@@ -1,0 +1,504 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+    scroll-behavior: smooth;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-body;
+  }
+
+  /* Hide scrollbar everywhere — still scrollable, just invisible */
+  * {
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* IE/Edge */
+  }
+  *::-webkit-scrollbar {
+    display: none;                /* Chrome/Safari/Opera */
+  }
+
+  /* Global transition defaults for interactive elements */
+  button, a, input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Focus rings — accessible but subtle */
+  *:focus-visible {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+@layer utilities {
+  .shadow-glow {
+    box-shadow: 0 0 30px -8px rgba(37, 99, 235, 0.45);
+  }
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04);
+  }
+  .shadow-card-hover {
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.10), 0 4px 6px -2px rgba(0,0,0,0.05);
+  }
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+
+.select__control {
+  min-height: 38px !important;
+  height: auto !important;
+}
+
+.form-floating .select__control {
+  min-height: calc(3.5rem + 2px) !important;
+}
+.form-floating .select__value-container {
+  padding-top: 1.2rem !important;
+}
+.select__value-container {
+  padding: 2px 8px !important;
+}
+.select__single-value, .select__placeholder {
+  line-height: 1.5 !important;
+  margin: 0 !important;
+}
+
+.select__menu {
+  background-color: #ffffff;
+  z-index: 9999 !important;
+}
+.select__option {
+  background-color: #ffffff;
+  color: #334155;
+}
+.select__option--is-focused {
+  background-color: #f1f5f9;
+}
+.select__option--is-selected {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+/* React Select Dark Mode Overrides */
+.dark .select__control {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #f1f5f9 !important;
+}
+.dark .select__single-value {
+  color: #f1f5f9 !important;
+}
+.dark .select__menu {
+  background-color: #1f2937 !important;
+  border: 1px solid #374151;
+}
+.dark .select__option {
+  background-color: #1f2937 !important;
+  color: #e2e8f0 !important;
+}
+.dark .select__option--is-focused {
+  background-color: #374151 !important;
+}
+.dark .select__option--is-selected {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+.dark .select__multi-value {
+  background-color: #374151 !important;
+  color: #f1f5f9 !important;
+}
+.dark .select__multi-value__label {
+  color: #f1f5f9 !important;
+}
+.dark .select__multi-value__remove {
+  background-color: #374151 !important;
+  color: #f1f5f9 !important;
+}
+.dark .select__multi-value__remove:hover {
+  background-color: #4b5563 !important;
+  color: #ef4444 !important;
+}
+
+/* React DatePicker Dark Mode Overrides */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+.react-datepicker-popper {
+  z-index: 9999 !important; /* Fix overlapping by elements with higher z-index like form-floating */
+}
+.dark .react-datepicker {
+  background-color: #1f2937 !important;
+  border-color: #374151 !important;
+  font-family: inherit;
+}
+.dark .react-datepicker__header {
+  background-color: #111827 !important;
+  border-bottom-color: #374151 !important;
+}
+.dark .react-datepicker__current-month,
+.dark .react-datepicker__day-name {
+  color: #f1f5f9 !important;
+}
+.dark .react-datepicker__day {
+  color: #e2e8f0 !important;
+}
+.dark .react-datepicker__day:hover {
+  background-color: #3b82f6 !important; /* Blue hover */
+  color: #ffffff !important;
+}
+.dark .react-datepicker__day--selected {
+  background-color: #2563eb !important; /* Blue selected */
+  color: #ffffff !important;
+}
+.dark .react-datepicker__day--keyboard-selected {
+  background-color: #1d4ed8 !important;
+}
+.dark .react-datepicker__month-select,
+.dark .react-datepicker__year-select {
+  background-color: #374151;
+  color: #f1f5f9;
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  padding: 2px 4px;
+  outline: none;
+}
+.dark .react-datepicker__month-select option,
+.dark .react-datepicker__year-select option {
+  background-color: #1f2937;
+  color: #f1f5f9;
+}
+
+/* Global Dark Mode Overrides */
+a {
+  text-decoration: none !important;
+}
+a:hover {
+  text-decoration: none !important;
+}
+
+.dark body {
+  background-color: #0a0a0a !important;
+  color: #f1f5f9 !important;
+  color-scheme: dark;
+}
+.dark .bg-slate-50 {
+  background-color: #111111 !important;
+}
+.dark .bg-slate-100 {
+  background-color: #1f2937 !important;
+  color: #f1f5f9 !important;
+}
+  .dark .hover\:bg-slate-50:hover {
+    background-color: #1f2937 !important;
+  }
+  .dark .hover\:bg-red-50:hover {
+    background-color: rgba(220, 38, 38, 0.15) !important;
+  }
+  .dark .hover\:bg-blue-50:hover,
+  .dark .hover\:bg-blue-100:hover {
+    background-color: rgba(37, 99, 235, 0.15) !important;
+  }
+.dark .bg-white {
+  background-color: #161616 !important;
+  border-color: #1f2937 !important;
+}
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+.dark .text-slate-700,
+.dark .text-slate-600 {
+  color: #9ca3af !important;
+}
+.dark .text-slate-500 {
+  color: #6b7280 !important;
+}
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: #1f2937 !important;
+}
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Bootstrap Dark Mode Overrides */
+.dark .card,
+.dark .modal-content {
+  background-color: #0f0f0f !important;
+  border-color: #272727 !important;
+  color: #f1f1f1 !important;
+}
+.dark .card-header,
+.dark .card-footer,
+.dark .modal-header,
+.dark .modal-footer {
+  background-color: #181818 !important;
+  border-color: #272727 !important;
+}
+.dark .text-muted {
+  color: #aaaaaa !important;
+}
+.dark .bg-light {
+  background-color: #2a2a2a !important;
+}
+.dark .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+.dark .table {
+  color: #f1f1f1 !important;
+}
+.dark .table th,
+.dark .table td,
+.dark .table tr {
+  background-color: transparent !important;
+  color: #f1f1f1 !important;
+  border-color: #3f3f3f !important;
+}
+
+.dark .rdt_Table,
+.dark .rdt_TableHeadRow,
+.dark .rdt_TableRow,
+.dark .rdt_TableCol,
+.dark .rdt_TableCell,
+.dark div[role="table"],
+.dark div[role="row"],
+.dark div[role="columnheader"],
+.dark div[role="gridcell"] {
+  background-color: #212121 !important;
+  color: #f1f1f1 !important;
+  border-color: #3f3f3f !important;
+}
+.dark .rdt_TableRow:hover,
+.dark div[role="row"]:hover {
+  background-color: #2a2a2a !important;
+}
+.dark .rdt_Pagination,
+.dark .rdt_Pagination select,
+.dark .rdt_Pagination button {
+  background-color: #212121 !important;
+  color: #f1f1f1 !important;
+  fill: #f1f1f1 !important;
+  border-color: #3f3f3f !important;
+}
+
+.dark .rdt_Pagination select option {
+  background-color: #212121 !important;
+  color: #f1f1f1 !important;
+}
+
+/* Fix for react-data-table-component NoData and Progress wrappers */
+.dark div[role="table"] > div {
+  background-color: transparent !important;
+  color: #f1f1f1 !important;
+}
+
+/* Forms & Inputs Dark Mode */
+.dark .form-control,
+.dark .form-select,
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark textarea {
+  background-color: #212121 !important;
+  border-color: #3f3f3f !important;
+  color: #f1f1f1 !important;
+}
+
+/* Form Switches / Sliders Dark Mode Fix & Sizing */
+.dark .form-switch .form-check-input {
+  background-color: #3f3f3f;
+  border-color: #555555;
+}
+.dark .form-switch.form-switch-success .form-check-input:checked,
+.dark .form-switch .form-check-input:checked {
+  background-color: #3b82f6 !important;
+  border-color: #3b82f6 !important;
+}
+
+/* Make sliders bigger */
+.form-switch-lg .form-check-input {
+  width: 3.5rem !important;
+  height: 1.75rem !important;
+  border-radius: 2rem !important;
+  cursor: pointer;
+}
+.form-switch-lg .form-check-input:focus {
+  box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25) !important;
+}
+.dark .form-control::placeholder,
+.dark input::placeholder {
+  color: #717171 !important;
+}
+.dark .form-label,
+.dark label {
+  color: #f1f1f1 !important;
+}
+
+/* React Flow Dark Mode */
+.dark .react-flow__minimap {
+  background-color: #212121 !important;
+}
+.dark .react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.5) !important;
+}
+.dark .react-flow__minimap-node {
+  fill: #3f3f3f !important;
+}
+.dark .react-flow__controls-button {
+  background-color: #212121 !important;
+  border-bottom: 1px solid #3f3f3f !important;
+  fill: #f1f1f1 !important;
+}
+.dark .react-flow__controls-button:hover {
+  background-color: #2a2a2a !important;
+}
+
+/* React Select Dark Mode */
+.dark .select__control {
+  background-color: #212121 !important;
+  border-color: #3f3f3f !important;
+}
+.dark .select__single-value,
+.dark .select__input-container,
+.dark .select__input {
+  color: #f1f1f1 !important;
+}
+.dark .select__menu {
+  background-color: #212121 !important;
+  border: 1px solid #3f3f3f !important;
+}
+.dark .select__option {
+  background-color: #212121 !important;
+  color: #f1f1f1 !important;
+}
+.dark .select__option--is-focused {
+  background-color: #3f3f3f !important;
+}
+.dark .select__option--is-selected {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+
+/* ── Ticket Modal Dark Mode ──────────────────────────────────────────────── */
+.dark .ticket-modal-content,
+.dark .modal-content {
+  background-color: #1c1c1e !important;
+  color: #f1f1f1 !important;
+  border: 1px solid #3a3a3c !important;
+}
+.dark .modal-header {
+  background-color: #1c1c1e !important;
+  border-bottom-color: #3a3a3c !important;
+  color: #f1f1f1 !important;
+}
+.dark .modal-header .btn-close {
+  filter: invert(1);
+}
+.dark .modal-footer {
+  background-color: #1c1c1e !important;
+  border-top-color: #3a3a3c !important;
+}
+/* secondary bg (ticket description panel, chat bg, header strip) */
+.dark .modal-body {
+  background-color: #1c1c1e !important;
+  color: #f1f1f1 !important;
+}
+/* Chat bubble backgrounds override via BS variables */
+.dark {
+  --bs-secondary-bg: #28282a;
+  --bs-body-bg: #1c1c1e;
+  --bs-body-color: #f1f1f1;
+  --bs-border-color: #3a3a3c;
+}
+/* Outgoing bubble: keep the indigo */
+/* Incoming bubble dark */
+.dark .form-control,
+.dark .form-select,
+.dark input.form-control,
+.dark textarea.form-control,
+.dark select.form-select {
+  background-color: #2c2c2e !important;
+  color: #f1f1f1 !important;
+  border-color: #3a3a3c !important;
+}
+.dark .form-control::placeholder {
+  color: #6b6b6d !important;
+}
+.dark .table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: #28282a;
+  color: #f1f1f1 !important;
+}
+.dark .table th {
+  color: #9ca3af !important;
+}
+.dark .table td {
+  border-color: #3a3a3c !important;
+}
+.dark .table-hover tbody tr:hover {
+  background-color: #2c2c2e !important;
+  color: #f1f1f1 !important;
+}
+.dark .card {
+  background-color: #1c1c1e !important;
+  border-color: #3a3a3c !important;
+  color: #f1f1f1 !important;
+}
+.dark .btn-light {
+  background-color: #2c2c2e !important;
+  border-color: #3a3a3c !important;
+  color: #f1f1f1 !important;
+}
+.dark .btn-light:hover {
+  background-color: #3a3a3c !important;
+}
+
+/* Custom Top Scrollbar — always visible */
+.custom-top-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+.dark .custom-top-scrollbar {
+  scrollbar-color: #64748b #334155;
+}
+.custom-top-scrollbar::-webkit-scrollbar {
+  height: 12px;
+  display: block;
+}
+.custom-top-scrollbar::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 6px;
+}
+.dark .custom-top-scrollbar::-webkit-scrollbar-track {
+  background: #334155;
+}
+.custom-top-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #e2e8f0;
+}
+.custom-top-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+.dark .custom-top-scrollbar::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border: 2px solid #334155;
+}
+.dark .custom-top-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
