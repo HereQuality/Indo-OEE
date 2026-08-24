@@ -1,8 +1,8 @@
 import React from 'react';
 
 // Shown when a delete is blocked because the record is still referenced
-// elsewhere (e.g. a Department that still has Employees assigned to it,
-// or a Role that's still assigned to Employees). `referenceData` is
+// elsewhere (e.g. a Department that still has Operators assigned to it,
+// or a Role that's still assigned to Operators). `referenceData` is
 // whatever the backend's error response body contains for a 409 Conflict —
 // this renders defensively since the exact shape can vary by endpoint.
 const ReferenceErrorModal = ({ isOpen, toggle, title, referenceData }) => {
@@ -13,7 +13,7 @@ const ReferenceErrorModal = ({ isOpen, toggle, title, referenceData }) => {
     "This record can't be deleted because it's still being used elsewhere.";
 
   // Optional list of what's referencing it, if the backend provides one
-  // (e.g. referenceData.references = [{ name: 'John Doe', type: 'Employee' }]).
+  // (e.g. referenceData.references = [{ name: 'John Doe', type: 'Operator' }]).
   const references = Array.isArray(referenceData?.references)
     ? referenceData.references
     : [];

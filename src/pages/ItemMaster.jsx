@@ -17,40 +17,43 @@ import {
 import Select from "react-select";
 import DataTable from "react-data-table-component";
 import DeleteModal from "../Components/Common/DeleteModal";
-import TimePicker from "../Components/Common/TimePicker";
 import FormsHeader from "../Components/Common/FormsModalHeader";
 import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useProcesses } from "../hooks/useProcesses";
+import { useMachines } from "../hooks/useMachines";
 import { useShifts } from "../hooks/useShifts";
-import { useInvalidateMachines } from "../hooks/useMachines";
+import { useInvalidateItems } from "../hooks/useItems";
 import {
-    createMachine,
-    deleteMachine,
-    getMachineById,
-    updateMachine,
-    searchMachines,
-} from "../api/machines.api";
+    createItem,
+    deleteItem,
+    getItemById,
+    updateItem,
+    searchItems,
+} from "../api/items.api";
 
 const initialState = {
-    machineName: "",
-    machineCode: "",
+    itemName: "",
+    itemCode: "",
     description: "",
-    machineOnTime: "",
-    machineOffTime: "",
-    processes: [],
+    process: null,
+    machine: null,
     shifts: [],
+    cycleTimeMin: "",
     isActive: true,
 };
 
-const MachineMaster = () => {
+const ItemMaster = () => {
     const toast = useAlert();
     const { currentPagePermissions = { read: true, write: true, edit: true, delete: true } } = useContext(MenuContext) || {};
 
     const { data: processList = [] } = useProcesses();
     const processOptions = processList.map((p) => ({ value: p._id, label: p.processName }));
+
+    const { data: machineList = [] } = useMachines();
+    const machineOptions = machineList.map((m) => ({ value: m._id, label: m.machineName }));
 
     const { data: shiftList = [] } = useShifts();
     const shiftOptions = shiftList.map((s) => ({ value: s._id, label: s.shiftName }));
@@ -63,8 +66,8 @@ const MachineMaster = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isDeleteLoading, setIsDeleteLoading] = useState(false);
 
-    const [machines, setMachines] = useState([]);
-    const invalidateMachines = useInvalidateMachines();
+    const [items, setItems] = useState([]);
+    const invalidateItems = useInvalidateItems();
 
     const [query, setQuery] = useState("");
 
@@ -92,24 +95,24 @@ const MachineMaster = () => {
         if (_id && typeof _id === 'string') {
             set_Id(_id);
             setIsLoading(true);
-            getMachineById(_id)
+            getItemById(_id)
                 .then((res) => {
-                    const machine = res.data.data;
+                    const item = res.data.data;
                     setValues({
                         ...values,
-                        machineName: machine.machineName,
-                        machineCode: machine.machineCode || "",
-                        description: machine.description || "",
-                        machineOnTime: machine.machineOnTime || "",
-                        machineOffTime: machine.machineOffTime || "",
-                        processes: machine.processes?.map((p) => ({ value: p._id, label: p.processName })) || [],
-                        shifts: machine.shifts?.map((s) => ({ value: s._id, label: s.shiftName })) || [],
-                        isActive: machine.isActive,
+                        itemName: item.itemName,
+                        itemCode: item.itemCode || "",
+                        description: item.description || "",
+                        process: item.process ? { value: item.process._id, label: item.process.processName } : null,
+                        machine: item.machine ? { value: item.machine._id, label: item.machine.machineName } : null,
+                        shifts: item.shifts?.map((s) => ({ value: s._id, label: s.shiftName })) || [],
+                        cycleTimeMin: item.cycleTimeMin ?? "",
+                        isActive: item.isActive,
                     });
                 })
                 .catch((err) => {
                     console.log(err);
-                    toast.error("Failed to fetch machine details");
+                    toast.error("Failed to fetch item details");
                 })
                 .finally(() => {
                     setIsLoading(false);
@@ -132,14 +135,14 @@ const MachineMaster = () => {
     };
 
     const buildPayload = (values) => ({
-        machineName: values.machineName,
-        machineCode: values.machineCode,
+        itemName: values.itemName,
+        itemCode: values.itemCode,
         description: values.description,
-        machineOnTime: values.machineOnTime,
-        machineOffTime: values.machineOffTime,
-        isActive: values.isActive,
-        processes: values.processes.map((p) => p.value),
+        process: values.process?.value || "",
+        machine: values.machine?.value || "",
         shifts: values.shifts.map((s) => s.value),
+        cycleTimeMin: values.cycleTimeMin,
+        isActive: values.isActive,
     });
 
     const handleClick = (e) => {
@@ -150,19 +153,19 @@ const MachineMaster = () => {
         setIsSubmit(true);
         if (Object.keys(errors).length === 0) {
             setIsLoading(true);
-            createMachine(buildPayload(values))
+            createItem(buildPayload(values))
                 .then((res) => {
                     if (res.data.isOk) {
-                        toast.success("Machine Added Successfully!");
+                        toast.success("Item Added Successfully!");
                         setmodal_list(!modal_list);
                         setValues(initialState);
-                        fetchMachines();
-                        invalidateMachines();
+                        fetchItems();
+                        invalidateItems();
                     }
                 })
                 .catch((error) => {
                     console.log(error);
-                    toast.error("Failed to add machine. Please try again.");
+                    toast.error(error?.response?.data?.message || "Failed to add item. Please try again.");
                 })
                 .finally(() => {
                     setIsLoading(false);
@@ -173,17 +176,17 @@ const MachineMaster = () => {
     const handleDelete = (e) => {
         e.preventDefault();
         setIsDeleteLoading(true);
-        deleteMachine(remove_id)
+        deleteItem(remove_id)
             .then((res) => {
                 setmodal_delete(!modal_delete);
-                toast.success("Machine Removed Successfully!");
-                fetchMachines();
-                invalidateMachines();
+                toast.success("Item Removed Successfully!");
+                fetchItems();
+                invalidateItems();
             })
             .catch((err) => {
                 console.log(err);
                 setmodal_delete(false);
-                toast.error("Failed to delete machine. Please try again.");
+                toast.error("Failed to delete item. Please try again.");
             })
             .finally(() => {
                 setIsDeleteLoading(false);
@@ -209,16 +212,16 @@ const MachineMaster = () => {
 
         if (Object.keys(errors).length === 0) {
             setIsLoading(true);
-            updateMachine(_id, buildPayload(values))
+            updateItem(_id, buildPayload(values))
                 .then((res) => {
                     setmodal_edit(!modal_edit);
-                    fetchMachines();
-                    invalidateMachines();
-                    toast.success("Machine Updated Successfully!");
+                    fetchItems();
+                    invalidateItems();
+                    toast.success("Item Updated Successfully!");
                 })
                 .catch((err) => {
                     console.log(err);
-                    toast.error("Failed to update machine. Please try again.");
+                    toast.error(err?.response?.data?.message || "Failed to update item. Please try again.");
                 })
                 .finally(() => {
                     setIsLoading(false);
@@ -226,31 +229,33 @@ const MachineMaster = () => {
         }
     };
 
-    const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
     const validate = (values) => {
         const errors = {};
 
-        if (!values.machineName || !values.machineName.trim()) {
-            errors.machineName = "Machine Name is required!";
-        } else if (values.machineName.length > 100) {
-            errors.machineName = "Machine Name must not exceed 100 characters";
+        if (!values.itemName || !values.itemName.trim()) {
+            errors.itemName = "Item Name is required!";
+        } else if (values.itemName.length > 100) {
+            errors.itemName = "Item Name must not exceed 100 characters";
         }
 
-        if (values.machineCode && values.machineCode.length > 20) {
-            errors.machineCode = "Machine Code must not exceed 20 characters";
+        if (values.itemCode && values.itemCode.length > 20) {
+            errors.itemCode = "Item Code must not exceed 20 characters";
         }
 
         if (values.description && values.description.length > 300) {
             errors.description = "Description must not exceed 300 characters";
         }
 
-        if (!values.machineOnTime || !TIME_RE.test(values.machineOnTime)) {
-            errors.machineOnTime = "Shift Time Start is required";
+        if (!values.process) {
+            errors.process = "Process is required!";
         }
 
-        if (!values.machineOffTime || !TIME_RE.test(values.machineOffTime)) {
-            errors.machineOffTime = "Shift Time End is required";
+        if (!values.machine) {
+            errors.machine = "Machine is required!";
+        }
+
+        if (!values.cycleTimeMin || Number(values.cycleTimeMin) <= 0) {
+            errors.cycleTimeMin = "Cycle Time must be greater than 0";
         }
 
         return errors;
@@ -270,12 +275,12 @@ const MachineMaster = () => {
 
     useEffect(() => {
         const timeout = setTimeout(() => {
-            fetchMachines();
+            fetchItems();
         }, 500);
         return () => clearTimeout(timeout);
     }, [pageNo, perPage, column, sortDirection, query, filter]);
 
-    const fetchMachines = async () => {
+    const fetchItems = async () => {
         setLoading(true);
         let skip = (pageNo - 1) * perPage;
         if (skip < 0) {
@@ -283,7 +288,7 @@ const MachineMaster = () => {
         }
 
         try {
-            const response = await searchMachines({
+            const response = await searchItems({
                 skip: skip,
                 per_page: perPage,
                 sorton: column,
@@ -295,13 +300,13 @@ const MachineMaster = () => {
             if (response.data.data.length > 0) {
                 let res = response.data.data[0];
                 setTotalRows(res.count);
-                setMachines(res.data);
+                setItems(res.data);
             } else {
-                setMachines([]);
+                setItems([]);
             }
         } catch (error) {
-            console.error("Error fetching machines:", error);
-            setMachines([]);
+            console.error("Error fetching items:", error);
+            setItems([]);
         } finally {
             setLoading(false);
         }
@@ -323,33 +328,40 @@ const MachineMaster = () => {
             maxWidth: "20px",
         },
         {
-            name: "Machine Name",
-            selector: (row) => row.machineName,
+            name: "Item Name",
+            selector: (row) => row.itemName,
             sortable: true,
-            sortField: "machineName",
+            sortField: "itemName",
             minWidth: "160px",
         },
         {
-            name: "Machine Code",
-            selector: (row) => row.machineCode,
+            name: "Item Code",
+            selector: (row) => row.itemCode,
             sortable: true,
-            sortField: "machineCode",
-            minWidth: "130px",
+            sortField: "itemCode",
+            minWidth: "120px",
         },
         {
-            name: "Shift Time",
-            selector: (row) => `${row.machineOnTime || "--"} - ${row.machineOffTime || "--"}`,
-            minWidth: "140px",
+            name: "Process",
+            selector: (row) => row.process?.processName || "",
+            minWidth: "150px",
         },
         {
-            name: "Processes",
-            selector: (row) => row.processes?.map((p) => p.processName || p.name).join(", ") || "",
-            minWidth: "180px",
+            name: "Machine",
+            selector: (row) => row.machine?.machineName || "",
+            minWidth: "150px",
         },
         {
             name: "Shifts",
             selector: (row) => row.shifts?.map((s) => s.shiftName).join(", ") || "",
             minWidth: "150px",
+        },
+        {
+            name: "Cycle Time (min)",
+            selector: (row) => row.cycleTimeMin,
+            sortable: true,
+            sortField: "cycleTimeMin",
+            minWidth: "140px",
         },
         {
             name: "Status",
@@ -394,7 +406,7 @@ const MachineMaster = () => {
         },
     ];
 
-    document.title = `Machine Master | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
+    document.title = `Item Master | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
 
     const renderForm = () => (
         <>
@@ -404,20 +416,20 @@ const MachineMaster = () => {
                         <Input
                             type="text"
                             required
-                            name="machineName"
-                            value={values.machineName}
+                            name="itemName"
+                            value={values.itemName}
                             onChange={handleChange}
                             placeholder=" "
                             maxLength={100}
                             style={{ color: '#111827', fontWeight: '500' }}
                         />
                         <Label>
-                            Machine Name{" "}
+                            Item Name{" "}
                             <span className="text-danger">*</span>{" "}
                         </Label>
                         {isSubmit && (
                             <p className="text-danger">
-                                {formErrors.machineName}
+                                {formErrors.itemName}
                             </p>
                         )}
                     </div>
@@ -426,19 +438,19 @@ const MachineMaster = () => {
                     <div className="form-floating mb-3">
                         <Input
                             type="text"
-                            name="machineCode"
-                            value={values.machineCode}
+                            name="itemCode"
+                            value={values.itemCode}
                             onChange={handleChange}
                             placeholder=" "
                             maxLength={20}
                             style={{ color: '#111827', fontWeight: '500' }}
                         />
                         <Label>
-                            Machine Code
+                            Item Code
                         </Label>
                         {isSubmit && (
                             <p className="text-danger">
-                                {formErrors.machineCode}
+                                {formErrors.itemCode}
                             </p>
                         )}
                     </div>
@@ -449,57 +461,40 @@ const MachineMaster = () => {
                 <Col md={6}>
                     <div className="mb-3">
                         <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
-                            Shift Time Start <span className="text-danger">*</span>
+                            Process <span className="text-danger">*</span>
                         </label>
-                        <TimePicker
-                            name="machineOnTime"
-                            value={values.machineOnTime}
-                            onChange={handleChange}
-                            hasError={isSubmit && !!formErrors.machineOnTime}
+                        <Select
+                            className="basic-single"
+                            classNamePrefix="select"
+                            menuPortalTarget={document.body}
+                            styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
+                            placeholder="Select Process…"
+                            options={processOptions}
+                            value={values.process}
+                            onChange={(opt) => setValues({ ...values, process: opt })}
                         />
-                        {isSubmit && (
-                            <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>
-                                {formErrors.machineOnTime}
-                            </p>
-                        )}
+                        {isSubmit && formErrors.process && <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>{formErrors.process}</p>}
                     </div>
                 </Col>
                 <Col md={6}>
                     <div className="mb-3">
                         <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
-                            Shift Time End <span className="text-danger">*</span>
+                            Machine <span className="text-danger">*</span>
                         </label>
-                        <TimePicker
-                            name="machineOffTime"
-                            value={values.machineOffTime}
-                            onChange={handleChange}
-                            hasError={isSubmit && !!formErrors.machineOffTime}
+                        <Select
+                            className="basic-single"
+                            classNamePrefix="select"
+                            menuPortalTarget={document.body}
+                            styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
+                            placeholder="Select Machine…"
+                            options={machineOptions}
+                            value={values.machine}
+                            onChange={(opt) => setValues({ ...values, machine: opt })}
                         />
-                        {isSubmit && (
-                            <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>
-                                {formErrors.machineOffTime}
-                            </p>
-                        )}
+                        {isSubmit && formErrors.machine && <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>{formErrors.machine}</p>}
                     </div>
                 </Col>
             </Row>
-
-            <div className="mb-3">
-                <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
-                    Processes
-                </label>
-                <Select
-                    className="basic-multi-select"
-                    classNamePrefix="select"
-                    menuPortalTarget={document.body}
-                    styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
-                    placeholder="Select Process(es)…"
-                    isMulti
-                    options={processOptions}
-                    value={values.processes}
-                    onChange={(opt) => setValues({ ...values, processes: opt || [] })}
-                />
-            </div>
 
             <div className="mb-3">
                 <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
@@ -510,12 +505,35 @@ const MachineMaster = () => {
                     classNamePrefix="select"
                     menuPortalTarget={document.body}
                     styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
-                    placeholder="Select Shift(s)… (this machine runs on more than one shift if needed)"
+                    placeholder="Select Shift(s)… (this item runs on more than one shift if needed)"
                     isMulti
                     options={shiftOptions}
                     value={values.shifts}
                     onChange={(opt) => setValues({ ...values, shifts: opt || [] })}
                 />
+            </div>
+
+            <div className="form-floating mb-3">
+                <Input
+                    type="number"
+                    required
+                    name="cycleTimeMin"
+                    value={values.cycleTimeMin}
+                    onChange={handleChange}
+                    placeholder=" "
+                    min={0.01}
+                    step={0.01}
+                    style={{ color: '#111827', fontWeight: '500' }}
+                />
+                <Label>
+                    Cycle Time (min){" "}
+                    <span className="text-danger">*</span>{" "}
+                </Label>
+                {isSubmit && (
+                    <p className="text-danger">
+                        {formErrors.cycleTimeMin}
+                    </p>
+                )}
             </div>
 
             <div className="form-floating mb-3">
@@ -556,7 +574,7 @@ const MachineMaster = () => {
                             <Card>
                                 <CardHeader>
                                     <FormsHeader
-                                        formName="Machine"
+                                        formName="Item"
                                         filter={filter}
                                         handleFilter={handleFilter}
                                         tog_list={tog_list}
@@ -572,7 +590,7 @@ const MachineMaster = () => {
                                         <div className="table-responsive table-card mt-1 mb-1 text-right">
                                             <DataTable
                                                 columns={col}
-                                                data={machines}
+                                                data={items}
                                                 progressPending={loading}
                                                 sortServer
                                                 onSort={(
@@ -618,7 +636,7 @@ const MachineMaster = () => {
                         setIsSubmit(false);
                     }}
                 >
-                    Add Machine
+                    Add Item
                 </ModalHeader>
                 <form noValidate>
                     <ModalBody>
@@ -651,7 +669,7 @@ const MachineMaster = () => {
                         setIsSubmit(false);
                     }}
                 >
-                    Update Machine
+                    Update Item
                 </ModalHeader>
                 <form noValidate>
                     <ModalBody>
@@ -678,4 +696,4 @@ const MachineMaster = () => {
     );
 };
 
-export default MachineMaster;
+export default ItemMaster;

@@ -28,7 +28,7 @@ export default defineConfig({
     // Proxy API requests to Express server in dev (avoids CORS issues)
     proxy: {
       "/api": {
-        target: "http://localhost:5001",
+        target: "http://localhost:5050",
         changeOrigin: true,
         secure: false,
       },

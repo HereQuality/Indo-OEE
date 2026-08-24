@@ -9,7 +9,7 @@ const NonAuthLayout = ({ children }) => {
     if (!isSessionVerified) return null;
 
     if (adminData) {
-        const slug = getRoleSlug(adminData) || "employee";
+        const slug = getRoleSlug(adminData) || "operator";
         const homePath = `/${slug}/home`;
         return <Navigate to={homePath} replace />;
     }

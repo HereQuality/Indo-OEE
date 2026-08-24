@@ -114,7 +114,7 @@ export default function Profile() {
     // SuperAdmin fields
     name:         adminData?.name || "",
     username:     adminData?.username || "",
-    // Employee fields
+    // Operator fields
     employeeName: adminData?.employeeName || adminData?.name || "",
     mobileNumber: adminData?.mobileNumber || "",
     emailOffice:  adminData?.emailOffice || "",

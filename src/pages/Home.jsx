@@ -103,13 +103,13 @@ const ClockWeather = ({ isDarkMode }) => {
   useEffect(() => {
     const fetchWeather = async () => {
       try {
-        // Hardcoding to Halol, Gujarat (22.5029° N, 73.4735° E)
+        // Hardcoded to Makarpura GIDC, Vadodara (22.2495° N, 73.1739° E) — Indo Electricals' location
         const weatherRes = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=22.5029&longitude=73.4735&current_weather=true`
+          `https://api.open-meteo.com/v1/forecast?latitude=22.2495&longitude=73.1739&current_weather=true`
         );
         const weatherData = await weatherRes.json();
         if (weatherData?.current_weather) {
-          setWeather({ temp: Math.round(weatherData.current_weather.temperature), city: "Halol" });
+          setWeather({ temp: Math.round(weatherData.current_weather.temperature), city: "Vadodara" });
         }
       } catch { /* silent */ }
     };

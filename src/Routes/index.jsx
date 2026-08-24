@@ -56,7 +56,7 @@ const Index = () => {
       {/* Bare "/home" sends the user to their own "/<roleSlug>/home". */}
       <Route path="/home" element={<HomeRedirect />} />
 
-      {/* Every role — SuperAdmin and every Employee — shares this one
+      {/* Every role — SuperAdmin and every Operator — shares this one
           "/:roleSlug/..." tree, all nested under one persistent Layout.
           Defined once in allRoutes.jsx. */}
       <Route path="/:roleSlug" element={<RoleRoute />}>

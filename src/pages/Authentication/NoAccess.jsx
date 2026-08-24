@@ -36,7 +36,7 @@ export default function NoAccess() {
         <div className="bg-white py-6 px-4 shadow rounded-lg sm:px-10 border border-slate-200">
           <p className="text-sm text-slate-700 mb-4">
             If you need access, ask your administrator to grant "Read" (or
-            "Write") permission for this page under Employee Management &gt;
+            "Write") permission for this page under Operator Management &gt;
             Manage Role.
           </p>
           <div className="mt-6">

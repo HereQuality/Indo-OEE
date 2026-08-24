@@ -449,7 +449,7 @@ const RoleMaster = () => {
               )}
               {values.roleCode && (
                 <p className="text-muted small mb-0">
-                  Employees with this role will sign in at:{" "}
+                  Operators with this role will sign in at:{" "}
                   <strong>/{slugifyPreview(values.roleCode) || "…"}</strong>
                 </p>
               )}
@@ -544,7 +544,7 @@ onChange={handleCheck}
               )}
               {values.roleCode && (
                 <p className="text-muted small mb-0">
-                  Employees with this role will sign in at:{" "}
+                  Operators with this role will sign in at:{" "}
                   <strong>/{slugifyPreview(values.roleCode) || "…"}</strong>
                 </p>
               )}

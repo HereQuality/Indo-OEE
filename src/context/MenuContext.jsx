@@ -2,7 +2,7 @@ import { createContext, useEffect, useState, useContext } from "react";
 import { useLocation } from "react-router-dom";
 import { getCurrentUser } from "../api/auth.api";
 import { getMenusByGroups } from "../api/menus.api";
-import { getEmployeeRolesByRoleId } from "../api/employeeRoles.api";
+import { getOperatorRolesByRoleId } from "../api/operatorRoles.api";
 import { AuthContext } from "./AuthContext";
 
 const MenuContext = createContext();
@@ -19,7 +19,7 @@ const MenuProvider = ({ children }) => {
     const [employeeId, setEmployeeId] = useState(null);
     const [employeeRoleId, setEmployeeRoleId] = useState(null);
     const [isStatusFetched, setIsStatusFetched] = useState(false);
-    const [employeeRoles, setEmployeeRoles] = useState(null);
+    const [operatorRoles, setOperatorRoles] = useState(null);
     const [currentPagePermissions, setCurrentPagePermissions] = useState({
         menuId: null,
         view: false,
@@ -62,21 +62,21 @@ const MenuProvider = ({ children }) => {
         }
     };
 
-    // Fetch employee roles based on roleId instead of employee ID
-    const fetchEmployeeRoles = async (roleId) => {
+    // Fetch operator roles based on roleId instead of operator ID
+    const fetchOperatorRoles = async (roleId) => {
         try {
             if (!roleId) return null;
 
-            const response = await getEmployeeRolesByRoleId(roleId);
+            const response = await getOperatorRolesByRoleId(roleId);
 
             if (response.data.isOk) {
-                setEmployeeRoles(response.data.data[0]);
+                setOperatorRoles(response.data.data[0]);
                 return response.data.data[0];
             }
 
             return null;
         } catch (error) {
-            console.error("Error fetching employee roles:", error);
+            console.error("Error fetching operator roles:", error);
             return null;
         }
     };
@@ -148,9 +148,9 @@ const MenuProvider = ({ children }) => {
                         timestamp: now
                     }));
                 }
-                // If not admin, filter menus based on employee roles
+                // If not admin, filter menus based on operator roles
                 else if (employeeRoleId) {
-                    const rolesData = await fetchEmployeeRoles(employeeRoleId);
+                    const rolesData = await fetchOperatorRoles(employeeRoleId);
                     if (rolesData && rolesData.roles) {
                         const filteredMenus = filterMenusByPermission(menuGroups, rolesData.roles);
                         setMenuData(filteredMenus);
@@ -240,7 +240,7 @@ const MenuProvider = ({ children }) => {
             return;
         }
 
-        if (!employeeRoles || !employeeRoles.roles || !menuId) {
+        if (!operatorRoles || !operatorRoles.roles || !menuId) {
             setCurrentPagePermissions({
                 menuId: null,
                 view: false,
@@ -252,7 +252,7 @@ const MenuProvider = ({ children }) => {
         }
 
         // Find the permission for this menu ID
-        const menuPermission = employeeRoles.roles.find(role => role.menuId === menuId || role.menuGroupId === menuId);
+        const menuPermission = operatorRoles.roles.find(role => role.menuId === menuId || role.menuGroupId === menuId);
 
         if (menuPermission) {
             setCurrentPagePermissions({
@@ -285,7 +285,7 @@ const MenuProvider = ({ children }) => {
             };
         }
 
-        if (!employeeRoles || !employeeRoles.roles || !menuId) {
+        if (!operatorRoles || !operatorRoles.roles || !menuId) {
             return {
                 menuId,
                 view: false,
@@ -295,7 +295,7 @@ const MenuProvider = ({ children }) => {
             };
         }
 
-        const menuPermission = employeeRoles.roles.find(role => role.menuId === menuId || role.menuGroupId === menuId);
+        const menuPermission = operatorRoles.roles.find(role => role.menuId === menuId || role.menuGroupId === menuId);
 
         if (menuPermission) {
             return {
@@ -429,7 +429,7 @@ const MenuProvider = ({ children }) => {
             error,
             fetchMenus,
             isAdmin,
-            employeeRoles,
+            operatorRoles,
             invalidateMenuCache,
             currentPagePermissions,
             updateCurrentPagePermissions,

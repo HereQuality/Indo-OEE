@@ -16,10 +16,10 @@ import {
 import { Plus, Pencil, Trash2, Users, Search, X, Check, Network } from "lucide-react";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
-import { updateReportingManager } from "../api/employees.api";
+import { updateReportingManager } from "../api/operators.api";
 import { createTeam, updateTeam, deleteTeam } from "../api/teams.api";
 import { useTeams, useInvalidateTeams } from "../hooks/useTeams";
-import { useEmployees, useInvalidateEmployees } from "../hooks/useEmployees";
+import { useOperators, useInvalidateOperators } from "../hooks/useOperators";
 
 // Deterministic, muted tint/foreground pair for a name's initial-letter avatar.
 // Soft tinted background + matching darker foreground reads as considered design
@@ -1206,10 +1206,10 @@ const TeamsBoard = () => {
     // having only "create" isn't enough to reassign someone's manager.
     const canEditManager = !!currentPagePermissions.edit;
     const invalidateTeams = useInvalidateTeams();
-    const invalidateEmployees = useInvalidateEmployees();
+    const invalidateEmployees = useInvalidateOperators();
 
     const { data: teams = [], isLoading: loading } = useTeams();
-    const { data: employees = [] } = useEmployees();
+    const { data: employees = [] } = useOperators();
     const [query, setQuery] = useState("");
 
     const [addOpen, setAddOpen] = useState(false);

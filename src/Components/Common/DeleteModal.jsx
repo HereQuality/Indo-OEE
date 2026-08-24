@@ -1,6 +1,15 @@
 import React, { useEffect } from 'react';
 
-const DeleteModal = ({ show, handleDelete, toggle, disabled }) => {
+const DeleteModal = ({
+  show,
+  handleDelete,
+  toggle,
+  disabled,
+  title = 'Are you sure?',
+  message = 'Are you sure you want to remove this record? This action cannot be undone.',
+  confirmLabel = 'Yes, Delete It!',
+  confirmingLabel = 'Deleting...',
+}) => {
   // Keyboard shortcuts while the confirm dialog is open: Enter confirms
   // delete, Escape cancels — same pattern used everywhere this modal is
   // rendered (Machine/Operator/Process/Standard Time Master, etc.), so this
@@ -31,9 +40,9 @@ const DeleteModal = ({ show, handleDelete, toggle, disabled }) => {
             />
           </svg>
         </div>
-        <h4 className="text-base font-semibold text-slate-900 mb-1">Are you sure?</h4>
+        <h4 className="text-base font-semibold text-slate-900 mb-1">{title}</h4>
         <p className="text-sm text-slate-500 mb-6">
-          Are you sure you want to remove this record? This action cannot be undone.
+          {message}
         </p>
         <div className="flex items-center justify-center gap-3">
           <button
@@ -50,7 +59,7 @@ const DeleteModal = ({ show, handleDelete, toggle, disabled }) => {
             disabled={disabled}
             className="rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors disabled:opacity-70"
           >
-            {disabled ? 'Deleting...' : 'Yes, Delete It!'}
+            {disabled ? confirmingLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAllShifts } from "../api/shifts.api";
+import { getAllShifts } from "../api/shift.api";
 
 export const SHIFTS_QUERY_KEY = ["shifts", "all"];
 

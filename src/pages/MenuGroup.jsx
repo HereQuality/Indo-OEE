@@ -343,7 +343,7 @@ const MenuGroup = () => {
           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
             row.portal === "SuperAdmin"
               ? "bg-primary-50 text-primary-700"
-              : row.portal === "Employee"
+              : row.portal === "Operator"
               ? "bg-secondary-50 text-secondary-700"
               : "bg-slate-100 text-slate-600"
           }`}
@@ -501,11 +501,11 @@ const MenuGroup = () => {
               className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 text-sm transition-all text-slate-800"
             >
               <option value="SuperAdmin">SuperAdmin only</option>
-              <option value="Employee">Employee only</option>
+              <option value="Operator">Operator only</option>
               <option value="Both">Both portals</option>
             </select>
             <p className="mt-1.5 text-xs text-slate-400">
-              Controls whether this group shows up in the SuperAdmin sidebar, the Employee sidebar, or both.
+              Controls whether this group shows up in the SuperAdmin sidebar, the Operator sidebar, or both.
             </p>
           </div>
 
@@ -613,11 +613,11 @@ const MenuGroup = () => {
               className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 text-sm transition-all text-slate-800"
             >
               <option value="SuperAdmin">SuperAdmin only</option>
-              <option value="Employee">Employee only</option>
+              <option value="Operator">Operator only</option>
               <option value="Both">Both portals</option>
             </select>
             <p className="mt-1.5 text-xs text-slate-400">
-              Controls whether this group shows up in the SuperAdmin sidebar, the Employee sidebar, or both.
+              Controls whether this group shows up in the SuperAdmin sidebar, the Operator sidebar, or both.
             </p>
           </div>
 

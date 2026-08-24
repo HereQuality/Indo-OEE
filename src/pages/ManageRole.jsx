@@ -21,7 +21,7 @@ import { MenuContext } from "../context/MenuContext";
 import { ThemeContext } from "../context/ThemeContext";
 import { useRoles } from "../hooks/useRoles";
 import { getMenusByGroups } from "../api/menus.api";
-import { getEmployeeRolesByRoleId, createEmployeeRoles, updateEmployeeRoles } from "../api/employeeRoles.api";
+import { getOperatorRolesByRoleId, createOperatorRoles, updateOperatorRoles } from "../api/operatorRoles.api";
 
 // 4-flag RBAC model:
 //   view   → can see/open the page
@@ -32,7 +32,7 @@ import { getEmployeeRolesByRoleId, createEmployeeRoles, updateEmployeeRoles } fr
 
 const FLAGS = ["view", "create", "edit", "delete"];
 
-const EmployeeRoles = () => {
+const OperatorRoles = () => {
   const toast = useAlert();
   const [loading, setLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
@@ -45,7 +45,7 @@ const EmployeeRoles = () => {
   );
   const [selectedRole, setSelectedRole] = useState(null);
   const [menuData, setMenuData] = useState([]);
-  const [employeeRoles, setEmployeeRoles] = useState(null);
+  const [operatorRoles, setOperatorRoles] = useState(null);
   const [rolesChanged, setRolesChanged] = useState(false);
   const [hoveredRow, setHoveredRow] = useState(null);
 
@@ -55,8 +55,8 @@ const EmployeeRoles = () => {
 
   useEffect(() => { fetchAllMenuData(); }, []);
   useEffect(() => {
-    if (selectedRole) fetchEmployeeRoles(selectedRole.value);
-    else setEmployeeRoles(null);
+    if (selectedRole) fetchOperatorRoles(selectedRole.value);
+    else setOperatorRoles(null);
   }, [selectedRole]);
 
   const fetchAllMenuData = async () => {
@@ -79,15 +79,15 @@ const EmployeeRoles = () => {
     }
   };
 
-  const fetchEmployeeRoles = async (roleId) => {
+  const fetchOperatorRoles = async (roleId) => {
     setLoading(true);
     try {
-      const response = await getEmployeeRolesByRoleId(roleId);
-      if (response.data.data?.length > 0) setEmployeeRoles(response.data.data[0]);
-      else setEmployeeRoles(null);
+      const response = await getOperatorRolesByRoleId(roleId);
+      if (response.data.data?.length > 0) setOperatorRoles(response.data.data[0]);
+      else setOperatorRoles(null);
     } catch (error) {
-      if (error.response?.status === 404) setEmployeeRoles(null);
-      else toast.error("Failed to load employee roles");
+      if (error.response?.status === 404) setOperatorRoles(null);
+      else toast.error("Failed to load operator roles");
     } finally {
       setLoading(false);
       setRolesChanged(false);
@@ -96,8 +96,8 @@ const EmployeeRoles = () => {
 
   // Get the permission object for a menu/group id
   const getRole = (id, isGroup) => {
-    if (!employeeRoles?.roles) return null;
-    return employeeRoles.roles.find((r) =>
+    if (!operatorRoles?.roles) return null;
+    return operatorRoles.roles.find((r) =>
       isGroup ? r.menuGroupId === id : r.menuId === id
     ) || null;
   };
@@ -118,7 +118,7 @@ const EmployeeRoles = () => {
   };
 
   const hasColumnAllPermissions = (flag) => {
-    if (!employeeRoles?.roles) return false;
+    if (!operatorRoles?.roles) return false;
     const allIds = [];
     menuData.forEach((group) => {
       if (group.isLink) allIds.push({ id: group.groupId, isGroup: true });
@@ -135,7 +135,7 @@ const EmployeeRoles = () => {
   };
 
   const hasGroupAllPermissions = (groupId) => {
-    if (!employeeRoles?.roles) return false;
+    if (!operatorRoles?.roles) return false;
     const group = menuData.find((g) => g.groupId === groupId);
     if (!group) return false;
     if (group.isLink) {
@@ -154,7 +154,7 @@ const EmployeeRoles = () => {
   };
 
   const hasGroupAnyPermissions = (groupId) => {
-    if (!employeeRoles?.roles) return false;
+    if (!operatorRoles?.roles) return false;
     const group = menuData.find((g) => g.groupId === groupId);
     if (!group) return false;
     if (group.isLink) return hasAnyPermissions(groupId, true);
@@ -186,7 +186,7 @@ const EmployeeRoles = () => {
   const ensureBase = () => ({
     roleId: selectedRole.value,
     roles: [],
-    ...(employeeRoles || {}),
+    ...(operatorRoles || {}),
   });
 
   // Toggle a single flag on one menu/group
@@ -204,7 +204,7 @@ const EmployeeRoles = () => {
       updates.view = true;
     }
 
-    setEmployeeRoles(applyPermission(ensureBase(), menuField, id, updates));
+    setOperatorRoles(applyPermission(ensureBase(), menuField, id, updates));
   };
 
   // Toggle all 4 flags for one row
@@ -212,7 +212,7 @@ const EmployeeRoles = () => {
     setRolesChanged(true);
     const menuField = isGroup ? "menuGroupId" : "menuId";
     const updates = FLAGS.reduce((a, f) => ({ ...a, [f]: isChecked }), {});
-    setEmployeeRoles(applyPermission(ensureBase(), menuField, id, updates));
+    setOperatorRoles(applyPermission(ensureBase(), menuField, id, updates));
   };
 
   // Toggle a full column across all menus/groups
@@ -237,7 +237,7 @@ const EmployeeRoles = () => {
         apply(group.menus);
       }
     });
-    setEmployeeRoles(base);
+    setOperatorRoles(base);
   };
 
   // Toggle all 4 flags for every menu inside a group header
@@ -256,29 +256,29 @@ const EmployeeRoles = () => {
       });
       apply(group.menus);
     }
-    setEmployeeRoles(base);
+    setOperatorRoles(base);
   };
 
-  const saveEmployeeRoles = async () => {
+  const saveOperatorRoles = async () => {
     if (!selectedRole) return;
-    const payload = { roleId: selectedRole.value, roles: employeeRoles ? employeeRoles.roles : [] };
+    const payload = { roleId: selectedRole.value, roles: operatorRoles ? operatorRoles.roles : [] };
     setSaveLoading(true);
     try {
-      if (employeeRoles?._id) {
-        await updateEmployeeRoles(selectedRole.value, payload);
+      if (operatorRoles?._id) {
+        await updateOperatorRoles(selectedRole.value, payload);
         toast.success("Roles updated successfully");
       } else {
-        await createEmployeeRoles(payload);
+        await createOperatorRoles(payload);
         toast.success("Roles created successfully");
       }
-      fetchEmployeeRoles(selectedRole.value);
+      fetchOperatorRoles(selectedRole.value);
     } catch (error) {
       const msg = error?.response?.data?.message || "Failed to save roles";
       if (error?.response?.status === 400 && msg.includes("already exist")) {
         try {
-          await updateEmployeeRoles(selectedRole.value, payload);
+          await updateOperatorRoles(selectedRole.value, payload);
           toast.success("Roles updated successfully");
-          fetchEmployeeRoles(selectedRole.value);
+          fetchOperatorRoles(selectedRole.value);
         } catch { toast.error("Failed to save roles"); }
       } else { toast.error(msg); }
     } finally { setSaveLoading(false); }
@@ -288,11 +288,11 @@ const EmployeeRoles = () => {
     if (!selectedRole) return;
     setSaveLoading(true);
     try {
-      if (employeeRoles?._id) {
-        await updateEmployeeRoles(selectedRole.value, { roleId: selectedRole.value, roles: [] });
+      if (operatorRoles?._id) {
+        await updateOperatorRoles(selectedRole.value, { roleId: selectedRole.value, roles: [] });
         toast.success("All permissions cleared");
       } else { toast.info("No permissions to clear"); }
-      fetchEmployeeRoles(selectedRole.value);
+      fetchOperatorRoles(selectedRole.value);
     } catch { toast.error("Failed to clear permissions"); }
     finally { setSaveLoading(false); }
   };
@@ -360,7 +360,7 @@ const EmployeeRoles = () => {
     ));
   };
 
-  document.title = `Employee Roles | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+  document.title = `Operator Roles | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   const colWidth = { menu: "48%", flag: "13%" };
 
@@ -410,13 +410,13 @@ const EmployeeRoles = () => {
                       <i className="bx bx-lock-alt me-1" />Read Only
                     </span>
                   )}
-                  {selectedRole && canWrite && employeeRoles?._id && (
+                  {selectedRole && canWrite && operatorRoles?._id && (
                     <Button color="danger" outline size="sm" onClick={clearAllPermissions} disabled={saveLoading}>
                       <i className="bx bx-trash me-1" />Clear All
                     </Button>
                   )}
                   {selectedRole && canWrite && (
-                    <Button color="primary" onClick={saveEmployeeRoles} disabled={saveLoading || !rolesChanged}>
+                    <Button color="primary" onClick={saveOperatorRoles} disabled={saveLoading || !rolesChanged}>
                       {saveLoading
                         ? <><Spinner size="sm" className="me-1" /> Saving...</>
                         : <><i className="bx bx-save me-1" /> Save Roles</>}
@@ -579,4 +579,4 @@ const EmployeeRoles = () => {
   );
 };
 
-export default EmployeeRoles;
+export default OperatorRoles;

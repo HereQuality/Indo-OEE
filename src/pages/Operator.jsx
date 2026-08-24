@@ -23,28 +23,26 @@ import FormsHeader from "../Components/Common/FormsModalHeader";
 import FormsFooter from "../Components/Common/FormAddFooter";
 import { AuthContext } from "../context/AuthContext";
 import Select from "react-select";
-import CreatableSelect from 'react-select/creatable';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useAlert } from "../context/AlertContext";
-import { createEmployee, deleteEmployee, getEmployeeById, updateEmployee, searchEmployees, resetEmployeePassword } from "../api/employees.api";
+import { createOperator, deleteOperator, getOperatorById, updateOperator, searchOperators, resetOperatorPassword } from "../api/operators.api";
 import { MenuContext } from "../context/MenuContext";
 import { useRoles } from "../hooks/useRoles";
 import { useDepartments } from "../hooks/useDepartments";
 import { useTeams, useInvalidateTeams } from "../hooks/useTeams";
-import { useInvalidateEmployees } from "../hooks/useEmployees";
+import { useInvalidateOperators } from "../hooks/useOperators";
 import { checkUsernameAvailability } from "../api/auth.api";
 import { createRole } from "../api/roles.api";
 import { createDepartment } from "../api/departments.api";
 import { createTeam } from "../api/teams.api";
-import { getSkills } from "../api/skills.api";
 import { useInvalidateRoles } from "../hooks/useRoles";
 import { useInvalidateDepartments } from "../hooks/useDepartments";
 
-const Employee = () => {
+const Operator = () => {
     const toast = useAlert();
     const { adminData } = useContext(AuthContext);
-    const invalidateEmployees = useInvalidateEmployees();
+    const invalidateEmployees = useInvalidateOperators();
     // Basic states
     const [isLoading, setIsLoading] = useState(false);
     const [isDeleteLoading, setIsDeleteLoading] = useState(false);
@@ -60,7 +58,6 @@ const Employee = () => {
         departmentIds: [],
         teamIds: [],
         roleId: "",
-        skills: [],
         joiningDate: "",
         emailOffice: "",
         mobileNumber: "",
@@ -122,15 +119,6 @@ const Employee = () => {
     const invalidateRoles = useInvalidateRoles();
     const invalidateDepartments = useInvalidateDepartments();
 
-    const [dbSkills, setDbSkills] = useState([]);
-    useEffect(() => {
-        getSkills({ isActive: true }).then(res => {
-            if (res.data?.isOk) {
-                setDbSkills(res.data.data.map(s => ({ value: s.skillName, label: s.skillName })));
-            }
-        }).catch(err => console.error(err));
-    }, []);
-
     // Quick-add Role modal state
     const [showAddRoleModal, setShowAddRoleModal] = useState(false);
     const [newRoleData, setNewRoleData] = useState({ roleName: "", roleCode: "", remark: "", isActive: true });
@@ -162,7 +150,7 @@ const Employee = () => {
             maxWidth: "20px",
         },
         {
-            name: "Employee",
+            name: "Operator",
             selector: (row) => (
                 <div className="d-flex align-items-center gap-2">
                     {row.profilePic ? (
@@ -222,7 +210,7 @@ const Employee = () => {
                         </button>}
                         {currentPagePermissions.edit && (
                             <button
-                                title={row.isBlocked ? "Unblock Employee" : "Block Employee"}
+                                title={row.isBlocked ? "Unblock Operator" : "Block Operator"}
                                 onClick={() => setBlockAlert({ open: true, row })}
                                 style={{
                                     background: !row.isBlocked ? "transparent" : "#dc2626",
@@ -274,7 +262,7 @@ const Employee = () => {
         let skip = (pageNo - 1) * perPage;
         if (skip < 0) skip = 0;
         try {
-            const response = await searchEmployees({
+            const response = await searchOperators({
                 skip: skip,
                 per_page: perPage,
                 sorton: column,
@@ -352,7 +340,6 @@ const Employee = () => {
             formData.append("roleId", selectedRole?.value || "");
             formData.append("departmentIds", JSON.stringify(values.departmentIds.map(d => d.value)));
             formData.append("teamIds", JSON.stringify(values.teamIds.map(t => t.value)));
-            formData.append("skills", JSON.stringify(values.skills.map(s => s.value)));
             if (values.joiningDate) formData.append("joiningDate", values.joiningDate);
             if (values.emailOffice) formData.append("emailOffice", values.emailOffice);
             if (values.mobileNumber) formData.append("mobileNumber", values.mobileNumber);
@@ -364,7 +351,7 @@ const Employee = () => {
                 formData.append("profilePic", profilePic);
             }
 
-            createEmployee(formData)
+            createOperator(formData)
                 .then((res) => {
                     if (res.data?.isOk) {
                         setShowForm(false);
@@ -377,13 +364,13 @@ const Employee = () => {
                         setUsernameStatus('idle');
                         fetchEmployeeMaster();
                         invalidateEmployees();
-                        toast.success("Employee Added Successfully");
+                        toast.success("Operator Added Successfully");
                     } else {
-                        toast.error(res.data?.message || "Failed to add employee.");
+                        toast.error(res.data?.message || "Failed to add operator.");
                     }
                 })
                 .catch((err) => {
-                    toast.error(err.response?.data?.message || "Failed to add employee. Please try again.");
+                    toast.error(err.response?.data?.message || "Failed to add operator. Please try again.");
                 })
                 .finally(() => setIsLoading(false));
         }
@@ -403,7 +390,6 @@ const Employee = () => {
             formData.append("roleId", selectedRole?.value || "");
             formData.append("departmentIds", JSON.stringify(values.departmentIds.map(d => d.value)));
             formData.append("teamIds", JSON.stringify(values.teamIds.map(t => t.value)));
-            formData.append("skills", JSON.stringify(values.skills.map(s => s.value)));
             if (values.joiningDate) formData.append("joiningDate", values.joiningDate);
             if (values.emailOffice) formData.append("emailOffice", values.emailOffice);
             if (values.mobileNumber) formData.append("mobileNumber", values.mobileNumber);
@@ -414,10 +400,10 @@ const Employee = () => {
                 formData.append("profilePic", profilePic);
             }
 
-            updateEmployee(_id, formData)
+            updateOperator(_id, formData)
                 .then((res) => {
                     if (res.data.isOk) {
-                        toast.success("Employee Updated Successfully");
+                        toast.success("Operator Updated Successfully");
                         setUpdateForm(false);
                         setShowForm(false);
                         setValues(initialState);
@@ -433,7 +419,7 @@ const Employee = () => {
                     }
                 })
                 .catch((err) => {
-                    toast.error(err.response?.data?.message || "Cannot update Employee");
+                    toast.error(err.response?.data?.message || "Cannot update Operator");
                 })
                 .finally(() => setIsLoading(false));
         }
@@ -453,16 +439,16 @@ const Employee = () => {
     const handleDelete = (e) => {
         e.preventDefault();
         setIsDeleteLoading(true);
-        deleteEmployee(remove_id)
+        deleteOperator(remove_id)
             .then((res) => {
                 setmodal_delete(!modal_delete);
                 fetchEmployeeMaster();
                 invalidateEmployees();
-                toast.success("Employee Deleted Successfully");
+                toast.success("Operator Deleted Successfully");
             })
             .catch((err) => {
                 console.log(err);
-                toast.error("Cannot delete Employee");
+                toast.error("Cannot delete Operator");
             })
             .finally(() => setIsDeleteLoading(false));
     };
@@ -482,7 +468,7 @@ const Employee = () => {
         setShowResetPassword(false);
         setUsernameStatus('idle');
         try {
-            const res = await getEmployeeById(_id);
+            const res = await getOperatorById(_id);
             if (res.data.isOk) {
                 const emp = res.data.data;
                 const formattedDate = emp.joiningDate ? new Date(emp.joiningDate).toISOString().split('T')[0] : "";
@@ -494,7 +480,6 @@ const Employee = () => {
                     username: emp.username || "",
                     departmentIds: emp.departmentIds?.map(d => ({ value: d._id, label: d.departmentName })) || [],
                     teamIds: emp.teamIds?.map(t => ({ value: t._id, label: t.teamName })) || [],
-                    skills: emp.skills?.map(s => ({ value: s, label: s })) || [],
                     joiningDate: formattedDate,
                     emailOffice: emp.emailOffice || "",
                     mobileNumber: emp.mobileNumber || "",
@@ -522,7 +507,6 @@ const Employee = () => {
                         username: emp.username || "",
                         departmentIds: emp.departmentIds?.map(d => ({ value: d._id, label: d.departmentName })) || [],
                         teamIds: emp.teamIds?.map(t => ({ value: t._id, label: t.teamName })) || [],
-                            skills: emp.skills?.map(s => ({ value: s, label: s })) || [],
                         joiningDate: formattedDate,
                         emailOffice: emp.emailOffice || "",
                         mobileNumber: emp.mobileNumber || "",
@@ -535,7 +519,7 @@ const Employee = () => {
                 }));
             }
         } catch (err) {
-            toast.error("Failed to fetch employee details");
+            toast.error("Failed to fetch operator details");
         } finally {
             setIsLoading(false);
         }
@@ -614,7 +598,7 @@ const Employee = () => {
         setIsLoading(true);
 
         try {
-            const response = await resetEmployeePassword(_id, { password: resetPasswordData.newPassword });
+            const response = await resetOperatorPassword(_id, { password: resetPasswordData.newPassword });
 
             if (response && response.data && response.data.isOk) {
                 toast.success("Password reset successfully");
@@ -731,17 +715,17 @@ const Employee = () => {
                             <Form>
                                 <Row>
                                     <Row>
-                                        {/* Employee Code */}
+                                        {/* Operator Code */}
                                         <Col lg={4}>
                                             <div className="mb-3">
-                                                <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>Employee Code</label>
+                                                <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>Operator Code</label>
                                                 <input
                                                     type="text"
                                                     className="form-control"
                                                     name="employeeCode"
                                                     value={values.employeeCode}
                                                     onChange={handleChange}
-                                                    placeholder="Enter employee code..."
+                                                    placeholder="Enter operator code..."
                                                     maxLength="10"
                                                 />
                                             </div>
@@ -946,21 +930,9 @@ const Employee = () => {
                                         </Col>
                                     </Row>
 
-                                    {/* Skills, Joining Date, Profile Pic */}
+                                    {/* Joining Date, Profile Pic */}
                                     <Row className="mb-3">
-                                        <Col lg={4}>
-                                            <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>Skills</label>
-                                            <CreatableSelect 
-                                                isMulti 
-                                                className="basic-single" 
-                                                classNamePrefix="select" menuPortalTarget={document.body} styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }} 
-                                                placeholder="Enter skills..."
-                                                options={dbSkills}
-                                                value={values.skills}
-                                                onChange={(opt) => setValues({...values, skills: opt || []})}
-                                            />
-                                        </Col>
-                                        <Col lg={4}>
+                                        <Col lg={6}>
                                             <div className="mb-3">
                                                 <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>Joining Date</label>
                                                 <div className="d-block w-100">
@@ -979,7 +951,7 @@ const Employee = () => {
                                                 </div>
                                             </div>
                                         </Col>
-                                        <Col lg={4}>
+                                        <Col lg={6}>
                                             <div className="mb-3">
                                                 <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>Profile Picture</label>
                                                 <div className="d-flex align-items-center gap-2">
@@ -1199,14 +1171,14 @@ const Employee = () => {
     });
     const isFormDirty = currentFormData !== initialFormData;
 
-    document.title = `Employee | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
+    document.title = `Operator | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
 
     return (
         <React.Fragment>
             <ConfirmAlert
                 isOpen={blockAlert.open}
                 variant={!blockAlert.row?.isBlocked ? "danger" : "info"}
-                title={!blockAlert.row?.isBlocked ? "Block Employee?" : "Unblock Employee?"}
+                title={!blockAlert.row?.isBlocked ? "Block Operator?" : "Unblock Operator?"}
                 message={
                     !blockAlert.row?.isBlocked
                         ? `${blockAlert.row?.employeeName} will be blocked from accessing the system.`
@@ -1219,13 +1191,13 @@ const Employee = () => {
                     const row = blockAlert.row;
                     setBlockAlert({ open: false, row: null });
                     try {
-                        const res = await updateEmployee(row._id, { isBlocked: !row.isBlocked });
+                        const res = await updateOperator(row._id, { isBlocked: !row.isBlocked });
                         if (res.data?.isOk) {
                             toast.success(!row.isBlocked ? `${row.employeeName} has been blocked.` : `${row.employeeName} has been unblocked.`);
                             fetchEmployeeMaster();
                         }
                     } catch (err) {
-                        toast.error("Failed to update employee status.");
+                        toast.error("Failed to update operator status.");
                     }
                 }}
             />
@@ -1236,7 +1208,7 @@ const Employee = () => {
                             <Card>
                                 <CardHeader>
                                     <FormsHeader
-                                        formName="Employee"
+                                        formName="Operator"
                                         filter={filter}
                                         handleFilter={handleFilter}
                                         tog_list={() => {
@@ -1496,4 +1468,4 @@ const Employee = () => {
     );
 };
 
-export default Employee;
+export default Operator;

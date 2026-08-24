@@ -40,35 +40,32 @@ const Login = lazyWithRetry(() => import("../pages/Login"));
 const Blocked = lazyWithRetry(() => import("../pages/Authentication/Blocked"));
 const NoAccess = lazyWithRetry(() => import("../pages/Authentication/NoAccess"));
 
-const HqeplAdmin = lazyWithRetry(() => import("../pages/HqeplAdmin"));
 const Home = lazyWithRetry(() => import("../pages/Home"));
 const Profile = lazyWithRetry(() => import("../pages/Profile"));
 const MenuGroup = lazyWithRetry(() => import("../pages/MenuGroup"));
 const MenuMaster = lazyWithRetry(() => import("../pages/MenuMaster"));
 const Department = lazyWithRetry(() => import("../pages/Department"));
+const CompanyHolidays = lazyWithRetry(() => import("../pages/CompanyHolidays"));
+const ShiftMaster = lazyWithRetry(() => import("../pages/ShiftMaster"));
+const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
+const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
+const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
-const Employee = lazyWithRetry(() => import("../pages/Employee"));
+const Operator = lazyWithRetry(() => import("../pages/Operator"));
 const ManageRole = lazyWithRetry(() => import("../pages/ManageRole"));
 const CompanyManagement = lazyWithRetry(() => import("../pages/CompanyManagement"));
 const Settings = lazyWithRetry(() => import("../pages/Settings"));
 const Shortcuts = lazyWithRetry(() => import("../pages/Shortcuts"));
 const TeamMembers = lazyWithRetry(() => import("../pages/TeamMembers"));
-const Skills = lazyWithRetry(() => import("../pages/Skills"));
 const TeamsBoard = lazyWithRetry(() => import("../pages/TeamsBoard"));
 const Support = lazyWithRetry(() => import("../pages/Support"));
 const Notifications = lazyWithRetry(() => import("../pages/Notifications"));
-const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
-const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
-const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
-const StandardTimeMaster = lazyWithRetry(() => import("../pages/StandardTimeMaster"));
-const ShiftMaster = lazyWithRetry(() => import("../pages/ShiftMaster"));
-const GrindingEntry = lazyWithRetry(() => import("../pages/GrindingEntry"));
 const Dashboard = lazyWithRetry(() => import("../pages/Dashboard"));
 
 // ── Every logged-in page, defined ONCE ──────────────────────────────────
 // Every route renders under "/:roleSlug/<path>" — the role slug is
 // resolved per-user by utils/roleUrl.js (SuperAdmin -> "hqepl",
-// Employee -> their role's own custom slug).
+// Operator -> their role's own custom slug).
 // RoleRoute (see RoleRoute.jsx) is what actually enforces the two things
 // below, using this same list — nothing is duplicated into a second
 // "admin" route tree just to change the URL prefix.
@@ -81,7 +78,7 @@ const Dashboard = lazyWithRetry(() => import("../pages/Dashboard"));
 //   Manage Role.
 //
 //   Fine-grained per-page permissions (read/write/edit/delete/print/mail)
-//   for Employees are a separate, already-dynamic layer handled by
+//   for Operators are a separate, already-dynamic layer handled by
 //   MenuContext (currentPagePermissions) — that's what actually hides
 //   buttons/menu links a role's role wasn't granted "read"/"write" on.
 //   `roles` here is only the coarse "which portal" gate.
@@ -90,36 +87,35 @@ const protectedRoutes = [
   { path: "/settings", component: <Settings /> },
   { path: "/shortcuts", component: <Shortcuts /> },
 
-  // Company/Employee home — all non-SuperAdmin users land here
+  // Company/Operator home — all non-SuperAdmin users land here
   { path: "/home", component: <Home /> },
 
   // SuperAdmin only — defines the app's page/menu structure itself
-  { path: "/hqepl-dashboard", component: <HqeplAdmin />, roles: ["SuperAdmin"] },
   { path: "/menu-groups", component: <MenuGroup />, roles: ["SuperAdmin"] },
   { path: "/menus", component: <MenuMaster />, roles: ["SuperAdmin"] },
   { path: "/company", component: <CompanyManagement />, roles: ["SuperAdmin"] },
 
-  // Shared by SuperAdmin and every Employee role alike — what each one
+  // Shared by SuperAdmin and every Operator role alike — what each one
   // actually sees/can edit inside these pages is still narrowed by their
   // menu permissions (MenuContext), not by a second copy of the page.
+  { path: "/employee-management/company-holidays", component: <CompanyHolidays /> },
   { path: "/employee-management/department", component: <Department /> },
   { path: "/employee-management/role", component: <RoleMaster /> },
-  { path: "/employee-management/employee", component: <Employee /> },
+  { path: "/employee-management/employee", component: <Operator /> },
   { path: "/employee-management/manage-role", component: <ManageRole /> },
   { path: "/employee-management/team-members", component: <TeamMembers /> },
+
+  // Management group — Process/Machine masters, permission-gated the
+  // same way as the Operator Management pages above.
+  { path: "/management/shifts", component: <ShiftMaster /> },
+  { path: "/management/processes", component: <ProcessMaster /> },
+  { path: "/management/machines", component: <MachineMaster /> },
+  { path: "/management/items", component: <ItemMaster /> },
   // Other Routes
-  { path: "/skills", component: <Skills /> },
   { path: "/teams", component: <TeamsBoard /> },
   { path: "/support", component: <Support /> },
   { path: "/notifications", component: <Notifications /> },
 
-  // Production module
-  { path: "/production/machines", component: <MachineMaster /> },
-  { path: "/production/processes", component: <ProcessMaster /> },
-  { path: "/production/operators", component: <OperatorMaster /> },
-  { path: "/production/standard-time", component: <StandardTimeMaster /> },
-  { path: "/production/shift-master", component: <ShiftMaster /> },
-  { path: "/production/data-entry", component: <GrindingEntry /> },
   { path: "/dashboard", component: <Dashboard /> },
 
   // Dev-only tool — not registered in Menu Master, reached by direct URL.

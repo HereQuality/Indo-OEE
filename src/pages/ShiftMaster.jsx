@@ -15,9 +15,8 @@ import {
     Row,
 } from "reactstrap";
 import DataTable from "react-data-table-component";
-import TimePicker from "../Components/Common/TimePicker";
 import DeleteModal from "../Components/Common/DeleteModal";
-import ReferenceErrorModal from "../Components/Common/ReferenceErrorModal";
+import TimePicker from "../Components/Common/TimePicker";
 import FormsHeader from "../Components/Common/FormsModalHeader";
 import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
@@ -30,7 +29,7 @@ import {
     getShiftById,
     updateShift,
     searchShifts,
-} from "../api/shifts.api";
+} from "../api/shift.api";
 
 const initialState = {
     shiftName: "",
@@ -59,9 +58,6 @@ const ShiftMaster = () => {
     const [_id, set_Id] = useState("");
     const [remove_id, setRemove_id] = useState("");
 
-    const [referenceModal, setReferenceModal] = useState(false);
-    const [referenceData, setReferenceData] = useState(null);
-
     const [modal_list, setmodal_list] = useState(false);
     const tog_list = () => {
         setmodal_list(!modal_list);
@@ -80,16 +76,18 @@ const ShiftMaster = () => {
     const handleTog_edit = (_id) => {
         setmodal_edit(!modal_edit);
         setIsSubmit(false);
-        if (_id && typeof _id === "string") {
+        if (_id && typeof _id === 'string') {
             set_Id(_id);
             setIsLoading(true);
             getShiftById(_id)
                 .then((res) => {
+                    const shift = res.data.data;
                     setValues({
-                        shiftName: res.data.data.shiftName,
-                        shiftOnTime: res.data.data.shiftOnTime || "",
-                        shiftOffTime: res.data.data.shiftOffTime || "",
-                        isActive: res.data.data.isActive,
+                        ...values,
+                        shiftName: shift.shiftName,
+                        shiftOnTime: shift.shiftOnTime || "",
+                        shiftOffTime: shift.shiftOffTime || "",
+                        isActive: shift.isActive,
                     });
                 })
                 .catch((err) => {
@@ -122,10 +120,9 @@ const ShiftMaster = () => {
         let errors = validate(values);
         setFormErrors(errors);
         setIsSubmit(true);
-        const dataToSend = { ...values };
         if (Object.keys(errors).length === 0) {
             setIsLoading(true);
-            createShift(dataToSend)
+            createShift(values)
                 .then((res) => {
                     if (res.data.isOk) {
                         toast.success("Shift Added Successfully!");
@@ -137,7 +134,7 @@ const ShiftMaster = () => {
                 })
                 .catch((error) => {
                     console.log(error);
-                    toast.error(error.response?.data?.message || "Failed to add shift. Please try again.");
+                    toast.error(error?.response?.data?.message || "Failed to add shift. Please try again.");
                 })
                 .finally(() => {
                     setIsLoading(false);
@@ -158,12 +155,7 @@ const ShiftMaster = () => {
             .catch((err) => {
                 console.log(err);
                 setmodal_delete(false);
-                if (err.response && err.response.status === 409) {
-                    setReferenceData(err.response.data);
-                    setReferenceModal(true);
-                } else {
-                    toast.error("Failed to delete shift. Please try again.");
-                }
+                toast.error("Failed to delete shift. Please try again.");
             })
             .finally(() => {
                 setIsDeleteLoading(false);
@@ -173,11 +165,6 @@ const ShiftMaster = () => {
     const handleDeleteClose = (e) => {
         e.preventDefault();
         setmodal_delete(false);
-    };
-
-    const handleReferenceModalClose = () => {
-        setReferenceModal(false);
-        setReferenceData(null);
     };
 
     const handleUpdateCancel = (e) => {
@@ -203,7 +190,7 @@ const ShiftMaster = () => {
                 })
                 .catch((err) => {
                     console.log(err);
-                    toast.error(err.response?.data?.message || "Failed to update shift. Please try again.");
+                    toast.error(err?.response?.data?.message || "Failed to update shift. Please try again.");
                 })
                 .finally(() => {
                     setIsLoading(false);
@@ -211,30 +198,31 @@ const ShiftMaster = () => {
         }
     };
 
-    const timeRx = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
     const validate = (values) => {
         const errors = {};
 
-        if (!values.shiftName) {
+        if (!values.shiftName || !values.shiftName.trim()) {
             errors.shiftName = "Shift Name is required!";
         } else if (values.shiftName.length > 50) {
             errors.shiftName = "Shift Name must not exceed 50 characters";
         }
 
-        if (!values.shiftOnTime) errors.shiftOnTime = "Shift On Time is required!";
-        else if (!timeRx.test(values.shiftOnTime)) errors.shiftOnTime = "Must be HH:mm format";
+        if (!values.shiftOnTime || !TIME_RE.test(values.shiftOnTime)) {
+            errors.shiftOnTime = "Shift On Time is required";
+        }
 
-        if (!values.shiftOffTime) errors.shiftOffTime = "Shift Off Time is required!";
-        else if (!timeRx.test(values.shiftOffTime)) errors.shiftOffTime = "Must be HH:mm format";
-        else if (!errors.shiftOnTime && values.shiftOnTime === values.shiftOffTime)
-            errors.shiftOffTime = "Off Time cannot equal On Time";
+        if (!values.shiftOffTime || !TIME_RE.test(values.shiftOffTime)) {
+            errors.shiftOffTime = "Shift Off Time is required";
+        }
 
         return errors;
     };
 
     const [loading, setLoading] = useState(false);
     const [totalRows, setTotalRows] = useState(0);
-    const [perPage] = useState(100);
+    const [perPage, setPerPage] = useState(100);
     const [pageNo, setPageNo] = useState(1);
     const [column, setcolumn] = useState();
     const [sortDirection, setsortDirection] = useState();
@@ -249,17 +237,18 @@ const ShiftMaster = () => {
             fetchShifts();
         }, 500);
         return () => clearTimeout(timeout);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageNo, perPage, column, sortDirection, query, filter]);
 
     const fetchShifts = async () => {
         setLoading(true);
         let skip = (pageNo - 1) * perPage;
-        if (skip < 0) skip = 0;
+        if (skip < 0) {
+            skip = 0;
+        }
 
         try {
             const response = await searchShifts({
-                skip,
+                skip: skip,
                 per_page: perPage,
                 sorton: column,
                 sortdir: sortDirection,
@@ -290,7 +279,6 @@ const ShiftMaster = () => {
         setPageNo(1);
         setFilter(e.target.checked);
     };
-
     const col = [
         {
             name: "Sr No",
@@ -303,7 +291,7 @@ const ShiftMaster = () => {
             selector: (row) => row.shiftName,
             sortable: true,
             sortField: "shiftName",
-            minWidth: "150px",
+            minWidth: "160px",
         },
         {
             name: "Shift On Time",
@@ -322,39 +310,121 @@ const ShiftMaster = () => {
         },
         {
             name: "Action",
-            cell: (row) => (
-                <React.Fragment>
-                    <div className="d-flex gap-2">
-                        {currentPagePermissions.edit && (
-                            <button
-                                className="btn btn-sm btn-soft-success btn-icon fs-14"
-                                title="Edit"
-                                onClick={() => handleTog_edit(row._id)}
-                            >
-                                <Pencil size={16} className="text-success" />
-                            </button>
-                        )}
-                        {currentPagePermissions.delete && (
-                            <button
-                                className="btn btn-sm btn-soft-danger btn-icon fs-14"
-                                title="Remove"
-                                onClick={() => tog_delete(row._id)}
-                            >
-                                <Trash2 size={16} className="text-danger" />
-                            </button>
-                        )}
-                        {!currentPagePermissions.view && (
-                            <span className="text-muted">No actions available</span>
-                        )}
-                    </div>
-                </React.Fragment>
-            ),
+            cell: (row) => {
+                return (
+                    <React.Fragment>
+                        <div className="d-flex gap-2">
+                            {currentPagePermissions.edit && (
+                                <button
+                                    className="btn btn-sm btn-soft-success btn-icon fs-14"
+                                    title="Edit"
+                                    onClick={() => handleTog_edit(row._id)}
+                                >
+                                    <Pencil size={16} className="text-success" />
+                                </button>
+                            )}
+
+                            {currentPagePermissions.delete && (
+                                <button
+                                    className="btn btn-sm btn-soft-danger btn-icon fs-14"
+                                    title="Remove"
+                                    onClick={() => tog_delete(row._id)}
+                                >
+                                    <Trash2 size={16} className="text-danger" />
+                                </button>
+                            )}
+
+                            {!currentPagePermissions.view && (
+                                <span className="text-muted">No actions available</span>
+                            )}
+                        </div>
+                    </React.Fragment>
+                );
+            },
             sortable: false,
             minWidth: "160px",
         },
     ];
 
-    document.title = `Shift Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+    document.title = `Shift Master | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
+
+    const renderForm = () => (
+        <>
+            <div className="form-floating mb-3">
+                <Input
+                    type="text"
+                    required
+                    name="shiftName"
+                    value={values.shiftName}
+                    onChange={handleChange}
+                    placeholder=" "
+                    maxLength={50}
+                    style={{ color: '#111827', fontWeight: '500' }}
+                />
+                <Label>
+                    Shift Name{" "}
+                    <span className="text-danger">*</span>{" "}
+                </Label>
+                {isSubmit && (
+                    <p className="text-danger">
+                        {formErrors.shiftName}
+                    </p>
+                )}
+            </div>
+
+            <Row>
+                <Col md={6}>
+                    <div className="mb-3">
+                        <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
+                            Shift On Time <span className="text-danger">*</span>
+                        </label>
+                        <TimePicker
+                            name="shiftOnTime"
+                            value={values.shiftOnTime}
+                            onChange={handleChange}
+                            hasError={isSubmit && !!formErrors.shiftOnTime}
+                        />
+                        {isSubmit && (
+                            <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>
+                                {formErrors.shiftOnTime}
+                            </p>
+                        )}
+                    </div>
+                </Col>
+                <Col md={6}>
+                    <div className="mb-3">
+                        <label className="form-label" style={{ fontSize: "0.75rem", opacity: 0.8, marginBottom: "2px" }}>
+                            Shift Off Time <span className="text-danger">*</span>
+                        </label>
+                        <TimePicker
+                            name="shiftOffTime"
+                            value={values.shiftOffTime}
+                            onChange={handleChange}
+                            hasError={isSubmit && !!formErrors.shiftOffTime}
+                        />
+                        {isSubmit && (
+                            <p className="text-danger mb-0" style={{ fontSize: "0.75rem" }}>
+                                {formErrors.shiftOffTime}
+                            </p>
+                        )}
+                    </div>
+                </Col>
+            </Row>
+
+            <div className="mb-3">
+                <Input
+                    type="checkbox"
+                    className="form-check-input"
+                    name="isActive"
+                    checked={values.isActive}
+                    onChange={handleCheck}
+                />
+                <Label className="form-check-label ms-1">
+                    Is Active
+                </Label>
+            </div>
+        </>
+    );
 
     return (
         <React.Fragment>
@@ -370,18 +440,30 @@ const ShiftMaster = () => {
                                         handleFilter={handleFilter}
                                         tog_list={tog_list}
                                         setQuery={setQuery}
-                                        showAddButton={currentPagePermissions.create}
+                                        showAddButton={
+                                            currentPagePermissions.create
+                                        }
                                     />
                                 </CardHeader>
+
                                 <CardBody>
-                                    <div id="shiftList">
+                                    <div id="customerList">
                                         <div className="table-responsive table-card mt-1 mb-1 text-right">
                                             <DataTable
                                                 columns={col}
                                                 data={shifts}
                                                 progressPending={loading}
                                                 sortServer
-                                                onSort={(column, sortDirection) => handleSort(column, sortDirection)}
+                                                onSort={(
+                                                    column,
+                                                    sortDirection,
+                                                    sortedRows
+                                                ) => {
+                                                    handleSort(
+                                                        column,
+                                                        sortDirection
+                                                    );
+                                                }}
                                                 pagination
                                                 paginationServer
                                                 paginationComponentOptions={{ noRowsPerPage: true }}
@@ -399,7 +481,15 @@ const ShiftMaster = () => {
             </div>
 
             {/* Add Modal */}
-            <Modal isOpen={modal_list} toggle={() => tog_list()} centered backdrop="static" keyboard={false}>
+            <Modal
+                isOpen={modal_list}
+                toggle={() => {
+                    tog_list();
+                }}
+                centered
+                backdrop="static"
+                keyboard={false}
+            >
                 <ModalHeader
                     className="p-3 border-bottom"
                     toggle={() => {
@@ -411,71 +501,28 @@ const ShiftMaster = () => {
                 </ModalHeader>
                 <form noValidate>
                     <ModalBody>
-                        <div className="form-floating mb-3">
-                            <Input
-                                type="text"
-                                required
-                                name="shiftName"
-                                value={values.shiftName}
-                                onChange={handleChange}
-                                placeholder=" "
-                                maxLength={50}
-                                style={{ color: "#111827", fontWeight: "500" }}
-                            />
-                            <Label>
-                                Shift Name <span className="text-danger">*</span>
-                            </Label>
-                            {isSubmit && <p className="text-danger">{formErrors.shiftName}</p>}
-                        </div>
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <Label>
-                                        Shift On Time <span className="text-danger">*</span>
-                                    </Label>
-                                    <TimePicker
-                                        name="shiftOnTime"
-                                        value={values.shiftOnTime}
-                                        onChange={handleChange}
-                                        hasError={isSubmit && !!formErrors.shiftOnTime}
-                                    />
-                                    {isSubmit && <p className="text-danger">{formErrors.shiftOnTime}</p>}
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <Label>
-                                        Shift Off Time <span className="text-danger">*</span>
-                                    </Label>
-                                    <TimePicker
-                                        name="shiftOffTime"
-                                        value={values.shiftOffTime}
-                                        onChange={handleChange}
-                                        hasError={isSubmit && !!formErrors.shiftOffTime}
-                                    />
-                                    {isSubmit && <p className="text-danger">{formErrors.shiftOffTime}</p>}
-                                </div>
-                            </Col>
-                        </Row>
-                        <div className="mb-3">
-                            <Input
-                                type="checkbox"
-                                className="form-check-input"
-                                name="isActive"
-                                checked={values.isActive}
-                                onChange={handleCheck}
-                            />
-                            <Label className="form-check-label ms-1">Is Active</Label>
-                        </div>
+                        {renderForm()}
                     </ModalBody>
                     <ModalFooter>
-                        <FormsFooter handleSubmit={handleClick} handleSubmitCancel={handleSubmitCancel} isLoading={isLoading} />
+                        <FormsFooter
+                            handleSubmit={handleClick}
+                            handleSubmitCancel={handleSubmitCancel}
+                            isLoading={isLoading}
+                        />
                     </ModalFooter>
                 </form>
             </Modal>
 
             {/* Edit Modal */}
-            <Modal isOpen={modal_edit} toggle={() => handleTog_edit()} centered backdrop="static" keyboard={false}>
+            <Modal
+                isOpen={modal_edit}
+                toggle={() => {
+                    handleTog_edit();
+                }}
+                centered
+                backdrop="static"
+                keyboard={false}
+            >
                 <ModalHeader
                     className="p-3 border-bottom"
                     toggle={() => {
@@ -487,65 +534,15 @@ const ShiftMaster = () => {
                 </ModalHeader>
                 <form noValidate>
                     <ModalBody>
-                        <div className="form-floating mb-3">
-                            <Input
-                                type="text"
-                                required
-                                name="shiftName"
-                                value={values.shiftName}
-                                onChange={handleChange}
-                                placeholder=" "
-                                maxLength={50}
-                                style={{ color: "#111827", fontWeight: "500" }}
-                            />
-                            <Label>
-                                Shift Name <span className="text-danger">*</span>
-                            </Label>
-                            {isSubmit && <p className="text-danger">{formErrors.shiftName}</p>}
-                        </div>
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <Label>
-                                        Shift On Time <span className="text-danger">*</span>
-                                    </Label>
-                                    <TimePicker
-                                        name="shiftOnTime"
-                                        value={values.shiftOnTime}
-                                        onChange={handleChange}
-                                        hasError={isSubmit && !!formErrors.shiftOnTime}
-                                    />
-                                    {isSubmit && <p className="text-danger">{formErrors.shiftOnTime}</p>}
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <Label>
-                                        Shift Off Time <span className="text-danger">*</span>
-                                    </Label>
-                                    <TimePicker
-                                        name="shiftOffTime"
-                                        value={values.shiftOffTime}
-                                        onChange={handleChange}
-                                        hasError={isSubmit && !!formErrors.shiftOffTime}
-                                    />
-                                    {isSubmit && <p className="text-danger">{formErrors.shiftOffTime}</p>}
-                                </div>
-                            </Col>
-                        </Row>
-                        <div className="mb-3">
-                            <Input
-                                type="checkbox"
-                                className="form-check-input"
-                                name="isActive"
-                                checked={values.isActive}
-                                onChange={handleCheck}
-                            />
-                            <Label className="form-check-label ms-1">Is Active</Label>
-                        </div>
+                        {renderForm()}
                     </ModalBody>
+
                     <ModalFooter>
-                        <FormUpdateFooter handleUpdate={handleUpdate} handleUpdateCancel={handleUpdateCancel} isLoading={isLoading} />
+                        <FormUpdateFooter
+                            handleUpdate={handleUpdate}
+                            handleUpdateCancel={handleUpdateCancel}
+                            isLoading={isLoading}
+                        />
                     </ModalFooter>
                 </form>
             </Modal>
@@ -554,18 +551,8 @@ const ShiftMaster = () => {
                 show={modal_delete}
                 handleDelete={handleDelete}
                 toggle={handleDeleteClose}
-                setmodal_delete={setmodal_delete}
                 disabled={isDeleteLoading}
             />
-
-            {referenceModal && (
-                <ReferenceErrorModal
-                    isOpen={referenceModal}
-                    toggle={handleReferenceModalClose}
-                    title="Cannot Delete Shift"
-                    referenceData={referenceData}
-                />
-            )}
         </React.Fragment>
     );
 };

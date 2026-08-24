@@ -11,7 +11,7 @@ export default function HomeRedirect() {
 
   if (!adminData) return <Navigate to="/login" replace />;
 
-  const slug = getRoleSlug(adminData) || "employee";
+  const slug = getRoleSlug(adminData) || "operator";
 
   // Everyone goes to /home
   const homePath = `/${slug}/home`;

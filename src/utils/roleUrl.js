@@ -13,8 +13,8 @@ export function slugifyPreview(value) {
 // "/:roleSlug/..." route tree (see Routes/allRoutes.jsx). There is no
 // separate hardcoded panel per role anymore; only the slug differs:
 // - SuperAdmin -> "hqepl"   (fixed, the one seeded platform-owner account)
-// - Employee   -> whatever custom slug was set on their role in
-//                 Employee Management > Manage Role (e.g. "manager",
+// - Operator   -> whatever custom slug was set on their role in
+//                 Operator Management > Manage Role (e.g. "manager",
 //                 or "admin" if that's what the client named their
 //                 top role — "admin" isn't reserved, so that's fine)
 // To rename any of these, change it here only — nothing else references
@@ -26,7 +26,7 @@ const FIXED_SLUGS = {
 export function getRoleSlug(adminData) {
   if (!adminData) return null;
   if (FIXED_SLUGS[adminData.roleType]) return FIXED_SLUGS[adminData.roleType];
-  if (adminData.roleType === "Employee") return adminData.roleSlug || "employee";
+  if (adminData.roleType === "Operator") return adminData.roleSlug || "operator";
   return null;
 }
 

@@ -10,7 +10,6 @@ export const ENDPOINTS = {
     // Auth endpoints
     AUTH: {
         LOGIN: `${V1}/auth/login`,
-        EMPLOYEE_LOGIN: `${V1}/auth/employee-login`,
         ME: `${V1}/auth/me`,
         UPDATE_PROFILE: `${V1}/auth/me`,
         UPDATE_PREFERENCES: `${V1}/auth/me/preferences`,
@@ -39,6 +38,13 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/departments/search`,
     },
 
+    // Company Holidays endpoints (Administration > Company Holidays)
+    COMPANY_HOLIDAYS: {
+        BASE: `${V1}/company-holidays`,
+        BY_ID: (id) => `${V1}/company-holidays/${id}`,
+        WEEKLY_OFF: `${V1}/company-holidays/weekly-off`,
+    },
+
     // Machine (M/C) master endpoints
     MACHINES: {
         BASE: `${V1}/machines`,
@@ -53,6 +59,20 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/processes/search`,
     },
 
+    // Shift master endpoints
+    SHIFTS: {
+        BASE: `${V1}/shifts`,
+        BY_ID: (id) => `${V1}/shifts/${id}`,
+        SEARCH: `${V1}/shifts/search`,
+    },
+
+    // Item master endpoints
+    ITEMS: {
+        BASE: `${V1}/items`,
+        BY_ID: (id) => `${V1}/items/${id}`,
+        SEARCH: `${V1}/items/search`,
+    },
+
     // OEE report endpoints
     REPORTS: {
         OEE: `${V1}/reports/oee`,
@@ -64,41 +84,16 @@ export const ENDPOINTS = {
     // Production Data Entry endpoints
     PRODUCTION_ENTRIES: {
         BASE: `${V1}/production-entries`,
-        BY_ID: (id) => `${V1}/production-entries/${id}`,
-        EFFICIENCY: `${V1}/production-entries/efficiency`,
-        EFFICIENCY_PDF: `${V1}/production-entries/efficiency/pdf`,
-        SHIFT_TIME_REPORT: `${V1}/production-entries/shift-time-report`,
     },
 
-    // Shift Master endpoints
-    SHIFTS: {
-        BASE: `${V1}/shifts`,
-        BY_ID: (id) => `${V1}/shifts/${id}`,
-        SEARCH: `${V1}/shifts/search`,
-    },
-
-    // Operator Master endpoints
+    // Operator endpoints
     OPERATORS: {
         BASE: `${V1}/operators`,
         BY_ID: (id) => `${V1}/operators/${id}`,
         SEARCH: `${V1}/operators/search`,
-    },
-
-    // Standard Time Master endpoints
-    STANDARD_TIMES: {
-        BASE: `${V1}/standard-times`,
-        BY_ID: (id) => `${V1}/standard-times/${id}`,
-        SEARCH: `${V1}/standard-times/search`,
-    },
-
-    // Employee endpoints
-    EMPLOYEES: {
-        BASE: `${V1}/employees`,
-        BY_ID: (id) => `${V1}/employees/${id}`,
-        SEARCH: `${V1}/employees/search`,
-        TEAM_MEMBERS: `${V1}/employees/team-members/list`,
-        RESET_PASSWORD: (id) => `${V1}/employees/${id}/reset-password`,
-        IMPERSONATE: (id) => `${V1}/employees/${id}/impersonate`,
+        TEAM_MEMBERS: `${V1}/operators/team-members/list`,
+        RESET_PASSWORD: (id) => `${V1}/operators/${id}/reset-password`,
+        IMPERSONATE: (id) => `${V1}/operators/${id}/impersonate`,
     },
 
     // Role endpoints
@@ -108,10 +103,10 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/roles/search`,
     },
 
-    // Employee Role endpoints
-    EMPLOYEE_ROLES: {
-        BASE: `${V1}/employee-roles`,
-        BY_ID: (id) => `${V1}/employee-roles/${id}`,
+    // Operator Role endpoints
+    OPERATOR_ROLES: {
+        BASE: `${V1}/operator-roles`,
+        BY_ID: (id) => `${V1}/operator-roles/${id}`,
     },
 
     // Menus

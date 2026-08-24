@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from "react";
 import DataTable from "react-data-table-component";
 import { Container, Card, CardBody, Row, Col } from "reactstrap";
-import { getTeamMembers } from "../api/employees.api";
+import { getTeamMembers } from "../api/operators.api";
 import FormsModalHeader from "../Components/Common/FormsModalHeader";
 import { useAlert } from "../context/AlertContext";
 import { AuthContext } from "../context/AuthContext";

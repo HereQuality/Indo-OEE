@@ -10,7 +10,7 @@ export default function NotFoundFallback() {
 
   // If user is logged in, redirect them to their specific home
   if (adminData) {
-    const slug = getRoleSlug(adminData) || "employee";
+    const slug = getRoleSlug(adminData) || "operator";
     return <Navigate to={adminData?.redirectUrl || `/${slug}/home`} replace />;
   }
 

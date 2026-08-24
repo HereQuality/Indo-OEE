@@ -13,7 +13,7 @@ import NotificationBell from '../Components/Common/NotificationBell';
 import { useSocket } from '../context/SocketContext';
 import { getUnreadTicketCount } from '../api/tickets.api';
 
-// One layout for every role (SuperAdmin / Employee) — there is no separate
+// One layout for every role (SuperAdmin / Operator) — there is no separate
 // "AdminLayout" anymore. The sidebar itself is already fully dynamic
 // (comes from MenuContext, scoped server-side per role — see
 // server/controllers/menuMaster.controller.js). This is a single-tenant
@@ -58,7 +58,7 @@ export default function Layout({ children }) {
   const displayName = adminData?.name || adminData?.employeeName || "User";
   const roleLabel = isSuperAdmin
     ? "Super Admin"
-    : (adminData?.roleName || adminData?.roleType || "Employee");
+    : (adminData?.roleName || adminData?.roleType || "Operator");
   const initials = displayName
     .split(" ")
     .map((part) => part[0])
@@ -69,7 +69,7 @@ export default function Layout({ children }) {
 
   // Compute the current page title from menu data dynamically
   const currentPageTitle = useMemo(() => {
-    if (!menus) return isSuperAdmin ? 'HQEPL Dashboard' : 'Dashboard';
+    if (!menus) return 'Home';
     const path = location.pathname;
     // Strip the role-slug prefix from path for comparison
     const stripSlug = (p) => p.replace(/^\/[^/]+/, '');
@@ -185,7 +185,7 @@ export default function Layout({ children }) {
           }}
           className={`h-16 flex items-center ${sidebarCollapsed ? 'md:justify-center md:px-2 px-6 justify-between' : 'px-6 justify-between'}`}
         >
-          <Link to={adminData?.roleType === "SuperAdmin" ? `/hqepl/hqepl-dashboard` : `/${roleSlug}/home`} className="flex items-center justify-center w-full min-w-0">
+          <Link to={`/${roleSlug}/home`} className="flex items-center justify-center w-full min-w-0">
             {logo ? (
               <img src={logo} alt={APP_NAME} className="h-12 w-auto shrink-0" />
             ) : (
