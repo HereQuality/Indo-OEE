@@ -38,6 +38,27 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/departments/search`,
     },
 
+    // Machine master endpoints (Production > Machines)
+    MACHINES: {
+        BASE: `${V1}/machines`,
+        BY_ID: (id) => `${V1}/machines/${id}`,
+        SEARCH: `${V1}/machines/search`,
+    },
+
+    // Item master endpoints (Production > Items)
+    ITEMS: {
+        BASE: `${V1}/items`,
+        BY_ID: (id) => `${V1}/items/${id}`,
+        SEARCH: `${V1}/items/search`,
+    },
+
+    // Production Data Entry sheet endpoints
+    PRODUCTION_SHEET: {
+        BASE: `${V1}/production-sheet`,
+        ROW: `${V1}/production-sheet/row`,
+        OPERATORS: `${V1}/production-sheet/operators`,
+    },
+
     // Operator endpoints
     OPERATORS: {
         BASE: `${V1}/operators`,

@@ -5,8 +5,9 @@
  * One-shot seeder for a fresh database:
  *   1. The platform-owner SuperAdmin account (email/username/password below).
  *   2. Menu Groups + Menus for the HQEPL (SuperAdmin) portal:
- *      Administration (Menu Group, Menu Master, Company), Operator
- *      Management (Department/Teams/Role/Operator/Manage Role), Support.
+ *      Administration (Menu Group, Menu Master, Company), Production
+ *      (Data Entry, Machines, Items), Operator Management
+ *      (Department/Teams/Role/Operator/Manage Role), Support.
  *   3. A Menu Group + Menu for the normal Operator portal's Home.
  *
  * Safe to re-run: every insert is upsert-by-natural-key.
@@ -53,9 +54,23 @@ const ADMINISTRATION_MENUS = [
   { menuName: "Company", menuUrl: "/x/company", sequence: 3, icon: "Building2" },
 ];
 
+const PRODUCTION_GROUP = {
+  menuGroupName: "Production",
+  sequence: 3,
+  isLink: false,
+  portal: "Both",
+  icon: "Factory",
+};
+
+const PRODUCTION_MENUS = [
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
+];
+
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
-  sequence: 3,
+  sequence: 4,
   isLink: false,
   portal: "Both",
   icon: "Users",
@@ -78,7 +93,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
 //   - Operator with only "read": can raise their own tickets, nothing else.
 const SUPPORT_GROUP = {
   menuGroupName: "Support",
-  sequence: 4,
+  sequence: 5,
   isLink: true,
   menuUrl: "/hqepl/support",
   portal: "Both",
@@ -130,6 +145,24 @@ async function run() {
     );
   }
   
+  const productionGroup = await upsertGroup(PRODUCTION_GROUP);
+  for (const menu of PRODUCTION_MENUS) {
+    await MenuMaster.findOneAndUpdate(
+      { menuUrl: menu.menuUrl },
+      {
+        menuName: menu.menuName,
+        menuGroup: productionGroup._id,
+        menuUrl: menu.menuUrl,
+        sequence: menu.sequence,
+        icon: menu.icon,
+        isActive: true,
+        isParent: false,
+        parentMenu: null,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
+
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
 
   for (const menu of EMPLOYEE_MANAGEMENT_MENUS) {

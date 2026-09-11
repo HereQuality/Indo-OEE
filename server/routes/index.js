@@ -32,6 +32,9 @@ const operatorRoutes = require("./operator.routes");
 const teamRoutes = require("./team.routes");
 const ticketRoutes = require("./ticket.routes");
 const notificationRoutes = require("./notification.routes");
+const machineRoutes = require("./machine.routes");
+const itemRoutes = require("./item.routes");
+const productionSheetRoutes = require("./productionSheet.routes");
 // const inventoryRoutes = require("./inventory.routes");
 
 // ── Mount routes ─────────────────────────────────────────────────────────────
@@ -45,6 +48,9 @@ router.use("/operators", operatorRoutes);
 router.use("/teams", teamRoutes);
 router.use("/tickets", ticketRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/machines", machineRoutes);
+router.use("/items", itemRoutes);
+router.use("/production-sheet", productionSheetRoutes);
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

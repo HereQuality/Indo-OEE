@@ -1,0 +1,153 @@
+const mongoose = require("mongoose");
+const ProductionEntry = require("../models/ProductionEntry");
+const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
+const Machine = require("../models/Machine");
+const { normalizeCycleOps } = require("./item.controller");
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 62;
+
+const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupNo", "remarks"];
+const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
+const NUMBER_KEYS = ["okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+
+// "YYYY-MM-DD" -> Date at UTC midnight, or null if it isn't a real date.
+const parseDay = (s) => {
+  if (!DATE_RE.test(String(s || ""))) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
+};
+
+const toRow = (e) => ({
+  ...e,
+  date: e.date.toISOString().slice(0, 10),
+  machine: String(e.machine),
+  item: e.item ? String(e.item) : null,
+});
+
+// Builds the stored document from the request body. Blank inputs are unset
+// (not saved as 0), so a blank sheet cell stays blank.
+const buildFields = (body) => {
+  const set = {};
+  const unset = {};
+
+  for (const k of TEXT_KEYS) {
+    if (body[k] !== undefined) set[k] = String(body[k] ?? "").trim();
+  }
+  for (const k of TIME_KEYS) {
+    if (body[k] === undefined) continue;
+    if (body[k] === "" || body[k] === null) unset[k] = "";
+    else set[k] = String(body[k]);
+  }
+  for (const k of NUMBER_KEYS) {
+    if (body[k] === undefined) continue;
+    if (body[k] === "" || body[k] === null) {
+      unset[k] = "";
+    } else {
+      const n = Number(body[k]);
+      if (!Number.isFinite(n)) throw Object.assign(new Error(`"${k}" must be a number`), { status: 400 });
+      set[k] = n;
+    }
+  }
+  if (body.cycleOpsSec !== undefined) {
+    const ops = normalizeCycleOps(body.cycleOpsSec);
+    if (ops.some((v) => v !== null && !Number.isFinite(v))) {
+      throw Object.assign(new Error("Cycle times must be numbers"), { status: 400 });
+    }
+    set.cycleOpsSec = ops;
+  }
+  if (body.item !== undefined) {
+    if (body.item && !mongoose.isValidObjectId(body.item)) {
+      throw Object.assign(new Error("Invalid item"), { status: 400 });
+    }
+    set.item = body.item || null;
+  }
+  return { set, unset };
+};
+
+const isRowEmpty = (doc) =>
+  TEXT_KEYS.every((k) => !doc[k]) &&
+  TIME_KEYS.every((k) => !doc[k]) &&
+  NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null) &&
+  !(doc.cycleOpsSec || []).some((v) => v !== null && v !== undefined);
+
+// GET /production-sheet?from=YYYY-MM-DD&to=YYYY-MM-DD[&machine=id]
+exports.getSheet = async (req, res) => {
+  try {
+    const from = parseDay(req.query.from);
+    const to = parseDay(req.query.to);
+    if (!from || !to || to < from) {
+      return res.status(400).json({ isOk: false, message: "Valid 'from' and 'to' dates (YYYY-MM-DD) are required" });
+    }
+    if ((to - from) / 86400000 > MAX_RANGE_DAYS) {
+      return res.status(400).json({ isOk: false, message: `Date range can't exceed ${MAX_RANGE_DAYS} days` });
+    }
+
+    const query = { date: { $gte: from, $lte: to } };
+    if (req.query.machine) {
+      if (!mongoose.isValidObjectId(req.query.machine)) {
+        return res.status(400).json({ isOk: false, message: "Invalid machine" });
+      }
+      query.machine = req.query.machine;
+    }
+
+    const entries = await ProductionEntry.find(query)
+      .select("-__v -createdAt -updatedBy -updatedByModel")
+      .lean();
+
+    res.status(200).json({ isOk: true, data: entries.map(toRow) });
+  } catch (error) {
+    console.error("Error loading production sheet:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// PUT /production-sheet/row — upserts one (date, machine, slot) row; a row
+// with every field blank is deleted instead.
+exports.saveRow = async (req, res) => {
+  try {
+    const { date, machine, slot } = req.body;
+    const day = parseDay(date);
+    const slotNo = Number(slot);
+    if (!day) return res.status(400).json({ isOk: false, message: "Valid date (YYYY-MM-DD) is required" });
+    if (![1, 2, 3].includes(slotNo)) return res.status(400).json({ isOk: false, message: "Slot must be 1, 2 or 3" });
+    if (!mongoose.isValidObjectId(machine) || !(await Machine.exists({ _id: machine, isActive: true }))) {
+      return res.status(400).json({ isOk: false, message: "Machine not found or inactive" });
+    }
+
+    const { set, unset } = buildFields(req.body);
+    const key = { date: day, machine, slot: slotNo };
+
+    const doc = await ProductionEntry.findOneAndUpdate(
+      key,
+      {
+        $set: { ...set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+        ...(Object.keys(unset).length ? { $unset: unset } : {}),
+      },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    ).lean();
+
+    if (isRowEmpty(doc)) {
+      await ProductionEntry.deleteOne({ _id: doc._id });
+      return res.status(200).json({ isOk: true, data: null, message: "Row cleared" });
+    }
+
+    res.status(200).json({ isOk: true, data: toRow(doc), message: "Row saved" });
+  } catch (error) {
+    console.error("Error saving production row:", error);
+    const status = error.status || (error.name === "ValidationError" || error.name === "CastError" ? 400 : 500);
+    res.status(status).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /production-sheet/operators — every operator name typed so far, for
+// the Operator column's suggestions.
+exports.listOperatorNames = async (req, res) => {
+  try {
+    const names = await ProductionEntry.distinct("operator", { operator: { $nin: ["", null] } });
+    res.status(200).json({ isOk: true, data: names.sort((a, b) => a.localeCompare(b)) });
+  } catch (error) {
+    console.error("Error listing operator names:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};

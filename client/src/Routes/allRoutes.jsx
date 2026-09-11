@@ -45,6 +45,9 @@ const Profile = lazyWithRetry(() => import("../pages/Profile"));
 const MenuGroup = lazyWithRetry(() => import("../pages/MenuGroup"));
 const MenuMaster = lazyWithRetry(() => import("../pages/MenuMaster"));
 const Department = lazyWithRetry(() => import("../pages/Department"));
+const ProductionSheet = lazyWithRetry(() => import("../pages/ProductionSheet"));
+const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
+const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
 const ManageRole = lazyWithRetry(() => import("../pages/ManageRole"));
@@ -97,6 +100,11 @@ const protectedRoutes = [
   { path: "/employee-management/employee", component: <Operator /> },
   { path: "/employee-management/manage-role", component: <ManageRole /> },
   { path: "/employee-management/team-members", component: <TeamMembers /> },
+
+  // Production — Data Entry sheet and its Machine/Item masters.
+  { path: "/production/data-entry", component: <ProductionSheet /> },
+  { path: "/production/machines", component: <MachineMaster /> },
+  { path: "/production/items", component: <ItemMaster /> },
 
   // Other Routes
   { path: "/teams", component: <TeamsBoard /> },

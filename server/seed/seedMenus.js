@@ -19,17 +19,25 @@ const MenuMaster = require("../models/MenuMaster");
 // ── Sidebar order (top to bottom) ────────────────────────────────────────
 //   1. Home                      (link)
 //   2. Administration             (group: Menu Group, Menu Master, Company)
-//   3. Operator Management        (group)
-//   4. Support                    (link)
+//   3. Production                 (group: Data Entry, Machines, Items)
+//   4. Operator Management        (group)
+//   5. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 const ADMINISTRATION_GROUP = { menuGroupName: "Administration", sequence: 2, isLink: false, portal: "SuperAdmin", icon: "Settings" };
-const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 3, isLink: false, portal: "Both", icon: "Users" };
-const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 4, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
+const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 3, isLink: false, portal: "Both", icon: "Factory" };
+const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 4, isLink: false, portal: "Both", icon: "Users" };
+const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 5, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [
   { menuName: "Menu Group", menuUrl: "/x/menu-groups", sequence: 1, icon: "FolderTree" },
   { menuName: "Menu Master", menuUrl: "/x/menus", sequence: 2, icon: "List" },
   { menuName: "Company", menuUrl: "/x/company", sequence: 3, icon: "Building2" },
+];
+
+const PRODUCTION_MENUS = [
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
@@ -74,6 +82,9 @@ async function run() {
 
   const adminGroup = await upsertGroup(ADMINISTRATION_GROUP);
   await upsertMenus(ADMINISTRATION_MENUS, adminGroup);
+
+  const productionGroup = await upsertGroup(PRODUCTION_GROUP);
+  await upsertMenus(PRODUCTION_MENUS, productionGroup);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
   await upsertMenus(EMPLOYEE_MANAGEMENT_MENUS, empMgmtGroup);
