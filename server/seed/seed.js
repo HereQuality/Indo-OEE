@@ -5,9 +5,8 @@
  * One-shot seeder for a fresh database:
  *   1. The platform-owner SuperAdmin account (email/username/password below).
  *   2. Menu Groups + Menus for the HQEPL (SuperAdmin) portal:
- *      Dashboard, Menu Group, Menu Master, Operator Management (with its
- *      Department/Teams/Role/Skills/Operator/Manage Role/Org Chart children),
- *      Support.
+ *      Administration (Menu Group, Menu Master, Company), Operator
+ *      Management (Department/Teams/Role/Operator/Manage Role), Support.
  *   3. A Menu Group + Menu for the normal Operator portal's Home.
  *
  * Safe to re-run: every insert is upsert-by-natural-key.
@@ -54,47 +53,20 @@ const ADMINISTRATION_MENUS = [
   { menuName: "Company", menuUrl: "/x/company", sequence: 3, icon: "Building2" },
 ];
 
-// The OEE analytics dashboard (client/src/pages/Dashboard.jsx) — a direct
-// link, not a group with children.
-const DASHBOARD_GROUP = {
-  menuGroupName: "Dashboard",
-  sequence: 3,
-  isLink: true,
-  menuUrl: "/hqepl/dashboard",
-  portal: "Both",
-  icon: "LayoutDashboard",
-};
-
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
-  sequence: 4,
+  sequence: 3,
   isLink: false,
   portal: "Both",
   icon: "Users",
 };
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
-  { menuName: "Company Holidays", menuUrl: "/hqepl/employee-management/company-holidays", sequence: 0, icon: "CalendarOff" },
   { menuName: "Department", menuUrl: "/hqepl/employee-management/department", sequence: 1, icon: "Building" },
   { menuName: "Teams", menuUrl: "/hqepl/teams", sequence: 2, icon: "UsersRound" },
   { menuName: "Role", menuUrl: "/hqepl/employee-management/role", sequence: 3, icon: "ShieldCheck" },
   { menuName: "Operator", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
   { menuName: "Manage Role", menuUrl: "/hqepl/employee-management/manage-role", sequence: 6, icon: "UserCog" },
-];
-
-const MANAGEMENT_GROUP = {
-  menuGroupName: "Management",
-  sequence: 5,
-  isLink: false,
-  portal: "Both",
-  icon: "Factory",
-};
-
-const MANAGEMENT_MENUS = [
-  { menuName: "List of Shifts", menuUrl: "/hqepl/management/shifts", sequence: 1, icon: "Clock" },
-  { menuName: "List of Process", menuUrl: "/hqepl/management/processes", sequence: 2, icon: "Workflow" },
-  { menuName: "List of Machines", menuUrl: "/hqepl/management/machines", sequence: 3, icon: "Wrench" },
-  { menuName: "List of Items", menuUrl: "/hqepl/management/items", sequence: 4, icon: "Package" },
 ];
 
 // Support ticketing. Every role sees it (isLink: true, direct page — no
@@ -106,7 +78,7 @@ const MANAGEMENT_MENUS = [
 //   - Operator with only "read": can raise their own tickets, nothing else.
 const SUPPORT_GROUP = {
   menuGroupName: "Support",
-  sequence: 6,
+  sequence: 4,
   isLink: true,
   menuUrl: "/hqepl/support",
   portal: "Both",
@@ -166,27 +138,6 @@ async function run() {
       {
         menuName: menu.menuName,
         menuGroup: empMgmtGroup._id,
-        menuUrl: menu.menuUrl,
-        sequence: menu.sequence,
-        icon: menu.icon,
-        isActive: true,
-        isParent: false,
-        parentMenu: null,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-  }
-
-  await upsertGroup(DASHBOARD_GROUP);
-
-  const managementGroup = await upsertGroup(MANAGEMENT_GROUP);
-
-  for (const menu of MANAGEMENT_MENUS) {
-    await MenuMaster.findOneAndUpdate(
-      { menuUrl: menu.menuUrl },
-      {
-        menuName: menu.menuName,
-        menuGroup: managementGroup._id,
         menuUrl: menu.menuUrl,
         sequence: menu.sequence,
         icon: menu.icon,

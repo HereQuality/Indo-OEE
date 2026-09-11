@@ -45,15 +45,6 @@ const Profile = lazyWithRetry(() => import("../pages/Profile"));
 const MenuGroup = lazyWithRetry(() => import("../pages/MenuGroup"));
 const MenuMaster = lazyWithRetry(() => import("../pages/MenuMaster"));
 const Department = lazyWithRetry(() => import("../pages/Department"));
-const CompanyHolidays = lazyWithRetry(() => import("../pages/CompanyHolidays"));
-const ShiftMaster = lazyWithRetry(() => import("../pages/ShiftMaster"));
-const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
-const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
-const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
-const MachineOperatorMaster = lazyWithRetry(() => import("../pages/MachineOperatorMaster"));
-const StandardTimeMaster = lazyWithRetry(() => import("../pages/StandardTimeMaster"));
-const GrindingEntry = lazyWithRetry(() => import("../pages/GrindingEntry"));
-const FormBuilder = lazyWithRetry(() => import("../pages/FormBuilder"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
 const ManageRole = lazyWithRetry(() => import("../pages/ManageRole"));
@@ -64,7 +55,6 @@ const TeamMembers = lazyWithRetry(() => import("../pages/TeamMembers"));
 const TeamsBoard = lazyWithRetry(() => import("../pages/TeamsBoard"));
 const Support = lazyWithRetry(() => import("../pages/Support"));
 const Notifications = lazyWithRetry(() => import("../pages/Notifications"));
-const Dashboard = lazyWithRetry(() => import("../pages/Dashboard"));
 
 // ── Every logged-in page, defined ONCE ──────────────────────────────────
 // Every route renders under "/:roleSlug/<path>" — the role slug is
@@ -98,33 +88,20 @@ const protectedRoutes = [
   { path: "/menu-groups", component: <MenuGroup />, roles: ["SuperAdmin"] },
   { path: "/menus", component: <MenuMaster />, roles: ["SuperAdmin"] },
   { path: "/company", component: <CompanyManagement />, roles: ["SuperAdmin"] },
-  { path: "/form-builder", component: <FormBuilder />, roles: ["SuperAdmin"] },
 
   // Shared by SuperAdmin and every Operator role alike — what each one
   // actually sees/can edit inside these pages is still narrowed by their
   // menu permissions (MenuContext), not by a second copy of the page.
-  { path: "/employee-management/company-holidays", component: <CompanyHolidays /> },
   { path: "/employee-management/department", component: <Department /> },
   { path: "/employee-management/role", component: <RoleMaster /> },
   { path: "/employee-management/employee", component: <Operator /> },
   { path: "/employee-management/manage-role", component: <ManageRole /> },
   { path: "/employee-management/team-members", component: <TeamMembers /> },
 
-  // Management group — Process/Machine masters, permission-gated the
-  // same way as the Operator Management pages above.
-  { path: "/management/shifts", component: <ShiftMaster /> },
-  { path: "/management/processes", component: <ProcessMaster /> },
-  { path: "/management/machines", component: <MachineMaster /> },
-  { path: "/management/items", component: <ItemMaster /> },
-  { path: "/management/machine-operators", component: <MachineOperatorMaster /> },
-  { path: "/management/standard-time", component: <StandardTimeMaster /> },
-  { path: "/management/data-entry", component: <GrindingEntry /> },
   // Other Routes
   { path: "/teams", component: <TeamsBoard /> },
   { path: "/support", component: <Support /> },
   { path: "/notifications", component: <Notifications /> },
-
-  { path: "/dashboard", component: <Dashboard /> },
 
   // Dev-only tool — not registered in Menu Master, reached by direct URL.
 ];

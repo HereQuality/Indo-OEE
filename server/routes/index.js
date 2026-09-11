@@ -25,7 +25,6 @@ const router = express.Router();
 const authRoutes = require("./auth.routes");
 const menuRoutes = require("./menu.routes");
 const departmentRoutes = require("./department.routes");
-const companyHolidayRoutes = require("./companyHoliday.routes");
 const roleRoutes = require("./role.routes");
 const companyRoutes = require("./company.routes");
 const operatorRolesRoutes = require("./operatorRoles.routes");
@@ -33,22 +32,12 @@ const operatorRoutes = require("./operator.routes");
 const teamRoutes = require("./team.routes");
 const ticketRoutes = require("./ticket.routes");
 const notificationRoutes = require("./notification.routes");
-const machineRoutes = require("./machine.routes");
-const processRoutes = require("./process.routes");
-const shiftRoutes = require("./shift.routes");
-const itemRoutes = require("./item.routes");
-const productionEntryRoutes = require("./productionEntry.routes");
-const standardTimeRoutes = require("./standardTime.routes");
-const formBuilderRoutes = require("./formBuilder.routes");
-const machineOperatorRoutes = require("./machineOperator.routes");
-const reportRoutes = require("./report.routes");
 // const inventoryRoutes = require("./inventory.routes");
 
 // ── Mount routes ─────────────────────────────────────────────────────────────
 router.use("/auth", authRoutes);
 router.use("/", menuRoutes);
 router.use("/departments", departmentRoutes);
-router.use("/company-holidays", companyHolidayRoutes);
 router.use("/roles", roleRoutes);
 router.use("/companies", companyRoutes);
 router.use("/operator-roles", operatorRolesRoutes);
@@ -56,15 +45,6 @@ router.use("/operators", operatorRoutes);
 router.use("/teams", teamRoutes);
 router.use("/tickets", ticketRoutes);
 router.use("/notifications", notificationRoutes);
-router.use("/machines", machineRoutes);
-router.use("/processes", processRoutes);
-router.use("/shifts", shiftRoutes);
-router.use("/items", itemRoutes);
-router.use("/production-entries", productionEntryRoutes);
-router.use("/standard-times", standardTimeRoutes);
-router.use("/form-definitions", formBuilderRoutes);
-router.use("/machine-operators", machineOperatorRoutes);
-router.use("/reports", reportRoutes);
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

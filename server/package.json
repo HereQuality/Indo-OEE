@@ -10,7 +10,6 @@
     "lint:fix": "eslint . --ext .js --fix",
     "seed": "node seed/seed.js",
     "seed:menus": "node seed/seedMenus.js",
-    "seed:forms": "node seed/seedFormDefinitions.js",
     "seed:superadmin": "node seed/seedSuperAdmin.js",
     "migrate:remove-company": "node scripts/migrate-remove-company.js"
   },
