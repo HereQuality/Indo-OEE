@@ -56,3 +56,6 @@ coverage/
 .cache/
 .parcel-cache/
 
+
+# CI/CD workflows (disabled for now — kept locally only)
+.github/
