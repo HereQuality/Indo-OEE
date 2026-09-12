@@ -57,6 +57,7 @@ export const ENDPOINTS = {
         BASE: `${V1}/production-sheet`,
         ROW: `${V1}/production-sheet/row`,
         OPERATORS: `${V1}/production-sheet/operators`,
+        REJECT_REASONS: `${V1}/production-sheet/reject-reasons`,
     },
 
     // Operator endpoints

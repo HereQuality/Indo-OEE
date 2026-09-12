@@ -11,4 +11,9 @@ export const getProductionSheet = async ({ from, to, machine }) =>
 // Upserts one (date, machine, slot) row; the server deletes it if every field is blank.
 export const saveProductionRow = async (row) => api.put(ENDPOINTS.PRODUCTION_SHEET.ROW, row);
 
+// Deletes one saved entry by its _id.
+export const deleteProductionRow = async (id) => api.delete(`${ENDPOINTS.PRODUCTION_SHEET.ROW}/${id}`);
+
 export const getOperatorNames = async () => api.get(ENDPOINTS.PRODUCTION_SHEET.OPERATORS);
+
+export const getRejectReasons = async () => api.get(ENDPOINTS.PRODUCTION_SHEET.REJECT_REASONS);

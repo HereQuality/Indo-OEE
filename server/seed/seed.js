@@ -56,7 +56,7 @@ const ADMINISTRATION_MENUS = [
 
 const PRODUCTION_GROUP = {
   menuGroupName: "Production",
-  sequence: 3,
+  sequence: 4,
   isLink: false,
   portal: "Both",
   icon: "Factory",
@@ -70,7 +70,7 @@ const PRODUCTION_MENUS = [
 
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
-  sequence: 4,
+  sequence: 3,
   isLink: false,
   portal: "Both",
   icon: "Users",

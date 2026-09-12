@@ -19,13 +19,13 @@ const MenuMaster = require("../models/MenuMaster");
 // ── Sidebar order (top to bottom) ────────────────────────────────────────
 //   1. Home                      (link)
 //   2. Administration             (group: Menu Group, Menu Master, Company)
-//   3. Production                 (group: Data Entry, Machines, Items)
-//   4. Operator Management        (group)
+//   3. Operator Management        (group)
+//   4. Production                 (group: Data Entry, Machines, Items)
 //   5. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 const ADMINISTRATION_GROUP = { menuGroupName: "Administration", sequence: 2, isLink: false, portal: "SuperAdmin", icon: "Settings" };
-const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 3, isLink: false, portal: "Both", icon: "Factory" };
-const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 4, isLink: false, portal: "Both", icon: "Users" };
+const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 4, isLink: false, portal: "Both", icon: "Factory" };
+const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 3, isLink: false, portal: "Both", icon: "Users" };
 const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 5, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [

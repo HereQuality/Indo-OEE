@@ -10,7 +10,8 @@
  *   Machine Shift Time (h)   = Machine OFF − Machine ON
  *   Ideal Quantity           = Shift h × 3600 ÷ Total cycle sec
  *   Ideal Quantity/Hours     = 3600 ÷ Total cycle sec
- *   % OK Quantity            = OK ÷ (OK + Rejected)
+ *   Rejected Quantity        = Actual − OK          (derived, never typed)
+ *   % OK Quantity            = OK ÷ Actual
  *   Total Stoppage (min)     = sum of the ten stoppage columns
  *   Effective Run Time (h)   = OK × Total cycle sec ÷ 3600
  *   Setup Efficiency (%)     = Effective h ÷ Shift h
@@ -22,12 +23,26 @@
  *   OEE not considering losses but lunch and COT = Effective ÷ (Shift − Lunch − Setup)
  * (all in minutes; COT = Setup Time)
  *
- * Unutilized Machine Time is shown but not calculated yet — its formula
- * is still to be confirmed.
+ * Utilized / Unutilized Machine Time are shown but not calculated yet —
+ * their formula is still to be confirmed with Indo.
  */
 
 export const SLOTS_PER_DAY = 3;
 export const CYCLE_OPS = 5;
+
+// Offered in the entry form's Reject Reason dropdown and grouped on the
+// dashboard. Keep in step with REJECT_REASONS in server/models/ProductionEntry.js.
+export const REJECT_REASONS = [
+  "Dimension Out",
+  "Tool Mark",
+  "Surface Finish",
+  "Porosity / Blow Hole",
+  "Material Defect",
+  "Setting Mistake",
+  "Operator Mistake",
+  "Machine Fault",
+  "Other",
+];
 
 export const WORKING_STATUSES = ["M/C OFF", "ABSENT", "SUNDAY", "HOLIDAY", "STOCK COUNTING", "REPORT NOT FILLUP"];
 
@@ -83,24 +98,33 @@ export const totalCycleSec = (ops) => {
 
 export function rowCalc(row) {
   if (!row) return {};
-  const cycle = totalCycleSec(row.cycleOpsSec);
+  // The entry form supplies one `cycleTimeSec`; records saved by the old grid
+  // hold the op-wise `cycleOpsSec` array, which is summed. Either works.
+  const single = num(row.cycleTimeSec);
+  const cycle = isNum(single) ? single : totalCycleSec(row.cycleOpsSec);
   const shiftMin = spanMinutes(row.machineOnTime, row.machineOffTime);
   const shiftHours = shiftMin === null ? null : shiftMin / 60;
   const ok = num(row.okQty);
-  const rej = num(row.rejectedQty);
+  const actual = num(row.actualQty);
+  // Rejected is always Actual − OK. Rows saved before Actual Quantity existed
+  // have no actualQty, so their stored rejectedQty is used instead.
+  const rej = isNum(actual) && isNum(ok) ? Math.max(0, actual - ok) : num(row.rejectedQty);
 
   const stoppageVals = STOPPAGE_FIELDS.map((f) => num(row[f.key])).filter(isNum);
   const totalStoppageMin = stoppageVals.length ? stoppageVals.reduce((s, v) => s + v, 0) : null;
 
   const effectiveHours = cycle && isNum(ok) ? (ok * cycle) / 3600 : null;
-  const okPlusRej = (ok || 0) + (rej || 0);
+  // Falls back to OK + Rejected for rows that predate Actual Quantity.
+  const totalProduced = isNum(actual) ? actual : (ok || 0) + (rej || 0);
 
   return {
     totalCycleSec: cycle,
+    actualQty: isNum(actual) ? actual : isNum(ok) || isNum(rej) ? totalProduced : null,
+    rejectedQty: rej,
     shiftHours,
     idealQty: cycle && shiftHours !== null ? (shiftHours * 3600) / cycle : null,
     idealQtyPerHour: cycle ? 3600 / cycle : null,
-    pctOk: (isNum(ok) || isNum(rej)) && okPlusRej > 0 ? (ok || 0) / okPlusRej : null,
+    pctOk: totalProduced > 0 && (isNum(ok) || isNum(rej)) ? (ok || 0) / totalProduced : null,
     totalStoppageMin,
     effectiveHours,
     setupEfficiency: effectiveHours !== null && shiftHours > 0 ? effectiveHours / shiftHours : null,

@@ -32,6 +32,20 @@ const STOPPAGE_KEYS = [
   "otherMin",
 ];
 
+// Reject reasons offered in the entry form and grouped on the dashboard.
+// Add to this list to offer a new reason — nothing else needs changing.
+const REJECT_REASONS = [
+  "Dimension Out",
+  "Tool Mark",
+  "Surface Finish",
+  "Porosity / Blow Hole",
+  "Material Defect",
+  "Setting Mistake",
+  "Operator Mistake",
+  "Machine Fault",
+  "Other",
+];
+
 const ProductionEntrySchema = new mongoose.Schema(
   {
     // UTC midnight of the sheet date.
@@ -61,8 +75,14 @@ const ProductionEntrySchema = new mongoose.Schema(
     settingOnTime: { type: String, match: HHMM },
     settingOffTime: { type: String, match: HHMM },
 
+    // Actual and OK are entered; Rejected is derived (Actual − OK) by the
+    // controller on every save, so the three can never drift apart.
+    actualQty: { type: Number, min: [0, "Actual Quantity cannot be negative"] },
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
+    // Why the rejected pieces were rejected — one of REJECT_REASONS, or ""
+    // when nothing was rejected. Drives the Dashboard's reason breakdown.
+    rejectReason: { type: String, trim: true, maxlength: 60, default: "" },
     plannedOperatorShiftHours: { type: Number, min: [0, "Planned Operator Shift Time cannot be negative"], max: 24 },
 
     ...Object.fromEntries(STOPPAGE_KEYS.map((k) => [k, minutes])),
@@ -79,3 +99,4 @@ ProductionEntrySchema.index({ date: 1, machine: 1, slot: 1 }, { unique: true });
 
 module.exports = mongoose.model("ProductionEntry", ProductionEntrySchema);
 module.exports.STOPPAGE_KEYS = STOPPAGE_KEYS;
+module.exports.REJECT_REASONS = REJECT_REASONS;

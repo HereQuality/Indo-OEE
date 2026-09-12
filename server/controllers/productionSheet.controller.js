@@ -1,15 +1,17 @@
 const mongoose = require("mongoose");
 const ProductionEntry = require("../models/ProductionEntry");
-const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
+const { STOPPAGE_KEYS, REJECT_REASONS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { normalizeCycleOps } = require("./item.controller");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 62;
 
-const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupNo", "remarks"];
+const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupNo", "rejectReason", "remarks"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
-const NUMBER_KEYS = ["okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+// rejectedQty is NOT here — it is derived from actualQty − okQty below and
+// never accepted from the client.
+const NUMBER_KEYS = ["actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // "YYYY-MM-DD" -> Date at UTC midnight, or null if it isn't a real date.
 const parseDay = (s) => {
@@ -56,6 +58,26 @@ const buildFields = (body) => {
     }
     set.cycleOpsSec = ops;
   }
+  // Rejected = Actual − OK. Both are needed to compute it; when either side
+  // is being cleared the stored Rejected is cleared with it, and an OK above
+  // Actual is rejected outright rather than saved as a negative.
+  if (body.actualQty !== undefined || body.okQty !== undefined) {
+    const actual = "actualQty" in set ? set.actualQty : null;
+    const ok = "okQty" in set ? set.okQty : null;
+    if (actual === null || ok === null) {
+      unset.rejectedQty = "";
+    } else if (ok > actual) {
+      throw Object.assign(new Error("OK Quantity cannot be more than Actual Quantity"), { status: 400 });
+    } else {
+      set.rejectedQty = actual - ok;
+      delete unset.rejectedQty;
+    }
+  }
+
+  if (body.rejectReason !== undefined && set.rejectReason && !REJECT_REASONS.includes(set.rejectReason)) {
+    throw Object.assign(new Error(`"${set.rejectReason}" is not a valid reject reason`), { status: 400 });
+  }
+
   if (body.item !== undefined) {
     if (body.item && !mongoose.isValidObjectId(body.item)) {
       throw Object.assign(new Error("Invalid item"), { status: 400 });
@@ -68,7 +90,7 @@ const buildFields = (body) => {
 const isRowEmpty = (doc) =>
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
-  NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null) &&
+  [...NUMBER_KEYS, "rejectedQty"].every((k) => doc[k] === undefined || doc[k] === null) &&
   !(doc.cycleOpsSec || []).some((v) => v !== null && v !== undefined);
 
 // GET /production-sheet?from=YYYY-MM-DD&to=YYYY-MM-DD[&machine=id]
@@ -150,4 +172,24 @@ exports.listOperatorNames = async (req, res) => {
     console.error("Error listing operator names:", error);
     res.status(500).json({ isOk: false, message: error.message });
   }
+};
+
+// DELETE /production-sheet/row/:id — removes one saved entry.
+exports.deleteRow = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ isOk: false, message: "Invalid entry" });
+    }
+    const deleted = await ProductionEntry.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    res.status(200).json({ isOk: true, message: "Entry deleted" });
+  } catch (error) {
+    console.error("Error deleting production row:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /production-sheet/reject-reasons — the list the form's dropdown offers.
+exports.listRejectReasons = async (req, res) => {
+  res.status(200).json({ isOk: true, data: REJECT_REASONS });
 };
