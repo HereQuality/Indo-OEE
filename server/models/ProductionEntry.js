@@ -81,8 +81,21 @@ const ProductionEntrySchema = new mongoose.Schema(
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
     // Why the rejected pieces were rejected — one of REJECT_REASONS, or ""
-    // when nothing was rejected. Drives the Dashboard's reason breakdown.
+    // when nothing was rejected. Kept for records saved before the entry form
+    // took a per-reason split, and still read by the Dashboard as a fallback.
     rejectReason: { type: String, trim: true, maxlength: 60, default: "" },
+    // How the rejected pieces split across REJECT_REASONS — { reason: qty },
+    // only the reasons that actually cost pieces. The entry form writes this;
+    // it is what drives the Dashboard's reason breakdown for new records.
+    rejectBreakdown: {
+      type: Map,
+      of: { type: Number, min: [0, "Rejected quantity cannot be negative"] },
+      default: undefined,
+      validate: {
+        validator: (m) => !m || [...m.keys()].every((k) => REJECT_REASONS.includes(k)),
+        message: "Unknown reject reason",
+      },
+    },
     plannedOperatorShiftHours: { type: Number, min: [0, "Planned Operator Shift Time cannot be negative"], max: 24 },
 
     ...Object.fromEntries(STOPPAGE_KEYS.map((k) => [k, minutes])),

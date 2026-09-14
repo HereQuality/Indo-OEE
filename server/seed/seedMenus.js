@@ -20,7 +20,7 @@ const MenuMaster = require("../models/MenuMaster");
 //   1. Home                      (link)
 //   2. Administration             (group: Menu Group, Menu Master, Company)
 //   3. Operator Management        (group)
-//   4. Production                 (group: Data Entry, Machines, Items)
+//   4. Production                 (group: Items, Machines, Data Entry, Dashboard)
 //   5. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 const ADMINISTRATION_GROUP = { menuGroupName: "Administration", sequence: 2, isLink: false, portal: "SuperAdmin", icon: "Settings" };
@@ -35,9 +35,10 @@ const ADMINISTRATION_MENUS = [
 ];
 
 const PRODUCTION_MENUS = [
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 3, icon: "ClipboardList" },
+  { menuName: "Dashboard", menuUrl: "/hqepl/production/dashboard", sequence: 4, icon: "LayoutDashboard" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

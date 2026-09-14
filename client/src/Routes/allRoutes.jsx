@@ -46,6 +46,7 @@ const MenuGroup = lazyWithRetry(() => import("../pages/MenuGroup"));
 const MenuMaster = lazyWithRetry(() => import("../pages/MenuMaster"));
 const Department = lazyWithRetry(() => import("../pages/Department"));
 const ProductionSheet = lazyWithRetry(() => import("../pages/ProductionSheet"));
+const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
@@ -101,10 +102,13 @@ const protectedRoutes = [
   { path: "/employee-management/manage-role", component: <ManageRole /> },
   { path: "/employee-management/team-members", component: <TeamMembers /> },
 
-  // Production — Data Entry sheet and its Machine/Item masters.
-  { path: "/production/data-entry", component: <ProductionSheet /> },
-  { path: "/production/machines", component: <MachineMaster /> },
+  // Production — Data Entry sheet, its Machine/Item masters, and the
+  // read-only dashboard over the same entries (its own page so neither it
+  // nor Data Entry loads the other's requests).
   { path: "/production/items", component: <ItemMaster /> },
+  { path: "/production/machines", component: <MachineMaster /> },
+  { path: "/production/data-entry", component: <ProductionSheet /> },
+  { path: "/production/dashboard", component: <ProductionDashboardPage /> },
 
   // Other Routes
   { path: "/teams", component: <TeamsBoard /> },

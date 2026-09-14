@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { LayoutDashboard, Plus, Table2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   Card,
   CardBody,
@@ -16,7 +16,6 @@ import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import ProductionEntriesTable from "../Components/Production/ProductionEntriesTable";
 import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
-import ProductionDashboard from "../Components/Production/ProductionDashboard";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines } from "../hooks/useMachines";
@@ -28,6 +27,7 @@ import {
   saveProductionRow,
 } from "../api/productionSheet.api";
 import {
+  REJECT_REASONS,
   STOPPAGE_FIELDS,
   dayCalc,
   daysOfMonth,
@@ -36,29 +36,38 @@ import {
 } from "../utils/productionSheet";
 
 /**
- * Production Data Entry — one form per record, plus a dashboard over the
- * same month's records.
+ * Production Data Entry — the month's records, and one form per record.
+ *
+ * The roll-up charts live on their own page (pages/ProductionDashboardPage),
+ * so this page loads only what the list and the form need.
  *
  * A record is still keyed by (date, machine, entry no.) the way the Indo
- * "Section Wise Eff. (CNC)" sheet is, which is why Machine and Entry No. are
- * locked while editing: changing them would move the record to a different
- * key rather than edit it. Delete and re-add instead.
+ * "Section Wise Eff. (CNC)" sheet is, but the entry no. is no longer typed:
+ * a new entry is sent with slot "auto" and the server gives it the machine's
+ * next free slot for that date (1–3), reporting a machine that already has
+ * three entries that day rather than overwriting one. Machine stays locked
+ * while editing,
+ * because changing it would move the record to a different key rather than
+ * edit it — delete and re-add instead.
  *
  * Every formula lives in utils/productionSheet.js and is shared with the
- * dashboard, so the form's read-only boxes and the charts can't disagree.
+ * dashboard page, so the form's read-only boxes and the charts can't disagree.
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "rejectReason", "remarks"];
+const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = ["actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 const emptyEntry = () => ({
   date: isoDay(new Date()),
   machine: "",
+  // Assigned on save from the machine's free slots for that date; kept in the
+  // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
   cycleTimeSec: "",
+  rejectBreakdown: {},
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -91,21 +100,54 @@ const toFormValues = (row) => {
     // that total, so the numbers are unchanged — only the op-wise split is
     // dropped, and only once such a record is saved from here.
     cycleTimeSec: totalCycleSec(row.cycleOpsSec) ?? "",
+    // A record saved before the split existed has only a single rejectReason;
+    // its rejected pieces are put against that reason so editing it doesn't
+    // look like the reason was lost.
+    rejectBreakdown: (() => {
+      const stored = row.rejectBreakdown;
+      if (stored && Object.keys(stored).length) {
+        return Object.fromEntries(Object.entries(stored).filter(([r]) => REJECT_REASONS.includes(r)));
+      }
+      const rejected = Number(row.rejectedQty);
+      return row.rejectReason && REJECT_REASONS.includes(row.rejectReason) && Number.isFinite(rejected) && rejected > 0
+        ? { [row.rejectReason]: rejected }
+        : {};
+    })(),
   };
 };
 
+// Blank boxes dropped, everything else as a number — what the server stores.
+const cleanSplit = (split) =>
+  Object.fromEntries(
+    Object.entries(split || {})
+      .map(([reason, v]) => [reason, v === "" || v === null || v === undefined ? 0 : Number(v)])
+      .filter(([, n]) => Number.isFinite(n) && n > 0),
+  );
+
 // Form values -> request body. "" tells the server to unset that field.
 // rejectedQty is deliberately absent: the server derives it from Actual − OK.
-const toPayload = (v) => ({
+const toPayload = (v, isEdit) => {
+  const split = cleanSplit(v.rejectBreakdown);
+  // The entries table and older records still carry one reason per entry, so
+  // the biggest contributor in the split is saved there too — the table column
+  // keeps working without needing a second shape.
+  const topReason = Object.entries(split).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  return {
   date: v.date,
   machine: v.machine,
-  slot: Number(v.slot),
+  // An edited record saves back to its own slot; a new one asks the server for
+  // the machine's next free slot on that date, since only the server can see
+  // every entry — the page may be filtered to one machine.
+  slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
   cycleOpsSec: v.cycleTimeSec === "" ? [] : [Number(v.cycleTimeSec)],
+  rejectBreakdown: split,
+  rejectReason: topReason,
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" ? "" : Number(v[k])])),
-});
+  };
+};
 
 const ProductionSheet = () => {
   const toast = useAlert();
@@ -114,7 +156,6 @@ const ProductionSheet = () => {
   const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
   const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
 
-  const [tab, setTab] = useState("entries");
   const [month, setMonth] = useState(() => isoDay(new Date()).slice(0, 7));
   const [machineFilter, setMachineFilter] = useState("");
   const [rows, setRows] = useState([]);
@@ -175,19 +216,6 @@ const ProductionSheet = () => {
     [rows, machineName],
   );
 
-  // Day-level figures per machine block: that machine's other saved entries on
-  // that date, with the block's live values standing in for its own.
-  const dayResults = useMemo(() => {
-    if (!modalMode) return [];
-    return entries.map((v) => {
-      if (!v.date || !v.machine) return {};
-      const others = rows.filter(
-        (r) => r.machine === v.machine && r.date === v.date && r.slot !== Number(v.slot),
-      );
-      return dayCalc([...others, v]);
-    });
-  }, [modalMode, rows, entries]);
-
   // Same figures per saved record, for the list's OEE column.
   const dayResultByKey = useMemo(() => {
     const groups = {};
@@ -219,6 +247,14 @@ const ProductionSheet = () => {
 
   const handleChange = useCallback((index, name, value) => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
+  }, []);
+
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) =>
+        i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v,
+      ),
+    );
   }, []);
 
   // A new machine block copies the date from the block above it — the whole
@@ -259,7 +295,6 @@ const ProductionSheet = () => {
     const errors = {};
     if (!v.date) errors.date = "Date is required";
     if (!v.machine) errors.machine = "Machine is required";
-    if (![1, 2, 3].includes(Number(v.slot))) errors.slot = "Entry No. must be 1, 2 or 3";
 
     const actual = v.actualQty === "" ? null : Number(v.actualQty);
     const ok = v.okQty === "" ? null : Number(v.okQty);
@@ -268,9 +303,18 @@ const ProductionSheet = () => {
     if (actual !== null && ok !== null && ok > actual) errors.okQty = "OK cannot be more than Actual";
     if (ok !== null && actual === null) errors.actualQty = "Enter Actual Quantity too";
 
-    // A reason is what makes rejections readable on the dashboard.
+    // The per-reason split is what makes rejections readable on the dashboard,
+    // so it has to account for every rejected piece — no more, no less.
     const rejected = actual !== null && ok !== null ? actual - ok : 0;
-    if (rejected > 0 && !v.rejectReason) errors.rejectReason = "Pick a reason for the rejected pieces";
+    const split = cleanSplit(v.rejectBreakdown);
+    const splitTotal = Object.values(split).reduce((s, n) => s + n, 0);
+    if (Object.entries(v.rejectBreakdown || {}).some(([, n]) => n !== "" && (!Number.isFinite(Number(n)) || Number(n) < 0))) {
+      errors.rejectBreakdown = "Rejected quantities must be 0 or more";
+    } else if (rejected > 0 && splitTotal !== rejected) {
+      errors.rejectBreakdown = `Split ${splitTotal} of ${rejected} rejected — the boxes must add up to the rejected quantity`;
+    } else if (rejected <= 0 && splitTotal > 0) {
+      errors.rejectBreakdown = "Nothing was rejected, so these boxes should be empty";
+    }
 
     const cycle = v.cycleTimeSec === "" ? null : Number(v.cycleTimeSec);
     if (cycle !== null && (!Number.isFinite(cycle) || cycle < 0)) errors.cycleTimeSec = "Must be 0 or more";
@@ -300,22 +344,6 @@ const ProductionSheet = () => {
       return;
     }
 
-    // (date, machine, entry no.) is a record's key, so two blocks may not
-    // share one, and an added block may not land on an already-saved record.
-    const seen = new Map();
-    entries.forEach((v, i) => {
-      if (isUntouched(v) || !v.date) return;
-      const key = `${v.date}|${v.machine}|${Number(v.slot)}`;
-      if (seen.has(key)) {
-        errorsPerBlock[i].slot = `Same machine, date and entry no. as machine block ${seen.get(key) + 1}`;
-      } else {
-        seen.set(key, i);
-      }
-      if (modalMode === "add" && rows.some((r) => `${r.date}|${r.machine}|${r.slot}` === key)) {
-        errorsPerBlock[i].slot = "This machine already has this entry no. on this date — edit that entry instead";
-      }
-    });
-
     setFormErrors(errorsPerBlock);
     if (errorsPerBlock.some((errs) => Object.keys(errs).length)) return;
 
@@ -326,7 +354,7 @@ const ProductionSheet = () => {
       let saved = 0;
       let cleared = 0;
       for (const v of toSave) {
-        const res = await saveProductionRow(toPayload(v));
+        const res = await saveProductionRow(toPayload(v, modalMode === "edit"));
         if (res?.data?.data) saved += 1;
         else cleared += 1;
       }
@@ -365,17 +393,6 @@ const ProductionSheet = () => {
 
   document.title = `Production Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
-  const TabButton = ({ id, icon: Icon, children }) => (
-    <button
-      type="button"
-      onClick={() => setTab(id)}
-      className={`btn btn-sm d-inline-flex align-items-center gap-1 ${tab === id ? "btn-primary" : "btn-light"}`}
-    >
-      <Icon size={15} />
-      {children}
-    </button>
-  );
-
   return (
     <React.Fragment>
       <div className="page-content">
@@ -383,14 +400,7 @@ const ProductionSheet = () => {
           <Card>
             <CardHeader>
               <div className="d-flex flex-wrap align-items-center gap-2">
-                <div className="d-flex gap-1">
-                  <TabButton id="entries" icon={Table2}>
-                    Entries
-                  </TabButton>
-                  <TabButton id="dashboard" icon={LayoutDashboard}>
-                    Dashboard
-                  </TabButton>
-                </div>
+                <h5 className="mb-0 fs-6 fw-semibold">Production Data Entry</h5>
 
                 <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
                   <Input
@@ -427,29 +437,20 @@ const ProductionSheet = () => {
               </div>
             </CardHeader>
             <CardBody>
-              {tab === "entries" ? (
-                <ProductionEntriesTable
-                  rows={sortedRows}
-                  machineName={machineName}
-                  dayResultByKey={dayResultByKey}
-                  loading={loading}
-                  emptyText={`No entries for ${periodLabel}. Click “Add Entry” to start.`}
-                  canEdit={canEdit}
-                  canDelete={canDelete}
-                  onEdit={openEdit}
-                  onDelete={(r) => {
-                    setRemoveId(r._id);
-                    setDeleteOpen(true);
-                  }}
-                />
-              ) : (
-                <ProductionDashboard
-                  rows={rows}
-                  machines={machines}
-                  loading={loading}
-                  periodLabel={periodLabel}
-                />
-              )}
+              <ProductionEntriesTable
+                rows={sortedRows}
+                machineName={machineName}
+                dayResultByKey={dayResultByKey}
+                loading={loading}
+                emptyText={`No entries for ${periodLabel}. Click “Add Entry” to start.`}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                onEdit={openEdit}
+                onDelete={(r) => {
+                  setRemoveId(r._id);
+                  setDeleteOpen(true);
+                }}
+              />
             </CardBody>
           </Card>
         </Container>
@@ -471,10 +472,10 @@ const ProductionSheet = () => {
               machines={machines}
               items={items}
               operatorNames={operatorNames}
-              dayResults={dayResults}
               isEdit={modalMode === "edit"}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

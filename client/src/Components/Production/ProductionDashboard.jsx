@@ -113,8 +113,20 @@ const ProductionDashboard = ({ rows = [], machines = [], loading = false, period
 
       const rej = num(calc.rejectedQty);
       if (rej > 0) {
-        const reason = row.rejectReason || "Not specified";
-        rejectByReason[reason] = (rejectByReason[reason] || 0) + rej;
+        // Entries saved from the current form carry a per-reason split, which
+        // is used as-is. Older ones carry a single reason for the whole lot,
+        // and are counted against that reason so the two kinds add up in one
+        // chart rather than needing two.
+        const split = row.rejectBreakdown || {};
+        const splitEntries = Object.entries(split).filter(([, qty]) => num(Number(qty)) > 0);
+        if (splitEntries.length) {
+          for (const [reason, qty] of splitEntries) {
+            rejectByReason[reason] = (rejectByReason[reason] || 0) + num(Number(qty));
+          }
+        } else {
+          const reason = row.rejectReason || "Not specified";
+          rejectByReason[reason] = (rejectByReason[reason] || 0) + rej;
+        }
       }
 
       (byMachineDay[`${row.machine}|${row.date}`] ||= []).push(row);

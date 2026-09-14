@@ -6,6 +6,9 @@ const { normalizeCycleOps } = require("./item.controller");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 62;
+// Entries a machine can have on one date — the sheet's three rows per machine.
+const MAX_SLOTS = 3;
+const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 
 const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupNo", "rejectReason", "remarks"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
@@ -78,6 +81,31 @@ const buildFields = (body) => {
     throw Object.assign(new Error(`"${set.rejectReason}" is not a valid reject reason`), { status: 400 });
   }
 
+  // The per-reason split of the rejected pieces. Only reasons that actually
+  // cost pieces are stored, so an all-zero split unsets the field rather than
+  // saving nine zeroes. The total is not checked against Actual − OK here:
+  // the form does that, and a part-filled split is still worth keeping.
+  if (body.rejectBreakdown !== undefined) {
+    const raw = body.rejectBreakdown;
+    if (raw !== null && (typeof raw !== "object" || Array.isArray(raw))) {
+      throw Object.assign(new Error("rejectBreakdown must be an object"), { status: 400 });
+    }
+    const split = {};
+    for (const [reason, value] of Object.entries(raw || {})) {
+      if (!REJECT_REASONS.includes(reason)) {
+        throw Object.assign(new Error(`"${reason}" is not a valid reject reason`), { status: 400 });
+      }
+      if (value === "" || value === null || value === undefined) continue;
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        throw Object.assign(new Error(`Rejected quantity for "${reason}" must be 0 or more`), { status: 400 });
+      }
+      if (n > 0) split[reason] = n;
+    }
+    if (Object.keys(split).length) set.rejectBreakdown = split;
+    else unset.rejectBreakdown = "";
+  }
+
   if (body.item !== undefined) {
     if (body.item && !mongoose.isValidObjectId(body.item)) {
       throw Object.assign(new Error("Invalid item"), { status: 400 });
@@ -91,6 +119,7 @@ const isRowEmpty = (doc) =>
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
   [...NUMBER_KEYS, "rejectedQty"].every((k) => doc[k] === undefined || doc[k] === null) &&
+  !Object.keys(doc.rejectBreakdown || {}).length &&
   !(doc.cycleOpsSec || []).some((v) => v !== null && v !== undefined);
 
 // GET /production-sheet?from=YYYY-MM-DD&to=YYYY-MM-DD[&machine=id]
@@ -130,11 +159,31 @@ exports.saveRow = async (req, res) => {
   try {
     const { date, machine, slot } = req.body;
     const day = parseDay(date);
-    const slotNo = Number(slot);
     if (!day) return res.status(400).json({ isOk: false, message: "Valid date (YYYY-MM-DD) is required" });
-    if (![1, 2, 3].includes(slotNo)) return res.status(400).json({ isOk: false, message: "Slot must be 1, 2 or 3" });
     if (!mongoose.isValidObjectId(machine) || !(await Machine.exists({ _id: machine, isActive: true }))) {
       return res.status(400).json({ isOk: false, message: "Machine not found or inactive" });
+    }
+
+    // The entry form no longer asks for a slot — it sends "auto" and this
+    // picks the machine's lowest free slot for that date. Done here rather
+    // than in the form because the form only holds the entries it has loaded,
+    // which may be filtered to one machine; this always sees all of them, so
+    // a new entry can never land on an existing one and overwrite it.
+    let slotNo;
+    if (slot === "auto") {
+      const used = new Set((await ProductionEntry.find({ date: day, machine }).select("slot").lean()).map((e) => e.slot));
+      slotNo = SLOT_NUMBERS.find((n) => !used.has(n));
+      if (!slotNo) {
+        return res.status(400).json({
+          isOk: false,
+          message: `This machine already has ${MAX_SLOTS} entries on ${date} — edit one of them instead`,
+        });
+      }
+    } else {
+      slotNo = Number(slot);
+      if (!SLOT_NUMBERS.includes(slotNo)) {
+        return res.status(400).json({ isOk: false, message: `Slot must be 1–${MAX_SLOTS}` });
+      }
     }
 
     const { set, unset } = buildFields(req.body);

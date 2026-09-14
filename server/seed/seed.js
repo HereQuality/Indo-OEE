@@ -6,7 +6,7 @@
  *   1. The platform-owner SuperAdmin account (email/username/password below).
  *   2. Menu Groups + Menus for the HQEPL (SuperAdmin) portal:
  *      Administration (Menu Group, Menu Master, Company), Production
- *      (Data Entry, Machines, Items), Operator Management
+ *      (Items, Machines, Data Entry, Dashboard), Operator Management
  *      (Department/Teams/Role/Operator/Manage Role), Support.
  *   3. A Menu Group + Menu for the normal Operator portal's Home.
  *
@@ -63,9 +63,10 @@ const PRODUCTION_GROUP = {
 };
 
 const PRODUCTION_MENUS = [
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 3, icon: "ClipboardList" },
+  { menuName: "Dashboard", menuUrl: "/hqepl/production/dashboard", sequence: 4, icon: "LayoutDashboard" },
 ];
 
 const EMPLOYEE_MANAGEMENT_GROUP = {

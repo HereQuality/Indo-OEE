@@ -4,7 +4,7 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import { REJECT_REASONS, SLOTS_PER_DAY, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
+import { REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -20,8 +20,14 @@ import { REJECT_REASONS, SLOTS_PER_DAY, fmtNum, fmtPct, rowCalc } from "../../ut
  *
  * Typed fields are white; every grey box is calculated live by
  * utils/productionSheet.js, Rejected Quantity included (always Actual − OK,
- * which is why it can't be typed). The last four boxes cover that machine's
- * whole day rather than the one record, and arrive via `dayResult`.
+ * which is why it can't be typed).
+ *
+ * The form deliberately shows less than the sheet does. Entry No. is assigned
+ * by the page rather than picked; Drawing No. and Cycle Time come from the
+ * chosen part and are saved without being shown; and Ideal Quantity, Effective
+ * Machine Runtime, Unreported Time, Setup Efficiency and the three OEE figures
+ * are all derived, so they are left to the entries table and the dashboard
+ * instead of being repeated here as boxes nobody fills in.
  */
 
 const labelClass = "form-label small text-muted mb-1";
@@ -52,18 +58,16 @@ const Field = ({ label, required, error, children, md = 3 }) => (
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
 const LINES = [
-  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "slot", "operator"] },
-  { id: 2, title: "Part Name, Drawing No., Cycle Time", fields: ["itemName", "drawingNo", "cycleTimeSec"] },
+  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
+  { id: 2, title: "Part Name", fields: ["itemName"] },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 4, title: "Ideal Quantity, Ideal Quantity per Hour", fields: [] },
-  { id: 5, title: "Actual Qty, OK Qty, Rejected, % OK Qty, Reject Master", fields: ["actualQty", "okQty", "rejectReason"] },
+  { id: 5, title: "Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
+  { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
   { id: 6, title: "Planned Operator Shift Time, Utilized Machine Time", fields: ["plannedOperatorShiftHours"] },
-  { id: 7, title: "Downtime, Setup Time, No Man Power, Material Shifting", fields: ["plannedDownMin", "setupMin", "noManPowerMin", "materialShiftingMin"] },
+  { id: 7, title: "Setup Time, No Man Power, Material Shifting", fields: ["setupMin", "noManPowerMin", "materialShiftingMin"] },
   { id: 8, title: "No Material, Breakdown Mechanical, BD Electricity, No Power", fields: ["noMaterialMin", "bdMechMin", "bdEleMin", "noPowerMin"] },
   { id: 9, title: "Lunch / Rest, Other (min)", fields: ["lunchMin", "otherMin"] },
-  { id: 10, title: "Effective Machine Runtime, Unreported Time", fields: [] },
-  { id: 11, title: "Setup Efficiency", fields: [] },
-  { id: 12, title: "OEE (3 measures), Remarks", fields: ["remarks"] },
+  { id: 12, title: "Remarks", fields: ["remarks"] },
 ];
 
 const findLine = (id) => LINES.find((l) => l.id === id);
@@ -72,11 +76,13 @@ const findLine = (id) => LINES.find((l) => l.id === id);
 // collapsed block that still has typing in it from an untouched one.
 const DATA_KEYS = [
   "operator", "itemName", "drawingNo", "cycleTimeSec", "machineOnTime", "machineOffTime",
-  "actualQty", "okQty", "rejectReason", "plannedOperatorShiftHours", "remarks",
+  "actualQty", "okQty", "plannedOperatorShiftHours", "remarks",
   ...LINES.flatMap((l) => l.fields),
-].filter((k) => !["date", "machine", "slot"].includes(k));
+].filter((k) => !["date", "machine", "slot", "rejectBreakdown"].includes(k));
 
-const hasData = (v) => DATA_KEYS.some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
+const hasData = (v) =>
+  DATA_KEYS.some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null) ||
+  Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null);
 
 const EntryBlock = ({
   values,
@@ -84,15 +90,28 @@ const EntryBlock = ({
   isSubmit,
   machines,
   items,
-  dayResult,
   isEdit,
   index,
   canRemove,
   onChange,
   onItemSelect,
+  onRejectChange,
   onRemove,
 }) => {
   const calc = useMemo(() => rowCalc(values), [values]);
+
+  // The reject split's running total, against the Rejected figure it has to
+  // match. Shown live so the operator sees the gap while typing rather than
+  // only after pressing Save.
+  const splitTotal = useMemo(
+    () =>
+      Object.values(values.rejectBreakdown || {}).reduce(
+        (sum, v) => sum + (v === "" || v === null || v === undefined ? 0 : Number(v) || 0),
+        0,
+      ),
+    [values.rejectBreakdown],
+  );
+  const splitMismatch = splitTotal !== (calc.rejectedQty || 0);
   // A new block starts collapsed to its machine picker; editing opens straight up.
   const [expanded, setExpanded] = useState(isEdit);
 
@@ -209,16 +228,7 @@ const EntryBlock = ({
             <Field label="Machine No." required error={err("machine")} md={3}>
               {machineSelect}
             </Field>
-            <Field label="Entry No." required error={err("slot")} md={2}>
-              <Input type="select" name="slot" value={values.slot} onChange={handle} disabled={isEdit}>
-                {Array.from({ length: SLOTS_PER_DAY }, (_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    {i + 1}
-                  </option>
-                ))}
-              </Input>
-            </Field>
-            <Field label="Operator" error={err("operator")} md={4}>
+            <Field label="Operator" error={err("operator")} md={6}>
               <Input
                 type="text"
                 name="operator"
@@ -234,7 +244,7 @@ const EntryBlock = ({
 
         <Line id={2}>
           <Row>
-            <Field label="Part Name" error={err("itemName")} md={5}>
+            <Field label="Part Name" error={err("itemName")} md={12}>
               <Input
                 type="select"
                 name="item"
@@ -251,12 +261,6 @@ const EntryBlock = ({
                   </option>
                 ))}
               </Input>
-            </Field>
-            <Field label="Drawing No." md={4}>
-              <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handle} maxLength={40} />
-            </Field>
-            <Field label="Cycle Time (sec)" error={err("cycleTimeSec")} md={3}>
-              <NumberInput name="cycleTimeSec" value={values.cycleTimeSec} onChange={handle} />
             </Field>
           </Row>
         </Line>
@@ -288,23 +292,6 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={4}>
-          <Row>
-            <Calc
-              label="Ideal Quantity"
-              value={fmtNum(calc.idealQty)}
-              md={6}
-              title="Machine Shift (hr) × 3600 ÷ Cycle Time (sec)"
-            />
-            <Calc
-              label="Ideal Quantity per Hour"
-              value={fmtNum(calc.idealQtyPerHour)}
-              md={6}
-              title="3600 ÷ Cycle Time (sec)"
-            />
-          </Row>
-        </Line>
-
         <Line id={5}>
           <Row>
             <Field label="Actual Quantity" error={err("actualQty")} md={3}>
@@ -316,18 +303,32 @@ const EntryBlock = ({
             <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Actual Quantity − OK Quantity" />
             <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ Actual Quantity" />
           </Row>
+        </Line>
+
+        <Line id={13}>
           <Row>
-            <Field label="Reject Master" error={err("rejectReason")} md={6}>
-              <Input type="select" name="rejectReason" value={values.rejectReason} onChange={handle}>
-                <option value="">— None —</option>
-                {REJECT_REASONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </Input>
-            </Field>
+            {REJECT_REASONS.map((reason) => (
+              <Col md={4} key={reason}>
+                <div className="mb-3">
+                  <Label className={labelClass}>{reason}</Label>
+                  <NumberInput
+                    name={reason}
+                    value={values.rejectBreakdown?.[reason] ?? ""}
+                    onChange={(e) => onRejectChange(index, reason, e.target.value)}
+                    decimals={false}
+                  />
+                </div>
+              </Col>
+            ))}
           </Row>
+          {/* The split has to account for every rejected piece, so the running
+              total is shown next to the figure it must match. */}
+          <div className="mb-3 small">
+            <span className="text-muted">Split so far: </span>
+            <span className={splitMismatch ? "text-danger fw-semibold" : "fw-semibold"}>{splitTotal}</span>
+            <span className="text-muted"> of {fmtNum(calc.rejectedQty) || 0} rejected</span>
+            {err("rejectBreakdown") && <p className="text-danger mb-0 mt-1">{err("rejectBreakdown")}</p>}
+          </div>
         </Line>
 
         <Line id={6}>
@@ -350,16 +351,13 @@ const EntryBlock = ({
 
         <Line id={7}>
           <Row>
-            <Field label="Downtime (min)" error={err("plannedDownMin")} md={3}>
-              <NumberInput name="plannedDownMin" value={values.plannedDownMin} onChange={handle} decimals={false} />
-            </Field>
-            <Field label="Setup Time (min)" error={err("setupMin")} md={3}>
+            <Field label="Setup Time (min)" error={err("setupMin")} md={4}>
               <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} />
             </Field>
-            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={3}>
+            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={4}>
               <NumberInput name="noManPowerMin" value={values.noManPowerMin} onChange={handle} decimals={false} />
             </Field>
-            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={3}>
+            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={4}>
               <NumberInput
                 name="materialShiftingMin"
                 value={values.materialShiftingMin}
@@ -398,55 +396,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={10}>
-          <Row>
-            <Calc
-              label="Effective Machine Runtime (hr)"
-              value={fmtNum(calc.effectiveHours)}
-              md={6}
-              title="OK Quantity × Cycle Time (sec) ÷ 3600"
-            />
-            <Calc
-              label="Unreported Time (min)"
-              value={fmtNum(dayResult.unreportedMin)}
-              md={6}
-              title="Per machine per day: Shift − Total Downtime − Effective Runtime"
-            />
-          </Row>
-        </Line>
-
-        <Line id={11}>
-          <Row>
-            <Calc
-              label="Setup Efficiency (%)"
-              value={fmtPct(calc.setupEfficiency)}
-              md={6}
-              title="Effective Machine Runtime ÷ Machine Shift"
-            />
-          </Row>
-        </Line>
-
         <Line id={12}>
-          <Row>
-            <Calc
-              label="OEE considering losses (%)"
-              value={fmtPct(dayResult.oeeLosses)}
-              md={4}
-              title="Per machine per day: Effective ÷ (Shift − Total Downtime)"
-            />
-            <Calc
-              label="OEE not considering losses but lunch (%)"
-              value={fmtPct(dayResult.oeeLunch)}
-              md={4}
-              title="Per machine per day: Effective ÷ (Shift − Lunch/Rest)"
-            />
-            <Calc
-              label="OEE not considering losses but lunch and COT (%)"
-              value={fmtPct(dayResult.oeeLunchCot)}
-              md={4}
-              title="Per machine per day: Effective ÷ (Shift − Lunch − Setup Time). COT = Setup Time."
-            />
-          </Row>
           <div className="mb-3">
             <Label className={labelClass}>Remarks</Label>
             <Input
@@ -471,10 +421,10 @@ const ProductionEntryForm = ({
   machines = [],
   items = [],
   operatorNames = [],
-  dayResults = [],
   isEdit = false,
   onChange,
   onItemSelect,
+  onRejectChange,
   onAdd,
   onRemove,
 }) => (
@@ -495,11 +445,11 @@ const ProductionEntryForm = ({
         isSubmit={isSubmit}
         machines={machines}
         items={items}
-        dayResult={dayResults[i] || {}}
         isEdit={isEdit}
         canRemove={!isEdit && entries.length > 1}
         onChange={onChange}
         onItemSelect={onItemSelect}
+        onRejectChange={onRejectChange}
         onRemove={onRemove}
       />
     ))}
