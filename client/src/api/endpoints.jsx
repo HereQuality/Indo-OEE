@@ -31,6 +31,18 @@ export const ENDPOINTS = {
         BY_ID: (id) => `${V1}/companies/${id}`,
         SEARCH: `${V1}/companies/search`,
     },
+    // Maintenance mode endpoints
+    MAINTENANCE: {
+        STATUS: `${V1}/maintenance/status`,
+        BASE: `${V1}/maintenance`,
+    },
+
+    // Announcement mode endpoints
+    ANNOUNCEMENT: {
+        STATUS: `${V1}/announcement/status`,
+        BASE: `${V1}/announcement`,
+    },
+
     // Department endpoints
     DEPARTMENTS: {
         BASE: `${V1}/departments`,

@@ -17,6 +17,7 @@ const mongoSanitize = require("express-mongo-sanitize");
 const corsOptions = require("./config/corsOptions");
 const { globalErrorHandler } = require("./middlewares/errorHandler");
 const { notFoundHandler } = require("./middlewares/notFoundHandler");
+const { blockDuringMaintenance } = require("./middlewares/maintenance.middleware");
 const apiRouter = require("./routes");
 const logger = require("./config/logger");
  
@@ -86,7 +87,10 @@ app.get("/health", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const path = require("path");
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use("/api/v1", apiRouter);
+// blockDuringMaintenance runs ahead of every /api/v1/* route — see
+// middlewares/maintenance.middleware.js for the allowlist (the status
+// endpoints, auth, public company branding) and the SuperAdmin bypass.
+app.use("/api/v1", blockDuringMaintenance, apiRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. 404 HANDLER (must come after all valid routes)

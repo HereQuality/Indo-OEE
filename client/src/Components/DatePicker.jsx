@@ -13,6 +13,9 @@ const DatePicker = ({
   onChange,
   placeholder = "DD/MM/YYYY",
   label,
+  minDate,
+  maxDate,
+  disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState(null);
@@ -78,8 +81,9 @@ const DatePicker = ({
               }
             }}
             format="DD/MM/YYYY"
-            minDate={dayjs('2020-01-01')}
-            maxDate={dayjs('2030-12-31')}
+            minDate={minDate ? dayjs(minDate) : dayjs('2020-01-01')}
+            maxDate={maxDate ? dayjs(maxDate) : dayjs('2030-12-31')}
+            disabled={disabled}
             closeOnSelect={true}
             slotProps={{
               actionBar: { actions: ['today'] },

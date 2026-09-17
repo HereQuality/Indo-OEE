@@ -35,6 +35,8 @@ const notificationRoutes = require("./notification.routes");
 const machineRoutes = require("./machine.routes");
 const itemRoutes = require("./item.routes");
 const productionSheetRoutes = require("./productionSheet.routes");
+const maintenanceRoutes = require("./maintenance.routes");
+const announcementRoutes = require("./announcement.routes");
 // const inventoryRoutes = require("./inventory.routes");
 
 // ── Mount routes ─────────────────────────────────────────────────────────────
@@ -51,6 +53,8 @@ router.use("/notifications", notificationRoutes);
 router.use("/machines", machineRoutes);
 router.use("/items", itemRoutes);
 router.use("/production-sheet", productionSheetRoutes);
+router.use("/maintenance", maintenanceRoutes);
+router.use("/announcement", announcementRoutes);
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

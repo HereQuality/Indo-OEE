@@ -5,6 +5,8 @@ import { Card, CardBody, CardHeader, Col, Container, Row, Input, Label, Form, Bu
 import { useQueryClient } from '@tanstack/react-query';
 import { ImagePlus, Trash2, Building2, Globe } from 'lucide-react';
 import defaultFavicon from '../assets/Fevicon_hqepl.png';
+import MaintenanceModeCard from '../Components/Common/MaintenanceModeCard';
+import AnnouncementModeCard from '../Components/Common/AnnouncementModeCard';
 
 export default function CompanyManagement() {
   const queryClient = useQueryClient();
@@ -268,6 +270,14 @@ export default function CompanyManagement() {
                   )}
                 </CardBody>
               </Card>
+
+              <div className="mt-4">
+                <MaintenanceModeCard />
+              </div>
+
+              <div className="mt-4">
+                <AnnouncementModeCard />
+              </div>
             </Col>
           </Row>
         </Container>
