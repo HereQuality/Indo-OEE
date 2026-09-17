@@ -89,6 +89,7 @@ const EntryBlock = ({
   errors,
   isSubmit,
   machines,
+  processes,
   items,
   isEdit,
   index,
@@ -99,6 +100,41 @@ const EntryBlock = ({
   onRemove,
 }) => {
   const calc = useMemo(() => rowCalc(values), [values]);
+
+  // Which process's machines the machine picker is narrowed to — a filter
+  // only, never saved on the entry itself (the machine already carries its
+  // own process link). Starts on the process the entry's machine already
+  // belongs to, so editing (or reopening a filled-in block) doesn't reset it.
+  const [processFilter, setProcessFilter] = useState(
+    () => String(machines.find((m) => m._id === values.machine)?.process || ""),
+  );
+
+  const filteredMachines = useMemo(
+    () => (processFilter ? machines.filter((m) => String(m.process || "") === processFilter) : machines),
+    [machines, processFilter],
+  );
+
+  const handleProcessFilter = (e) => {
+    const nextProcess = e.target.value;
+    setProcessFilter(nextProcess);
+    // Dropping a machine that belongs to a different process than the one
+    // just picked, so the two selects can't disagree with each other.
+    const stillValid = machines.some(
+      (m) => m._id === values.machine && (!nextProcess || String(m.process || "") === nextProcess),
+    );
+    if (!stillValid) onChange(index, "machine", "");
+  };
+
+  const processSelect = (
+    <Input type="select" value={processFilter} onChange={handleProcessFilter} disabled={isEdit}>
+      <option value="">All processes</option>
+      {processes.map((p) => (
+        <option key={p._id} value={p._id}>
+          {p.processName}
+        </option>
+      ))}
+    </Input>
+  );
 
   // The reject split's running total, against the Rejected figure it has to
   // match. Shown live so the operator sees the gap while typing rather than
@@ -128,7 +164,7 @@ const EntryBlock = ({
   const machineSelect = (
     <Input type="select" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
       <option value="">Select machine</option>
-      {machines.map((m) => (
+      {filteredMachines.map((m) => (
         <option key={m._id} value={m._id}>
           {m.machineName}
         </option>
@@ -147,15 +183,18 @@ const EntryBlock = ({
     </button>
   );
 
-  // Collapsed: just the machine picker and this machine's "+".
+  // Collapsed: process, then this process's machines, then this machine's "+".
   if (!expanded) {
     return (
       <div className="border rounded mb-3 px-3 pt-3">
         <Row className="align-items-start">
+          <Field label="Process" md={5}>
+            {processSelect}
+          </Field>
           <Field label="Machine No." required error={err("machine")} md={5}>
             {machineSelect}
           </Field>
-          <Col md={7}>
+          <Col md={2}>
             <div className="mb-3">
               <Label className={`${labelClass} d-block`}>&nbsp;</Label>
               <div className="d-flex align-items-center gap-2">
@@ -170,15 +209,19 @@ const EntryBlock = ({
                 >
                   <Plus size={18} />
                 </button>
-                <span className="text-muted small">
-                  {!values.machine
-                    ? "Select a machine, then press +"
-                    : hasData(values)
-                      ? "Entry filled in — press + to reopen it"
-                      : "Press + to fill this machine's entry"}
-                </span>
-                <span className="ms-auto">{removeButton}</span>
+                {removeButton}
               </div>
+            </div>
+          </Col>
+          <Col md={12}>
+            <div className="text-muted small mt-n2 mb-2">
+              {!values.machine
+                ? processFilter
+                  ? "Select a machine, then press +"
+                  : "Select a process, then a machine, then press +"
+                : hasData(values)
+                  ? "Entry filled in — press + to reopen it"
+                  : "Press + to fill this machine's entry"}
             </div>
           </Col>
         </Row>
@@ -419,6 +462,7 @@ const ProductionEntryForm = ({
   errors = [],
   isSubmit = false,
   machines = [],
+  processes = [],
   items = [],
   operatorNames = [],
   isEdit = false,
@@ -444,6 +488,7 @@ const ProductionEntryForm = ({
         errors={errors[i] || {}}
         isSubmit={isSubmit}
         machines={machines}
+        processes={processes}
         items={items}
         isEdit={isEdit}
         canRemove={!isEdit && entries.length > 1}

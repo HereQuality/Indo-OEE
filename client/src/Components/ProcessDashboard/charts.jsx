@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart,
+  Bar, BarChart, CartesianGrid, Cell, Funnel, FunnelChart, LabelList, Legend, Line, LineChart,
   ReferenceLine, ResponsiveContainer, Tooltip, Treemap, XAxis, YAxis,
 } from "recharts";
 import { STOPPAGE_FIELDS } from "../../utils/productionSheet";
@@ -129,6 +129,50 @@ const RunTimeByOperator = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="hours" selected={filters.operator} onSelect={(k) => onToggle("operator", k)}
       dimLabel="Operator" valueLabel="Effective run time" emptyText="Needs cycle time and OK quantity." />
+  );
+};
+
+// A funnel narrows as it goes: every operator's effective run time as one
+// band, widest at the top, sorted descending — the same figures as the
+// horizontal-bar version, just shaped like a Power BI funnel.
+const FUNNEL_ROWS = 40;
+
+const RunTimeByOperatorFunnel = ({ rowsFor, ctx, c, filters, onToggle, view, expanded }) => {
+  const data = useDimBars(rowsFor("operator"), "operator", ctx, (s) => s.effectiveHours);
+  if (!data.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
+  if (view === "table") {
+    return (
+      <MiniTable columns={["Operator", "Effective run time"]} selected={filters.operator} onRowClick={(k) => onToggle("operator", k)}
+        rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
+    );
+  }
+  const shown = expanded ? data : data.slice(0, FUNNEL_ROWS);
+  const hidden = data.length - shown.length;
+  return (
+    <div className="h-100 d-flex flex-column">
+      <div className="flex-grow-1" style={{ minHeight: 0 }}>
+        <ResponsiveContainer>
+          <FunnelChart>
+            <Tooltip {...tooltipProps(c)} formatter={(v, name) => [formatExact("hours", v), name]} />
+            <Funnel
+              data={shown}
+              dataKey="value"
+              nameKey="label"
+              isAnimationActive={false}
+              fill={c.ok}
+              stroke={c.surface}
+              onClick={(d) => onToggle("operator", d?.payload?.key)}
+              style={{ cursor: "pointer" }}
+            >
+              {shown.map((d) => (
+                <Cell key={d.key} fillOpacity={markOpacity(filters.operator, d.key)} />
+              ))}
+            </Funnel>
+          </FunnelChart>
+        </ResponsiveContainer>
+      </div>
+      {hidden > 0 && <div className="text-muted small pt-1">+{hidden} more — maximize to see all</div>}
+    </div>
   );
 };
 
@@ -357,6 +401,86 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
+// Nested treemap cell: depth 1 is a machine's whole area (outlined, its name
+// pinned top-left); depth 2 is one stoppage group's slice within it, coloured
+// like Downtime by Machine's stacked bars so the two visuals read as one.
+const NestedTreemapCell = ({ x, y, width, height, depth, name, value, groupIndex, machineKey, c, selected, onSelect }) => {
+  if (depth === 1) {
+    // nodeInset leaves this whole rect visible as a band around its children,
+    // room enough for the machine name that would otherwise sit under them.
+    const fits = width > 40 && height > 16;
+    return (
+      <g>
+        <rect x={x} y={y} width={width} height={height} fill={c.grid} rx={3} />
+        {fits && (
+          <text x={x + 6} y={y + 13} fill={c.ink} fontSize={12} fontWeight={700} style={{ pointerEvents: "none" }}>
+            {truncate(name, Math.floor(width / 7))}
+          </text>
+        )}
+      </g>
+    );
+  }
+  if (depth === 2) {
+    const color = c.series[(groupIndex ?? 0) % c.series.length];
+    const fits = width > 56 && height > 30;
+    return (
+      <g onClick={() => onSelect(machineKey)} style={{ cursor: "pointer" }}>
+        <rect x={x} y={y} width={width} height={height} fill={color} fillOpacity={markOpacity(selected, machineKey)} stroke={c.surface} strokeWidth={2} />
+        {fits && (
+          <>
+            <text x={x + 6} y={y + height - 22} fill="#ffffff" fontSize={11} fontWeight={600}>
+              {truncate(name, Math.floor(width / 7))}
+            </text>
+            <text x={x + 6} y={y + height - 8} fill="#ffffff" fontSize={11}>{FORMATS.minutes(value)}</text>
+          </>
+        )}
+      </g>
+    );
+  }
+  return null;
+};
+
+const DowntimeTreemap = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
+  const rows = rowsFor("machine");
+  const data = useMemo(
+    () => summarizeBy(rows, "machine", ctx)
+      .sort(naturalSort)
+      .map((m) => ({
+        name: m.label,
+        machineKey: m.key,
+        children: STOPPAGE_GROUPS
+          .map((g, i) => ({
+            name: g.label,
+            value: g.fields.reduce((sum, f) => sum + m.summary.downtimeByCause[f], 0),
+            groupIndex: i,
+            machineKey: m.key,
+          }))
+          .filter((leaf) => leaf.value > 0),
+      }))
+      .filter((m) => m.children.length),
+    [rows, ctx],
+  );
+  if (!data.length) return <Empty>No downtime recorded.</Empty>;
+  if (view === "table") {
+    return (
+      <MiniTable columns={["Machine", ...STOPPAGE_GROUPS.map((g) => `${g.label} (min)`)]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+        rows={data.map((m) => ({
+          key: m.machineKey,
+          cells: [m.name, ...STOPPAGE_GROUPS.map((g) => formatExact("qty", m.children.find((leaf) => leaf.groupIndex === STOPPAGE_GROUPS.indexOf(g))?.value || 0))],
+        }))}
+      />
+    );
+  }
+  return (
+    <ResponsiveContainer>
+      <Treemap data={data} dataKey="value" aspectRatio={4 / 3} isAnimationActive={false} nodeInset={16}
+        content={<NestedTreemapCell c={c} selected={filters.machine} onSelect={(k) => onToggle("machine", k)} />}>
+        <Tooltip {...tooltipProps(c)} formatter={(v, n) => [formatExact("minutes", v), n]} labelFormatter={() => ""} />
+      </Treemap>
+    </ResponsiveContainer>
+  );
+};
+
 const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
   const rows = rowsFor(null);
@@ -427,7 +551,9 @@ const MachineSummary = ({ rowsFor, ctx, filters, onToggle }) => {
 export const CHART_COMPONENTS = {
   oeeTrend: OeeTrend,
   runTimeByOperator: RunTimeByOperator,
+  runTimeByOperatorFunnel: RunTimeByOperatorFunnel,
   downtimeByMachine: DowntimeByMachine,
+  downtimeTreemap: DowntimeTreemap,
   runTimeByMachine: RunTimeByMachine,
   unreportedByMachine: UnreportedByMachine,
   okRejectedTrend: OkRejectedTrend,

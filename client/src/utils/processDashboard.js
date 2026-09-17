@@ -23,6 +23,7 @@ export const FORMATS = {
   pct: (v) => fmtPct(v) || "—",
   hours: (v) => (Number.isFinite(v) ? `${fmtNum(v)} hr` : "—"),
   minutes: (v) => (Number.isFinite(v) ? `${fmtNum(v)} min` : "—"),
+  days: (v) => (Number.isFinite(v) ? fmtNum(v) : "—"),
 };
 // Full-precision twin of FORMATS, for tooltips and tables.
 export const formatExact = (format, v) => (format === "qty" ? (Number.isFinite(v) ? fmtNum(v) : "—") : FORMATS[format](v));
@@ -48,6 +49,7 @@ export const STAT_CATALOG = [
   { key: "unreportedMin", label: "Unreported Time", hint: "Shift − stoppage − effective", format: "minutes", example: "212 min" },
   { key: "setupEfficiency", label: "Setup Efficiency", hint: "Effective ÷ shift, per entry", format: "pct", example: "88.40%" },
   { key: "entries", label: "Entries", hint: "Rows on the data entry sheet", format: "qty", example: "3,204" },
+  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "(Machine Shift Time − Effective Run Time) ÷ 24", format: "days", example: "869.81" },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -57,7 +59,9 @@ export const STAT_CATALOG = [
 export const CHART_CATALOG = [
   { key: "oeeTrend", measure: "oeeLosses", label: "OEE (over time)", hint: "The three OEE figures by date — by month on long ranges.", size: "lg", preview: "lines" },
   { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok" },
+  { key: "runTimeByOperatorFunnel", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator (Funnel)", hint: "Same figures as a funnel — operators ranked top to bottom.", size: "sm", preview: "funnel", tone: "ok" },
   { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "stacked" },
+  { key: "downtimeTreemap", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No. (Treemap)", hint: "Minutes lost per machine, split by cause — sized by area.", size: "lg", preview: "nestedTreemap" },
   { key: "runTimeByMachine", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Each machine's share of effective run time.", size: "md", preview: "treemap" },
   { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples" },
   { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected QTY (over time)", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
@@ -205,6 +209,7 @@ export function summarize(rows) {
     oeeLosses: mean(oee.oeeLosses),
     oeeLunch: mean(oee.oeeLunch),
     oeeLunchCot: mean(oee.oeeLunchCot),
+    unutilizedDays: Math.max(0, s.shiftHours - s.effectiveHours) / 24,
     machineDays: byMachineDay.size,
     downtimeByCause,
     rejectByReason,

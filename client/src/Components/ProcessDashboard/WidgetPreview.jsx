@@ -89,6 +89,29 @@ const Treemap = () => (
   </Frame>
 );
 
+// A treemap whose panels are themselves split into two coloured slices, so
+// the sketch reads as "machine, then cause" the way B.D. Backup does.
+const NestedTreemap = () => (
+  <Frame>
+    {[[14, 8, 96], [112, 8, 44], [158, 8, 34]].map(([x, y, w], i) => (
+      <g key={x}>
+        <rect x={x} y={y} width={w} height={70 - i * 6} fill="none" stroke={GRID} strokeWidth="1.5" />
+        <rect x={x + 2} y={y + 2} width={w - 4} height={(70 - i * 6) * 0.6} fill={S[0]} />
+        <rect x={x + 2} y={y + 2 + (70 - i * 6) * 0.62} width={w - 4} height={(70 - i * 6) * 0.36} fill={S[2]} />
+      </g>
+    ))}
+  </Frame>
+);
+
+// A wide band narrowing to a point — the funnel shape, sorted top to bottom.
+const Funnel = ({ color }) => (
+  <Frame>
+    {[172, 148, 128, 108, 90, 72, 54, 36, 20].map((w, i) => (
+      <rect key={w} x={(W - w) / 2} y={6 + i * 8} width={w} height="7" fill={color} />
+    ))}
+  </Frame>
+);
+
 const Multiples = () => (
   <Frame>
     {[[14, 6], [108, 6], [14, 46], [108, 46]].map(([x, y], p) => (
@@ -123,6 +146,8 @@ export const ChartPreview = ({ chart }) => {
     case "stacked": return <Stacked />;
     case "stackedTime": return <StackedTime />;
     case "treemap": return <Treemap />;
+    case "nestedTreemap": return <NestedTreemap />;
+    case "funnel": return <Funnel color={color} />;
     case "multiples": return <Multiples />;
     case "table": return <Table />;
     default: return <VBars color={color} />;

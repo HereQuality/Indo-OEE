@@ -19,6 +19,7 @@ import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines } from "../hooks/useMachines";
+import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
 import {
   deleteProductionRow,
@@ -163,6 +164,7 @@ const ProductionSheet = () => {
   const [operatorNames, setOperatorNames] = useState([]);
 
   const { data: machines = [] } = useMachines();
+  const { data: processes = [] } = useProcesses();
   const { data: items = [] } = useItems();
 
   // null = closed, "add" | "edit"
@@ -470,6 +472,7 @@ const ProductionSheet = () => {
               errors={formErrors}
               isSubmit={isSubmit}
               machines={machines}
+              processes={processes}
               items={items}
               operatorNames={operatorNames}
               isEdit={modalMode === "edit"}
