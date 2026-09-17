@@ -1,0 +1,271 @@
+/* Process dashboards — layout + chrome. Colours are tokens so the dark theme
+   (ThemeContext puts `.dark` on <html>) swaps them in one place. */
+.pd-root {
+  --pd-surface: #ffffff;
+  --pd-border: rgba(11, 11, 11, 0.1);
+  --pd-ink: #0b0b0b;
+  --pd-ink-2: #52514e;
+  --pd-muted: #898781;
+  --pd-wash: rgba(37, 99, 235, 0.07);
+  --pd-accent: #2563eb;
+  --pd-track: #f0efec;
+  --pd-s1: #2a78d6; --pd-s2: #eb6834; --pd-s3: #1baf7a; --pd-s4: #eda100;
+}
+.dark .pd-root, .dark .modal .pd-tabs, .dark .modal .pd-split, .dark .modal .pd-picker, .dark .modal .pd-table, .dark .pd-pop {
+  --pd-surface: #212121;
+  --pd-border: rgba(255, 255, 255, 0.1);
+  --pd-ink: #ffffff;
+  --pd-ink-2: #c3c2b7;
+  --pd-muted: #898781;
+  --pd-wash: rgba(96, 165, 250, 0.14);
+  --pd-accent: #60a5fa;
+  --pd-track: #2c2c2a;
+  --pd-s1: #3987e5; --pd-s2: #d95926; --pd-s3: #199e70; --pd-s4: #c98500;
+}
+/* Modals render outside .pd-root, so they carry the light tokens themselves. */
+.modal .pd-tabs, .modal .pd-split, .modal .pd-picker, .modal .pd-table, .pd-pop {
+  --pd-surface: #ffffff; --pd-border: rgba(11, 11, 11, 0.1); --pd-ink: #0b0b0b; --pd-ink-2: #52514e;
+  --pd-muted: #898781; --pd-wash: rgba(37, 99, 235, 0.07); --pd-accent: #2563eb; --pd-track: #f0efec;
+  --pd-s1: #2a78d6; --pd-s2: #eb6834; --pd-s3: #1baf7a; --pd-s4: #eda100;
+}
+
+.pd-card, .pd-stat, .pd-tile, .pd-header {
+  background: var(--pd-surface);
+  border: 1px solid var(--pd-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.pd-card { padding: 14px 16px; min-width: 0; }
+
+/* Header */
+.pd-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px; }
+.pd-back {
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--pd-border); background: transparent; color: var(--pd-ink);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.pd-back:hover { background: var(--pd-wash); }
+.pd-title { min-width: 0; color: var(--pd-ink); }
+.pd-title-group { display: block; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pd-muted); }
+
+/* Chips (active filters, period tabs, drill-down tabs) */
+.pd-chip {
+  border: 1px solid var(--pd-border); background: transparent; color: var(--pd-ink-2); border-radius: 8px;
+  font-size: 0.75rem; font-weight: 600; padding: 4px 10px; white-space: nowrap; transition: background 0.12s;
+}
+.pd-chip:hover:not(:disabled):not(.pd-chip-static) { background: var(--pd-wash); }
+.pd-chip:disabled { opacity: 0.35; }
+.pd-chip.is-on { background: var(--pd-accent); border-color: var(--pd-accent); color: #fff; }
+.pd-chip-static { background: var(--pd-surface); cursor: default; }
+.pd-chip-x { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; display: inline-flex; border-radius: 4px; }
+.pd-chip-x:hover { color: var(--pd-accent); }
+.pd-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Filters button + panel */
+.pd-field-btn {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; max-width: 100%; overflow: hidden;
+  font-size: 0.82rem; font-weight: 600; line-height: 1.2; padding: 8px 14px; border-radius: 8px;
+  background: var(--pd-surface); border: 1px solid var(--pd-border); color: var(--pd-ink);
+}
+.pd-field-btn:hover, .pd-field-btn:focus { background: var(--pd-wash); border-color: var(--pd-border); color: var(--pd-ink); }
+.pd-filter { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+/* The one deliberately loud control in the header, the same red in both
+   themes. Always present — disabled rather than hidden — so applying a filter
+   never shifts the buttons around it. */
+.pd-clear-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 0.82rem; font-weight: 700; line-height: 1.2;
+  padding: 8px 14px; border-radius: 8px; background: #ef444416; border: 1px solid #ef444455; color: #dc2626;
+}
+.pd-clear-btn:hover:not(:disabled) { background: #ef444428; border-color: #ef4444; }
+.pd-clear-btn:disabled { opacity: 0.4; cursor: default; }
+.dark .pd-clear-btn { background: #ef444422; border-color: #ef444466; color: #f87171; }
+/* A corner badge rather than an inline dot, so the button is exactly the same
+   width with and without it and nothing beside it moves. */
+.pd-filter > .pd-field-btn { position: relative; }
+.pd-filter-dot { position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: #e34948; box-shadow: 0 0 0 2px var(--pd-surface); }
+.pd-filter-pop[hidden] { display: none; }
+/* No max-height / overflow here on purpose: the calendar and the select
+   menus open INSIDE this box, and a scrolling ancestor would clip them. */
+.pd-filter-pop {
+  /* Above the cards and sticky table heads, below the phone sidebar (z-50) and every modal (1050+). */
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 340px; max-width: min(92vw, 340px);
+  display: flex; flex-direction: column; gap: 14px; padding: 14px;
+  background: var(--pd-surface); border: 1px solid var(--pd-border); border-radius: 14px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  color: var(--pd-ink);
+}
+.pd-filter-label { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pd-muted); font-weight: 600; margin-bottom: 6px; }
+.pd-filter-note { font-size: 0.74rem; color: var(--pd-muted); margin-top: 8px; }
+.pd-filter-note b { color: var(--pd-ink); }
+.pd-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border-radius: 10px; background: var(--pd-track); margin-bottom: 10px; }
+.pd-seg-btn { border: 0; background: transparent; border-radius: 8px; padding: 5px 4px; font-size: 0.76rem; font-weight: 600; color: var(--pd-ink-2); }
+.pd-seg-btn.is-on { background: var(--pd-surface); color: var(--pd-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.pd-month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.pd-month-grid .pd-chip { padding: 7px 4px; text-align: center; }
+/* Quick ranges in the calendar's footer */
+.pd-quick { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--pd-border); background: var(--pd-track); user-select: none; clear: both; }
+.pd-quick-hint { font-size: 0.72rem; color: var(--pd-muted); }
+.pd-quick-btn { font-size: 0.72rem; font-weight: 600; line-height: 1.4; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--pd-border); background: var(--pd-surface); color: var(--pd-ink-2); }
+.pd-quick-btn:hover { background: var(--pd-wash); color: var(--pd-ink); }
+.pd-quick-btn.is-on { background: var(--pd-accent); border-color: var(--pd-accent); color: #fff; }
+.pd-filter-pop .react-datepicker { font-family: inherit; max-width: 100%; }
+/* The calendar in the app's own blue instead of the library's, with the range
+   states the global dark theme (index.css) doesn't cover. Scoped to this
+   panel so the Operator page's date picker is untouched.
+   Every selector starts with `.pd-root .pd-filter-pop` on purpose: index.css
+   has `.dark div[role="gridcell"] { background-color … !important }` for the
+   data tables, and react-datepicker's day cells are div[role="gridcell"] too
+   — anything less specific than that rule loses to it and the selected range
+   simply disappears in dark mode. */
+.pd-root .pd-filter-pop .react-datepicker__day { background-color: transparent !important; }
+.pd-root .pd-filter-pop .react-datepicker__day:hover:not(.react-datepicker__day--disabled) { background-color: var(--pd-wash) !important; color: var(--pd-ink) !important; }
+.pd-root .pd-filter-pop .react-datepicker__day--in-selecting-range,
+.pd-root .pd-filter-pop .react-datepicker__day--keyboard-selected { background-color: var(--pd-wash) !important; color: var(--pd-ink) !important; }
+.pd-root .pd-filter-pop .react-datepicker__day--selected,
+.pd-root .pd-filter-pop .react-datepicker__day--range-start,
+.pd-root .pd-filter-pop .react-datepicker__day--range-end,
+.pd-root .pd-filter-pop .react-datepicker__day--in-range,
+.pd-root .pd-filter-pop .react-datepicker__day--in-range:hover { background-color: var(--pd-accent) !important; color: #fff !important; }
+.pd-root .pd-filter-pop .react-datepicker__day--today { font-weight: 700; box-shadow: inset 0 0 0 1px var(--pd-accent); border-radius: 0.3rem; }
+.pd-root .pd-filter-pop .react-datepicker__day--outside-month:not(.react-datepicker__day--in-range) { color: var(--pd-muted) !important; }
+.pd-root .pd-filter-pop .react-datepicker__day--disabled,
+.pd-root .pd-filter-pop .react-datepicker__day--disabled:hover { color: var(--pd-muted) !important; opacity: 0.45; background-color: transparent !important; cursor: default; }
+.pd-filter-pop .react-datepicker__month-select, .pd-filter-pop .react-datepicker__year-select { border-radius: 6px; padding: 1px 4px; }
+.dark .pd-root .pd-filter-pop .react-datepicker, .dark .pd-root .pd-filter-pop .react-datepicker__header { background-color: var(--pd-surface) !important; border-color: var(--pd-border) !important; }
+/* On a phone the header stacks and the button can end up at the left edge,
+   so the panel anchors to the whole header card instead of to the button. */
+@media (max-width: 575.98px) {
+  .pd-header { position: relative; }
+  .pd-filter { position: static; }
+  .pd-filter-pop { left: 0; right: 0; width: auto; max-width: none; }
+}
+
+/* KPI tiles */
+.pd-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.pd-stat { flex: 1 1 168px; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px 14px; color: var(--pd-ink); transition: transform 0.12s, box-shadow 0.12s; }
+.pd-stat:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.09); }
+.pd-stat-label { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pd-muted); }
+.pd-stat-value { font-size: 1.55rem; font-weight: 700; line-height: 1.2; display: flex; align-items: center; gap: 8px; }
+.pd-stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pd-stat-hint { font-size: 0.72rem; color: var(--pd-muted); }
+
+/* Visual grid — 12 columns, collapsing as the screen narrows */
+.pd-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
+.pd-span-sm { grid-column: span 4; }
+.pd-span-md { grid-column: span 6; }
+.pd-span-lg { grid-column: span 8; }
+.pd-span-full { grid-column: span 12; }
+@media (max-width: 1199.98px) {
+  .pd-span-sm, .pd-span-md { grid-column: span 6; }
+  .pd-span-lg { grid-column: span 12; }
+}
+@media (max-width: 767.98px) {
+  .pd-span-sm, .pd-span-md, .pd-span-lg { grid-column: span 12; }
+  .pd-stat { flex-basis: calc(50% - 6px); }
+  .pd-stat-value { font-size: 1.25rem; }
+}
+
+.pd-icon-btn {
+  width: 26px; height: 26px; border-radius: 6px; border: 0; background: transparent; color: var(--pd-muted, #898781);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pd-icon-btn:hover:not(:disabled), .pd-icon-btn.is-on { background: var(--pd-wash, rgba(37, 99, 235, 0.07)); color: var(--pd-accent, #2563eb); }
+.pd-icon-btn:disabled { opacity: 0.3; }
+
+/* Maximize pop-up (WidgetCard) — a centered dialog, never the full page */
+.pd-pop .modal-content { border-radius: 16px; overflow: hidden; }
+.pd-pop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 0; }
+.pd-pop-body { padding: 12px 20px 20px; }
+.pd-pop-chart { height: min(62vh, 560px); min-height: 300px; }
+/* Sized to its content and centered; the inner table wrapper does the scrolling
+   so its sticky header keeps working. */
+.pd-pop-table { width: fit-content; min-width: min(100%, 520px); max-width: 100%; margin: 0 auto; }
+.pd-pop-table > div { max-height: min(62vh, 560px); height: auto !important; }
+@media (max-width: 575.98px) {
+  .pd-pop-head { padding: 12px 14px 0; }
+  .pd-pop-body { padding: 10px 14px 14px; }
+  .pd-pop-chart { height: min(58vh, 420px); }
+}
+
+/* Tables */
+.pd-table { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.pd-table thead th { position: sticky; top: 0; background: var(--pd-surface); font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pd-muted); font-weight: 600; white-space: nowrap; }
+.pd-table tbody tr:hover > td { background: var(--pd-wash); }
+.pd-row-selected > td { background: var(--pd-wash) !important; box-shadow: inset 0 0 0 9999px var(--pd-wash); }
+
+/* Small multiples */
+.pd-multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; align-content: start; }
+.pd-multiple-title { border: 0; background: transparent; padding: 0; font-size: 0.75rem; font-weight: 700; color: var(--pd-ink); }
+.pd-multiple-title:hover { color: var(--pd-accent); }
+
+/* Drill-down splits */
+.pd-split { display: flex; flex-direction: column; gap: 2px; max-height: 55vh; overflow-y: auto; }
+.pd-split-row {
+  display: grid; grid-template-columns: minmax(90px, 200px) 1fr minmax(70px, auto); align-items: center; gap: 12px;
+  border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; text-align: left; color: var(--pd-ink); font-size: 0.82rem;
+}
+.pd-split-row:hover { background: var(--pd-wash); }
+.pd-split-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-split-track { height: 10px; border-radius: 5px; background: var(--pd-track); overflow: hidden; }
+.pd-split-bar { display: block; height: 100%; border-radius: 0 5px 5px 0; }
+.pd-split-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Process Master: a react-select sitting beside Bootstrap floating inputs.
+   Bootstrap only floats a label next to a .form-control, so this one is
+   simply pinned where a floated label sits. */
+.pd-float-select { position: relative; }
+.pd-float-select > .pd-float-label {
+  position: absolute; top: 0.45rem; left: 0.8rem; z-index: 1; margin: 0; padding: 0; height: auto; width: auto;
+  font-size: 0.75rem; line-height: 1.2; opacity: 0.65; pointer-events: none; transform: none;
+}
+
+/* Widget picker — a gallery of option cards, each with an example */
+.pd-gallery { display: grid; gap: 10px; }
+.pd-gallery-stat { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.pd-gallery-chart { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.pd-option { position: relative; display: flex; flex-direction: column; border: 1.5px solid var(--pd-border); border-radius: 12px; background: var(--pd-surface); transition: border-color 0.12s, background 0.12s; }
+.pd-option:hover { border-color: var(--pd-accent); }
+.pd-option.is-on { border-color: var(--pd-accent); background: var(--pd-wash); }
+.pd-option-body { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; margin: 0; padding: 10px 12px 8px; cursor: pointer; }
+.pd-option-input { position: absolute; opacity: 0; pointer-events: none; }
+.pd-option-check {
+  position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--pd-border);
+  background: var(--pd-surface); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+}
+.pd-option.is-on .pd-option-check { background: var(--pd-accent); border-color: var(--pd-accent); }
+.pd-option-input:focus-visible ~ .pd-option-check { outline: 2px solid var(--pd-accent); outline-offset: 2px; }
+.pd-option-preview { display: flex; align-items: center; min-height: 40px; padding-right: 26px; }
+.pd-gallery-chart .pd-option-preview { padding: 0; margin-bottom: 4px; }
+.pd-preview-stat { display: inline-flex; align-items: center; gap: 8px; font-size: 1.35rem; font-weight: 700; color: var(--pd-ink); }
+.pd-option-name { font-size: 0.84rem; font-weight: 600; color: var(--pd-ink); line-height: 1.25; }
+.pd-option-hint { font-size: 0.74rem; color: var(--pd-muted); line-height: 1.3; }
+.pd-option-order { display: flex; align-items: center; justify-content: center; gap: 4px; border-top: 1px solid var(--pd-border); padding: 3px 0; }
+.pd-option-pos { min-width: 22px; text-align: center; font-size: 0.75rem; font-weight: 700; color: var(--pd-accent); }
+
+/* Landing: groups of process tiles */
+.pd-group { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 20px; align-items: start; margin-bottom: 22px; }
+.pd-group-name { margin: 0; padding-top: 22px; font-weight: 700; color: var(--pd-ink); }
+.pd-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.pd-tile {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; min-height: 64px; padding: 12px 16px;
+  color: var(--pd-ink); transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.pd-tile:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1); border-color: var(--pd-accent); }
+.pd-tile-name { display: block; font-size: 1.02rem; font-weight: 700; overflow-wrap: anywhere; }
+.pd-tile-sub { display: block; font-size: 0.74rem; color: var(--pd-muted); }
+.pd-tile-arrow { color: var(--pd-muted); transition: transform 0.12s, color 0.12s; }
+.pd-tile:hover .pd-tile-arrow { color: var(--pd-accent); transform: translateX(2px); }
+@media (max-width: 767.98px) {
+  .pd-group { grid-template-columns: 1fr; }
+  .pd-group-name { padding-top: 0; }
+}
+
+.pd-back:focus-visible, .pd-chip:focus-visible, .pd-field-btn:focus-visible, .pd-clear-btn:focus-visible, .pd-seg-btn:focus-visible, .pd-quick-btn:focus-visible, .pd-stat:focus-visible, .pd-tile:focus-visible,
+.pd-icon-btn:focus-visible, .pd-split-row:focus-visible, .pd-multiple-title:focus-visible {
+  outline: 2px solid var(--pd-accent, #2563eb); outline-offset: 2px;
+}
+
+/* Recharts makes each chart focusable for keyboard users; keep that ring for
+   the keyboard, but don't flash it on a mouse click. */
+.pd-card .recharts-wrapper:focus:not(:focus-visible),
+.pd-card .recharts-surface:focus:not(:focus-visible),
+.modal .recharts-wrapper:focus:not(:focus-visible),
+.modal .recharts-surface:focus:not(:focus-visible) { outline: none; }

@@ -10,6 +10,7 @@ import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateMachines } from "../hooks/useMachines";
+import { useProcesses, useInvalidateProcesses } from "../hooks/useProcesses";
 import { createMachine, deleteMachine, getMachineById, updateMachine, searchMachines } from "../api/machines.api";
 
 // Same tints the Excel sheet uses on its M.C. No. column.
@@ -29,6 +30,7 @@ const initialState = {
   description: "",
   color: "",
   sequence: "",
+  process: "",
   isActive: true,
 };
 
@@ -45,6 +47,10 @@ const MachineMaster = () => {
 
   const [machines, setMachines] = useState([]);
   const invalidateMachines = useInvalidateMachines();
+  // The process a machine belongs to decides which dashboard it rolls up into.
+  const { data: processes = [] } = useProcesses();
+  const invalidateProcesses = useInvalidateProcesses();
+  const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
   const [query, setQuery] = useState("");
 
   const [_id, set_Id] = useState("");
@@ -91,6 +97,7 @@ const MachineMaster = () => {
           description: m.description || "",
           color: m.color || "",
           sequence: m.sequence ?? "",
+          process: m.process || "",
           isActive: m.isActive,
         });
       })
@@ -135,6 +142,7 @@ const MachineMaster = () => {
         closeModal();
         fetchMachines();
         invalidateMachines();
+        invalidateProcesses();
       })
       .catch((err) => toast.error(err?.response?.data?.message || "Failed to save machine. Please try again."))
       .finally(() => setIsLoading(false));
@@ -149,6 +157,7 @@ const MachineMaster = () => {
         toast.success(res?.data?.message || "Machine Removed Successfully!");
         fetchMachines();
         invalidateMachines();
+        invalidateProcesses();
       })
       .catch((err) => {
         setmodal_delete(false);
@@ -204,6 +213,7 @@ const MachineMaster = () => {
       sortField: "machineName",
       minWidth: "130px",
     },
+    { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "130px" },
     { name: "Description", selector: (row) => row.description || "", minWidth: "180px" },
     { name: "Sequence", selector: (row) => row.sequence ?? 0, sortable: true, sortField: "sequence", maxWidth: "120px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "110px" },
@@ -299,6 +309,17 @@ const MachineMaster = () => {
                 </div>
               </Col>
             </Row>
+            <div className="form-floating mb-3">
+              <Input type="select" name="process" value={values.process} onChange={handleChange}>
+                <option value="">Not in any process</option>
+                {processes.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.group ? `${p.group} — ${p.processName}` : p.processName}
+                  </option>
+                ))}
+              </Input>
+              <Label>Process (dashboard it appears on)</Label>
+            </div>
             <div className="form-floating mb-3">
               <Input type="text" name="description" value={values.description} onChange={handleChange} placeholder=" " maxLength={200} />
               <Label>Description</Label>

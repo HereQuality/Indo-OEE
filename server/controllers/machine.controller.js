@@ -1,12 +1,15 @@
 const Machine = require("../models/Machine");
 const ProductionEntry = require("../models/ProductionEntry");
 
-const pickMachine = ({ machineName, description, color, sequence, isActive }) => ({
+// `process` is only touched when the request actually sends it, so a form
+// that doesn't know about processes can't clear the link by accident.
+const pickMachine = ({ machineName, description, color, sequence, isActive, process }) => ({
   machineName,
   description,
   color,
   sequence,
   isActive,
+  ...(process !== undefined ? { process: process || null } : {}),
 });
 
 const isDuplicateName = async (machineName, excludeId) => {

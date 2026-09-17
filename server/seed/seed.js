@@ -5,9 +5,11 @@
  * One-shot seeder for a fresh database:
  *   1. The platform-owner SuperAdmin account (email/username/password below).
  *   2. Menu Groups + Menus for the HQEPL (SuperAdmin) portal:
- *      Administration (Menu Group, Menu Master, Company), Production
- *      (Items, Machines, Data Entry, Dashboard), Operator Management
- *      (Department/Teams/Role/Operator/Manage Role), Support.
+ *      Dashboard (top-level link, right under Home), Administration
+ *      (Menu Group, Menu Master, Company), Operator Management
+ *      (Department/Teams/Role/Operator/Manage Role), Production (Items,
+ *      Machines, Processes, Data Entry), Support.
+ *      Keep these in step with seed/seedMenus.js — the safe re-runnable one.
  *   3. A Menu Group + Menu for the normal Operator portal's Home.
  *
  * Safe to re-run: every insert is upsert-by-natural-key.
@@ -40,9 +42,19 @@ const EMPLOYEE_DASHBOARD_GROUP = {
   icon: "Home",
 };
 
+// The process dashboards — a top-level link directly under Home.
+const DASHBOARD_GROUP = {
+  menuGroupName: "Dashboard",
+  sequence: 2,
+  isLink: true,
+  menuUrl: "/hqepl/production/dashboard",
+  portal: "Both",
+  icon: "LayoutDashboard",
+};
+
 const ADMINISTRATION_GROUP = {
   menuGroupName: "Administration",
-  sequence: 2,
+  sequence: 3,
   isLink: false,
   portal: "SuperAdmin",
   icon: "Settings",
@@ -56,7 +68,7 @@ const ADMINISTRATION_MENUS = [
 
 const PRODUCTION_GROUP = {
   menuGroupName: "Production",
-  sequence: 4,
+  sequence: 5,
   isLink: false,
   portal: "Both",
   icon: "Factory",
@@ -65,13 +77,13 @@ const PRODUCTION_GROUP = {
 const PRODUCTION_MENUS = [
   { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 3, icon: "ClipboardList" },
-  { menuName: "Dashboard", menuUrl: "/hqepl/production/dashboard", sequence: 4, icon: "LayoutDashboard" },
+  { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 3, icon: "Workflow" },
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 4, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
-  sequence: 3,
+  sequence: 4,
   isLink: false,
   portal: "Both",
   icon: "Users",
@@ -94,7 +106,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
 //   - Operator with only "read": can raise their own tickets, nothing else.
 const SUPPORT_GROUP = {
   menuGroupName: "Support",
-  sequence: 5,
+  sequence: 6,
   isLink: true,
   menuUrl: "/hqepl/support",
   portal: "Both",
@@ -127,6 +139,8 @@ async function run() {
   // Clear old menus to prevent duplicates due to URL changes
   await MenuGroupMaster.deleteMany({});
   await MenuMaster.deleteMany({});
+
+  await upsertGroup(DASHBOARD_GROUP);
 
   const adminGroup = await upsertGroup(ADMINISTRATION_GROUP);
   for (const menu of ADMINISTRATION_MENUS) {

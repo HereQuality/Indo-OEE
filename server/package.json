@@ -11,6 +11,7 @@
     "seed": "node seed/seed.js",
     "seed:menus": "node seed/seedMenus.js",
     "seed:superadmin": "node seed/seedSuperAdmin.js",
+    "seed:processes": "node seed/seedProcesses.js",
     "migrate:remove-company": "node scripts/migrate-remove-company.js",
     "seed:demo": "node seed/seedProductionDemo.js"
   },

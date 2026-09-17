@@ -1,0 +1,270 @@
+const mongoose = require("mongoose");
+const Process = require("../models/Process");
+const Machine = require("../models/Machine");
+const ProductionEntry = require("../models/ProductionEntry");
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Columns the Process Master table may sort by.
+const SORTABLE = ["processName", "group", "isActive", "createdAt"];
+// Dashboards look across years, unlike the entry sheet's two-month window.
+const MAX_RANGE_DAYS = 366 * 5;
+
+const parseDay = (s) => {
+  if (!DATE_RE.test(String(s || ""))) return null;
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
+};
+
+const pickProcess = ({ processName, group, description, stats, charts, isActive }) => ({
+  processName,
+  group,
+  description,
+  isActive,
+  ...(Array.isArray(stats) ? { stats } : {}),
+  ...(Array.isArray(charts) ? { charts } : {}),
+});
+
+const isDuplicateName = async (processName, excludeId) => {
+  const escaped = String(processName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const query = { processName: { $regex: `^${escaped}$`, $options: "i" } };
+  if (excludeId) query._id = { $ne: excludeId };
+  return !!(await Process.exists(query));
+};
+
+// A group is only a name shared between processes, so "hood/housing" typed on
+// one process and "Hood/Housing" on another would silently become two
+// headings on the dashboard. Whatever is sent is tidied (trimmed, inner
+// whitespace collapsed) and then snapped to the spelling already in use by
+// the OTHER processes — so the last process in a group can still re-spell it.
+const canonicalGroup = async (group, excludeId) => {
+  const name = String(group ?? "").trim().replace(/\s+/g, " ");
+  if (!name) return "";
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const query = { group: { $regex: `^${escaped}$`, $options: "i" } };
+  if (excludeId) query._id = { $ne: excludeId };
+  const existing = await Process.findOne(query).select("group").lean();
+  return existing ? existing.group : name;
+};
+
+const validMachineIds = (machineIds) =>
+  Array.isArray(machineIds) && machineIds.every((id) => mongoose.isValidObjectId(id));
+
+// Makes `machineIds` exactly the machines of this process: machines listed
+// are moved in (from whichever process held them), machines no longer listed
+// are released.
+const syncMachines = async (processId, machineIds) => {
+  await Machine.updateMany({ process: processId, _id: { $nin: machineIds } }, { $set: { process: null } });
+  if (machineIds.length) await Machine.updateMany({ _id: { $in: machineIds } }, { $set: { process: processId } });
+};
+
+// { processId: [machine, …] } in sheet order.
+const machinesByProcess = async (processIds, onlyActive) => {
+  const query = { process: { $in: processIds } };
+  if (onlyActive) query.isActive = true;
+  const machines = await Machine.find(query)
+    .select("machineName color sequence isActive process")
+    .sort({ sequence: 1, machineName: 1 })
+    .lean();
+  const map = {};
+  for (const m of machines) (map[String(m.process)] ||= []).push(m);
+  return map;
+};
+
+const withMachines = async (processes, onlyActive = false) => {
+  const map = await machinesByProcess(processes.map((p) => p._id), onlyActive);
+  return processes.map((p) => ({ ...p, machines: map[String(p._id)] || [] }));
+};
+
+exports.createProcess = async (req, res) => {
+  try {
+    const data = pickProcess(req.body);
+    const { machineIds } = req.body;
+    if (machineIds !== undefined && !validMachineIds(machineIds)) {
+      return res.status(400).json({ isOk: false, message: "Invalid machine list" });
+    }
+    if (await isDuplicateName(data.processName)) {
+      return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
+    }
+    data.group = await canonicalGroup(data.group);
+    const process = await Process.create(data);
+    if (machineIds) await syncMachines(process._id, machineIds);
+    res.status(201).json({ isOk: true, data: process, message: "Process created successfully" });
+  } catch (error) {
+    console.error("Error creating process:", error);
+    res.status(400).json({ isOk: false, message: error.message });
+  }
+};
+
+exports.updateProcess = async (req, res) => {
+  try {
+    const { processId } = req.params;
+    const data = pickProcess(req.body);
+    const { machineIds } = req.body;
+    if (machineIds !== undefined && !validMachineIds(machineIds)) {
+      return res.status(400).json({ isOk: false, message: "Invalid machine list" });
+    }
+    if (data.processName !== undefined && (await isDuplicateName(data.processName, processId))) {
+      return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
+    }
+    // Only when the request carries a group — Customize on the dashboard
+    // sends just { stats, charts } and must leave the group alone.
+    if (data.group !== undefined) data.group = await canonicalGroup(data.group, processId);
+    const process = await Process.findByIdAndUpdate(processId, data, { new: true, runValidators: true });
+    if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
+    if (machineIds) await syncMachines(process._id, machineIds);
+    res.status(200).json({ isOk: true, data: process, message: "Process updated successfully" });
+  } catch (error) {
+    console.error("Error updating process:", error);
+    res.status(400).json({ isOk: false, message: error.message });
+  }
+};
+
+// First delete deactivates (hides it from the dashboard); deleting an already
+// inactive process removes it and releases its machines. Production entries
+// hang off machines, not processes, so nothing is ever lost.
+exports.deleteProcess = async (req, res) => {
+  try {
+    const process = await Process.findById(req.params.processId);
+    if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
+
+    if (process.isActive) {
+      process.isActive = false;
+      await process.save();
+      return res.status(200).json({ isOk: true, message: "Process deactivated successfully" });
+    }
+
+    await Machine.updateMany({ process: process._id }, { $set: { process: null } });
+    await Process.findByIdAndDelete(process._id);
+    res.status(200).json({ isOk: true, message: "Process deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting process:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+exports.getProcessById = async (req, res) => {
+  try {
+    const process = await Process.findById(req.params.processId).lean();
+    if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
+    const [data] = await withMachines([process]);
+    res.status(200).json({ isOk: true, data });
+  } catch (error) {
+    console.error("Error fetching process:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// Every group name in use (active or not), A–Z — the options the Process
+// Master's Group dropdown offers.
+exports.listProcessGroups = async (req, res) => {
+  try {
+    const groups = await Process.distinct("group", { group: { $nin: ["", null] } });
+    res.status(200).json({ isOk: true, data: groups.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })) });
+  } catch (error) {
+    console.error("Error listing process groups:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// Active processes with their active machines, in display order (the order
+// they were created) — what the dashboard landing page lays out.
+exports.listProcesses = async (req, res) => {
+  try {
+    const processes = await Process.find({ isActive: true }).sort({ createdAt: 1 }).lean();
+    res.status(200).json({ isOk: true, data: await withMachines(processes, true) });
+  } catch (error) {
+    console.error("Error listing processes:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+exports.listProcessByParams = async (req, res) => {
+  try {
+    const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+
+    const query = {};
+    if (match) {
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { processName: { $regex: escaped, $options: "i" } },
+        { group: { $regex: escaped, $options: "i" } },
+      ];
+    }
+    if (isActive !== undefined) query.isActive = isActive;
+
+    let sortQuery = { createdAt: 1 };
+    if (SORTABLE.includes(sorton) && sortdir) sortQuery = { [sorton]: sortdir === "desc" ? -1 : 1, createdAt: 1 };
+
+    const [totalCount, processes] = await Promise.all([
+      Process.countDocuments(query),
+      Process.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).lean(),
+    ]);
+
+    res.status(200).json({ isOk: true, data: [{ count: totalCount, data: await withMachines(processes) }] });
+  } catch (error) {
+    console.error("Error searching processes:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]
+// The raw entries a dashboard computes from — one process's machines, or
+// every machine when `process` is omitted. Same row shape as
+// GET /production-sheet so the client's shared formulas apply unchanged.
+//
+// `extent` is the first and last date this process has ANY entry on
+// (regardless of from/to), so the filter panel can offer the real years
+// without a second request. Both are index lookups on { date, machine, slot }.
+// `machineNames` names every machine the returned entries were made on.
+exports.getDashboardEntries = async (req, res) => {
+  try {
+    const from = parseDay(req.query.from);
+    const to = parseDay(req.query.to);
+    if (!from || !to || to < from) {
+      return res.status(400).json({ isOk: false, message: "Valid 'from' and 'to' dates (YYYY-MM-DD) are required" });
+    }
+    if ((to - from) / 86400000 > MAX_RANGE_DAYS) {
+      return res.status(400).json({ isOk: false, message: "Date range can't exceed 5 years" });
+    }
+
+    const scope = {};
+    if (req.query.process) {
+      if (!mongoose.isValidObjectId(req.query.process)) {
+        return res.status(400).json({ isOk: false, message: "Invalid process" });
+      }
+      const machineIds = await Machine.find({ process: req.query.process }).distinct("_id");
+      scope.machine = { $in: machineIds };
+    }
+
+    const edge = (dir) => ProductionEntry.findOne(scope).sort({ date: dir }).select("date").lean();
+    const [entries, first, last] = await Promise.all([
+      ProductionEntry.find({ ...scope, date: { $gte: from, $lte: to } })
+        .select("-__v -createdAt -updatedAt -updatedBy -updatedByModel")
+        .sort({ date: 1 })
+        .lean(),
+      edge(1),
+      edge(-1),
+    ]);
+
+    // The dashboard's machine list is active-only; an entry made on a machine
+    // that has since been deactivated still needs its name.
+    const referenced = await Machine.find({ _id: { $in: [...new Set(entries.map((e) => String(e.machine)))] } })
+      .select("machineName")
+      .lean();
+
+    res.status(200).json({
+      isOk: true,
+      machineNames: Object.fromEntries(referenced.map((m) => [String(m._id), m.machineName])),
+      extent: first && last ? { from: first.date.toISOString().slice(0, 10), to: last.date.toISOString().slice(0, 10) } : null,
+      data: entries.map((e) => ({
+        ...e,
+        date: e.date.toISOString().slice(0, 10),
+        machine: String(e.machine),
+        item: e.item ? String(e.item) : null,
+      })),
+    });
+  } catch (error) {
+    console.error("Error loading dashboard entries:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};

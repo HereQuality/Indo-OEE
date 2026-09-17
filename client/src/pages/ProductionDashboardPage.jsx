@@ -1,105 +1,50 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardBody, CardHeader, Container, Input } from "reactstrap";
-import ProductionDashboard from "../Components/Production/ProductionDashboard";
-import { useAlert } from "../context/AlertContext";
+import React from "react";
+import { useSearchParams } from "react-router-dom";
+import { Container } from "reactstrap";
+import ProcessOverview from "../Components/ProcessDashboard/ProcessOverview";
+import ProcessDashboard from "../Components/ProcessDashboard/ProcessDashboard";
 import { useMachines } from "../hooks/useMachines";
-import { getProductionSheet } from "../api/productionSheet.api";
-import { daysOfMonth, isoDay } from "../utils/productionSheet";
+import { useProcesses } from "../hooks/useProcesses";
 
 /**
- * Production Dashboard — the read-only roll-up that used to be a tab on the
- * Data Entry page, on its own route.
+ * Production Dashboard.
  *
- * Split out so neither page pays for the other's requests: opening Data Entry
- * no longer loads anything the charts need, and opening this page loads only
- * the month's entries and the machine list — not the item master or the
- * operator name list, which only the entry form uses.
- *
- * Every figure is still computed by ProductionDashboard from the same
- * formulas in utils/productionSheet.js that the entry form uses, so the two
- * pages cannot disagree.
+ * Lands on every process laid out under its group (ProcessOverview); picking
+ * one opens that process's own dashboard (ProcessDashboard). Which process is
+ * open lives in the query string — "?process=<id>", or "?process=all" for
+ * every machine — rather than in the path, because page permissions are
+ * matched on the path (see PageGuard): this way the one "Dashboard" menu
+ * permission covers the landing page and every process under it.
  */
-
 const ProductionDashboardPage = () => {
-  const toast = useAlert();
-
-  const [month, setMonth] = useState(() => isoDay(new Date()).slice(0, 7));
-  const [machineFilter, setMachineFilter] = useState("");
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const selected = params.get("process");
 
   const { data: machines = [] } = useMachines();
+  const { data: processes = [], isLoading } = useProcesses();
 
-  const days = useMemo(() => daysOfMonth(month), [month]);
+  const process = selected && selected !== "all" ? processes.find((p) => p._id === selected) : null;
+  const showDashboard = selected === "all" || !!process;
 
-  const fetchRows = useCallback(() => {
-    setLoading(true);
-    getProductionSheet({ from: days[0], to: days[days.length - 1], machine: machineFilter || undefined })
-      .then((res) => setRows(res.data.data || []))
-      .catch((err) => {
-        toast.error(err?.response?.data?.message || "Failed to load entries");
-        setRows([]);
-      })
-      .finally(() => setLoading(false));
-  }, [days, machineFilter]);
-
-  useEffect(() => {
-    fetchRows();
-  }, [fetchRows]);
-
-  const periodLabel = useMemo(() => {
-    const [y, m] = month.split("-");
-    return new Date(Number(y), Number(m) - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
-  }, [month]);
-
-  document.title = `Production Dashboard | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+  document.title = `${process ? `${process.processName} Dashboard` : "Production Dashboard"} | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
-    <React.Fragment>
-      <div className="page-content">
-        <Container fluid>
-          <Card>
-            <CardHeader>
-              <div className="d-flex flex-wrap align-items-center gap-2">
-                <h5 className="mb-0 fs-6 fw-semibold">Production Dashboard</h5>
-
-                <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
-                  <Input
-                    type="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                    style={{ width: "165px" }}
-                    bsSize="sm"
-                  />
-                  <Input
-                    type="select"
-                    value={machineFilter}
-                    onChange={(e) => setMachineFilter(e.target.value)}
-                    style={{ width: "170px" }}
-                    bsSize="sm"
-                  >
-                    <option value="">All machines</option>
-                    {machines.map((m) => (
-                      <option key={m._id} value={m._id}>
-                        {m.machineName}
-                      </option>
-                    ))}
-                  </Input>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <ProductionDashboard
-                rows={rows}
-                machines={machines}
-                loading={loading}
-                periodLabel={periodLabel}
-              />
-            </CardBody>
-          </Card>
-        </Container>
-      </div>
-    </React.Fragment>
+    <div className="page-content">
+      <Container fluid>
+        {showDashboard ? (
+          <ProcessDashboard
+            key={selected}
+            process={process}
+            machines={machines}
+            onBack={() => setParams({})}
+          />
+        ) : (
+          // An unknown id (deleted / deactivated process) falls back here once
+          // the list has loaded, instead of showing an empty dashboard.
+          <ProcessOverview processes={processes} machines={machines} loading={isLoading} onOpen={(id) => setParams({ process: id })} />
+        )}
+      </Container>
+    </div>
   );
 };
 

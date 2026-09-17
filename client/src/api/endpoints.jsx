@@ -57,6 +57,15 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/machines/search`,
     },
 
+    // Process master endpoints (Production > Processes) + dashboard data
+    PROCESSES: {
+        BASE: `${V1}/processes`,
+        BY_ID: (id) => `${V1}/processes/${id}`,
+        SEARCH: `${V1}/processes/search`,
+        GROUPS: `${V1}/processes/groups`,
+        ENTRIES: `${V1}/processes/entries`,
+    },
+
     // Item master endpoints (Production > Items)
     ITEMS: {
         BASE: `${V1}/items`,

@@ -29,6 +29,13 @@ const MachineSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // The production process this machine belongs to (see models/Process.js)
+    // — decides which process dashboard its entries roll up into.
+    process: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Process",
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
