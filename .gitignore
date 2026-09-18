@@ -62,3 +62,6 @@ coverage/
 
 # Local DB backups (never commit)
 backups/
+
+# Redis dump files
+*.rdb
