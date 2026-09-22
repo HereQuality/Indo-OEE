@@ -5,16 +5,21 @@
  * Formulas reproduce the Indo "Section Wise Eff. — CNC" Excel sheet and
  * were checked against its values (e.g. 06/04 7A, 07/04 7D, 22/04 7B).
  *
- * Per row (blank while Working Status — the Operator cell — is empty):
+ * Per row:
+ *   2  Machine Shift Time (h)   = MOD(OFF − ON, 1) × 24 (as soon as ON/OFF are typed,
+ *                                 regardless of Working Status/Operator)
  *   1  Total cycle time (sec)   = the item's own Total Cycle Time (blank without Part Name)
- *   2  Machine Shift Time (h)   = MOD(OFF − ON, 1) × 24
- *   3  Ideal Quantity           = Shift min × 60 ÷ Cycle sec (not reduced by Planned Down)
+ *   3  Ideal Quantity           = FLOOR(Shift min × 60 ÷ Cycle sec) (not reduced by Planned
+ *                                 Down; floored — a fractional target can't actually be made)
  *   4  Ideal Quantity/Hours     = Ideal Quantity ÷ Shift h
  *   5  % OK Quantity            = OK ÷ (OK + Rejected)
- *   7  Total Stoppage (min)     = sum of the ten stoppage columns
- *   8  Effective Run Time (h)   = OK × Cycle sec ÷ 3600
+ *   7  Total Stoppage (min)     = sum of the ten stoppage columns (blank while Working
+ *                                 Status/Operator is empty)
+ *   8  Effective Run Time (h)   = OK × Cycle sec ÷ 3600 (blank while Working Status/Operator
+ *                                 is empty)
  *   10 Setup Efficiency (%)     = Effective h ÷ Shift h
- *      Rejected Quantity        = Actual − OK          (derived, never typed)
+ *      Rejected Quantity        = Ideal Quantity − OK   (derived, never typed — there's no
+ *                                 separate typed Actual Quantity; Ideal Quantity does that job)
  *
  * Per row again, but looking forward ("this row + next row + next 2 rows" in
  * Excel — a rolling 3-row window starting at that row, bounded to this
@@ -149,17 +154,12 @@ export function rowCalc(row) {
         : totalCycleSec(row.cycleOpsSec);
   const cycle = String(row.itemName || "").trim() ? opsTotal : null;
 
-  // 2) Machine Shift Time = MOD(OFF − ON, 1) × 24.
-  const shiftMin = working ? spanMinutes(row.machineOnTime, row.machineOffTime) : null;
+  // 2) Machine Shift Time = MOD(OFF − ON, 1) × 24. Pure span math off the two
+  // typed times — shown as soon as both are entered, not gated on Working
+  // Status/Operator (unlike Effective Hours/Stoppage below, which really do
+  // depend on whether the machine was actually run).
+  const shiftMin = spanMinutes(row.machineOnTime, row.machineOffTime);
   const shiftHours = shiftMin === null ? null : shiftMin / 60;
-
-  const ok = num(row.okQty);
-  const actual = num(row.actualQty);
-  // Rejected is always Actual − OK. Rows saved before Actual Quantity existed
-  // have no actualQty, so their stored rejectedQty is used instead.
-  const rej = isNum(actual) && isNum(ok) ? Math.max(0, actual - ok) : num(row.rejectedQty);
-  // Falls back to OK + Rejected for rows that predate Actual Quantity.
-  const totalProduced = isNum(actual) ? actual : (ok || 0) + (rej || 0);
 
   // 3) Ideal Quantity = shift min × 60 ÷ cycle sec. The formula as first given
   // subtracted Planned Down Time here too, but two real entries checked
@@ -167,7 +167,18 @@ export function rowCalc(row) {
   // no down time and a 3-hour shift with 90 min of it both came out to
   // exactly 40 pieces/hour once the subtraction was dropped, matching their
   // real Ideal Quantities (320 and 120) exactly — with it, neither did.
-  const idealQty = shiftMin !== null ? ratio(shiftMin * 60, cycle) : null;
+  // Floored — a piece is either finished or it isn't, so a fractional target
+  // (e.g. 292.3) can never actually be produced; the lower whole number is
+  // the real ceiling on what the shift could make.
+  const idealQtyRaw = shiftMin !== null ? ratio(shiftMin * 60, cycle) : null;
+  const idealQty = isNum(idealQtyRaw) ? Math.floor(idealQtyRaw) : null;
+
+  const ok = num(row.okQty);
+  // Ideal Quantity now stands in for a typed Actual Quantity — there's no
+  // separate "how many did we actually make" box any more, so Rejected is
+  // Ideal Quantity − OK.
+  const rej = isNum(idealQty) && isNum(ok) ? Math.max(0, idealQty - ok) : num(row.rejectedQty);
+  const totalProduced = isNum(idealQty) ? idealQty : (ok || 0) + (rej || 0);
 
   // 7) Total Stoppage = sum of the ten stoppage columns.
   const totalStoppageMin = working ? sumOrZero(STOPPAGE_FIELDS.map((f) => num(row[f.key]))) : null;
@@ -177,7 +188,7 @@ export function rowCalc(row) {
 
   return {
     totalCycleSec: cycle,
-    actualQty: isNum(actual) ? actual : isNum(ok) || isNum(rej) ? totalProduced : null,
+    actualQty: isNum(idealQty) ? idealQty : isNum(ok) || isNum(rej) ? totalProduced : null,
     rejectedQty: rej,
     shiftHours,
     idealQty,

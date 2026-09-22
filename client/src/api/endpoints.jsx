@@ -73,12 +73,17 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/items/search`,
     },
 
+    MACHINE_OPERATORS: {
+        BASE: `${V1}/machine-operators`,
+        BY_ID: (id) => `${V1}/machine-operators/${id}`,
+        SEARCH: `${V1}/machine-operators/search`,
+    },
+
     // Production Data Entry sheet endpoints
     PRODUCTION_SHEET: {
         BASE: `${V1}/production-sheet`,
         ROW: `${V1}/production-sheet/row`,
         OPERATORS: `${V1}/production-sheet/operators`,
-        OPERATOR_MASTER: `${V1}/production-sheet/operator-master`,
         REJECT_REASONS: `${V1}/production-sheet/reject-reasons`,
     },
 

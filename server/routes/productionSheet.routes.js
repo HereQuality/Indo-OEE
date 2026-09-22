@@ -6,7 +6,6 @@ const {
   saveRow,
   deleteRow,
   listOperatorNames,
-  listOperatorMaster,
   listRejectReasons,
 } = require("../controllers/productionSheet.controller");
 
@@ -19,7 +18,6 @@ router.use(authorize("SuperAdmin", "Operator"));
 
 router.get("/", requireMenuPermission(MENU_URL, "read"), getSheet);
 router.get("/operators", requireMenuPermission(MENU_URL, "read"), listOperatorNames);
-router.get("/operator-master", requireMenuPermission(MENU_URL, "read"), listOperatorMaster);
 router.get("/reject-reasons", requireMenuPermission(MENU_URL, "read"), listRejectReasons);
 router.put("/row", requireMenuPermission(MENU_URL, "write"), saveRow);
 router.delete("/row/:id", requireMenuPermission(MENU_URL, "write"), deleteRow);

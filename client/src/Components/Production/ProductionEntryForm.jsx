@@ -19,14 +19,16 @@ import { CYCLE_OP_FIELDS, REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../
  * already open.
  *
  * Typed fields are white; every grey box is calculated live by
- * utils/productionSheet.js, Rejected Quantity included (always Actual − OK,
- * which is why it can't be typed).
+ * utils/productionSheet.js. There's no typed Actual Quantity box — Ideal
+ * Quantity (Shift Time ÷ Cycle Time, rounded down) does that job, so Rejected
+ * Quantity (always Ideal − OK) and the dashboard's Total/Rejected/% OK all
+ * read from Ideal Quantity rather than a separately typed count.
  *
  * The form deliberately shows less than the sheet does. Entry No. is assigned
  * by the page rather than picked; Drawing No. and Cycle Time come from the
- * chosen part and are saved without being shown; and Ideal Quantity, Effective
- * Machine Runtime, Unreported Time, Setup Efficiency and the three OEE figures
- * are all derived, so they are left to the entries table and the dashboard
+ * chosen part and are saved without being shown; and Effective Machine
+ * Runtime, Unreported Time, Setup Efficiency and the three OEE figures are
+ * all derived, so they are left to the entries table and the dashboard
  * instead of being repeated here as boxes nobody fills in.
  */
 
@@ -65,7 +67,7 @@ const LINES = [
     fields: ["itemName", ...CYCLE_OP_FIELDS.map((f) => f.key)],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Ideal Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
+  { id: 5, title: "Ideal Qty, OK Qty, Rejected, % OK Qty", fields: ["okQty"] },
   { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
   { id: 6, title: "Planned Operator Shift Time", fields: ["plannedOperatorShiftHours"] },
   { id: 7, title: "Setup Time, No Man Power, Material Shifting", fields: ["setupMin", "noManPowerMin", "materialShiftingMin"] },
@@ -98,7 +100,7 @@ const Line = ({ id, errors, isSubmit, children }) => {
 // collapsed block that still has typing in it from an untouched one.
 const DATA_KEYS = [
   "operator", "itemName", "drawingNo", "machineOnTime", "machineOffTime",
-  "actualQty", "okQty", "plannedOperatorShiftHours", "remarks",
+  "okQty", "plannedOperatorShiftHours", "remarks",
   ...LINES.flatMap((l) => l.fields),
 ].filter((k) => !["date", "machine", "slot", "rejectBreakdown"].includes(k));
 
@@ -286,18 +288,18 @@ const EntryBlock = ({
             </Field>
             <Field label="Operator" error={err("operator")} md={6}>
               <Input type="select" name="operator" value={values.operator} onChange={handle}>
-                {/* A record saved before the Operator box read from the Employee
-                    master, or one whose employee has since left, still has a
+                {/* A record saved before this box read from Operator Master, or
+                    one whose operator has since been deactivated, still has a
                     name typed here that this list won't contain — keep showing
                     that name rather than an empty box. */}
                 <option value="">
-                  {values.operator && !operators.some((o) => o.employeeName === values.operator)
+                  {values.operator && !operators.some((o) => o.name === values.operator)
                     ? values.operator
                     : "Select operator"}
                 </option>
                 {operators.map((o) => (
-                  <option key={o._id} value={o.employeeName}>
-                    {o.employeeName}
+                  <option key={o._id} value={o.name}>
+                    {o.name}
                   </option>
                 ))}
               </Input>
@@ -412,14 +414,25 @@ const EntryBlock = ({
 
         <Line id={5} errors={errors} isSubmit={isSubmit}>
           <Row>
-            <Field label="Ideal Quantity" error={err("actualQty")} md={3}>
-              <NumberInput name="actualQty" value={values.actualQty} onChange={handle} decimals={false} />
+            <Calc
+              label="Ideal Quantity"
+              value={fmtNum(calc.idealQty)}
+              md={4}
+              title="Machine Shift Time × 3600 ÷ Total Cycle Time, rounded down — stands in for Actual Quantity, so Rejected is measured against it"
+            />
+            <Field label="OK Quantity" error={err("okQty")} md={4}>
+              <NumberInput
+                name="okQty"
+                value={values.okQty}
+                onChange={handle}
+                decimals={false}
+                max={calc.idealQty}
+              />
             </Field>
-            <Field label="OK Quantity" error={err("okQty")} md={3}>
-              <NumberInput name="okQty" value={values.okQty} onChange={handle} decimals={false} />
-            </Field>
-            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Ideal Quantity − OK Quantity" />
-            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
+            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={4} title="Ideal Quantity − OK Quantity" />
+          </Row>
+          <Row>
+            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={4} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
 

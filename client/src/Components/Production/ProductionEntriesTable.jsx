@@ -133,7 +133,9 @@ const GROUPS = [
     label: "Quantity",
     head: HEAD_BG,
     columns: [
-      { key: "actualQty", label: "Ideal Quantity", get: (r, c) => n(c.actualQty), align: "text-end" },
+      // There's no typed Actual Quantity any more — Ideal Quantity (its own
+      // column in the collapsible "Ideal Quantity" group above) stands in for
+      // it, so it isn't repeated here.
       { key: "okQty", label: "OK Quantity", get: (r) => min(r.okQty), align: "text-end" },
       { key: "rejectedQty", label: "Rejected", get: (r, c) => n(c.rejectedQty), align: "text-end", tone: "calc" },
       { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-end", tone: "calc" },

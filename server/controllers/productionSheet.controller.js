@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 const ProductionEntry = require("../models/ProductionEntry");
 const { STOPPAGE_KEYS, REJECT_REASONS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
-const Operator = require("../models/Operator");
 const { CYCLE_OP_FIELDS } = require("../models/Item");
 const { normalizeCycleOps } = require("./item.controller");
 
@@ -234,34 +233,15 @@ exports.saveRow = async (req, res) => {
 
 // GET /production-sheet/operators — every operator name typed so far, for
 // the Operator column's suggestions. Kept for records saved before the
-// Operator box read from the Employee master (see listOperatorMaster below).
+// Operator box read from Operator Master (see machineOperator.controller.js
+// — MachineOperator is its own lightweight model; this endpoint is only
+// history, not a live source for the dropdown any more).
 exports.listOperatorNames = async (req, res) => {
   try {
     const names = await ProductionEntry.distinct("operator", { operator: { $nin: ["", null] } });
     res.status(200).json({ isOk: true, data: names.sort((a, b) => a.localeCompare(b)) });
   } catch (error) {
     console.error("Error listing operator names:", error);
-    res.status(500).json({ isOk: false, message: error.message });
-  }
-};
-
-// GET /production-sheet/operator-master — active employees, for the Operator
-// box's dropdown. A name picked here is still saved as plain text on the
-// entry (ProductionEntry.operator is a string, not a link to Employee), so
-// this only keeps everyone picking from the same list — it doesn't require
-// the Employee Management menu permission the full employee endpoints do,
-// since anyone who can open Production Data Entry needs this list too.
-exports.listOperatorMaster = async (req, res) => {
-  try {
-    const employees = await Operator.find({ isActive: true }, "employeeName")
-      .sort({ employeeName: 1 })
-      .lean();
-    res.status(200).json({
-      isOk: true,
-      data: employees.map((e) => ({ _id: e._id, employeeName: e.employeeName })),
-    });
-  } catch (error) {
-    console.error("Error listing operator master:", error);
     res.status(500).json({ isOk: false, message: error.message });
   }
 };

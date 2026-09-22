@@ -15,13 +15,21 @@ import { Input } from "reactstrap";
  * the page converts it on save. Capped at 7 digits by default — long enough
  * for any figure on this sheet — so one stray keystroke can't turn a cell
  * into a 20-digit number; pass a different `maxLength` to override it.
+ *
+ * An optional `max` blocks typing past a value entirely (not just an error
+ * after the fact) — e.g. OK Quantity can't be typed bigger than Ideal
+ * Quantity. Left out, or not yet a real number (still being calculated),
+ * there's no ceiling.
  */
-const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, ...rest }) => {
+const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, max, ...rest }) => {
   const pattern = decimals ? /^\d*\.?\d*$/ : /^\d*$/;
 
   const handleChange = (e) => {
     const next = e.target.value;
-    if (next === "" || pattern.test(next)) onChange(e);
+    if (next === "" || pattern.test(next)) {
+      if (Number.isFinite(max) && next !== "" && Number(next) > max) return;
+      onChange(e);
+    }
   };
 
   return (

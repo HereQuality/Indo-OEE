@@ -21,9 +21,9 @@ import { MenuContext } from "../context/MenuContext";
 import { useMachines } from "../hooks/useMachines";
 import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
+import { useMachineOperators } from "../hooks/useMachineOperators";
 import {
   deleteProductionRow,
-  getOperatorMaster,
   getProductionSheet,
   saveProductionRow,
 } from "../api/productionSheet.api";
@@ -34,6 +34,7 @@ import {
   dayCalc,
   daysOfMonth,
   isoDay,
+  rowCalc,
   sortByMachineOn,
 } from "../utils/productionSheet";
 
@@ -87,24 +88,13 @@ const emptyEntry = () => ({
 
 // A saved record -> form values ("" for anything unset, so inputs stay controlled).
 //
-// Records saved by the old grid have OK and Rejected but no Actual. Actual is
-// back-filled from them here, because the server now derives Rejected from
-// Actual − OK: without this, re-saving such a record with Actual left blank
-// would quietly wipe its Rejected quantity.
+// actualQty is never shown or typed here — Ideal Quantity does that job — but
+// it's still sent back on save (see toPayload), recomputed from this record's
+// own Ideal Quantity rather than kept from what was last stored.
 const toFormValues = (row) => {
-  const ok = Number(row.okQty);
-  const rejected = Number(row.rejectedQty);
-  const legacyActual =
-    row.actualQty === null || row.actualQty === undefined
-      ? [ok, rejected].filter(Number.isFinite).length
-        ? (Number.isFinite(ok) ? ok : 0) + (Number.isFinite(rejected) ? rejected : 0)
-        : ""
-      : row.actualQty;
-
   return {
     ...emptyEntry(),
     ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
-    actualQty: legacyActual,
     item: row.item || "",
     slot: row.slot,
     // A record saved before the split existed has only a single rejectReason;
@@ -139,6 +129,10 @@ const toPayload = (v, isEdit) => {
   // the biggest contributor in the split is saved there too — the table column
   // keeps working without needing a second shape.
   const topReason = Object.entries(split).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  // There's no typed Actual Quantity any more — Ideal Quantity stands in for
+  // it, so what's sent as actualQty (the server still derives Rejected from
+  // actualQty − okQty) is this entry's own calculated Ideal Quantity.
+  const idealQty = rowCalc(v).idealQty;
   return {
   date: v.date,
   machine: v.machine,
@@ -153,6 +147,7 @@ const toPayload = (v, isEdit) => {
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" ? "" : Number(v[k])])),
+  actualQty: idealQty === null ? "" : idealQty,
   };
 };
 
@@ -167,11 +162,11 @@ const ProductionSheet = () => {
   const [machineFilter, setMachineFilter] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [operators, setOperators] = useState([]);
 
   const { data: machines = [] } = useMachines();
   const { data: processes = [] } = useProcesses();
   const { data: items = [] } = useItems();
+  const { data: operators = [] } = useMachineOperators();
 
   // null = closed, "add" | "edit"
   const [modalMode, setModalMode] = useState(null);
@@ -207,11 +202,6 @@ const ProductionSheet = () => {
     fetchRows();
   }, [fetchRows]);
 
-  useEffect(() => {
-    getOperatorMaster()
-      .then((res) => setOperators(res.data.data || []))
-      .catch(() => {});
-  }, []);
 
   const sortedRows = useMemo(
     () =>
@@ -326,16 +316,17 @@ const ProductionSheet = () => {
     if (!v.date) errors.date = "Date is required";
     if (!v.machine) errors.machine = "Machine is required";
 
-    const actual = v.actualQty === "" ? null : Number(v.actualQty);
+    // There's no typed Actual Quantity any more — Ideal Quantity (Shift Time ÷
+    // Cycle Time, rounded down) stands in for it, so OK/Rejected are checked
+    // against Ideal Quantity instead.
+    const idealQty = rowCalc(v).idealQty;
     const ok = v.okQty === "" ? null : Number(v.okQty);
-    if (actual !== null && (!Number.isFinite(actual) || actual < 0)) errors.actualQty = "Must be 0 or more";
     if (ok !== null && (!Number.isFinite(ok) || ok < 0)) errors.okQty = "Must be 0 or more";
-    if (actual !== null && ok !== null && ok > actual) errors.okQty = "OK cannot be more than Actual";
-    if (ok !== null && actual === null) errors.actualQty = "Enter Ideal Quantity too";
+    if (ok !== null && idealQty !== null && ok > idealQty) errors.okQty = "OK cannot be more than Ideal Quantity";
 
     // The per-reason split is what makes rejections readable on the dashboard,
     // so it has to account for every rejected piece — no more, no less.
-    const rejected = actual !== null && ok !== null ? actual - ok : 0;
+    const rejected = idealQty !== null && ok !== null ? idealQty - ok : 0;
     const split = cleanSplit(v.rejectBreakdown);
     const splitTotal = Object.values(split).reduce((s, n) => s + n, 0);
     if (Object.entries(v.rejectBreakdown || {}).some(([, n]) => n !== "" && (!Number.isFinite(Number(n)) || Number(n) < 0))) {
