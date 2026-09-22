@@ -4,6 +4,7 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
+import { useAlert } from "../../context/AlertContext";
 import { CYCLE_OP_FIELDS, REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
 
 /**
@@ -126,6 +127,7 @@ const EntryBlock = ({
   onRejectChange,
   onRemove,
 }) => {
+  const { warning } = useAlert();
   const calc = useMemo(() => rowCalc(values), [values]);
   // The picked part's own record — its Total Cycle Time and operation times
   // are what an unticked box gets restored from when it's ticked back.
@@ -427,6 +429,7 @@ const EntryBlock = ({
                 onChange={handle}
                 decimals={false}
                 max={calc.idealQty}
+                onExceedMax={(max) => warning(`OK Quantity can't be more than Ideal Quantity (${fmtNum(max)})`)}
               />
             </Field>
             <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={4} title="Ideal Quantity − OK Quantity" />
