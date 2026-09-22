@@ -15,13 +15,11 @@ import { STOPPAGE_FIELDS, displayDay, fmtNum, fmtPct, rowCalc } from "../../util
  * and the same `rowCalc`/`dayCalc` formulas the form uses fill every
  * calculated cell, so the table can't disagree with the form.
  *
- * Colour carries meaning, the way it does on the Jajoo sheet:
- *   • group headers use the Indo Excel sheet's own section colours
- *   • violet cells are calculated from that row
- *   • blue cells are calculated per machine per day
- *   • teal is the machine, fuchsia the operator
- *   • rows of the same date share a tint, which flips as the date changes
- * Everything else is typed in.
+ * Colour is kept to a minimum: every group header is the same neutral grey,
+ * and the only tint on a body cell marks it as calculated rather than typed
+ * — nothing is colour-coded by group or column. Rows of the same date share
+ * a faint shade, which flips as the date changes, so a many-row day still
+ * reads as one block without needing its own colour.
  *
  * With several entries per day the repeated cells are merged rather than
  * restated: one Date cell spans that date's rows, one Machine cell spans that
@@ -41,42 +39,27 @@ const FROZEN = {
   machine: "sticky left-[104px] w-[96px] min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
 };
 
-// Section colours lifted from the Indo "Section Wise Eff. (CNC)" Excel sheet,
-// so the headings read the way the printed sheet does.
+// One neutral colour for every group header — no per-section hues.
 //
-// Every colour here is fully opaque, and must stay that way: the headers are
-// sticky and the Date/Machine columns are frozen, so a translucent background
-// lets the columns scrolling underneath show straight through the cell.
-const HEAD = {
-  details: "bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200",
-  cycle: "bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200",
-  time: "bg-sky-200 dark:bg-sky-950 text-sky-900 dark:text-sky-200",
-  calc: "bg-blue-50 dark:bg-blue-950 text-blue-900 dark:text-blue-200",
-  qty: "bg-orange-100 dark:bg-orange-950 text-orange-900 dark:text-orange-200",
-  operatorShift: "bg-pink-100 dark:bg-pink-950 text-pink-900 dark:text-pink-200",
-  stoppage: "bg-yellow-200 dark:bg-yellow-950 text-yellow-900 dark:text-yellow-200",
-  effective: "bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-slate-100",
-  remarks: "bg-rose-100 dark:bg-rose-950 text-rose-900 dark:text-rose-200",
-};
+// It must stay fully opaque: the headers are sticky and the Date/Machine
+// columns are frozen, so a translucent background would let the columns
+// scrolling underneath show straight through the cell.
+const HEAD_BG = "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200";
 
-// Body cell tints, by what the cell is rather than where it sits.
+// Body cell tints, by what the cell is rather than where it sits. Both
+// calculated tones share one shade — the point is just "not typed in",
+// not which formula produced it. Machine is frozen (needs its own opaque
+// background so scrolling columns can't show through underneath it);
+// Operator isn't frozen, so it just takes the row's own tint plus weight.
 const TONE = {
-  calc: "bg-violet-50 dark:bg-violet-950 text-violet-800 dark:text-violet-300 font-medium",
-  day: "bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-medium",
-  machine: "bg-teal-50 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-semibold",
-  operator: "bg-fuchsia-50 dark:bg-fuchsia-950 text-fuchsia-800 dark:text-fuchsia-300 font-medium",
+  calc: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium",
+  day: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium",
+  machine: "bg-slate-50 dark:bg-slate-900 font-semibold",
+  operator: "font-medium",
 };
 
-// Rows of one date share a tint; it flips as the date changes.
-const DAY_TINT = ["bg-white dark:bg-slate-900", "bg-indigo-50 dark:bg-indigo-950"];
-
-// Legend-only swatches: the body tints are too pale to read at 11px.
-const SWATCH = {
-  calc: "bg-violet-200 dark:bg-violet-800",
-  day: "bg-blue-200 dark:bg-blue-800",
-  machine: "bg-teal-200 dark:bg-teal-800",
-  operator: "bg-fuchsia-200 dark:bg-fuchsia-800",
-};
+// Rows of one date share a faint shade; it flips as the date changes.
+const DAY_TINT = ["bg-white dark:bg-slate-900", "bg-slate-50 dark:bg-slate-900/60"];
 
 const dash = (v) => (v === "" || v === null || v === undefined ? "—" : v);
 const n = (v) => dash(fmtNum(v));
@@ -106,7 +89,7 @@ const GROUPS = [
   {
     key: "entry",
     label: "Entry",
-    head: HEAD.details,
+    head: HEAD_BG,
     columns: [
       { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date" },
       { key: "machine", label: "Machine No.", get: (r, c, d, ctx) => ctx.machineName[r.machine] || "—", merge: "machineDay", tone: "machine", frozen: "machine" },
@@ -117,7 +100,7 @@ const GROUPS = [
   {
     key: "part",
     label: "Part Details",
-    head: HEAD.cycle,
+    head: HEAD_BG,
     columns: [
       { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName) },
       { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo) },
@@ -127,7 +110,7 @@ const GROUPS = [
   {
     key: "machineTime",
     label: "Machine Timing",
-    head: HEAD.time,
+    head: HEAD_BG,
     columns: [
       { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime) },
       { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime) },
@@ -137,7 +120,7 @@ const GROUPS = [
   {
     key: "ideal",
     label: "Ideal Quantity",
-    head: HEAD.calc,
+    head: HEAD_BG,
     collapsible: true,
     summary: { key: "idealQty", label: "Ideal Quantity", get: (r, c) => n(c.idealQty), align: "text-end", tone: "calc" },
     columns: [
@@ -148,9 +131,11 @@ const GROUPS = [
   {
     key: "quantity",
     label: "Quantity",
-    head: HEAD.qty,
+    head: HEAD_BG,
     columns: [
-      { key: "actualQty", label: "Actual Quantity", get: (r, c) => n(c.actualQty), align: "text-end" },
+      // There's no typed Actual Quantity any more — Ideal Quantity (its own
+      // column in the collapsible "Ideal Quantity" group above) stands in for
+      // it, so it isn't repeated here.
       { key: "okQty", label: "OK Quantity", get: (r) => min(r.okQty), align: "text-end" },
       { key: "rejectedQty", label: "Rejected", get: (r, c) => n(c.rejectedQty), align: "text-end", tone: "calc" },
       { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-end", tone: "calc" },
@@ -160,7 +145,7 @@ const GROUPS = [
   {
     key: "operatorShift",
     label: "Operator Shift",
-    head: HEAD.operatorShift,
+    head: HEAD_BG,
     collapsible: true,
     summary: {
       key: "plannedShift",
@@ -181,14 +166,13 @@ const GROUPS = [
         get: (r, c, d) => n(d.unutilized),
         align: "text-end",
         tone: "day",
-        merge: "machineDay",
       },
     ],
   },
   {
     key: "downtime",
     label: "Downtime (minutes)",
-    head: HEAD.stoppage,
+    head: HEAD_BG,
     collapsible: true,
     summary: {
       key: "totalStoppage",
@@ -208,7 +192,7 @@ const GROUPS = [
   {
     key: "results",
     label: "Results",
-    head: HEAD.effective,
+    head: HEAD_BG,
     collapsible: true,
     summary: {
       key: "oeeLosses",
@@ -216,7 +200,6 @@ const GROUPS = [
       get: (r, c, d) => pct(d.oeeLosses),
       align: "text-end",
       tone: "day",
-      merge: "machineDay",
     },
     columns: [
       {
@@ -226,16 +209,25 @@ const GROUPS = [
         align: "text-end",
         tone: "calc",
       },
-      { key: "unreported", label: "Unreported Time (min)", get: (r, c, d) => n(d.unreportedMin), align: "text-end", tone: "day", merge: "machineDay" },
+      { key: "unreported", label: "Unreported Time (min)", get: (r, c, d) => n(d.unreportedMin), align: "text-end", tone: "day" },
+      {
+        key: "gap",
+        label: "Gap to Next Entry (min)",
+        // Just the clock gap to the next entry on this machine — never a
+        // stoppage reason, never folded into Total Stoppage or Unreported.
+        // Blank for the day's last entry (nothing after it yet to compare).
+        get: (r, c, d) => n(d.gapMin),
+        align: "text-end",
+        tone: "day",
+      },
       { key: "setupEff", label: "Setup Efficiency (%)", get: (r, c) => pct(c.setupEfficiency), align: "text-end", tone: "calc" },
-      { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-end", tone: "day", merge: "machineDay" },
+      { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-end", tone: "day" },
       {
         key: "oeeLunch",
         label: "OEE not considering losses but lunch (%)",
         get: (r, c, d) => pct(d.oeeLunch),
         align: "text-end",
         tone: "day",
-        merge: "machineDay",
       },
       {
         key: "oeeLunchCot",
@@ -243,14 +235,13 @@ const GROUPS = [
         get: (r, c, d) => pct(d.oeeLunchCot),
         align: "text-end",
         tone: "day",
-        merge: "machineDay",
       },
     ],
   },
   {
     key: "remarks",
     label: "",
-    head: HEAD.remarks,
+    head: HEAD_BG,
     columns: [{ key: "remarks", label: "Remarks", get: (r) => dash(r.remarks), wrap: true }],
   },
 ];
@@ -325,23 +316,8 @@ const ProductionEntriesTable = ({
     </button>
   );
 
-  const Swatch = ({ className, children }) => (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={`inline-block rounded-sm border border-slate-300 dark:border-slate-600 ${className}`} style={{ width: 11, height: 11 }} />
-      {children}
-    </span>
-  );
-
   return (
     <>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[11px] text-slate-500 dark:text-slate-400">
-        <Swatch className={SWATCH.calc}>Calculated from the row</Swatch>
-        <Swatch className={SWATCH.day}>Calculated per machine per day</Swatch>
-        <Swatch className={SWATCH.machine}>Machine</Swatch>
-        <Swatch className={SWATCH.operator}>Operator</Swatch>
-        <span>Everything else is typed in.</span>
-      </div>
-
       <div
         className="border border-slate-300 dark:border-slate-700 rounded-lg overflow-auto"
         style={{ maxHeight: "calc(100vh - 300px)" }}
@@ -375,7 +351,7 @@ const ProductionEntriesTable = ({
                   </th>
                 );
               })}
-              <th className={`${thBase} top-0 z-20 ${HEAD.details} text-center`}>Action</th>
+              <th className={`${thBase} top-0 z-20 ${HEAD_BG} text-center`}>Action</th>
             </tr>
             {/* Column row */}
             <tr>
@@ -389,7 +365,7 @@ const ProductionEntriesTable = ({
                   </th>
                 )),
               )}
-              <th className={`${thBase} top-[37px] z-20 ${HEAD.details}`} />
+              <th className={`${thBase} top-[37px] z-20 ${HEAD_BG}`} />
             </tr>
           </thead>
           <tbody>
@@ -410,7 +386,7 @@ const ProductionEntriesTable = ({
             {!loading &&
               rows.map((r, i) => {
                 const calc = rowCalc(r);
-                const day = dayResultByKey[`${r.machine}|${r.date}`] || {};
+                const day = dayResultByKey[r._id] || {};
                 const span = layout[i];
                 const dayBg = DAY_TINT[span.dayIndex % 2];
 
@@ -426,7 +402,15 @@ const ProductionEntriesTable = ({
                         // Every cell paints its own background: a frozen column
                         // would otherwise be see-through as the rest scrolls
                         // underneath it.
-                        const bg = c.tone ? TONE[c.tone] : `${dayBg} text-slate-700 dark:text-slate-200`;
+                        // Operator isn't frozen and has no bg of its own, so it
+                        // still takes the row's alternating date tint; every
+                        // other tone (or none) carries its own opaque bg.
+                        const bg =
+                          c.tone === "operator"
+                            ? `${dayBg} ${TONE.operator}`
+                            : c.tone
+                              ? TONE[c.tone]
+                              : `${dayBg} text-slate-700 dark:text-slate-200`;
                         return (
                           <td
                             key={`${g.key}-${c.key}`}

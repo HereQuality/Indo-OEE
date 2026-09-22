@@ -37,7 +37,7 @@ export const STAT_CATALOG = [
   { key: "rejectedQty", label: "Rejected QTY", hint: "Actual − OK", format: "qty", tone: "reject", example: "9,453" },
   { key: "okPct", label: "% OK Quantity", hint: "OK ÷ (OK + Rejected)", format: "pct", tone: "ok", example: "99.97%" },
   { key: "rejectionPct", label: "Rejection %", hint: "Rejected ÷ Actual", format: "pct", tone: "reject", example: "0.66%" },
-  { key: "idealQty", label: "Ideal QTY", hint: "(Shift − planned down) ÷ cycle time", format: "qty", example: "1.51M" },
+  { key: "idealQty", label: "Ideal QTY", hint: "Shift time ÷ cycle time", format: "qty", example: "1.51M" },
   { key: "performance", label: "Actual vs Ideal", hint: "Actual ÷ Ideal quantity", format: "pct", example: "94.70%" },
   { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%" },
   { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%" },
@@ -193,12 +193,16 @@ export function summarize(rows) {
     byMachineDay.get(k).push(row);
   }
 
+  // dayCalc hands back one result per row of the group (a rolling window
+  // starting at that row), not one shared value for the whole day — so every
+  // row's own figure is added in here, not the day's counted once.
   const oee = { oeeLosses: [], oeeLunch: [], oeeLunchCot: [] };
   for (const group of byMachineDay.values()) {
-    const d = dayCalc(group);
-    if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
-    if (Number.isFinite(d.unutilized)) s.unutilizedDays += d.unutilized;
-    for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
+    for (const d of dayCalc(group)) {
+      if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
+      if (Number.isFinite(d.unutilized)) s.unutilizedDays += d.unutilized;
+      for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
+    }
   }
 
   return {

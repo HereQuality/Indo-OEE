@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const ProductionEntry = require("../models/ProductionEntry");
 const { STOPPAGE_KEYS, REJECT_REASONS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
+const { CYCLE_OP_FIELDS } = require("../models/Item");
 const { normalizeCycleOps } = require("./item.controller");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -14,7 +15,14 @@ const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupN
 const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
 // rejectedQty is NOT here — it is derived from actualQty − okQty below and
 // never accepted from the client.
-const NUMBER_KEYS = ["actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_KEYS = [
+  "actualQty",
+  "okQty",
+  "plannedOperatorShiftHours",
+  "totalCycleSec",
+  ...STOPPAGE_KEYS,
+  ...CYCLE_OP_FIELDS.map((f) => f.key),
+];
 
 // "YYYY-MM-DD" -> Date at UTC midnight, or null if it isn't a real date.
 const parseDay = (s) => {
@@ -60,6 +68,18 @@ const buildFields = (body) => {
       throw Object.assign(new Error("Cycle times must be numbers"), { status: 400 });
     }
     set.cycleOpsSec = ops;
+  }
+  // Which of this entry's own operations don't count toward its Total Cycle
+  // Time — an empty list unsets the field rather than saving one.
+  if (body.excludedOps !== undefined) {
+    const raw = Array.isArray(body.excludedOps) ? body.excludedOps : [];
+    const validKeys = CYCLE_OP_FIELDS.map((f) => f.key);
+    if (raw.some((k) => !validKeys.includes(k))) {
+      throw Object.assign(new Error("Unknown operation in excludedOps"), { status: 400 });
+    }
+    const excluded = [...new Set(raw)];
+    if (excluded.length) set.excludedOps = excluded;
+    else unset.excludedOps = "";
   }
   // Rejected = Actual − OK. Both are needed to compute it; when either side
   // is being cleared the stored Rejected is cleared with it, and an OK above
@@ -212,7 +232,10 @@ exports.saveRow = async (req, res) => {
 };
 
 // GET /production-sheet/operators — every operator name typed so far, for
-// the Operator column's suggestions.
+// the Operator column's suggestions. Kept for records saved before the
+// Operator box read from Operator Master (see machineOperator.controller.js
+// — MachineOperator is its own lightweight model; this endpoint is only
+// history, not a live source for the dropdown any more).
 exports.listOperatorNames = async (req, res) => {
   try {
     const names = await ProductionEntry.distinct("operator", { operator: { $nin: ["", null] } });

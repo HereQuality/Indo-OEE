@@ -1,5 +1,5 @@
 const Item = require("../models/Item");
-const { MAX_CYCLE_OPS } = require("../models/Item");
+const { MAX_CYCLE_OPS, CYCLE_OP_FIELDS } = require("../models/Item");
 
 // Keeps Op 1…Op 5 positional: blanks in the middle stay null so Op 3 never
 // shifts into Op 2's column. Trailing blanks are trimmed.
@@ -10,17 +10,28 @@ const normalizeCycleOps = (ops) => {
   return out;
 };
 
-const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive }) => ({
+// A blank operation (or Total Cycle Time) box stays unset rather than being
+// saved as 0, so an item that's never had, say, Boring measured doesn't
+// quietly read as "Boring takes 0 seconds" once it's picked on an entry.
+const pickCycleOps = (body) =>
+  Object.fromEntries(
+    [...CYCLE_OP_FIELDS.map((f) => f.key), "totalCycleSec"]
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive }, body = {}) => ({
   itemName,
   drawingNo,
   setupNo,
   ...(cycleOpsSec !== undefined ? { cycleOpsSec: normalizeCycleOps(cycleOpsSec) } : {}),
+  ...pickCycleOps(body),
   isActive,
 });
 
 exports.createItem = async (req, res) => {
   try {
-    const item = await Item.create(pickItem(req.body));
+    const item = await Item.create(pickItem(req.body, req.body));
     res.status(201).json({ isOk: true, data: item, message: "Item created successfully" });
   } catch (error) {
     console.error("Error creating item:", error);
@@ -30,7 +41,7 @@ exports.createItem = async (req, res) => {
 
 exports.updateItem = async (req, res) => {
   try {
-    const item = await Item.findByIdAndUpdate(req.params.itemId, pickItem(req.body), { new: true, runValidators: true });
+    const item = await Item.findByIdAndUpdate(req.params.itemId, pickItem(req.body, req.body), { new: true, runValidators: true });
     if (!item) return res.status(404).json({ isOk: false, message: "Item not found" });
     res.status(200).json({ isOk: true, data: item, message: "Item updated successfully" });
   } catch (error) {

@@ -50,6 +50,7 @@ const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionD
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
+const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
 const ManageRole = lazyWithRetry(() => import("../pages/ManageRole"));
@@ -109,6 +110,7 @@ const protectedRoutes = [
   { path: "/production/items", component: <ItemMaster /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
+  { path: "/production/operators", component: <OperatorMaster /> },
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },
 

@@ -49,7 +49,8 @@ const PRODUCTION_MENUS = [
   { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 3, icon: "Workflow" },
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 4, icon: "ClipboardList" },
+  { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
+  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 5, icon: "ClipboardList" },
   // Dashboard is NOT listed here any more (it is DASHBOARD_GROUP above).
   // Listing it again would re-activate the retired row on every run.
 ];

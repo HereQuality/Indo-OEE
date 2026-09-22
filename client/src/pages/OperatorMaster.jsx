@@ -8,23 +8,27 @@ import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
-import { useInvalidateItems } from "../hooks/useItems";
-import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
-import { CYCLE_OP_FIELDS } from "../utils/productionSheet";
-import NumberInput from "../Components/Production/NumberInput";
+import { useInvalidateMachineOperators } from "../hooks/useMachineOperators";
+import {
+  createMachineOperator,
+  deleteMachineOperator,
+  getMachineOperatorById,
+  updateMachineOperator,
+  searchMachineOperators,
+} from "../api/machineOperators.api";
 
-const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
+/**
+ * pages/OperatorMaster.jsx
+ * ────────────────────────────
+ * The shop-floor operator list behind Production Data Entry's "Operator"
+ * dropdown — just a name and an active flag, on its own MachineOperator
+ * model. Deliberately not the Employee Management "Operator" page: that one
+ * is people who log in (roles, departments, passwords); this is who ran a
+ * machine on a given shift, and never logs in at all.
+ */
+const initialState = { name: "", isActive: true };
 
-const initialState = {
-  itemName: "",
-  drawingNo: "",
-  setupNo: "",
-  totalCycleSec: "",
-  ...emptyOps(),
-  isActive: true,
-};
-
-const ItemMaster = () => {
+const OperatorMaster = () => {
   const toast = useAlert();
   const { currentPagePermissions = { read: true, write: true, edit: true, delete: true } } = useContext(MenuContext) || {};
 
@@ -35,8 +39,8 @@ const ItemMaster = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleteLoading, setIsDeleteLoading] = useState(false);
 
-  const [items, setItems] = useState([]);
-  const invalidateItems = useInvalidateItems();
+  const [operators, setOperators] = useState([]);
+  const invalidateOperators = useInvalidateMachineOperators();
   const [query, setQuery] = useState("");
 
   const [_id, set_Id] = useState("");
@@ -73,19 +77,12 @@ const ItemMaster = () => {
     setFormErrors({});
     setModalMode("edit");
     setIsLoading(true);
-    getItemById(id)
+    getMachineOperatorById(id)
       .then((res) => {
-        const it = res.data.data;
-        setValues({
-          itemName: it.itemName,
-          drawingNo: it.drawingNo || "",
-          setupNo: it.setupNo || "",
-          totalCycleSec: it.totalCycleSec ?? "",
-          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
-          isActive: it.isActive,
-        });
+        const o = res.data.data;
+        setValues({ name: o.name || "", isActive: o.isActive });
       })
-      .catch(() => toast.error("Failed to fetch item details"))
+      .catch(() => toast.error("Failed to fetch operator details"))
       .finally(() => setIsLoading(false));
   };
 
@@ -98,13 +95,7 @@ const ItemMaster = () => {
 
   const validate = (v) => {
     const errors = {};
-    if (!v.itemName.trim()) errors.itemName = "Item Name is required!";
-    if (v.totalCycleSec !== "" && (!Number.isFinite(Number(v.totalCycleSec)) || Number(v.totalCycleSec) < 0)) {
-      errors.totalCycleSec = "Must be 0 or more";
-    }
-    if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
-      errors.cycleOps = "Cycle times must be 0 or more";
-    }
+    if (!v.name.trim()) errors.name = "Operator name is required!";
     return errors;
   };
 
@@ -115,54 +106,47 @@ const ItemMaster = () => {
     setIsSubmit(true);
     if (Object.keys(errors).length) return;
 
-    const data = {
-      ...values,
-      itemName: values.itemName.trim(),
-      drawingNo: values.drawingNo.trim(),
-      setupNo: values.setupNo.trim(),
-      totalCycleSec: values.totalCycleSec === "" ? null : Number(values.totalCycleSec),
-      ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, values[f.key] === "" ? null : Number(values[f.key])])),
-    };
+    const data = { ...values, name: values.name.trim() };
 
     setIsLoading(true);
-    const request = modalMode === "add" ? createItem(data) : updateItem(_id, data);
+    const request = modalMode === "add" ? createMachineOperator(data) : updateMachineOperator(_id, data);
     request
       .then(() => {
-        toast.success(modalMode === "add" ? "Item Added Successfully!" : "Item Updated Successfully!");
+        toast.success(modalMode === "add" ? "Operator Added Successfully!" : "Operator Updated Successfully!");
         closeModal();
-        fetchItems();
-        invalidateItems();
+        fetchOperators();
+        invalidateOperators();
       })
-      .catch((err) => toast.error(err?.response?.data?.message || "Failed to save item. Please try again."))
+      .catch((err) => toast.error(err?.response?.data?.message || "Failed to save operator. Please try again."))
       .finally(() => setIsLoading(false));
   };
 
   const handleDelete = (e) => {
     e.preventDefault();
     setIsDeleteLoading(true);
-    deleteItem(remove_id)
+    deleteMachineOperator(remove_id)
       .then((res) => {
         setmodal_delete(false);
-        toast.success(res?.data?.message || "Item Removed Successfully!");
-        fetchItems();
-        invalidateItems();
+        toast.success(res?.data?.message || "Operator Removed Successfully!");
+        fetchOperators();
+        invalidateOperators();
       })
       .catch(() => {
         setmodal_delete(false);
-        toast.error("Failed to delete item. Please try again.");
+        toast.error("Failed to delete operator. Please try again.");
       })
       .finally(() => setIsDeleteLoading(false));
   };
 
   useEffect(() => {
-    const timeout = setTimeout(() => fetchItems(), 500);
+    const timeout = setTimeout(() => fetchOperators(), 500);
     return () => clearTimeout(timeout);
   }, [pageNo, column, sortDirection, query, filter]);
 
-  const fetchItems = async () => {
+  const fetchOperators = async () => {
     setLoading(true);
     try {
-      const response = await searchItems({
+      const response = await searchMachineOperators({
         skip: Math.max(0, (pageNo - 1) * perPage),
         per_page: perPage,
         sorton: column,
@@ -172,10 +156,10 @@ const ItemMaster = () => {
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
-      setItems(res?.data || []);
+      setOperators(res?.data || []);
     } catch (error) {
-      console.error("Error fetching items:", error);
-      setItems([]);
+      console.error("Error fetching operators:", error);
+      setOperators([]);
     } finally {
       setLoading(false);
     }
@@ -183,10 +167,7 @@ const ItemMaster = () => {
 
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
-    { name: "Item Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
-    { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
-    { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
-    { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
+    { name: "Operator Name", selector: (row) => row.name, sortable: true, sortField: "name", minWidth: "260px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
       name: "Action",
@@ -208,7 +189,7 @@ const ItemMaster = () => {
     },
   ];
 
-  document.title = `Item Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+  document.title = `Operator Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
     <React.Fragment>
@@ -219,7 +200,7 @@ const ItemMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Items"
+                    formName="Operators"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -234,7 +215,7 @@ const ItemMaster = () => {
                   <div className="table-responsive table-card mt-1 mb-1 text-right">
                     <DataTable
                       columns={col}
-                      data={items}
+                      data={operators}
                       progressPending={loading}
                       sortServer
                       onSort={(c, dir) => {
@@ -256,67 +237,19 @@ const ItemMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false} size="lg">
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false} size="md">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
-          {modalMode === "edit" ? "Update Item" : "Add Item"}
+          {modalMode === "edit" ? "Update Operator" : "Add Operator"}
         </ModalHeader>
         <form noValidate>
           <ModalBody>
             <div className="form-floating mb-3">
-              <Input type="text" name="itemName" value={values.itemName} onChange={handleChange} placeholder=" " maxLength={120} />
+              <Input type="text" name="name" value={values.name} onChange={handleChange} placeholder=" " maxLength={100} />
               <Label>
-                Item Name <span className="text-danger">*</span>
+                Operator Name <span className="text-danger">*</span>
               </Label>
-              {isSubmit && <p className="text-danger">{formErrors.itemName}</p>}
+              {isSubmit && <p className="text-danger">{formErrors.name}</p>}
             </div>
-            <Row>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
-                  <Label>Drawing No.</Label>
-                </div>
-              </Col>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="text" name="setupNo" value={values.setupNo} onChange={handleChange} placeholder=" " maxLength={40} />
-                  <Label>Setup No.</Label>
-                </div>
-              </Col>
-            </Row>
-            <div className="form-floating mb-3">
-              <NumberInput
-                name="totalCycleSec"
-                value={values.totalCycleSec}
-                onChange={handleChange}
-                decimals={false}
-                placeholder=" "
-              />
-              <Label>Total Cycle Time (sec)</Label>
-              {isSubmit && formErrors.totalCycleSec && <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>}
-            </div>
-            {/* Every formula uses Total Cycle Time above on its own — these
-                are the breakdown, kept for reference, not summed into it,
-                since the two can genuinely differ on the real sheet. */}
-            <Label className="mb-2 d-block">Operation Times (sec) — reference only</Label>
-            <Row className="g-2 align-items-end">
-              {CYCLE_OP_FIELDS.map((f) => (
-                <Col key={f.key} xs={6} md={3}>
-                  <div className="form-floating">
-                    <NumberInput
-                      name={f.key}
-                      value={values[f.key]}
-                      onChange={handleChange}
-                      decimals={false}
-                      placeholder=" "
-                    />
-                    {/* Both "Other Operation" boxes carry the sheet's own label;
-                        the index tells the two apart without renaming either. */}
-                    <Label>{f.label.replace(" (sec)", "")}{f.key === "otherOp2Sec" ? " 2" : ""}</Label>
-                  </div>
-                </Col>
-              ))}
-            </Row>
-            {isSubmit && formErrors.cycleOps && <p className="text-danger mt-1">{formErrors.cycleOps}</p>}
             <div className="mt-3">
               <Input
                 type="checkbox"
@@ -352,4 +285,4 @@ const ItemMaster = () => {
   );
 };
 
-export default ItemMaster;
+export default OperatorMaster;

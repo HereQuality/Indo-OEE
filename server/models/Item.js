@@ -10,6 +10,24 @@ const mongoose = require("mongoose");
  */
 const MAX_CYCLE_OPS = 5;
 
+// The named operation-time boxes, in sheet order — Total Cycle Time is their
+// sum. Kept in one place so the Item master, Production Entry row and the
+// client's own copy of this list (client/src/utils/productionSheet.js) name
+// the same eight fields the same way. Two operations really are both called
+// "Other Operation (sec)" on the sheet; they're told apart here only by key.
+const CYCLE_OP_FIELDS = [
+  { key: "drillingSec", label: "Drilling (sec)" },
+  { key: "boringSec", label: "Boring (sec)" },
+  { key: "threadingSec", label: "Threading (sec)" },
+  { key: "tappingSec", label: "Tapping (sec)" },
+  { key: "chamferingSec", label: "Chamfering (sec)" },
+  { key: "otherOp1Sec", label: "Other Operation (sec)" },
+  { key: "otherOp2Sec", label: "Other Operation (sec)" },
+  { key: "clampDeclampSec", label: "Clamp/Declamp (sec)" },
+];
+
+const cycleOpNumber = { type: Number, min: [0, "Cycle time cannot be negative"] };
+
 const ItemSchema = new mongoose.Schema(
   {
     itemName: {
@@ -30,7 +48,15 @@ const ItemSchema = new mongoose.Schema(
       maxlength: [40, "Setup No. must be 40 characters or fewer"],
       default: "",
     },
-    // Seconds per operation (Op 1…Op 5); Total cycle time is their sum.
+    ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, cycleOpNumber])),
+    // The authoritative cycle time every formula uses — typed on its own,
+    // not the sum of the eight operations above. On the real sheet the two
+    // can genuinely differ (an item's measured operations don't always add
+    // up to its set cycle time), so Total Cycle Time is never derived from
+    // them; it's just its own number.
+    totalCycleSec: cycleOpNumber,
+    // Superseded by the eight named fields above; kept only so items saved
+    // before they existed don't lose their Op 1…Op 5 cycle times.
     cycleOpsSec: {
       type: [{ type: Number, min: [0, "Cycle time cannot be negative"] }],
       default: [],
@@ -49,3 +75,4 @@ const ItemSchema = new mongoose.Schema(
 
 module.exports = mongoose.model("Item", ItemSchema);
 module.exports.MAX_CYCLE_OPS = MAX_CYCLE_OPS;
+module.exports.CYCLE_OP_FIELDS = CYCLE_OP_FIELDS;
