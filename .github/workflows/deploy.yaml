@@ -1,0 +1,79 @@
+name: Deploy to Production
+
+on:
+  workflow_run:
+    workflows:
+      - Continuous Integration
+    types:
+      - completed
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.0
+
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+
+          timeout: 60s
+          command_timeout: 20m
+
+          script: |
+            set -e
+
+            echo "======================================"
+            echo "🚀 Starting Production Deployment..."
+            echo "======================================"
+
+            # Go to project
+            cd ${{ secrets.PROJECT_PATH }}
+
+            echo "📥 Pulling latest code..."
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "📦 Installing Backend Dependencies..."
+            cd ${{ secrets.BACKEND_DIR }}
+            npm ci
+
+            echo "📦 Installing Frontend Dependencies..."
+            cd ${{ secrets.FRONTEND_DIR }}
+            npm ci
+
+            echo "🏗️ Building React Application..."
+            npm run build
+
+            echo "🔄 Reloading PM2..."
+            cd ${{ secrets.BACKEND_DIR }}
+
+            # --------------------------------------------------------
+            # FIRST TIME ONLY (Brand New VPS)
+            #
+            # pm2 start npm --name indo -- start
+            #
+            # After that, comment it again and always use reload below.
+            # --------------------------------------------------------
+
+            # pm2 reload indo --update-env
+            pm2 reload indo
+
+            pm2 save
+
+            echo "======================================"
+            echo "✅ Deployment Completed Successfully!"
+            echo "======================================"
