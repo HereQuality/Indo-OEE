@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { MAX_CYCLE_OPS } = require("./Item");
+const { MAX_CYCLE_OPS, CYCLE_OP_FIELDS } = require("./Item");
 
 /**
  * models/ProductionEntry.js
@@ -60,7 +60,26 @@ const ProductionEntrySchema = new mongoose.Schema(
     itemName: { type: String, trim: true, maxlength: 120, default: "" },
     drawingNo: { type: String, trim: true, maxlength: 40, default: "" },
     setupNo: { type: String, trim: true, maxlength: 40, default: "" },
-    // Op 1…Op 5 seconds; null keeps a blank cell blank.
+    // Drilling…Clamp/Declamp, copied from the item when picked (display
+    // only — informational breakdown, not summed into Total Cycle Time).
+    ...Object.fromEntries(
+      CYCLE_OP_FIELDS.map((f) => [f.key, { type: Number, min: [0, "Cycle time cannot be negative"] }]),
+    ),
+    // The cycle time every formula actually uses, copied from the item's own
+    // Total Cycle Time — not derived from the operations above, since on the
+    // real sheet the two can genuinely differ.
+    totalCycleSec: { type: Number, min: [0, "Cycle time cannot be negative"] },
+    // Which of the operations above didn't apply on THIS entry (e.g. this
+    // run skipped Drilling) — their seconds are subtracted out of
+    // totalCycleSec for this entry only; the item's own master values are
+    // never touched. Keys, not indexes, so they still mean the same
+    // operation if CYCLE_OP_FIELDS is ever reordered.
+    excludedOps: {
+      type: [{ type: String, enum: CYCLE_OP_FIELDS.map((f) => f.key) }],
+      default: [],
+    },
+    // Superseded by the eight named fields above; kept only so entries saved
+    // by the old grid (Op 1…Op 5, no names) keep their cycle times.
     cycleOpsSec: {
       type: [{ type: Number, min: [0, "Cycle time cannot be negative"] }],
       default: [],

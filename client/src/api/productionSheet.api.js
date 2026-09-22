@@ -16,4 +16,7 @@ export const deleteProductionRow = async (id) => api.delete(`${ENDPOINTS.PRODUCT
 
 export const getOperatorNames = async () => api.get(ENDPOINTS.PRODUCTION_SHEET.OPERATORS);
 
+// Active employees from the Employee master, for the Operator dropdown.
+export const getOperatorMaster = async () => api.get(ENDPOINTS.PRODUCTION_SHEET.OPERATOR_MASTER);
+
 export const getRejectReasons = async () => api.get(ENDPOINTS.PRODUCTION_SHEET.REJECT_REASONS);

@@ -10,15 +10,17 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateItems } from "../hooks/useItems";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
-import { CYCLE_OPS, totalCycleSec } from "../utils/productionSheet";
+import { CYCLE_OP_FIELDS } from "../utils/productionSheet";
+import NumberInput from "../Components/Production/NumberInput";
 
-const emptyOps = () => Array(CYCLE_OPS).fill("");
+const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
 
 const initialState = {
   itemName: "",
   drawingNo: "",
   setupNo: "",
-  cycleOpsSec: emptyOps(),
+  totalCycleSec: "",
+  ...emptyOps(),
   isActive: true,
 };
 
@@ -74,12 +76,12 @@ const ItemMaster = () => {
     getItemById(id)
       .then((res) => {
         const it = res.data.data;
-        const ops = emptyOps().map((_, i) => it.cycleOpsSec?.[i] ?? "");
         setValues({
           itemName: it.itemName,
           drawingNo: it.drawingNo || "",
           setupNo: it.setupNo || "",
-          cycleOpsSec: ops,
+          totalCycleSec: it.totalCycleSec ?? "",
+          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           isActive: it.isActive,
         });
       })
@@ -94,17 +96,14 @@ const ItemMaster = () => {
 
   const handleChange = (e) => setValues({ ...values, [e.target.name]: e.target.value });
 
-  const handleOpChange = (index, value) => {
-    const ops = [...values.cycleOpsSec];
-    ops[index] = value;
-    setValues({ ...values, cycleOpsSec: ops });
-  };
-
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Item Name is required!";
-    if (v.cycleOpsSec.some((op) => op !== "" && (!Number.isFinite(Number(op)) || Number(op) < 0))) {
-      errors.cycleOpsSec = "Cycle times must be positive numbers";
+    if (v.totalCycleSec !== "" && (!Number.isFinite(Number(v.totalCycleSec)) || Number(v.totalCycleSec) < 0)) {
+      errors.totalCycleSec = "Must be 0 or more";
+    }
+    if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
+      errors.cycleOps = "Cycle times must be 0 or more";
     }
     return errors;
   };
@@ -121,7 +120,8 @@ const ItemMaster = () => {
       itemName: values.itemName.trim(),
       drawingNo: values.drawingNo.trim(),
       setupNo: values.setupNo.trim(),
-      cycleOpsSec: values.cycleOpsSec.map((op) => (op === "" ? null : Number(op))),
+      totalCycleSec: values.totalCycleSec === "" ? null : Number(values.totalCycleSec),
+      ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, values[f.key] === "" ? null : Number(values[f.key])])),
     };
 
     setIsLoading(true);
@@ -186,12 +186,7 @@ const ItemMaster = () => {
     { name: "Item Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
     { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
-    {
-      name: "Cycle Times (sec)",
-      selector: (row) => (row.cycleOpsSec || []).map((v) => (v === null || v === undefined ? "–" : v)).join(" + "),
-      minWidth: "170px",
-    },
-    { name: "Total Cycle (sec)", selector: (row) => totalCycleSec(row.cycleOpsSec) ?? "", minWidth: "130px" },
+    { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
       name: "Action",
@@ -212,8 +207,6 @@ const ItemMaster = () => {
       minWidth: "140px",
     },
   ];
-
-  const total = totalCycleSec(values.cycleOpsSec);
 
   document.title = `Item Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
@@ -290,24 +283,40 @@ const ItemMaster = () => {
                 </div>
               </Col>
             </Row>
-            <Label className="mb-2 d-block">Cycle Time (sec)</Label>
+            <div className="form-floating mb-3">
+              <NumberInput
+                name="totalCycleSec"
+                value={values.totalCycleSec}
+                onChange={handleChange}
+                decimals={false}
+                placeholder=" "
+              />
+              <Label>Total Cycle Time (sec)</Label>
+              {isSubmit && formErrors.totalCycleSec && <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>}
+            </div>
+            {/* Every formula uses Total Cycle Time above on its own — these
+                are the breakdown, kept for reference, not summed into it,
+                since the two can genuinely differ on the real sheet. */}
+            <Label className="mb-2 d-block">Operation Times (sec) — reference only</Label>
             <Row className="g-2 align-items-end">
-              {values.cycleOpsSec.map((op, i) => (
-                <Col key={i} xs={4} md={2}>
+              {CYCLE_OP_FIELDS.map((f) => (
+                <Col key={f.key} xs={6} md={3}>
                   <div className="form-floating">
-                    <Input type="number" min="0" value={op} onChange={(e) => handleOpChange(i, e.target.value)} placeholder=" " />
-                    <Label>Op {i + 1}</Label>
+                    <NumberInput
+                      name={f.key}
+                      value={values[f.key]}
+                      onChange={handleChange}
+                      decimals={false}
+                      placeholder=" "
+                    />
+                    {/* Both "Other Operation" boxes carry the sheet's own label;
+                        the index tells the two apart without renaming either. */}
+                    <Label>{f.label.replace(" (sec)", "")}{f.key === "otherOp2Sec" ? " 2" : ""}</Label>
                   </div>
                 </Col>
               ))}
-              <Col xs={4} md={2}>
-                <div className="form-floating">
-                  <Input type="text" value={total ?? ""} readOnly disabled placeholder=" " />
-                  <Label>Total</Label>
-                </div>
-              </Col>
             </Row>
-            {isSubmit && formErrors.cycleOpsSec && <p className="text-danger mt-1">{formErrors.cycleOpsSec}</p>}
+            {isSubmit && formErrors.cycleOps && <p className="text-danger mt-1">{formErrors.cycleOps}</p>}
             <div className="mt-3">
               <Input
                 type="checkbox"

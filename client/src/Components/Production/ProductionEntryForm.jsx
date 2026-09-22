@@ -4,7 +4,7 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import { REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
+import { CYCLE_OP_FIELDS, REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -59,9 +59,13 @@ const Field = ({ label, required, error, children, md = 3 }) => (
 // line containing a validation error can flag itself in its heading.
 const LINES = [
   { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
-  { id: 2, title: "Part Name", fields: ["itemName"] },
+  {
+    id: 2,
+    title: "Part Name, Total Cycle Time",
+    fields: ["itemName", ...CYCLE_OP_FIELDS.map((f) => f.key)],
+  },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
+  { id: 5, title: "Ideal Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
   { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
   { id: 6, title: "Planned Operator Shift Time", fields: ["plannedOperatorShiftHours"] },
   { id: 7, title: "Setup Time, No Man Power, Material Shifting", fields: ["setupMin", "noManPowerMin", "materialShiftingMin"] },
@@ -93,7 +97,7 @@ const Line = ({ id, errors, isSubmit, children }) => {
 // Everything a block can hold beyond the machine itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
 const DATA_KEYS = [
-  "operator", "itemName", "drawingNo", "cycleTimeSec", "machineOnTime", "machineOffTime",
+  "operator", "itemName", "drawingNo", "machineOnTime", "machineOffTime",
   "actualQty", "okQty", "plannedOperatorShiftHours", "remarks",
   ...LINES.flatMap((l) => l.fields),
 ].filter((k) => !["date", "machine", "slot", "rejectBreakdown"].includes(k));
@@ -109,15 +113,21 @@ const EntryBlock = ({
   machines,
   processes,
   items,
+  operators,
   isEdit,
   index,
   canRemove,
+  expanded,
+  onExpand,
   onChange,
   onItemSelect,
   onRejectChange,
   onRemove,
 }) => {
   const calc = useMemo(() => rowCalc(values), [values]);
+  // The picked part's own record — its Total Cycle Time and operation times
+  // are what an unticked box gets restored from when it's ticked back.
+  const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // Which process's machines the machine picker is narrowed to — a filter
   // only, never saved on the entry itself (the machine already carries its
@@ -166,8 +176,6 @@ const EntryBlock = ({
     [values.rejectBreakdown],
   );
   const splitMismatch = splitTotal !== (calc.rejectedQty || 0);
-  // A new block starts collapsed to its machine picker; editing opens straight up.
-  const [expanded, setExpanded] = useState(isEdit);
 
   const err = (key) => (isSubmit ? errors[key] : undefined);
   const handle = (e) => onChange(index, e.target.name, e.target.value);
@@ -176,7 +184,8 @@ const EntryBlock = ({
   // with them. Reopen the block whenever validation flags something inside it.
   const errorKeys = Object.keys(errors).join("|");
   useEffect(() => {
-    if (isSubmit && errorKeys) setExpanded(true);
+    if (isSubmit && errorKeys) onExpand(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmit, errorKeys]);
 
   const machineSelect = (
@@ -220,7 +229,7 @@ const EntryBlock = ({
                   type="button"
                   className="btn btn-primary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
                   style={{ width: 38, height: 38 }}
-                  onClick={() => setExpanded(true)}
+                  onClick={() => onExpand(index)}
                   disabled={!values.machine}
                   title={values.machine ? "Open the entry fields" : "Select a machine first"}
                   aria-label="Open the entry fields"
@@ -256,7 +265,7 @@ const EntryBlock = ({
           type="button"
           className="btn btn-sm btn-light border d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
           style={{ width: 28, height: 28 }}
-          onClick={() => setExpanded(false)}
+          onClick={() => onExpand(isEdit ? index : null)}
           title="Collapse this machine"
           aria-label="Collapse this machine"
         >
@@ -276,22 +285,29 @@ const EntryBlock = ({
               {machineSelect}
             </Field>
             <Field label="Operator" error={err("operator")} md={6}>
-              <Input
-                type="text"
-                name="operator"
-                value={values.operator}
-                onChange={handle}
-                list="operator-names"
-                maxLength={60}
-                autoComplete="off"
-              />
+              <Input type="select" name="operator" value={values.operator} onChange={handle}>
+                {/* A record saved before the Operator box read from the Employee
+                    master, or one whose employee has since left, still has a
+                    name typed here that this list won't contain — keep showing
+                    that name rather than an empty box. */}
+                <option value="">
+                  {values.operator && !operators.some((o) => o.employeeName === values.operator)
+                    ? values.operator
+                    : "Select operator"}
+                </option>
+                {operators.map((o) => (
+                  <option key={o._id} value={o.employeeName}>
+                    {o.employeeName}
+                  </option>
+                ))}
+              </Input>
             </Field>
           </Row>
         </Line>
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row>
-            <Field label="Part Name" error={err("itemName")} md={12}>
+            <Field label="Part Name" error={err("itemName")} md={8}>
               <Input
                 type="select"
                 name="item"
@@ -309,6 +325,61 @@ const EntryBlock = ({
                 ))}
               </Input>
             </Field>
+            <Calc
+              label="Total Cycle Time (sec)"
+              value={fmtNum(calc.totalCycleSec)}
+              md={4}
+              title="The Part's own Total Cycle Time, minus any unticked operation below"
+            />
+          </Row>
+          <Row>
+            {CYCLE_OP_FIELDS.map((f) => {
+              // Both "Other Operation" boxes carry the sheet's own label; the
+              // index tells the two apart without renaming either.
+              const label = f.key === "otherOp2Sec" ? `${f.label.replace(" (sec)", "")} 2 (sec)` : f.label;
+              const checkId = `cycle-op-${index}-${f.key}`;
+              // Which operations this Part *has* decides whether the box can
+              // be ticked at all — one Item Master doesn't have stays
+              // permanently unticked. The value itself always comes from the
+              // Part and is never cleared; unticking only excludes it from
+              // this entry's Total Cycle Time (excludedOps), so ticking it
+              // back needs nothing restored — the seconds were there the
+              // whole time.
+              const itemValue = selectedItem?.[f.key];
+              const canTick = itemValue !== undefined && itemValue !== null && itemValue !== "";
+              const excludedOps = values.excludedOps || [];
+              const excluded = excludedOps.includes(f.key);
+              const toggle = () => {
+                if (!canTick) return;
+                onChange(
+                  index,
+                  "excludedOps",
+                  excluded ? excludedOps.filter((k) => k !== f.key) : [...excludedOps, f.key],
+                );
+              };
+              return (
+                <Col key={f.key} md={3}>
+                  <div className="form-check mb-2 d-flex align-items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input flex-shrink-0"
+                      id={checkId}
+                      checked={canTick && !excluded}
+                      disabled={!canTick}
+                      onChange={toggle}
+                    />
+                    <Label className={`form-check-label ${labelClass} mb-0`} htmlFor={checkId}>
+                      {label}
+                      {canTick && (
+                        <span className={`ms-1 ${excluded ? "text-decoration-line-through text-muted" : "fw-semibold text-body"}`}>
+                          — {fmtNum(Number(itemValue))}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                </Col>
+              );
+            })}
           </Row>
         </Line>
 
@@ -341,13 +412,13 @@ const EntryBlock = ({
 
         <Line id={5} errors={errors} isSubmit={isSubmit}>
           <Row>
-            <Field label="Actual Quantity" error={err("actualQty")} md={3}>
+            <Field label="Ideal Quantity" error={err("actualQty")} md={3}>
               <NumberInput name="actualQty" value={values.actualQty} onChange={handle} decimals={false} />
             </Field>
             <Field label="OK Quantity" error={err("okQty")} md={3}>
               <NumberInput name="okQty" value={values.okQty} onChange={handle} decimals={false} />
             </Field>
-            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Actual Quantity − OK Quantity" />
+            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Ideal Quantity − OK Quantity" />
             <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
@@ -462,47 +533,58 @@ const ProductionEntryForm = ({
   machines = [],
   processes = [],
   items = [],
-  operatorNames = [],
+  operators = [],
   isEdit = false,
   onChange,
   onItemSelect,
   onRejectChange,
   onAdd,
   onRemove,
-}) => (
-  <>
-    {/* One shared suggestion list for every block's Operator box. */}
-    <datalist id="operator-names">
-      {operatorNames.map((n) => (
-        <option key={n} value={n} />
+}) => {
+  // Only one block is ever open at a time: opening one collapses whichever
+  // else was open, so several "Add another machine" blocks behave like an
+  // accordion instead of piling up expanded together. Editing shows a single
+  // block, always open.
+  const [expandedIndex, setExpandedIndex] = useState(isEdit ? 0 : null);
+
+  return (
+    <>
+      {entries.map((values, i) => (
+        <EntryBlock
+          key={i}
+          index={i}
+          values={values}
+          errors={errors[i] || {}}
+          isSubmit={isSubmit}
+          machines={machines}
+          processes={processes}
+          items={items}
+          operators={operators}
+          isEdit={isEdit}
+          canRemove={!isEdit && entries.length > 1}
+          expanded={isEdit || expandedIndex === i}
+          onExpand={setExpandedIndex}
+          onChange={onChange}
+          onItemSelect={onItemSelect}
+          onRejectChange={onRejectChange}
+          onRemove={onRemove}
+        />
       ))}
-    </datalist>
 
-    {entries.map((values, i) => (
-      <EntryBlock
-        key={i}
-        index={i}
-        values={values}
-        errors={errors[i] || {}}
-        isSubmit={isSubmit}
-        machines={machines}
-        processes={processes}
-        items={items}
-        isEdit={isEdit}
-        canRemove={!isEdit && entries.length > 1}
-        onChange={onChange}
-        onItemSelect={onItemSelect}
-        onRejectChange={onRejectChange}
-        onRemove={onRemove}
-      />
-    ))}
-
-    {!isEdit && (
-      <button type="button" className="btn btn-outline-primary d-inline-flex align-items-center gap-2" onClick={onAdd}>
-        <Plus size={16} /> Add another machine
-      </button>
-    )}
-  </>
-);
+      {!isEdit && (
+        <button
+          type="button"
+          className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
+          onClick={() => {
+            setExpandedIndex(entries.length);
+            onAdd();
+          }}
+        >
+          <Plus size={16} /> Add another machine
+        </button>
+      )}
+    </>
+  );
+};
 
 export default ProductionEntryForm;

@@ -23,17 +23,18 @@ import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
 import {
   deleteProductionRow,
-  getOperatorNames,
+  getOperatorMaster,
   getProductionSheet,
   saveProductionRow,
 } from "../api/productionSheet.api";
 import {
+  CYCLE_OP_FIELDS,
   REJECT_REASONS,
   STOPPAGE_FIELDS,
   dayCalc,
   daysOfMonth,
   isoDay,
-  totalCycleSec,
+  sortByMachineOn,
 } from "../utils/productionSheet";
 
 /**
@@ -56,9 +57,17 @@ import {
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
+const CYCLE_OP_KEYS = CYCLE_OP_FIELDS.map((f) => f.key);
 const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = ["actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = [
+  "actualQty",
+  "okQty",
+  "plannedOperatorShiftHours",
+  "totalCycleSec",
+  ...STOPPAGE_KEYS,
+  ...CYCLE_OP_KEYS,
+];
 
 const emptyEntry = () => ({
   date: isoDay(new Date()),
@@ -67,8 +76,10 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
-  cycleTimeSec: "",
   rejectBreakdown: {},
+  // Operations this entry has unticked out of what its Part carries — subtracted
+  // from its Total Cycle Time; the Part's own record is never touched.
+  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -96,11 +107,6 @@ const toFormValues = (row) => {
     actualQty: legacyActual,
     item: row.item || "",
     slot: row.slot,
-    // Records saved by the old grid hold up to five op-wise cycle times; the
-    // form has one Cycle Time box, so it shows their total. Every formula uses
-    // that total, so the numbers are unchanged — only the op-wise split is
-    // dropped, and only once such a record is saved from here.
-    cycleTimeSec: totalCycleSec(row.cycleOpsSec) ?? "",
     // A record saved before the split existed has only a single rejectReason;
     // its rejected pieces are put against that reason so editing it doesn't
     // look like the reason was lost.
@@ -141,7 +147,7 @@ const toPayload = (v, isEdit) => {
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
-  cycleOpsSec: v.cycleTimeSec === "" ? [] : [Number(v.cycleTimeSec)],
+  excludedOps: v.excludedOps || [],
   rejectBreakdown: split,
   rejectReason: topReason,
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
@@ -161,7 +167,7 @@ const ProductionSheet = () => {
   const [machineFilter, setMachineFilter] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [operatorNames, setOperatorNames] = useState([]);
+  const [operators, setOperators] = useState([]);
 
   const { data: machines = [] } = useMachines();
   const { data: processes = [] } = useProcesses();
@@ -202,8 +208,8 @@ const ProductionSheet = () => {
   }, [fetchRows]);
 
   useEffect(() => {
-    getOperatorNames()
-      .then((res) => setOperatorNames(res.data.data || []))
+    getOperatorMaster()
+      .then((res) => setOperators(res.data.data || []))
       .catch(() => {});
   }, []);
 
@@ -218,11 +224,25 @@ const ProductionSheet = () => {
     [rows, machineName],
   );
 
-  // Same figures per saved record, for the list's OEE column.
+  // dayCalc looks at a machine's whole date (this row + the following rows
+  // of that same date) but hands back one result per row, not one shared
+  // value — so each saved record's OEE/Unreported/Unutilized figures are
+  // keyed by that record's own id, not by machine+date.
   const dayResultByKey = useMemo(() => {
     const groups = {};
     for (const r of rows) (groups[`${r.machine}|${r.date}`] ||= []).push(r);
-    return Object.fromEntries(Object.entries(groups).map(([k, g]) => [k, dayCalc(g)]));
+    const out = {};
+    for (const group of Object.values(groups)) {
+      // dayCalc sorts by Machine ON Time internally to build its window;
+      // sorted the same way here (via the same helper, not a second copy of
+      // the logic) so result i still lines up with sorted[i].
+      const sorted = sortByMachineOn(group);
+      const results = dayCalc(sorted);
+      sorted.forEach((r, i) => {
+        out[r._id] = results[i];
+      });
+    }
+    return out;
   }, [rows]);
 
   // ── Form ───────────────────────────────────────────────────────────────
@@ -277,7 +297,7 @@ const ProductionSheet = () => {
       setEntries((list) =>
         list.map((v, i) => {
           if (i !== index) return v;
-          if (!itemId) return { ...v, item: "", itemName: "" };
+          if (!itemId) return { ...v, item: "", itemName: "", excludedOps: [] };
           const it = items.find((item) => item._id === itemId);
           if (!it) return { ...v, item: "" };
           return {
@@ -285,7 +305,15 @@ const ProductionSheet = () => {
             item: it._id,
             itemName: it.itemName,
             drawingNo: it.drawingNo || "",
-            cycleTimeSec: totalCycleSec(it.cycleOpsSec) ?? "",
+            // Copies the item's own Total Cycle Time and operation times onto
+            // the entry. These are locked to the item, not typed here — a
+            // later change to the master is picked up again next time this
+            // part is (re)selected. A freshly (re)picked part starts with
+            // every operation ticked; whichever were unticked belonged to
+            // the part picked before.
+            totalCycleSec: it.totalCycleSec ?? "",
+            excludedOps: [],
+            ...Object.fromEntries(CYCLE_OP_KEYS.map((k) => [k, it[k] ?? ""])),
           };
         }),
       );
@@ -303,7 +331,7 @@ const ProductionSheet = () => {
     if (actual !== null && (!Number.isFinite(actual) || actual < 0)) errors.actualQty = "Must be 0 or more";
     if (ok !== null && (!Number.isFinite(ok) || ok < 0)) errors.okQty = "Must be 0 or more";
     if (actual !== null && ok !== null && ok > actual) errors.okQty = "OK cannot be more than Actual";
-    if (ok !== null && actual === null) errors.actualQty = "Enter Actual Quantity too";
+    if (ok !== null && actual === null) errors.actualQty = "Enter Ideal Quantity too";
 
     // The per-reason split is what makes rejections readable on the dashboard,
     // so it has to account for every rejected piece — no more, no less.
@@ -318,8 +346,10 @@ const ProductionSheet = () => {
       errors.rejectBreakdown = "Nothing was rejected, so these boxes should be empty";
     }
 
-    const cycle = v.cycleTimeSec === "" ? null : Number(v.cycleTimeSec);
-    if (cycle !== null && (!Number.isFinite(cycle) || cycle < 0)) errors.cycleTimeSec = "Must be 0 or more";
+    for (const key of CYCLE_OP_KEYS) {
+      const n = v[key] === "" ? null : Number(v[key]);
+      if (n !== null && (!Number.isFinite(n) || n < 0)) errors[key] = "Must be 0 or more";
+    }
     for (const key of STOPPAGE_KEYS) {
       const n = v[key] === "" ? null : Number(v[key]);
       if (n !== null && (!Number.isFinite(n) || n < 0 || n > 1440)) errors[key] = "0–1440";
@@ -474,7 +504,7 @@ const ProductionSheet = () => {
               machines={machines}
               processes={processes}
               items={items}
-              operatorNames={operatorNames}
+              operators={operators}
               isEdit={modalMode === "edit"}
               onChange={handleChange}
               onItemSelect={handleItemSelect}

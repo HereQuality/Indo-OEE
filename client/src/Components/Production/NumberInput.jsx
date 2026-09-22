@@ -8,11 +8,15 @@ import { Input } from "reactstrap";
  * stepping, both of which change production figures by accident.
  *
  * It is a text input (that is what removes the browser's stepper entirely
- * rather than just hiding it) with a numeric keypad on mobile, and it only
- * accepts digits and a single decimal point as you type. The value stays a
- * string, exactly like the other form fields; the page converts it on save.
+ * rather than just hiding it, and what stops the mouse wheel changing the
+ * value while it's focused — only a number input does that) with a numeric
+ * keypad on mobile, and it only accepts digits and a single decimal point as
+ * you type. The value stays a string, exactly like the other form fields;
+ * the page converts it on save. Capped at 7 digits by default — long enough
+ * for any figure on this sheet — so one stray keystroke can't turn a cell
+ * into a 20-digit number; pass a different `maxLength` to override it.
  */
-const NumberInput = ({ name, value, onChange, decimals = true, ...rest }) => {
+const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, ...rest }) => {
   const pattern = decimals ? /^\d*\.?\d*$/ : /^\d*$/;
 
   const handleChange = (e) => {
@@ -28,6 +32,7 @@ const NumberInput = ({ name, value, onChange, decimals = true, ...rest }) => {
       name={name}
       value={value ?? ""}
       onChange={handleChange}
+      maxLength={maxLength}
       {...rest}
     />
   );
