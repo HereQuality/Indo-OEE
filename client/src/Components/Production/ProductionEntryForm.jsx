@@ -63,7 +63,7 @@ const LINES = [
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
   { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
-  { id: 6, title: "Planned Operator Shift Time, Utilized Machine Time", fields: ["plannedOperatorShiftHours"] },
+  { id: 6, title: "Planned Operator Shift Time", fields: ["plannedOperatorShiftHours"] },
   { id: 7, title: "Setup Time, No Man Power, Material Shifting", fields: ["setupMin", "noManPowerMin", "materialShiftingMin"] },
   { id: 8, title: "No Material, Breakdown Mechanical, BD Electricity, No Power", fields: ["noMaterialMin", "bdMechMin", "bdEleMin", "noPowerMin"] },
   { id: 9, title: "Lunch / Rest, Other (min)", fields: ["lunchMin", "otherMin"] },
@@ -71,6 +71,24 @@ const LINES = [
 ];
 
 const findLine = (id) => LINES.find((l) => l.id === id);
+
+// A titled box around one line's fields. Kept at module scope — defining it
+// inside EntryBlock would make React see a brand-new component type on every
+// keystroke (since the function itself is recreated each render) and remount
+// the whole subtree, dropping focus out of whatever input was being typed in.
+const Line = ({ id, errors, isSubmit, children }) => {
+  const def = findLine(id);
+  const hasError = isSubmit && def.fields.some((f) => errors[f]);
+  return (
+    <div className={`border rounded mb-3 ${hasError ? "border-danger" : ""}`}>
+      <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom rounded-top">
+        <span className="fw-semibold small">{def.title}</span>
+        {hasError && <span className="badge bg-danger-subtle text-danger ms-auto">Check this line</span>}
+      </div>
+      <div className="px-3 pt-3">{children}</div>
+    </div>
+  );
+};
 
 // Everything a block can hold beyond the machine itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
@@ -229,20 +247,6 @@ const EntryBlock = ({
     );
   }
 
-  const Line = ({ id, children }) => {
-    const def = findLine(id);
-    const hasError = isSubmit && def.fields.some((f) => errors[f]);
-    return (
-      <div className={`border rounded mb-3 ${hasError ? "border-danger" : ""}`}>
-        <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom rounded-top">
-          <span className="fw-semibold small">{def.title}</span>
-          {hasError && <span className="badge bg-danger-subtle text-danger ms-auto">Check this line</span>}
-        </div>
-        <div className="px-3 pt-3">{children}</div>
-      </div>
-    );
-  };
-
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
@@ -263,7 +267,7 @@ const EntryBlock = ({
       </div>
 
       <div className="p-3">
-        <Line id={1}>
+        <Line id={1} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Date" required error={err("date")} md={3}>
               <DatePicker name="date" value={values.date} onChange={handle} hasError={!!err("date")} />
@@ -285,7 +289,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={2}>
+        <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Part Name" error={err("itemName")} md={12}>
               <Input
@@ -308,7 +312,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={3}>
+        <Line id={3} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Machine ON Time" error={err("machineOnTime")} md={4}>
               <TimePicker
@@ -330,12 +334,12 @@ const EntryBlock = ({
               label="Machine Shift (hr)"
               value={fmtNum(calc.shiftHours)}
               md={4}
-              title="Machine OFF Time − Machine ON Time"
+              title="MOD(Machine OFF Time − Machine ON Time, 1) × 24"
             />
           </Row>
         </Line>
 
-        <Line id={5}>
+        <Line id={5} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Actual Quantity" error={err("actualQty")} md={3}>
               <NumberInput name="actualQty" value={values.actualQty} onChange={handle} decimals={false} />
@@ -344,11 +348,11 @@ const EntryBlock = ({
               <NumberInput name="okQty" value={values.okQty} onChange={handle} decimals={false} />
             </Field>
             <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Actual Quantity − OK Quantity" />
-            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ Actual Quantity" />
+            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
 
-        <Line id={13}>
+        <Line id={13} errors={errors} isSubmit={isSubmit}>
           <Row>
             {REJECT_REASONS.map((reason) => (
               <Col md={4} key={reason}>
@@ -374,7 +378,7 @@ const EntryBlock = ({
           </div>
         </Line>
 
-        <Line id={6}>
+        <Line id={6} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Planned Operator Shift Time (hr)" error={err("plannedOperatorShiftHours")} md={6}>
               <NumberInput
@@ -383,16 +387,10 @@ const EntryBlock = ({
                 onChange={handle}
               />
             </Field>
-            <Calc
-              label="Utilized Machine Time (hr)"
-              value=""
-              md={6}
-              title="Formula still to be confirmed — not calculated yet"
-            />
           </Row>
         </Line>
 
-        <Line id={7}>
+        <Line id={7} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Setup Time (min)" error={err("setupMin")} md={4}>
               <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} />
@@ -411,7 +409,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={8}>
+        <Line id={8} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="No Material (min)" error={err("noMaterialMin")} md={3}>
               <NumberInput name="noMaterialMin" value={values.noMaterialMin} onChange={handle} decimals={false} />
@@ -428,7 +426,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={9}>
+        <Line id={9} errors={errors} isSubmit={isSubmit}>
           <Row>
             <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={6}>
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} />
@@ -439,7 +437,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={12}>
+        <Line id={12} errors={errors} isSubmit={isSubmit}>
           <div className="mb-3">
             <Label className={labelClass}>Remarks</Label>
             <Input

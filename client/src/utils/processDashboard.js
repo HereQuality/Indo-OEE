@@ -35,9 +35,9 @@ export const STAT_CATALOG = [
   { key: "totalQty", label: "Total QTY", hint: "Actual quantity produced", format: "qty", example: "1.43M" },
   { key: "okQty", label: "OK QTY", hint: "Pieces that passed", format: "qty", tone: "ok", example: "269K" },
   { key: "rejectedQty", label: "Rejected QTY", hint: "Actual − OK", format: "qty", tone: "reject", example: "9,453" },
-  { key: "okPct", label: "% OK Quantity", hint: "OK ÷ Actual", format: "pct", tone: "ok", example: "99.97%" },
+  { key: "okPct", label: "% OK Quantity", hint: "OK ÷ (OK + Rejected)", format: "pct", tone: "ok", example: "99.97%" },
   { key: "rejectionPct", label: "Rejection %", hint: "Rejected ÷ Actual", format: "pct", tone: "reject", example: "0.66%" },
-  { key: "idealQty", label: "Ideal QTY", hint: "Shift time ÷ cycle time", format: "qty", example: "1.51M" },
+  { key: "idealQty", label: "Ideal QTY", hint: "(Shift − planned down) ÷ cycle time", format: "qty", example: "1.51M" },
   { key: "performance", label: "Actual vs Ideal", hint: "Actual ÷ Ideal quantity", format: "pct", example: "94.70%" },
   { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%" },
   { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%" },
@@ -49,7 +49,7 @@ export const STAT_CATALOG = [
   { key: "unreportedMin", label: "Unreported Time", hint: "Shift − stoppage − effective", format: "minutes", example: "212 min" },
   { key: "setupEfficiency", label: "Setup Efficiency", hint: "Effective ÷ shift, per entry", format: "pct", example: "88.40%" },
   { key: "entries", label: "Entries", hint: "Rows on the data entry sheet", format: "qty", example: "3,204" },
-  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "(Machine Shift Time − Effective Run Time) ÷ 24", format: "days", example: "869.81" },
+  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "Σ (12 − (Shift − Stoppage ÷ 60)) ÷ 11, per machine-day", format: "days", example: "869.81" },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ export function summarize(rows) {
   const s = {
     totalQty: 0, okQty: 0, rejectedQty: 0, idealQty: 0,
     shiftHours: 0, effectiveHours: 0, plannedShiftHours: 0,
-    downtimeMin: 0, unreportedMin: 0, entries: rows.length,
+    downtimeMin: 0, unreportedMin: 0, unutilizedDays: 0, entries: rows.length,
   };
   const setupEff = [];
   const downtimeByCause = Object.fromEntries(STOPPAGE_FIELDS.map((f) => [f.key, 0]));
@@ -197,6 +197,7 @@ export function summarize(rows) {
   for (const group of byMachineDay.values()) {
     const d = dayCalc(group);
     if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
+    if (Number.isFinite(d.unutilized)) s.unutilizedDays += d.unutilized;
     for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
   }
 
@@ -209,7 +210,6 @@ export function summarize(rows) {
     oeeLosses: mean(oee.oeeLosses),
     oeeLunch: mean(oee.oeeLunch),
     oeeLunchCot: mean(oee.oeeLunchCot),
-    unutilizedDays: Math.max(0, s.shiftHours - s.effectiveHours) / 24,
     machineDays: byMachineDay.size,
     downtimeByCause,
     rejectByReason,

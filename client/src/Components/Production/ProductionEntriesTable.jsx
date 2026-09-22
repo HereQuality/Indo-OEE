@@ -121,7 +121,7 @@ const GROUPS = [
     columns: [
       { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName) },
       { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo) },
-      { key: "cycle", label: "Cycle Time (sec)", get: (r, c) => n(c.totalCycleSec), align: "text-end", tone: "calc" },
+      { key: "cycle", label: "Total Cycle Time (sec)", get: (r, c) => n(c.totalCycleSec), align: "text-end", tone: "calc" },
     ],
   },
   {
@@ -175,8 +175,14 @@ const GROUPS = [
         get: (r) => min(r.plannedOperatorShiftHours),
         align: "text-end",
       },
-      // Blank until Indo confirms the formula — see the same note on the form.
-      { key: "utilized", label: "Utilized Machine Time (hr)", get: () => "—", align: "text-end", tone: "calc" },
+      {
+        key: "unutilized",
+        label: "Unutilized Machine Time",
+        get: (r, c, d) => n(d.unutilized),
+        align: "text-end",
+        tone: "day",
+        merge: "machineDay",
+      },
     ],
   },
   {

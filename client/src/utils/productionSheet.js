@@ -5,26 +5,25 @@
  * Formulas reproduce the Indo "Section Wise Eff. — CNC" Excel sheet and
  * were checked against its values (e.g. 06/04 7A, 07/04 7D, 22/04 7B).
  *
- * Per row:
- *   Total cycle time (sec)   = Op 1 + … + Op 5
- *   Machine Shift Time (h)   = Machine OFF − Machine ON
- *   Ideal Quantity           = Shift h × 3600 ÷ Total cycle sec
- *   Ideal Quantity/Hours     = 3600 ÷ Total cycle sec
- *   Rejected Quantity        = Actual − OK          (derived, never typed)
- *   % OK Quantity            = OK ÷ Actual
- *   Total Stoppage (min)     = sum of the ten stoppage columns
- *   Effective Run Time (h)   = OK × Total cycle sec ÷ 3600
- *   Setup Efficiency (%)     = Effective h ÷ Shift h
+ * Per row (blank while Working Status — the Operator cell — is empty):
+ *   1  Total cycle time (sec)   = sum of operation times (blank without Part Name)
+ *   2  Machine Shift Time (h)   = MOD(OFF − ON, 1) × 24
+ *   3  Ideal Quantity           = (Shift min − Planned Down min) × 60 ÷ Cycle sec
+ *   4  Ideal Quantity/Hours     = Ideal Quantity ÷ Shift h
+ *   5  % OK Quantity            = OK ÷ (OK + Rejected)
+ *   7  Total Stoppage (min)     = sum of the ten stoppage columns
+ *   8  Effective Run Time (h)   = OK × Cycle sec ÷ 3600
+ *   10 Setup Efficiency (%)     = Effective h ÷ Shift h
+ *      Rejected Quantity        = Actual − OK          (derived, never typed)
  *
- * Per machine per day (all three rows of that machine on that date):
- *   Unreported Time (min)                       = Shift − Stoppage − Effective
- *   OEE considering losses                      = Effective ÷ (Shift − Stoppage)
- *   OEE not considering losses but lunch        = Effective ÷ (Shift − Lunch)
- *   OEE not considering losses but lunch and COT = Effective ÷ (Shift − Lunch − Setup)
- * (all in minutes; COT = Setup Time)
- *
- * Utilized / Unutilized Machine Time are shown but not calculated yet —
- * their formula is still to be confirmed with Indo.
+ * Per machine per day ("this row + next 2 rows" in Excel = its three rows);
+ * blank while Planned Operator Shift Time is empty:
+ *   9  Unreported Time (min)    = Shift×60 − Effective×60 − Stoppage
+ *   11 OEE considering losses   = Effective ÷ (Shift − Stoppage/60)
+ *   12 OEE … but lunch          = Effective ÷ (Shift − Lunch/60)
+ *   13 OEE … but lunch and COT  = Effective ÷ (Shift − Lunch/60 − Setup/60)
+ *   6  Unutilized Machine Time  = (12 − (Shift − Stoppage/60)) ÷ 11
+ *      (blank while Working Status is empty)
  */
 
 export const SLOTS_PER_DAY = 3;
@@ -96,71 +95,91 @@ export const totalCycleSec = (ops) => {
   return vals.length ? vals.reduce((s, v) => s + v, 0) : null;
 };
 
+// The Indo sheet's "Working Status" cell holds the operator's name, or a
+// status such as ABSENT / M/C OFF when nobody ran the machine. Most formulas
+// stay blank until it is filled.
+const workingStatusOf = (row) => String(row?.operator || row?.workingStatus || "").trim();
+
+const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
+const ratio = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? a / b : null);
+
 export function rowCalc(row) {
   if (!row) return {};
+  const working = workingStatusOf(row) !== "";
+
+  // 1) Total cycle time = sum of the operation times; blank without a Part Name.
   // The entry form supplies one `cycleTimeSec`; records saved by the old grid
   // hold the op-wise `cycleOpsSec` array, which is summed. Either works.
   const single = num(row.cycleTimeSec);
-  const cycle = isNum(single) ? single : totalCycleSec(row.cycleOpsSec);
-  const shiftMin = spanMinutes(row.machineOnTime, row.machineOffTime);
+  const opsTotal = isNum(single) ? single : totalCycleSec(row.cycleOpsSec);
+  const cycle = String(row.itemName || "").trim() ? opsTotal : null;
+
+  // 2) Machine Shift Time = MOD(OFF − ON, 1) × 24.
+  const shiftMin = working ? spanMinutes(row.machineOnTime, row.machineOffTime) : null;
   const shiftHours = shiftMin === null ? null : shiftMin / 60;
+
   const ok = num(row.okQty);
   const actual = num(row.actualQty);
   // Rejected is always Actual − OK. Rows saved before Actual Quantity existed
   // have no actualQty, so their stored rejectedQty is used instead.
   const rej = isNum(actual) && isNum(ok) ? Math.max(0, actual - ok) : num(row.rejectedQty);
-
-  const stoppageVals = STOPPAGE_FIELDS.map((f) => num(row[f.key])).filter(isNum);
-  const totalStoppageMin = stoppageVals.length ? stoppageVals.reduce((s, v) => s + v, 0) : null;
-
-  const effectiveHours = cycle && isNum(ok) ? (ok * cycle) / 3600 : null;
   // Falls back to OK + Rejected for rows that predate Actual Quantity.
   const totalProduced = isNum(actual) ? actual : (ok || 0) + (rej || 0);
+
+  // 3) Ideal Quantity = (shift min − Planned Down Time) × 60 ÷ cycle sec.
+  const idealQty =
+    shiftMin !== null ? ratio((shiftMin - (num(row.plannedDownMin) || 0)) * 60, cycle) : null;
+
+  // 7) Total Stoppage = sum of the ten stoppage columns.
+  const totalStoppageMin = working ? sumOrZero(STOPPAGE_FIELDS.map((f) => num(row[f.key]))) : null;
+
+  // 8) Effective Machine Run Time = OK × cycle sec ÷ 3600.
+  const effectiveHours = working && isNum(cycle) ? ((ok || 0) * cycle) / 3600 : null;
 
   return {
     totalCycleSec: cycle,
     actualQty: isNum(actual) ? actual : isNum(ok) || isNum(rej) ? totalProduced : null,
     rejectedQty: rej,
     shiftHours,
-    idealQty: cycle && shiftHours !== null ? (shiftHours * 3600) / cycle : null,
-    idealQtyPerHour: cycle ? 3600 / cycle : null,
-    pctOk: totalProduced > 0 && (isNum(ok) || isNum(rej)) ? (ok || 0) / totalProduced : null,
+    idealQty,
+    // 4) Ideal Quantity/Hours = Ideal Quantity ÷ Machine Shift Time.
+    idealQtyPerHour: ratio(idealQty, shiftHours),
+    // 5) % OK Quantity = OK ÷ (OK + Rejected).
+    pctOk: isNum(ok) ? ratio(ok, ok + (rej || 0)) : null,
     totalStoppageMin,
     effectiveHours,
-    setupEfficiency: effectiveHours !== null && shiftHours > 0 ? effectiveHours / shiftHours : null,
+    // 10) Setup Efficiency = Effective Run Time ÷ Machine Shift Time.
+    setupEfficiency: ratio(effectiveHours, shiftHours),
   };
 }
 
-// Day-level results for one machine on one date, from its (up to) three rows.
+// Day-level results for one machine on one date. The Excel formulas read
+// "this row + the next 2 rows" — i.e. all (up to) three rows of that machine
+// on that date. A row whose value is blank counts as 0.
 export function dayCalc(rows) {
-  let shiftMin = 0;
-  let stoppageMin = 0;
-  let lunchMin = 0;
-  let setupMin = 0;
-  let effectiveMin = 0;
-  let hasShift = false;
+  const list = (rows || []).filter(Boolean);
+  const calcs = list.map(rowCalc);
 
-  for (const row of rows) {
-    if (!row) continue;
-    const c = rowCalc(row);
-    if (c.shiftHours !== null) {
-      shiftMin += c.shiftHours * 60;
-      hasShift = true;
-    }
-    stoppageMin += c.totalStoppageMin || 0;
-    lunchMin += num(row.lunchMin) || 0;
-    setupMin += num(row.setupMin) || 0;
-    effectiveMin += (c.effectiveHours || 0) * 60;
-  }
+  const shiftH = sumOrZero(calcs.map((c) => c.shiftHours));
+  const stoppageMin = sumOrZero(calcs.map((c) => c.totalStoppageMin));
+  const effectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
+  const lunchMin = sumOrZero(list.map((r) => num(r.lunchMin)));
+  const setupMin = sumOrZero(list.map((r) => num(r.setupMin)));
 
-  if (!hasShift) return { unreportedMin: null, oeeLosses: null, oeeLunch: null, oeeLunchCot: null };
+  const working = list.some((r) => workingStatusOf(r) !== "");
+  const planned = list.some((r) => isNum(num(r.plannedOperatorShiftHours)));
 
-  const ratio = (denominator) => (denominator > 0 ? effectiveMin / denominator : null);
   return {
-    unreportedMin: shiftMin - stoppageMin - effectiveMin,
-    oeeLosses: ratio(shiftMin - stoppageMin),
-    oeeLunch: ratio(shiftMin - lunchMin),
-    oeeLunchCot: ratio(shiftMin - lunchMin - setupMin),
+    // 6) Unutilized Machine Time = (12 − (Shift h − Stoppage min ÷ 60)) ÷ 11.
+    unutilized: working ? (12 - (shiftH - stoppageMin / 60)) / 11 : null,
+    // 9) Unreported Time (min) = Shift × 60 − Effective × 60 − Stoppage.
+    unreportedMin: planned ? shiftH * 60 - effectiveH * 60 - stoppageMin : null,
+    // 11) OEE considering losses = Effective ÷ (Shift − Stoppage ÷ 60).
+    oeeLosses: planned ? ratio(effectiveH, shiftH - stoppageMin / 60) : null,
+    // 12) OEE not considering losses but lunch = Effective ÷ (Shift − Lunch ÷ 60).
+    oeeLunch: planned ? ratio(effectiveH, shiftH - lunchMin / 60) : null,
+    // 13) … but lunch and COT = Effective ÷ (Shift − Lunch ÷ 60 − Setup ÷ 60).
+    oeeLunchCot: planned ? ratio(effectiveH, shiftH - lunchMin / 60 - setupMin / 60) : null,
   };
 }
 
