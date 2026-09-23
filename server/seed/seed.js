@@ -74,12 +74,28 @@ const PRODUCTION_GROUP = {
   icon: "Factory",
 };
 
+// Dashboard and Data Entry are NOT listed here — they are their own
+// top-level links (DASHBOARD_GROUP / DATA_ENTRY_GROUP below), same as
+// seed/seedMenus.js. Listing either again here would recreate the exact
+// duplicate sidebar entries that script's promoteMenuToLinkGroup retires.
 const PRODUCTION_MENUS = [
-  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
+  { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 1, icon: "Workflow" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 3, icon: "Workflow" },
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 4, icon: "ClipboardList" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
+  { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
 ];
+
+// Data Entry's own top-level link, right under Production's row in the
+// group order — see seed/seedMenus.js for why this lives outside the
+// Production group instead of as one more item inside it.
+const DATA_ENTRY_GROUP = {
+  menuGroupName: "CNC Data Entry",
+  sequence: 6,
+  isLink: true,
+  menuUrl: "/hqepl/production/cnc-data-entry",
+  portal: "Both",
+  icon: "ClipboardList",
+};
 
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
@@ -93,7 +109,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
   { menuName: "Department", menuUrl: "/hqepl/employee-management/department", sequence: 1, icon: "Building" },
   { menuName: "Teams", menuUrl: "/hqepl/teams", sequence: 2, icon: "UsersRound" },
   { menuName: "Role", menuUrl: "/hqepl/employee-management/role", sequence: 3, icon: "ShieldCheck" },
-  { menuName: "Operator", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
+  { menuName: "Employee", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
   { menuName: "Manage Role", menuUrl: "/hqepl/employee-management/manage-role", sequence: 6, icon: "UserCog" },
 ];
 
@@ -106,7 +122,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
 //   - Operator with only "read": can raise their own tickets, nothing else.
 const SUPPORT_GROUP = {
   menuGroupName: "Support",
-  sequence: 6,
+  sequence: 7,
   isLink: true,
   menuUrl: "/hqepl/support",
   portal: "Both",
@@ -177,6 +193,8 @@ async function run() {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
   }
+
+  await upsertGroup(DATA_ENTRY_GROUP);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
 

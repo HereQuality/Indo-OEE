@@ -107,6 +107,10 @@
 .select__control {
   min-height: 38px !important;
   height: auto !important;
+  font-size: 0.9rem !important;
+}
+.select__menu, .select__option, .select__single-value, .select__placeholder, .select__input-container {
+  font-size: 0.9rem !important;
 }
 
 .form-floating .select__control {
@@ -603,4 +607,23 @@ a:hover {
 }
 .no-spinner[type="number"] {
   -moz-appearance: textfield;
+}
+
+/* A block sliding open/closed (e.g. one machine's entry in the Production
+   Data Entry form) — collapsed and expanded are two different layouts, so
+   this can't be a height/opacity transition on one element; it's a quick
+   settle-in animation retriggered on mount, which React already does for us
+   here since switching state swaps in a genuinely different element. */
+@keyframes entry-block-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.entry-block-in {
+  animation: entry-block-in 180ms ease-out;
 }

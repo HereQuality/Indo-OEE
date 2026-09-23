@@ -270,7 +270,7 @@ const ItemMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false} size="lg">
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="lg">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Part" : "Add Part"}
         </ModalHeader>

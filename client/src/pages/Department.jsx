@@ -458,7 +458,6 @@ const Department = () => {
                 }}
                 centered
                 backdrop="static"
-                keyboard={false}
             >
                 <ModalHeader
                     className="p-3 border-bottom"
@@ -562,7 +561,6 @@ const Department = () => {
                 }}
                 centered
                 backdrop="static"
-                keyboard={false}
             >
                 <ModalHeader
                     className="p-3 border-bottom"

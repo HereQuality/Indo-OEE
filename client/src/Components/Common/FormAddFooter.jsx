@@ -15,7 +15,12 @@ const FormsFooter = ({ handleSubmit, handleSubmitCancel, isLoading, isSaveDisabl
         type="submit"
         onClick={handleSubmit}
         disabled={isLoading || isSaveDisabled}
-        className="inline-flex items-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors disabled:opacity-70"
+        title={isSaveDisabled && !isLoading ? "Fill in the required fields (marked *) first" : undefined}
+        className={`inline-flex items-center gap-2 rounded-xl text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors ${
+          isSaveDisabled && !isLoading
+            ? "bg-slate-200 text-slate-400 shadow-none cursor-not-allowed"
+            : "bg-brand-600 hover:bg-brand-500 text-white disabled:opacity-70"
+        }`}
       >
         {isLoading ? (
           <>

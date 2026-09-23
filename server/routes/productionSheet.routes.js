@@ -11,7 +11,7 @@ const {
 
 const router = express.Router();
 
-const MENU_URL = "/production/data-entry";
+const MENU_URL = "/production/cnc-data-entry";
 
 router.use(protect);
 router.use(authorize("SuperAdmin", "Operator"));

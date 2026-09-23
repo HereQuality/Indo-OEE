@@ -150,7 +150,7 @@ const Operator = () => {
             maxWidth: "20px",
         },
         {
-            name: "Operator",
+            name: "Employee",
             selector: (row) => (
                 <div className="d-flex align-items-center gap-2">
                     {row.profilePic ? (
@@ -1171,7 +1171,7 @@ const Operator = () => {
     });
     const isFormDirty = currentFormData !== initialFormData;
 
-    document.title = `Operator | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
+    document.title = `Employee | ${window.localStorage.getItem('companyName') || import.meta.env.VITE_APP_NAME}`;
 
     return (
         <React.Fragment>
@@ -1208,7 +1208,7 @@ const Operator = () => {
                             <Card>
                                 <CardHeader>
                                     <FormsHeader
-                                        formName="Operator"
+                                        formName="Employee"
                                         filter={filter}
                                         handleFilter={handleFilter}
                                         tog_list={() => {

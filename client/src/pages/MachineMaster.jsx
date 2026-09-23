@@ -265,7 +265,7 @@ const MachineMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false}>
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Machine" : "Add Machine"}
         </ModalHeader>

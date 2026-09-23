@@ -15,12 +15,16 @@ const parseDay = (s) => {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
 };
 
-const pickProcess = ({ processName, description, stats, charts, isActive }) => ({
+const pickProcess = ({ processName, description, stats, charts, isActive, dataEntryMenu, dataEntryMenuLabel }) => ({
   processName,
   description,
   isActive,
   ...(Array.isArray(stats) ? { stats } : {}),
   ...(Array.isArray(charts) ? { charts } : {}),
+  // "" from an unpicked select clears the link; undefined leaves it alone.
+  ...(dataEntryMenu !== undefined
+    ? { dataEntryMenu: dataEntryMenu || null, dataEntryMenuLabel: dataEntryMenu ? dataEntryMenuLabel || null : null }
+    : {}),
 });
 
 const isDuplicateName = async (processName, excludeId) => {
@@ -138,7 +142,9 @@ exports.getProcessById = async (req, res) => {
 // they were created) — what the dashboard landing page lays out.
 exports.listProcesses = async (req, res) => {
   try {
-    const processes = await Process.find({ isActive: true }).sort({ createdAt: 1 }).lean();
+    const processes = await Process.find({ isActive: true })
+      .sort({ createdAt: 1 })
+      .lean();
     res.status(200).json({ isOk: true, data: await withMachines(processes, true) });
   } catch (error) {
     console.error("Error listing processes:", error);
@@ -162,7 +168,11 @@ exports.listProcessByParams = async (req, res) => {
 
     const [totalCount, processes] = await Promise.all([
       Process.countDocuments(query),
-      Process.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).lean(),
+      Process.find(query)
+        .sort(sortQuery)
+        .skip(parseInt(skip))
+        .limit(parseInt(per_page))
+        .lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: await withMachines(processes) }] });

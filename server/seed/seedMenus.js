@@ -42,7 +42,7 @@ const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 5, isLink: fal
 // own top-level link for the same reason Dashboard was (it's opened far more
 // often than the master lists it used to sit beside). Same promotion
 // mechanism as Dashboard above; the URL is unchanged.
-const DATA_ENTRY_GROUP = { menuGroupName: "CNC Data Entry", sequence: 6, isLink: true, menuUrl: "/hqepl/production/data-entry", portal: "Both", icon: "ClipboardList" };
+const DATA_ENTRY_GROUP = { menuGroupName: "CNC Data Entry", sequence: 6, isLink: true, menuUrl: "/hqepl/production/cnc-data-entry", portal: "Both", icon: "ClipboardList" };
 const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 7, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [
@@ -52,9 +52,9 @@ const ADMINISTRATION_MENUS = [
 ];
 
 const PRODUCTION_MENUS = [
-  { menuName: "Part Master", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
+  { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 1, icon: "Workflow" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 3, icon: "Workflow" },
+  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
   // Dashboard and Data Entry are NOT listed here any more (they are
   // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
@@ -65,7 +65,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
   { menuName: "Department", menuUrl: "/hqepl/employee-management/department", sequence: 1, icon: "Building" },
   { menuName: "Teams", menuUrl: "/hqepl/teams", sequence: 2, icon: "UsersRound" },
   { menuName: "Role", menuUrl: "/hqepl/employee-management/role", sequence: 3, icon: "ShieldCheck" },
-  { menuName: "Operator", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
+  { menuName: "Employee", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
   { menuName: "Manage Role", menuUrl: "/hqepl/employee-management/manage-role", sequence: 6, icon: "UserCog" },
 ];
 

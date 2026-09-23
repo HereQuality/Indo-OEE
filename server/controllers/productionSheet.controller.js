@@ -6,12 +6,14 @@ const { CYCLE_OP_FIELDS } = require("../models/Item");
 const { normalizeCycleOps } = require("./item.controller");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-// The Data Entry sheet's Filters panel offers a "Year" period (same shared
-// panel the dashboards use), which requests a full ~366-day span — so the
-// cap has to cover that, not just a couple of months. The client still pages
-// the result 10 days at a time, so a whole year of raw rows never renders at
-// once even though this fetches all of them.
-const MAX_RANGE_DAYS = 366;
+// The Data Entry sheet defaults to as much history as it can show in one
+// request (see defaultEntryRange in client/src/utils/processDashboard.js),
+// and the Filters panel's own "Year"/custom-range pickers can ask for
+// several years too — so this matches the dashboard endpoint's own cap
+// (process.controller.js) rather than being its own, smaller one. The client
+// still pages the result 10 days at a time, so years of raw rows never
+// render at once even though this fetches all of them.
+const MAX_RANGE_DAYS = 366 * 5;
 // Entries a machine can have on one date — the sheet's three rows per machine.
 const MAX_SLOTS = 3;
 const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);

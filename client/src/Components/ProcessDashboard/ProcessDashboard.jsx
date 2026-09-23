@@ -130,7 +130,9 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
   }, []);
 
   const isDefaultRange = range.join() === baseRange.join();
-  const periodLabel = isDefaultRange ? "Last 30 days" : QUICK_RANGES.find((q) => q.key === quickRangeKey(range))?.label || describeRange(range);
+  // The untouched default is "this month" — named after the actual month
+  // (e.g. "September 2026"), not a generic "Last 30 days"/"This month" label.
+  const periodLabel = isDefaultRange ? describeRange(range) : QUICK_RANGES.find((q) => q.key === quickRangeKey(range))?.label || describeRange(range);
   const filtersActive = !isDefaultRange || hasFilters(filters);
   const resetRange = () => {
     const fresh = defaultRange();
@@ -170,6 +172,12 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           <h4 className="mb-0 fw-bold">{process ? process.processName : "All machines"}</h4>
         </div>
         <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
+          <span className="pd-chip pd-chip-static d-inline-flex align-items-center gap-1">
+            <CalendarRange size={13} /> {periodLabel}
+            {!isDefaultRange && (
+              <button type="button" className="pd-chip-x" onClick={resetRange} aria-label="Reset the period to this month" title="Reset to this month"><X size={12} /></button>
+            )}
+          </span>
           <FilterPanel range={range} onRangeChange={onRangeChange} extent={extent} filters={filters} onFilterSet={onFilterSet}
             options={filterOptions} active={filtersActive} onClearAll={clearAll} />
           {isAdmin && process && (
@@ -180,21 +188,18 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
         </div>
       </div>
 
-      {/* What the dashboard is currently showing — each chip removes itself;
-          the Clear button beside Filters removes them all. */}
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <span className="pd-chip pd-chip-static d-inline-flex align-items-center gap-1">
-          <CalendarRange size={13} /> {periodLabel}
-          {!isDefaultRange && (
-            <button type="button" className="pd-chip-x" onClick={resetRange} aria-label="Reset the period to the last 30 days" title="Reset to the last 30 days"><X size={12} /></button>
-          )}
-        </span>
-        {activeChips.map((chip) => (
-          <button key={`${chip.dim}:${chip.value}`} type="button" className="pd-chip is-on d-inline-flex align-items-center gap-1" onClick={() => onToggle(chip.dim, chip.value)} title="Remove this filter">
-            {chip.label} <X size={12} />
-          </button>
-        ))}
-      </div>
+      {/* What the dashboard's machine/operator/item filters are currently
+          narrowed to — the period itself is shown on the header line above,
+          not repeated here. Each chip removes itself. */}
+      {activeChips.length > 0 && (
+        <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+          {activeChips.map((chip) => (
+            <button key={`${chip.dim}:${chip.value}`} type="button" className="pd-chip is-on d-inline-flex align-items-center gap-1" onClick={() => onToggle(chip.dim, chip.value)} title="Remove this filter">
+              {chip.label} <X size={12} />
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading && !rows.length ? (
         <div className="text-center text-muted py-5"><Spinner size="sm" className="me-2" />Loading dashboard…</div>

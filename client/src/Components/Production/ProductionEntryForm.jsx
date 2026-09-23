@@ -131,7 +131,6 @@ const EntryBlock = ({
   errors,
   isSubmit,
   machines,
-  processes,
   items,
   operators,
   isEdit,
@@ -149,41 +148,6 @@ const EntryBlock = ({
   // The picked part's own record — its Total Cycle Time and operation times
   // are what an unticked box gets restored from when it's ticked back.
   const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
-
-  // Which process's machines the machine picker is narrowed to — a filter
-  // only, never saved on the entry itself (the machine already carries its
-  // own process link). Starts on the process the entry's machine already
-  // belongs to, so editing (or reopening a filled-in block) doesn't reset it.
-  const [processFilter, setProcessFilter] = useState(
-    () => String(machines.find((m) => m._id === values.machine)?.process || ""),
-  );
-
-  const filteredMachines = useMemo(
-    () => (processFilter ? machines.filter((m) => String(m.process || "") === processFilter) : machines),
-    [machines, processFilter],
-  );
-
-  const handleProcessFilter = (e) => {
-    const nextProcess = e.target.value;
-    setProcessFilter(nextProcess);
-    // Dropping a machine that belongs to a different process than the one
-    // just picked, so the two selects can't disagree with each other.
-    const stillValid = machines.some(
-      (m) => m._id === values.machine && (!nextProcess || String(m.process || "") === nextProcess),
-    );
-    if (!stillValid) onChange(index, "machine", "");
-  };
-
-  const processSelect = (
-    <Input type="select" bsSize="sm" value={processFilter} onChange={handleProcessFilter} disabled={isEdit}>
-      <option value="">All processes</option>
-      {processes.map((p) => (
-        <option key={p._id} value={p._id}>
-          {p.processName}
-        </option>
-      ))}
-    </Input>
-  );
 
   // The reject split's running total, against the Rejected figure it has to
   // match. Shown live so the operator sees the gap while typing rather than
@@ -223,7 +187,7 @@ const EntryBlock = ({
   const machineSelect = (
     <Input type="select" bsSize="sm" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
       <option value="">Select machine</option>
-      {filteredMachines.map((m) => (
+      {machines.map((m) => (
         <option key={m._id} value={m._id}>
           {m.machineName}
         </option>
@@ -249,13 +213,10 @@ const EntryBlock = ({
     return (
       <div
         ref={blockRef}
-        className={`border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
+        className={`entry-block-in border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
       >
         <Row className="align-items-start g-1">
-          <Field label="Process" md={5}>
-            {processSelect}
-          </Field>
-          <Field label="Machine No." required error={err("machine")} md={5}>
+          <Field label="Machine No." required error={err("machine")} md={10}>
             {machineSelect}
           </Field>
           <Col md={2}>
@@ -264,7 +225,7 @@ const EntryBlock = ({
               <div className="d-flex align-items-center gap-2">
                 <button
                   type="button"
-                  className="btn btn-primary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
+                  className="btn btn-primary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0 rounded-circle"
                   style={{ width: 32, height: 32 }}
                   onClick={() => onExpand(index)}
                   disabled={!values.machine}
@@ -280,9 +241,7 @@ const EntryBlock = ({
           <Col md={12}>
             <div className="text-muted small mt-n2 mb-2">
               {!values.machine
-                ? processFilter
-                  ? "Select a machine, then press +"
-                  : "Select a process, then a machine, then press +"
+                ? "Select a machine, then press +"
                 : hasData(values)
                   ? "Entry filled in — press + to reopen it"
                   : "Press + to fill this machine's entry"}
@@ -296,11 +255,11 @@ const EntryBlock = ({
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
-    <div ref={blockRef} className="border border-primary rounded mb-2 transition-colors">
+    <div ref={blockRef} className="entry-block-in border border-primary rounded mb-2 transition-colors">
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <button
           type="button"
-          className="btn btn-sm btn-light border d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
+          className="btn btn-sm btn-primary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0 rounded-circle"
           style={{ width: 24, height: 24 }}
           onClick={() => onExpand(isEdit ? index : null)}
           title="Collapse this machine"
@@ -572,7 +531,6 @@ const ProductionEntryForm = ({
   errors = [],
   isSubmit = false,
   machines = [],
-  processes = [],
   items = [],
   operators = [],
   isEdit = false,
@@ -598,7 +556,6 @@ const ProductionEntryForm = ({
           errors={errors[i] || {}}
           isSubmit={isSubmit}
           machines={machines}
-          processes={processes}
           items={items}
           operators={operators}
           isEdit={isEdit}

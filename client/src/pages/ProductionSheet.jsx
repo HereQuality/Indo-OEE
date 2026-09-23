@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import {
   Card,
@@ -38,7 +39,7 @@ import {
   rowCalc,
   sortByMachineOn,
 } from "../utils/productionSheet";
-import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultRange, hasFilters } from "../utils/processDashboard";
+import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 
 /**
  * Production Data Entry — the month's records, and one form per record.
@@ -71,6 +72,53 @@ const NUMBER_FIELDS = [
   ...STOPPAGE_KEYS,
   ...CYCLE_OP_KEYS,
 ];
+
+// Add-entry drafts: typing gets saved to localStorage the moment the form is
+// closed (Cancel, the X, Escape, clicking away isn't possible — backdrop is
+// static) so an accidental close doesn't lose it. Reopening "Add Entry"
+// within a minute brings it back; after that (or on a successful Save) it's
+// gone, so the form doesn't come back stale hours later.
+const DRAFT_KEY = "productionEntryDraft";
+const DRAFT_TTL_MS = 60 * 1000;
+
+const hasAnyEntryData = (list) =>
+  list.some((v) => {
+    if (v.machine || v.operator || v.itemName || v.drawingNo || v.remarks) return true;
+    if (v.machineOnTime || v.machineOffTime || v.okQty !== "" || v.plannedOperatorShiftHours !== "") return true;
+    if (Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null && Number(n) !== 0)) return true;
+    return [...STOPPAGE_KEYS, ...CYCLE_OP_KEYS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
+  });
+
+const loadDraft = () => {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.entries?.length || Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
+      window.localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return parsed.entries;
+  } catch {
+    return null;
+  }
+};
+
+const saveDraft = (entries) => {
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ entries, savedAt: Date.now() }));
+  } catch {
+    // localStorage unavailable (private mode, quota) — the draft is just skipped.
+  }
+};
+
+const clearDraft = () => {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+};
 
 const emptyEntry = () => ({
   date: isoDay(new Date()),
@@ -164,7 +212,7 @@ const ProductionSheet = () => {
   // (date range / month / year), Machine, Operator, Item — the same panel
   // the process dashboards use, so both pages behave alike. Search stays its
   // own field beside it, since it searches text the panel can't multi-select.
-  const [range, setRange] = useState(defaultRange);
+  const [range, setRange] = useState(defaultEntryRange);
   const [baseRange, setBaseRange] = useState(range);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState("");
@@ -183,6 +231,26 @@ const ProductionSheet = () => {
   const { data: processes = [] } = useProcesses();
   const { data: items = [] } = useItems();
   const { data: operators = [] } = useMachineOperators();
+
+  // Whichever process (Production › Processes) names *this* page as its own
+  // Data Entry Page — matched on the route path with any role-slug prefix
+  // stripped, the same way Layout.jsx matches the sidebar's current-page
+  // title, so it doesn't matter which role's slug the URL happens to carry.
+  // Exactly one match narrows the Machine picker to that process's own
+  // machines; none (not linked yet) or more than one (misconfigured — two
+  // processes pointing at the same page) falls back to every machine.
+  const location = useLocation();
+  const lockedProcess = useMemo(() => {
+    const stripSlug = (p) => p.replace(/^\/[^/]+/, "");
+    const here = stripSlug(location.pathname);
+    const owners = processes.filter((p) => p.dataEntryMenu && stripSlug(p.dataEntryMenu) === here);
+    return owners.length === 1 ? owners[0] : null;
+  }, [processes, location.pathname]);
+
+  const scopedMachines = useMemo(
+    () => (lockedProcess ? machines.filter((m) => String(m.process || "") === String(lockedProcess._id)) : machines),
+    [machines, lockedProcess],
+  );
 
   // null = closed, "add" | "edit"
   const [modalMode, setModalMode] = useState(null);
@@ -254,7 +322,7 @@ const ProductionSheet = () => {
   const filtersActive = !isDefaultRange || hasFilters(filters);
   const clearAll = () => {
     setFilters(EMPTY_FILTERS);
-    const fresh = defaultRange();
+    const fresh = defaultEntryRange();
     setBaseRange(fresh);
     setRange(fresh);
   };
@@ -315,7 +383,13 @@ const ProductionSheet = () => {
   }, [rows]);
 
   // ── Form ───────────────────────────────────────────────────────────────
-  const closeModal = () => {
+  // discardDraft: true after a successful Save — that data's in the database
+  // now, so there's nothing left worth keeping a temporary copy of.
+  const closeModal = (discardDraft = false) => {
+    if (modalMode === "add") {
+      if (!discardDraft && hasAnyEntryData(entries)) saveDraft(entries);
+      else clearDraft();
+    }
     setModalMode(null);
     setEntries([emptyEntry()]);
     setFormErrors([]);
@@ -323,12 +397,22 @@ const ProductionSheet = () => {
   };
 
   const openAdd = () => {
+    const draft = loadDraft();
     // Only pre-fills the machine when the Filters panel narrows to exactly
     // one — with several ticked there's no single machine to default to.
-    setEntries([{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
+    setEntries(draft || [{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
     setFormErrors([]);
     setIsSubmit(false);
     setModalMode("add");
+  };
+
+  // The "Clear form" button in the Add Entry modal — wipes every block back
+  // to blank and drops the saved draft, so a bad start doesn't linger.
+  const clearForm = () => {
+    if (!window.confirm("Clear everything typed in this form? This can't be undone.")) return;
+    clearDraft();
+    setEntries([emptyEntry()]);
+    setFormErrors([]);
   };
 
   const openEdit = (row) => {
@@ -433,13 +517,23 @@ const ProductionSheet = () => {
     return errors;
   };
 
+  // A block whose machine was never picked is one the user added and left
+  // alone — skipped rather than reported, so a stray block can't block a save.
+  const isUntouched = (v) => !v.machine;
+
+  // The Save/Update button stays disabled until every required field (Date,
+  // Machine — the only two boxes marked * on the form) is filled in for at
+  // least one machine block. This only gates the required boxes, not the
+  // full validation (mismatched reject splits, out-of-range minutes, …) —
+  // those still surface as the usual field errors once Save is pressed.
+  const canSave = useMemo(
+    () => entries.some((v) => !isUntouched(v)) && entries.every((v) => isUntouched(v) || v.date),
+    [entries],
+  );
+
   const handleSave = async (e) => {
     e.preventDefault();
     setIsSubmit(true);
-
-    // A block whose machine was never picked is one the user added and left
-    // alone — skipped rather than reported, so a stray block can't block a save.
-    const isUntouched = (v) => !v.machine;
     const errorsPerBlock = entries.map((v) => (isUntouched(v) ? {} : validate(v)));
     const toSave = entries.filter((v) => !isUntouched(v));
 
@@ -465,7 +559,7 @@ const ProductionSheet = () => {
       if (modalMode === "edit") toast.success("Entry updated successfully!");
       else toast.success(saved === 1 ? "Entry added successfully!" : `${saved} entries added successfully!`);
       if (cleared) toast.info(`${cleared} block(s) had every field blank, so nothing was saved for them.`);
-      closeModal();
+      closeModal(true);
       fetchRows();
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save. Please try again.");
@@ -565,12 +659,12 @@ const ProductionSheet = () => {
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-bottom">
               <span className="small text-muted">
                 Page {page} of {totalPages}
-                {activeDays.length > 0 && ` — ${activeDays.length} day${activeDays.length === 1 ? "" : "s"} with entries`}
               </span>
               <div className="d-flex align-items-center gap-2">
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-outline-primary"
+                  style={{ minWidth: "84px" }}
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
@@ -578,7 +672,8 @@ const ProductionSheet = () => {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-outline-primary"
+                  style={{ minWidth: "84px" }}
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
@@ -621,9 +716,20 @@ const ProductionSheet = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false} size="xl" scrollable>
-        <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
-          {modalMode === "edit" ? "Update Production Entry" : "Add Production Entry"}
+      <Modal isOpen={modalMode !== null} toggle={() => closeModal()} centered backdrop="static" size="xl" scrollable>
+        <ModalHeader className="p-3 border-bottom" toggle={() => closeModal()}>
+          <div className="d-flex align-items-center gap-2">
+            <span>{modalMode === "edit" ? "Update Production Entry" : "Add Production Entry"}</span>
+            {modalMode === "add" && hasAnyEntryData(entries) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger ms-2"
+                onClick={clearForm}
+              >
+                Clear form
+              </button>
+            )}
+          </div>
         </ModalHeader>
         <form noValidate onSubmit={handleSave}>
           {/* The form is far taller than the viewport. An explicit height here
@@ -634,8 +740,7 @@ const ProductionSheet = () => {
               entries={entries}
               errors={formErrors}
               isSubmit={isSubmit}
-              machines={machines}
-              processes={processes}
+              machines={scopedMachines}
               items={items}
               operators={operators}
               isEdit={modalMode === "edit"}
@@ -648,9 +753,9 @@ const ProductionSheet = () => {
           </ModalBody>
           <ModalFooter>
             {modalMode === "edit" ? (
-              <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={closeModal} isLoading={isSaving} />
+              <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={() => closeModal()} isLoading={isSaving} isSaveDisabled={!canSave} />
             ) : (
-              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={closeModal} isLoading={isSaving} />
+              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={() => closeModal()} isLoading={isSaving} isSaveDisabled={!canSave} />
             )}
           </ModalFooter>
         </form>

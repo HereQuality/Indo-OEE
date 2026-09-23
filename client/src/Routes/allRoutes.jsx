@@ -111,6 +111,8 @@ const protectedRoutes = [
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },
+  { path: "/production/cnc-data-entry", component: <ProductionSheet /> },
+  // Old URL, kept working for anyone with it bookmarked or pinned.
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },
 

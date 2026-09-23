@@ -238,7 +238,7 @@ export default function Layout({ children }) {
                   <NavLink
                     to={toRolePath(group.url, roleSlug)}
                     title={sidebarCollapsed ? group.groupName : undefined}
-                    className={`relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${sidebarCollapsed ? 'md:justify-center' : ''}`}
+                    className={`relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-[15px] font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${sidebarCollapsed ? 'md:justify-center' : ''}`}
                     style={({ isActive }) => ({
                       background: isActive
                         ? (isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.09)')
@@ -314,7 +314,7 @@ export default function Layout({ children }) {
                                 key={menu.id}
                                 to={toRolePath(menu.url, roleSlug)}
                                 className={({ isActive }) =>
-                                  `relative flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${isActive ? 'font-semibold' : 'font-medium'}`
+                                  `relative flex items-center gap-2.5 px-3 py-2 rounded-xl text-[15px] transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${isActive ? 'font-semibold' : 'font-medium'}`
                                 }
                                 style={({ isActive }) => ({
                                   background: isActive
@@ -349,7 +349,7 @@ export default function Layout({ children }) {
                                 <NavLink
                                   key={menu.id}
                                   to={toRolePath(menu.url, roleSlug)}
-                                  className="flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-all rounded-lg"
+                                  className="flex items-center gap-2.5 px-3 py-2 text-[15px] font-medium transition-all rounded-lg"
                                   style={({ isActive }) => ({
                                     background: isActive
                                       ? (isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.08)')
@@ -407,7 +407,7 @@ export default function Layout({ children }) {
               border: isDarkMode ? '1px solid rgba(239,68,68,0.15)' : '1px solid rgba(239,68,68,0.12)',
               color: isDarkMode ? '#f87171' : '#dc2626',
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-red-50 hover:!text-red-700 hover:!border-red-300"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[15px] font-semibold transition-all hover:bg-red-50 hover:!text-red-700 hover:!border-red-300"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
             {!sidebarCollapsed && <span>Sign Out</span>}
@@ -438,11 +438,11 @@ export default function Layout({ children }) {
             {logo ? (
               <img src={logo} alt={APP_NAME} className="h-6 w-auto" />
             ) : (
-              <span className="font-bold text-sm truncate">{APP_NAME}</span>
+              <span className="font-bold text-[15px] truncate">{APP_NAME}</span>
             )}
           </div>
 
-          <div className="hidden md:flex items-center text-sm font-medium min-w-0 flex-1"
+          <div className="hidden md:flex items-center text-[15px] font-medium min-w-0 flex-1"
             style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}
           >
             <span style={{ color: isDarkMode ? '#64748b' : '#94a3b8' }} className="mr-2 shrink-0">{isSuperAdmin ? "Owner Portal" : APP_NAME}</span>
@@ -453,7 +453,7 @@ export default function Layout({ children }) {
           <div className="flex items-center gap-3 ml-auto shrink-0 relative" ref={dropdownRef}>
             <NotificationBell />
             <div className="hidden sm:flex flex-col items-end leading-tight max-w-[140px] min-w-0">
-              <span style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-sm font-medium truncate w-full text-right">{displayName}</span>
+              <span style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-[15px] font-medium truncate w-full text-right">{displayName}</span>
               <span style={{ color: isDarkMode ? '#aaaaaa' : '#64748b' }} className="text-xs truncate w-full text-right">{roleLabel}</span>
             </div>
             <div
@@ -486,13 +486,13 @@ export default function Layout({ children }) {
                 className="absolute right-0 top-12 mt-2 w-56 rounded-xl shadow-xl py-1.5 z-50"
               >
                 <div style={{ borderBottom: isDarkMode ? '1px solid #3f3f3f' : '1px solid #f1f5f9' }} className="px-4 py-2.5">
-                  <p style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-sm font-semibold truncate">{displayName}</p>
+                  <p style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-[15px] font-semibold truncate">{displayName}</p>
                   <p style={{ color: isDarkMode ? '#aaaaaa' : '#64748b' }} className="text-xs truncate">{roleLabel}</p>
                 </div>
                 <Link
                   to={`/${roleSlug}/profile`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -501,7 +501,7 @@ export default function Layout({ children }) {
                 <Link
                   to={`/${roleSlug}/shortcuts`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
@@ -510,7 +510,7 @@ export default function Layout({ children }) {
                 <Link
                   to={`/${roleSlug}/settings`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
@@ -521,7 +521,7 @@ export default function Layout({ children }) {
                 <button
                   onClick={() => { toggleTheme(); setProfileDropdownOpen(false); }}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                 >
                   {isDarkMode ? (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
@@ -533,7 +533,7 @@ export default function Layout({ children }) {
                 <div style={{ borderTop: isDarkMode ? '1px solid #3f3f3f' : '1px solid #f1f5f9' }} className="my-1" />
                 <button
                   onClick={() => { setProfileDropdownOpen(false); handleLogout(); }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] text-red-600 hover:bg-red-50 transition-colors"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                   Sign Out

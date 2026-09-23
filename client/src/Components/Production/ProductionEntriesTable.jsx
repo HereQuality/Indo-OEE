@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Eye, Pencil, Trash2, X } from "lucide-react";
 import {
   CYCLE_OP_FIELDS,
@@ -123,8 +123,6 @@ const FROZEN = {
 // back to a plain neutral header.
 const HEAD_BG = "bg-white dark:bg-slate-900";
 const HEAD_TEXT = {
-  date: "text-blue-700 dark:text-blue-300",
-  machine: "text-emerald-700 dark:text-emerald-300",
   calc: "text-indigo-700 dark:text-indigo-300",
   day: "text-teal-700 dark:text-teal-300",
   oee: "text-blue-700 dark:text-blue-300",
@@ -142,8 +140,8 @@ const HEAD_TEXT_DEFAULT = "text-slate-600 dark:text-slate-300";
 const TONE = {
   calc: "bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 font-semibold",
   day: "bg-teal-50/60 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300 font-semibold",
-  machine: "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold",
-  date: "text-blue-700 dark:text-blue-300 font-semibold",
+  machine: "bg-white dark:bg-slate-900 font-semibold",
+  date: "font-semibold",
   operator: "font-medium",
 };
 // Tones that colour only the text, keeping the row's own alternating
@@ -217,33 +215,33 @@ const COLUMNS = [
       key: "cycle",
       label: "Total Cycle Time (sec)",
       get: (r, c) => n(c.totalCycleSec),
-      align: "text-end",
+      align: "text-center",
       tone: "calc",
     },
     columns: CYCLE_OP_FIELDS.map((f) => ({
       key: f.key,
       label: f.label,
       get: (r) => dash(r[f.key]),
-      align: "text-end",
+      align: "text-center",
     })),
   },
-  { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime), align: "text-end" },
-  { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-end" },
+  { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime), align: "text-center" },
+  { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-center" },
   {
     key: "shift",
     label: "Machine Shift Time (hr)",
     get: (r, c) => n(c.shiftHours),
-    align: "text-end",
+    align: "text-center",
     tone: "calc",
   },
   {
     key: "idealQty",
     label: "Ideal Quantity",
     get: (r, c) => n(c.idealQty),
-    align: "text-end",
+    align: "text-center",
     tone: "calc",
   },
-  { key: "okQty", label: "Actual OK Quantity", get: (r) => min(r.okQty), align: "text-end" },
+  { key: "okQty", label: "Actual OK Quantity", get: (r) => min(r.okQty), align: "text-center" },
   {
     key: "rejectedQty",
     label: "Rejected Quantity",
@@ -252,29 +250,29 @@ const COLUMNS = [
       key: "rejectedQty",
       label: "Rejected Quantity",
       get: (r, c) => n(c.rejectedQty),
-      align: "text-end",
+      align: "text-center",
       tone: "calc",
     },
     columns: REJECT_REASONS.map((reason) => ({
       key: reason,
       label: reason,
       get: (r) => min(r.rejectBreakdown?.[reason]),
-      align: "text-end",
+      align: "text-center",
     })),
   },
-  { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-end", tone: "calc" },
+  { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-center", tone: "calc" },
   {
     key: "plannedShift",
     label: "Planned Operator Shift Time (hr)",
     get: (r) => min(r.plannedOperatorShiftHours),
-    align: "text-end",
+    align: "text-center",
   },
   {
     key: "unutilized",
     label: "Unutilized Machine Time (%)",
     // Shown as a percentage like every other efficiency column, not a raw ratio.
     get: (r, c, d) => pct(d.unutilized),
-    align: "text-end",
+    align: "text-center",
     tone: "day",
   },
   {
@@ -285,28 +283,28 @@ const COLUMNS = [
       key: "totalStoppage",
       label: "Total Stoppage (min)",
       get: (r, c) => n(c.totalStoppageMin),
-      align: "text-end",
+      align: "text-center",
       tone: "calc",
     },
     columns: STOPPAGE_FIELDS.map((f) => ({
       key: f.key,
       label: DOWNTIME_LABEL[f.key] || f.label,
       get: (r) => zeroIfBlank(r[f.key]),
-      align: "text-end",
+      align: "text-center",
     })),
   },
   {
     key: "effective",
     label: "Effective Machine Run Time (hr)",
     get: (r, c) => n(c.effectiveHours),
-    align: "text-end",
+    align: "text-center",
     tone: "calc",
   },
   {
     key: "unreported",
     label: "Unreported Time (min)",
     get: (r, c, d) => n(d.unreportedMin),
-    align: "text-end",
+    align: "text-center",
     tone: "day",
     // Combined across every entry of this machine's date (see dayCalc), so
     // it's shown once per machine/date group — spanning its rows exactly
@@ -318,14 +316,14 @@ const COLUMNS = [
     key: "setupEff",
     label: "Setup Efficiency (%)",
     get: (r, c) => pct(c.setupEfficiency),
-    align: "text-end",
+    align: "text-center",
     tone: "calc",
   },
   {
     key: "oeeLosses",
     label: "OEE considering losses (%)",
     get: (r, c, d) => pct(d.oeeLosses),
-    align: "text-end",
+    align: "text-center",
     tone: "oee",
     merge: "machineDay",
   },
@@ -333,7 +331,7 @@ const COLUMNS = [
     key: "oeeLunch",
     label: "OEE not considering losses but lunch (%)",
     get: (r, c, d) => pct(d.oeeLunch),
-    align: "text-end",
+    align: "text-center",
     tone: "oee",
     merge: "machineDay",
   },
@@ -341,7 +339,7 @@ const COLUMNS = [
     key: "oeeLunchCot",
     label: "OEE not considering losses but lunch and COT (%)",
     get: (r, c, d) => pct(d.oeeLunchCot),
-    align: "text-end",
+    align: "text-center",
     tone: "oee",
     merge: "machineDay",
   },
@@ -373,6 +371,30 @@ const ProductionEntriesTable = ({
   // totals, and either can be expanded on demand.
   const [open, setOpen] = useState({ cycle: false, downtime: false });
   const toggle = (key) => setOpen((o) => ({ ...o, [key]: !o[key] }));
+
+  // A second, top-side horizontal scrollbar mirroring the table's own —
+  // with a tall/wide sheet like this one, the browser's native horizontal
+  // scrollbar sits below every row, which means scrolling all the way down
+  // (or all the way back up) just to reach it. This bar tracks the table's
+  // real scroll width and stays in sync with the bottom one either way.
+  const topBarRef = useRef(null);
+  const bodyRef = useRef(null);
+  const [scrollWidth, setScrollWidth] = useState(0);
+  const [hasOverflowX, setHasOverflowX] = useState(false);
+  const syncingScroll = useRef(false);
+
+  const onTopScroll = () => {
+    if (syncingScroll.current || !bodyRef.current || !topBarRef.current) return;
+    syncingScroll.current = true;
+    bodyRef.current.scrollLeft = topBarRef.current.scrollLeft;
+    syncingScroll.current = false;
+  };
+  const onBodyScroll = () => {
+    if (syncingScroll.current || !bodyRef.current || !topBarRef.current) return;
+    syncingScroll.current = true;
+    topBarRef.current.scrollLeft = bodyRef.current.scrollLeft;
+    syncingScroll.current = false;
+  };
 
   // The formula popover, anchored to whichever eye icon was clicked — fixed-
   // position so it isn't clipped by the table's own scroll container.
@@ -421,7 +443,10 @@ const ProductionEntriesTable = ({
   // shows: an `expandable` column always contributes its own summary (the
   // total) with the expand/collapse chevron riding beside it; opening it
   // appends its breakdown columns straight after, to that total's right —
-  // every other column passes straight through.
+  // every other column passes straight through. While open, the LAST
+  // breakdown column also gets its own collapse chevron, so collapsing a
+  // wide breakdown (e.g. the ten downtime reasons, or Drilling…Clamp/Declamp)
+  // doesn't mean scrolling all the way back to the summary column first.
   const visible = useMemo(() => {
     const out = [];
     for (const col of COLUMNS) {
@@ -431,11 +456,34 @@ const ProductionEntriesTable = ({
       }
       const isOpen = open[col.key];
       out.push({ ...col.summary, expand: { id: col.key, isOpen, label: col.label } });
-      if (isOpen) col.columns.forEach((sub) => out.push(sub));
+      if (isOpen) {
+        col.columns.forEach((sub, i) => {
+          const isLast = i === col.columns.length - 1;
+          out.push(isLast ? { ...sub, expand: { id: col.key, isOpen: true, label: col.label } } : sub);
+        });
+      }
     }
     return out;
   }, [open]);
   const totalCols = visible.length + 1; // + Actions
+
+  // Re-measured whenever the visible columns or row count change — expanding
+  // a breakdown or loading a new page both change how wide/tall the table
+  // actually is, which is what the top scrollbar has to track.
+  useEffect(() => {
+    const bodyEl = bodyRef.current;
+    const table = bodyEl?.querySelector("table");
+    if (!bodyEl || !table) return undefined;
+    const measure = () => {
+      setScrollWidth(table.scrollWidth);
+      setHasOverflowX(table.scrollWidth > bodyEl.clientWidth + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(table);
+    ro.observe(bodyEl);
+    return () => ro.disconnect();
+  }, [visible, rows]);
 
   const Chevron = ({ expand }) => (
     <button
@@ -455,7 +503,23 @@ const ProductionEntriesTable = ({
 
   return (
     <>
+      {/* Mirrors the table's own horizontal scrollbar, but pinned above the
+          rows instead of below every one of them — so reaching for it never
+          means scrolling all the way down (or back up) first. Hidden when
+          the table isn't actually wider than its box. */}
+      {hasOverflowX && (
+        <div
+          ref={topBarRef}
+          onScroll={onTopScroll}
+          className="table-scroll-x overflow-x-auto overflow-y-hidden"
+          style={{ height: 14 }}
+        >
+          <div style={{ width: scrollWidth, height: 1 }} />
+        </div>
+      )}
       <div
+        ref={bodyRef}
+        onScroll={onBodyScroll}
         className={`table-scroll-x border border-slate-200 dark:border-slate-700 rounded-xl overflow-auto ${
           fillHeight ? "h-full" : ""
         }`}
@@ -477,7 +541,7 @@ const ProductionEntriesTable = ({
                         autoHeadStyle(c.label, { hasFormula: !!FORMULAS[c.key], hasExpand: !!c.expand })
                   }
                 >
-                  <span className="inline-flex items-center gap-1">
+                  <span className={`flex items-center gap-1 ${c.align === "text-center" ? "justify-center" : c.align === "text-end" ? "justify-end" : ""}`}>
                     <span>{c.label}</span>
                     {FORMULAS[c.key] && (
                       <button
