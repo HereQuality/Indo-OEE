@@ -216,7 +216,7 @@ const EntryBlock = ({
         className={`entry-block-in border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
       >
         <Row className="align-items-start g-1">
-          <Field label="Machine No." required error={err("machine")} md={10}>
+          <Field label="Machine No." required error={err("machine")} md={4}>
             {machineSelect}
           </Field>
           <Col md={2}>
@@ -317,7 +317,10 @@ const EntryBlock = ({
                 <option value="">{values.itemName && !values.item ? values.itemName : "Select part"}</option>
                 {items.map((it) => (
                   <option key={it._id} value={it._id}>
+                    {/* The cycle time rides along so two parts sharing a name (or a
+                        near-duplicate one) can still be told apart before picking. */}
                     {it.itemName}
+                    {Number.isFinite(Number(it.totalCycleSec)) && it.totalCycleSec !== "" ? ` — ${it.totalCycleSec} sec` : ""}
                   </option>
                 ))}
               </Input>

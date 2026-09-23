@@ -37,8 +37,15 @@
 }
 .pd-card { padding: 14px 16px; min-width: 0; }
 
-/* Header */
-.pd-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px; }
+/* Header — stays put while the KPI tiles/graphs below it scroll, inside
+   Layout.jsx's own scrolling <main>. top: -1 * that <main>'s own padding, so
+   it sits flush against the real top edge instead of leaving a gap once it
+   sticks. */
+.pd-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px;
+  position: sticky; top: -1.5rem; z-index: 15;
+}
+@media (max-width: 575.98px) { .pd-header { top: -1rem; } }
 .pd-back {
   width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--pd-border); background: transparent; color: var(--pd-ink);
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;

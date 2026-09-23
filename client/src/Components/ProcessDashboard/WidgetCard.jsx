@@ -52,8 +52,8 @@ const WidgetCard = ({ title, hint, size = "md", height = 300, tableOnly = false,
     <div className={`pd-card pd-span-${size}`}>
       <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
         <div style={{ minWidth: 0 }}>
-          <h6 className="fw-semibold mb-0 text-truncate">{title}</h6>
-          {hint && <div className="text-muted small text-truncate" title={hint}>{hint}</div>}
+          <h6 className="fw-semibold mb-0">{title}</h6>
+          {hint && <div className="text-muted small">{hint}</div>}
         </div>
         <div className="d-flex align-items-center gap-1 flex-shrink-0">
           {!tableOnly && <ViewToggle view={view} onChange={setView} />}
@@ -63,7 +63,12 @@ const WidgetCard = ({ title, hint, size = "md", height = 300, tableOnly = false,
           </IconButton>
         </div>
       </div>
-      <div style={{ height }}>{children({ view, expanded: false })}</div>
+      {/* A chart needs a fixed stage for ResponsiveContainer; a table-only
+          card (machineSummary) is only as tall as its rows — one machine
+          shouldn't leave a few hundred pixels of blank card below it. */}
+      <div style={tableOnly ? { maxHeight: height, overflow: "auto" } : { height }}>
+        {children({ view, expanded: false })}
+      </div>
 
       <Modal isOpen={expanded} toggle={closePopup} size="xl" centered className="pd-pop">
         <div className="pd-pop-head">

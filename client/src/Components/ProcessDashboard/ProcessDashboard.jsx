@@ -35,6 +35,20 @@ import "./processDashboard.css";
  * (Production > Processes); SuperAdmin can also change them here via
  * Customize.
  */
+// "All machines" (process === null) has no Process document of its own to
+// save a widget selection on, so Super Admin's Customize picks here are kept
+// in this browser's localStorage instead of the server — same shape as a
+// process's own {stats, charts}, just not shared across devices/users.
+const ALL_MACHINES_WIDGETS_KEY = "allMachinesDashboardWidgets";
+const loadAllMachinesWidgets = () => {
+  try {
+    const raw = window.localStorage.getItem(ALL_MACHINES_WIDGETS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 const ProcessDashboard = ({ process, machines, onBack }) => {
   const toast = useAlert();
   const { isDarkMode } = useContext(ThemeContext) || {};
@@ -57,6 +71,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
   const [drill, setDrill] = useState(null);
   const [customizing, setCustomizing] = useState(null); // { stats, charts } while the picker is open
   const [saving, setSaving] = useState(false);
+  const [allMachinesWidgets, setAllMachinesWidgets] = useState(loadAllMachinesWidgets);
 
   const processId = process?._id;
   const [from, to] = range;
@@ -144,10 +159,22 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
     resetRange();
   };
 
-  const stats = resolveWidgets(process?.stats, STATS_BY_KEY, DEFAULT_STATS);
-  const charts = resolveWidgets(process?.charts, CHARTS_BY_KEY, DEFAULT_CHARTS);
+  const stats = resolveWidgets(process ? process.stats : allMachinesWidgets?.stats, STATS_BY_KEY, DEFAULT_STATS);
+  const charts = resolveWidgets(process ? process.charts : allMachinesWidgets?.charts, CHARTS_BY_KEY, DEFAULT_CHARTS);
 
   const saveCustomize = () => {
+    if (!process) {
+      // No Process document backs "All machines" — save locally instead.
+      try {
+        window.localStorage.setItem(ALL_MACHINES_WIDGETS_KEY, JSON.stringify(customizing));
+      } catch {
+        // localStorage unavailable — the picks just don't stick past this session.
+      }
+      setAllMachinesWidgets(customizing);
+      toast.success("Dashboard updated");
+      setCustomizing(null);
+      return;
+    }
     setSaving(true);
     updateProcess(processId, customizing)
       .then(() => {
@@ -180,7 +207,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           </span>
           <FilterPanel range={range} onRangeChange={onRangeChange} extent={extent} filters={filters} onFilterSet={onFilterSet}
             options={filterOptions} active={filtersActive} onClearAll={clearAll} />
-          {isAdmin && process && (
+          {isAdmin && (
             <Button size="sm" color="light" className="pd-field-btn" onClick={() => setCustomizing({ stats: stats.map((s) => s.key), charts: charts.map((w) => w.key) })}>
               <LayoutDashboard size={15} /> Customize
             </Button>
@@ -251,7 +278,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
       <DrillModal measure={drill} rows={filtered} ctx={ctx} c={c} onClose={() => setDrill(null)} onPick={(dim, key) => onFilterSet(dim, [key])} />
 
       <Modal isOpen={!!customizing} toggle={() => setCustomizing(null)} size="xl" centered scrollable backdrop="static">
-        <ModalHeader toggle={() => setCustomizing(null)} className="p-3 border-bottom">Customize — {process?.processName}</ModalHeader>
+        <ModalHeader toggle={() => setCustomizing(null)} className="p-3 border-bottom">Customize — {process?.processName || "All machines"}</ModalHeader>
         <ModalBody>{customizing && <WidgetPicker stats={customizing.stats} charts={customizing.charts} onChange={setCustomizing} />}</ModalBody>
         <ModalFooter>
           <Button color="light" onClick={() => setCustomizing(null)} disabled={saving}>Cancel</Button>

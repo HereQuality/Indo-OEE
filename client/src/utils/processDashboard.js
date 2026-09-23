@@ -44,12 +44,7 @@ export const STAT_CATALOG = [
   { key: "oeeLunchCot", label: "OEE NOT Considering Losses, But Lunch & COT", hint: "Averaged per machine-day", format: "pct", example: "93.85%" },
   { key: "effectiveHours", label: "Effective Machine Run Time", hint: "OK × cycle time", format: "hours", example: "7,281 hr" },
   { key: "shiftHours", label: "Machine Shift Time", hint: "Machine OFF − ON", format: "hours", example: "8,120 hr" },
-  { key: "plannedShiftHours", label: "Planned Operator Shift Time", format: "hours", example: "8,400 hr" },
   { key: "downtimeMin", label: "Total Downtime", hint: "All stoppage causes", format: "minutes", tone: "downtime", example: "5,160 min" },
-  { key: "unreportedMin", label: "Unreported Time", hint: "Shift − stoppage − effective", format: "minutes", example: "212 min" },
-  { key: "setupEfficiency", label: "Setup Efficiency", hint: "Effective ÷ shift, per entry", format: "pct", example: "88.40%" },
-  { key: "entries", label: "Entries", hint: "Rows on the data entry sheet", format: "qty", example: "3,204" },
-  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "Σ (12 − (Shift − Lunch ÷ 60)) ÷ 11, per machine-day", format: "days", example: "869.81" },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -59,22 +54,19 @@ export const STAT_CATALOG = [
 export const CHART_CATALOG = [
   { key: "oeeTrend", measure: "oeeLosses", label: "OEE (over time)", hint: "The three OEE figures by date — by month on long ranges.", size: "lg", preview: "lines" },
   { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok" },
-  { key: "runTimeByOperatorFunnel", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator (Funnel)", hint: "Same figures as a funnel — operators ranked top to bottom.", size: "sm", preview: "funnel", tone: "ok" },
   { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "stacked" },
-  { key: "downtimeTreemap", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No. (Treemap)", hint: "Minutes lost per machine, split by cause — sized by area.", size: "lg", preview: "nestedTreemap" },
   { key: "runTimeByMachine", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Each machine's share of effective run time.", size: "md", preview: "treemap" },
   { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples" },
   { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected QTY (over time)", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
   { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by MC No.", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok" },
-  { key: "downtimeByCause", measure: "downtimeMin", label: "Downtime (Min) by Cause", hint: "Total minutes lost to each stoppage cause.", size: "md", preview: "hbars", tone: "downtime" },
   { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "hbars", tone: "reject" },
   { key: "okPctByOperator", measure: "okPct", label: "Operator v/s OK QTY %", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
   { key: "outputByItem", measure: "okQty", label: "OK QTY by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
   { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table" },
 ];
 
-export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin", "unreportedMin"];
-export const DEFAULT_CHARTS = ["runTimeByOperator", "oeeTrend", "downtimeByMachine", "runTimeByMachine", "unreportedByMachine", "okRejectedTrend", "downtimeByCause", "rejectByReason", "machineSummary"];
+export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin"];
+export const DEFAULT_CHARTS = ["runTimeByOperator", "oeeTrend", "downtimeByMachine", "runTimeByMachine", "unreportedByMachine", "okRejectedTrend", "rejectByReason", "machineSummary"];
 
 const byKey = (catalog) => Object.fromEntries(catalog.map((w) => [w.key, w]));
 export const STATS_BY_KEY = byKey(STAT_CATALOG);

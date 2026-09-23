@@ -1,11 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Bar, BarChart, CartesianGrid, Cell, Funnel, FunnelChart, LabelList, Legend, Line, LineChart,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart,
   ReferenceLine, ResponsiveContainer, Tooltip, Treemap, XAxis, YAxis,
 } from "recharts";
-import { STOPPAGE_FIELDS } from "../../utils/productionSheet";
 import {
-  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, causeLabel, causeMeasure, formatExact,
+  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, formatExact,
   reasonMeasure, summarize, summarizeBy,
 } from "../../utils/processDashboard";
 import { axisProps, markOpacity, tooltipProps } from "./chartTheme";
@@ -132,50 +131,6 @@ const RunTimeByOperator = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   );
 };
 
-// A funnel narrows as it goes: every operator's effective run time as one
-// band, widest at the top, sorted descending — the same figures as the
-// horizontal-bar version, just shaped like a Power BI funnel.
-const FUNNEL_ROWS = 40;
-
-const RunTimeByOperatorFunnel = ({ rowsFor, ctx, c, filters, onToggle, view, expanded }) => {
-  const data = useDimBars(rowsFor("operator"), "operator", ctx, (s) => s.effectiveHours);
-  if (!data.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
-  if (view === "table") {
-    return (
-      <MiniTable columns={["Operator", "Effective run time"]} selected={filters.operator} onRowClick={(k) => onToggle("operator", k)}
-        rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
-    );
-  }
-  const shown = expanded ? data : data.slice(0, FUNNEL_ROWS);
-  const hidden = data.length - shown.length;
-  return (
-    <div className="h-100 d-flex flex-column">
-      <div className="flex-grow-1" style={{ minHeight: 0 }}>
-        <ResponsiveContainer>
-          <FunnelChart>
-            <Tooltip {...tooltipProps(c)} formatter={(v, name) => [formatExact("hours", v), name]} />
-            <Funnel
-              data={shown}
-              dataKey="value"
-              nameKey="label"
-              isAnimationActive={false}
-              fill={c.ok}
-              stroke={c.surface}
-              onClick={(d) => onToggle("operator", d?.payload?.key)}
-              style={{ cursor: "pointer" }}
-            >
-              {shown.map((d) => (
-                <Cell key={d.key} fillOpacity={markOpacity(filters.operator, d.key)} />
-              ))}
-            </Funnel>
-          </FunnelChart>
-        </ResponsiveContainer>
-      </div>
-      {hidden > 0 && <div className="text-muted small pt-1">+{hidden} more — maximize to see all</div>}
-    </div>
-  );
-};
-
 const OkPctByOperator = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   const data = useDimBars(rowsFor("operator"), "operator", ctx, (s) => s.okPct, { positiveOnly: false });
   return (
@@ -189,20 +144,6 @@ const OutputByItem = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="qty" selected={filters.item} onSelect={(k) => onToggle("item", k)}
       dimLabel="Part" valueLabel="OK quantity" emptyText="No OK quantity entered." />
-  );
-};
-
-const DowntimeByCause = ({ rowsFor, c, onDrill, ...rest }) => {
-  const rows = rowsFor(null);
-  const data = useMemo(() => {
-    const by = summarize(rows).downtimeByCause;
-    return STOPPAGE_FIELDS.map((f) => ({ key: f.key, label: causeLabel(f.key), value: by[f.key] }))
-      .filter((d) => d.value > 0)
-      .sort((a, b) => b.value - a.value);
-  }, [rows]);
-  return (
-    <HBars {...rest} data={data} c={c} color={c.downtime} format="minutes" onSelect={(k) => onDrill(causeMeasure(k))}
-      dimLabel="Cause" valueLabel="Downtime" emptyText="No downtime recorded." />
   );
 };
 
@@ -248,12 +189,21 @@ const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
 const OEE_SERIES = [
   { key: "oeeLosses", label: "Considering losses" },
   { key: "oeeLunch", label: "Not considering losses, but lunch" },
-  { key: "oeeLunchCot", label: "…but lunch & COT" },
+  { key: "oeeLunchCot", label: "Not considering losses, but lunch & COT" },
 ];
 
 const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
   const rows = rowsFor(dim);
+  // Clicking a legend entry hides/shows that one OEE line — a filter on the
+  // series themselves, separate from onToggle's date/month cross-filter.
+  const [hidden, setHidden] = useState(() => new Set());
+  const toggleSeries = (key) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   const data = useMemo(
     () => summarizeBy(rows, dim, ctx)
       .map((g) => ({ key: g.key, label: g.label, ...Object.fromEntries(OEE_SERIES.map((s) => [s.key, pct100(g.summary[s.key])])) }))
@@ -276,10 +226,21 @@ const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
         <XAxis dataKey="key" {...axisProps(c)} tickFormatter={(k) => (dim === "date" ? `${k.slice(8)}/${k.slice(5, 7)}` : DIMENSIONS.month.text(k))} minTickGap={24} />
         <YAxis unit="%" {...axisProps(c)} domain={[0, (max) => Math.max(100, Math.ceil(max / 10) * 10)]} />
         <Tooltip {...tooltipProps(c)} cursor={{ stroke: c.muted }} labelFormatter={(k) => DIMENSIONS[dim].text(k)} formatter={(v, name) => [`${Number(v).toFixed(2)}%`, name]} />
-        <Legend itemSorter={null} wrapperStyle={{ fontSize: 12 }} iconType="plainline" formatter={(v) => <span style={{ color: c.axis }}>{v}</span>} />
+        <Legend
+          itemSorter={null}
+          wrapperStyle={{ fontSize: 12, cursor: "pointer" }}
+          iconType="plainline"
+          onClick={(d) => toggleSeries(d.dataKey)}
+          formatter={(v, entry) => (
+            <span style={{ color: c.axis, opacity: hidden.has(entry.dataKey) ? 0.4 : 1, textDecoration: hidden.has(entry.dataKey) ? "line-through" : "none" }}>
+              {v}
+            </span>
+          )}
+        />
         {filters[dim].map((k) => <ReferenceLine key={k} x={k} stroke={c.muted} strokeDasharray="3 3" />)}
         {OEE_SERIES.map((s, i) => (
           <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={c.series[i]} strokeWidth={2} connectNulls
+            hide={hidden.has(s.key)}
             dot={few ? { r: 3, strokeWidth: 0, fill: c.series[i] } : false} activeDot={{ r: 5, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
         ))}
       </LineChart>
@@ -404,83 +365,6 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
 // Nested treemap cell: depth 1 is a machine's whole area (outlined, its name
 // pinned top-left); depth 2 is one stoppage group's slice within it, coloured
 // like Downtime by Machine's stacked bars so the two visuals read as one.
-const NestedTreemapCell = ({ x, y, width, height, depth, name, value, groupIndex, machineKey, c, selected, onSelect }) => {
-  if (depth === 1) {
-    // nodeInset leaves this whole rect visible as a band around its children,
-    // room enough for the machine name that would otherwise sit under them.
-    const fits = width > 40 && height > 16;
-    return (
-      <g>
-        <rect x={x} y={y} width={width} height={height} fill={c.grid} rx={3} />
-        {fits && (
-          <text x={x + 6} y={y + 13} fill={c.ink} fontSize={12} fontWeight={700} style={{ pointerEvents: "none" }}>
-            {truncate(name, Math.floor(width / 7))}
-          </text>
-        )}
-      </g>
-    );
-  }
-  if (depth === 2) {
-    const color = c.series[(groupIndex ?? 0) % c.series.length];
-    const fits = width > 56 && height > 30;
-    return (
-      <g onClick={() => onSelect(machineKey)} style={{ cursor: "pointer" }}>
-        <rect x={x} y={y} width={width} height={height} fill={color} fillOpacity={markOpacity(selected, machineKey)} stroke={c.surface} strokeWidth={2} />
-        {fits && (
-          <>
-            <text x={x + 6} y={y + height - 22} fill="#ffffff" fontSize={11} fontWeight={600}>
-              {truncate(name, Math.floor(width / 7))}
-            </text>
-            <text x={x + 6} y={y + height - 8} fill="#ffffff" fontSize={11}>{FORMATS.minutes(value)}</text>
-          </>
-        )}
-      </g>
-    );
-  }
-  return null;
-};
-
-const DowntimeTreemap = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
-  const rows = rowsFor("machine");
-  const data = useMemo(
-    () => summarizeBy(rows, "machine", ctx)
-      .sort(naturalSort)
-      .map((m) => ({
-        name: m.label,
-        machineKey: m.key,
-        children: STOPPAGE_GROUPS
-          .map((g, i) => ({
-            name: g.label,
-            value: g.fields.reduce((sum, f) => sum + m.summary.downtimeByCause[f], 0),
-            groupIndex: i,
-            machineKey: m.key,
-          }))
-          .filter((leaf) => leaf.value > 0),
-      }))
-      .filter((m) => m.children.length),
-    [rows, ctx],
-  );
-  if (!data.length) return <Empty>No downtime recorded.</Empty>;
-  if (view === "table") {
-    return (
-      <MiniTable columns={["Machine", ...STOPPAGE_GROUPS.map((g) => `${g.label} (min)`)]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
-        rows={data.map((m) => ({
-          key: m.machineKey,
-          cells: [m.name, ...STOPPAGE_GROUPS.map((g) => formatExact("qty", m.children.find((leaf) => leaf.groupIndex === STOPPAGE_GROUPS.indexOf(g))?.value || 0))],
-        }))}
-      />
-    );
-  }
-  return (
-    <ResponsiveContainer>
-      <Treemap data={data} dataKey="value" aspectRatio={4 / 3} isAnimationActive={false} nodeInset={16}
-        content={<NestedTreemapCell c={c} selected={filters.machine} onSelect={(k) => onToggle("machine", k)} />}>
-        <Tooltip {...tooltipProps(c)} formatter={(v, n) => [formatExact("minutes", v), n]} labelFormatter={() => ""} />
-      </Treemap>
-    </ResponsiveContainer>
-  );
-};
-
 const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
   const rows = rowsFor(null);
@@ -551,14 +435,11 @@ const MachineSummary = ({ rowsFor, ctx, filters, onToggle }) => {
 export const CHART_COMPONENTS = {
   oeeTrend: OeeTrend,
   runTimeByOperator: RunTimeByOperator,
-  runTimeByOperatorFunnel: RunTimeByOperatorFunnel,
   downtimeByMachine: DowntimeByMachine,
-  downtimeTreemap: DowntimeTreemap,
   runTimeByMachine: RunTimeByMachine,
   unreportedByMachine: UnreportedByMachine,
   okRejectedTrend: OkRejectedTrend,
   oeeByMachine: OeeByMachine,
-  downtimeByCause: DowntimeByCause,
   rejectByReason: RejectByReason,
   okPctByOperator: OkPctByOperator,
   outputByItem: OutputByItem,

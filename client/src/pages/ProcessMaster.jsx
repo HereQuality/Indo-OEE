@@ -257,28 +257,36 @@ const ProcessMaster = () => {
       minWidth: "220px",
       grow: 2,
     },
-    {
-      name: "Dashboard",
-      selector: (row) =>
-        `${resolveWidgets(row.stats, STATS_BY_KEY, DEFAULT_STATS).length} KPI tiles · ${resolveWidgets(row.charts, CHARTS_BY_KEY, DEFAULT_CHARTS).length} graphs`,
-      minWidth: "150px",
-    },
-    {
-      name: "Data Entry Page",
-      cell: (row) =>
-        row.dataEntryMenu ? (
-          <Link
-            to={toRolePath(row.dataEntryMenu, roleSlug)}
-            className="d-inline-flex align-items-center gap-1 text-decoration-none"
-            title={`Open ${row.dataEntryMenuLabel}`}
-          >
-            {row.dataEntryMenuLabel} <ExternalLink size={13} />
-          </Link>
-        ) : (
-          <span className="text-muted">Not linked</span>
-        ),
-      minWidth: "160px",
-    },
+    // Dashboard customization and the Data Entry Page link are Super
+    // Admin-only capabilities (see the isAdmin-gated Select above) — a
+    // non-admin can't act on either from here, so these columns are just
+    // noise for them.
+    ...(isAdmin
+      ? [
+          {
+            name: "Dashboard",
+            selector: (row) =>
+              `${resolveWidgets(row.stats, STATS_BY_KEY, DEFAULT_STATS).length} KPI tiles · ${resolveWidgets(row.charts, CHARTS_BY_KEY, DEFAULT_CHARTS).length} graphs`,
+            minWidth: "150px",
+          },
+          {
+            name: "Data Entry Page",
+            cell: (row) =>
+              row.dataEntryMenu ? (
+                <Link
+                  to={toRolePath(row.dataEntryMenu, roleSlug)}
+                  className="d-inline-flex align-items-center gap-1 text-decoration-none"
+                  title={`Open ${row.dataEntryMenuLabel}`}
+                >
+                  {row.dataEntryMenuLabel} <ExternalLink size={13} />
+                </Link>
+              ) : (
+                <span className="text-muted">Not linked</span>
+              ),
+            minWidth: "160px",
+          },
+        ]
+      : []),
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), maxWidth: "110px" },
     {
       name: "Action",

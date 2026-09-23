@@ -366,6 +366,12 @@ a:hover {
   color: #f1f1f1 !important;
 }
 
+/* Blinking text cursor, explicit rather than left to inherit — some browser/
+   zoom combinations render it near-invisible against a light input otherwise. */
+input, textarea, .form-control {
+  caret-color: currentColor;
+}
+
 /* Form Switches / Sliders Dark Mode Fix & Sizing */
 .dark .form-switch .form-check-input {
   background-color: #3f3f3f;
