@@ -53,7 +53,6 @@ const ProcessOverview = ({ processes, machines, loading, onOpen }) => {
 
       {machines.length > 0 && (
         <section className="pd-group">
-          <h6 className="pd-group-name">Plant</h6>
           <div className="pd-tiles">
             <Tile title="All machines" onOpen={() => onOpen("all")}
               subtitle={`${machineCount(machines.length)}${unassigned ? ` · ${unassigned} not in any process` : ""}`} />

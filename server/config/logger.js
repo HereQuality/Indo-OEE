@@ -42,10 +42,13 @@ const transports = [];
 if (NODE_ENV === "development") {
   transports.push(new winston.transports.Console({ format: devFormat }));
 } else {
-  // Console: only errors in production
+  // Console: every request (morgan logs at "http") and anything more
+  // severe, so a live production server's console shows normal 200s too,
+  // not just errors — the file transports below still keep the full
+  // history either way.
   transports.push(
     new winston.transports.Console({
-      level: "error",
+      level: "http",
       format: devFormat,
     })
   );

@@ -123,6 +123,16 @@ const ProductionEntrySchema = new mongoose.Schema(
 
     updatedBy: { type: mongoose.Schema.Types.ObjectId, refPath: "updatedByModel" },
     updatedByModel: { type: String, enum: ["User", "Operator"] },
+
+    // A Super Admin-only, time-boxed override of the 2-working-day entry
+    // lock (see utils/workingDays.js) — set by PUT
+    // /production-sheet/row/:id/unlock, always exactly 24 hours from when
+    // it's granted. While in the future, this entry is editable/deletable
+    // by anyone with the page's normal write permission, not just Super
+    // Admin — the point is letting an Operator fix one old entry without
+    // Super Admin having to do the edit themselves. Expires on its own;
+    // nothing needs to re-lock it.
+    unlockedUntil: { type: Date, default: null },
   },
   { timestamps: true },
 );

@@ -17,6 +17,7 @@ import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import ProductionEntriesTable from "../Components/Production/ProductionEntriesTable";
 import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
+import NumberInput from "../Components/Production/NumberInput";
 import FilterPanel from "../Components/ProcessDashboard/FilterPanel";
 import "../Components/ProcessDashboard/processDashboard.css";
 import { useAlert } from "../context/AlertContext";
@@ -27,8 +28,11 @@ import { useItems } from "../hooks/useItems";
 import { useMachineOperators } from "../hooks/useMachineOperators";
 import {
   deleteProductionRow,
+  getProductionExtent,
+  getProductionFilterOptions,
   getProductionSheet,
   saveProductionRow,
+  unlockProductionRow,
 } from "../api/productionSheet.api";
 import {
   CYCLE_OP_FIELDS,
@@ -40,6 +44,8 @@ import {
   sortByMachineOn,
 } from "../utils/productionSheet";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
+import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
+import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
 
 /**
  * Production Data Entry — the month's records, and one form per record.
@@ -203,10 +209,50 @@ const toPayload = (v, isEdit) => {
 
 const ProductionSheet = () => {
   const toast = useAlert();
-  const { currentPagePermissions } = useContext(MenuContext) || {};
+  const { currentPagePermissions, isAdmin } = useContext(MenuContext) || {};
   const canCreate = currentPagePermissions ? !!currentPagePermissions.create : true;
   const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
   const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
+
+  // ── Entry lock (2 working days) ───────────────────────────────────────
+  // Preview only — see utils/workingDays.js's file comment. The server
+  // (productionSheet.controller.js) re-checks this against the real date
+  // on every Save/Delete/Unlock. A row already carrying an active
+  // `unlockedUntil` (Super Admin granted it, see handleUnlock below) is
+  // never locked here, for anyone — that's the whole point of unlocking it.
+  const [holidays, setHolidays] = useState([]);
+  const [weeklyOffDays, setWeeklyOffDays] = useState([0]);
+  useEffect(() => {
+    getCompanyHolidays().then((res) => setHolidays(res?.data?.data || [])).catch(() => setHolidays([]));
+    getWeeklyOff().then((res) => setWeeklyOffDays(res?.data?.data?.weeklyOffDays || [0])).catch(() => {});
+  }, []);
+  const lockInfo = useCallback(
+    (row) => {
+      if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
+      const asOf = isoDay(new Date());
+      const deadline = getLockDeadline(row.date, weeklyOffDays, holidays, LOCK_WORKING_DAYS);
+      if (asOf <= deadline) return "";
+      const [y, m, d] = deadline.split("-");
+      return `Locked — more than ${LOCK_WORKING_DAYS} working days old (editable through ${d}/${m}/${y})`;
+    },
+    [weeklyOffDays, holidays],
+  );
+
+  const [unlockingId, setUnlockingId] = useState(null);
+  const handleUnlock = useCallback(
+    (row) => {
+      setUnlockingId(row._id);
+      unlockProductionRow(row._id)
+        .then((res) => {
+          toast.success(res?.data?.message || "Unlocked for 24 hours");
+          fetchRows();
+        })
+        .catch((err) => toast.error(err?.response?.data?.message || "Could not unlock this entry"))
+        .finally(() => setUnlockingId(null));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // One Filters button holds everything that slices the sheet — period
   // (date range / month / year), Machine, Operator, Item — the same panel
@@ -220,12 +266,16 @@ const ProductionSheet = () => {
   const [loading, setLoading] = useState(false);
   const [fromDate, toDate] = range;
 
-  // Paginated by date rather than by raw row — a date's entries are merged
-  // into one block (shared Date/Machine cells), so slicing mid-date would
-  // split a merged block across two pages. 10 days per page.
-  const PAGE_SIZE_DAYS = 10;
+  // Paginated by date on the server, not in the browser — each page's own
+  // request only ever returns that page's rows (PAGE_SIZE_DAYS distinct
+  // dates), never the whole selected range at once. See getSheet in
+  // productionSheet.controller.js for the matching server-side paging.
   const [page, setPage] = useState(1);
-  const [goTo, setGoTo] = useState("1");
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDays, setTotalDays] = useState(0);
+  // Blank by default — the field shows the current page only as a
+  // placeholder hint, not a real value sitting there to be typed over.
+  const [goTo, setGoTo] = useState("");
 
   const { data: machines = [] } = useMachines();
   const { data: processes = [] } = useProcesses();
@@ -270,22 +320,34 @@ const ProductionSheet = () => {
   );
 
   // ── Load ───────────────────────────────────────────────────────────────
-  // The server is only asked to narrow by date — Machine/Operator/Item are
-  // applied in the browser (like the process dashboards), so ticking more
-  // than one of each in the Filters panel doesn't need a second round trip.
+  // Only Machine narrows what's actually fetched — Operator/Item still
+  // narrow the browser's *view* of a page's rows (applyFilters below), same
+  // as before — but both narrow which *dates* the server pages through, so
+  // paging a filtered view never lands on a date with nothing matching.
+  // Whatever page is asked for, only that page's rows come over the wire —
+  // the full date range is never fetched in one request.
   const validRange = !!fromDate && !!toDate && fromDate <= toDate;
 
   const fetchRows = useCallback(() => {
     if (!validRange) return;
     setLoading(true);
-    getProductionSheet({ from: fromDate, to: toDate })
-      .then((res) => setRows(res.data.data || []))
+    getProductionSheet({ from: fromDate, to: toDate, page, machine: filters.machine, operator: filters.operator, item: filters.item })
+      .then((res) => {
+        setRows(res.data.data || []);
+        const meta = res.data.meta || {};
+        setTotalPages(Math.max(1, meta.totalPages || 1));
+        setTotalDays(meta.totalDays || 0);
+        // The server clamps an out-of-range page to its own last page —
+        // mirror that back into local state so "Page X of Y" reads right.
+        if (meta.page && meta.page !== page) setPage(meta.page);
+      })
       .catch((err) => {
         toast.error(err?.response?.data?.message || "Failed to load entries");
         setRows([]);
       })
       .finally(() => setLoading(false));
-  }, [fromDate, toDate, validRange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, page, filters.machine, filters.operator, filters.item, validRange]);
 
   useEffect(() => {
     if (!validRange) {
@@ -294,30 +356,53 @@ const ProductionSheet = () => {
     }
     fetchRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, page, filters.machine, filters.operator, filters.item]);
 
+  // The date range this app actually has data in, for the Filters panel's
+  // Year tab — independent of the sheet's own current page.
+  const [extent, setExtent] = useState(null);
   useEffect(() => {
-    setPage(1);
-    setGoTo("1");
-  }, [fromDate, toDate, filters]);
-
-  const ctx = useMemo(() => ({ machineName }), [machineName]);
-
-  const filteredRows = useMemo(() => applyFilters(rows, filters), [rows, filters]);
+    getProductionExtent()
+      .then((res) => setExtent(res?.data?.data || null))
+      .catch(() => setExtent(null));
+  }, []);
 
   // What the Filters panel's Machine/Operator/Item pickers offer: the values
-  // present in the loaded period, plus anything already picked (so a pick
-  // never vanishes from its own list once the period moves past it).
+  // present anywhere in the selected date range (not just this page), plus
+  // anything already picked (so a pick never vanishes from its own list once
+  // the period moves past it). Refetched only when the date range changes —
+  // picking a filter doesn't shrink what the other pickers can offer.
+  const ctx = useMemo(() => ({ machineName }), [machineName]);
+  const [rangeFilterValues, setRangeFilterValues] = useState({ machine: [], operator: [], item: [] });
+  useEffect(() => {
+    if (!validRange) return;
+    getProductionFilterOptions({ from: fromDate, to: toDate })
+      .then((res) => setRangeFilterValues(res?.data?.data || { machine: [], operator: [], item: [] }))
+      .catch(() => {});
+  }, [fromDate, toDate, validRange]);
+
   const filterOptions = useMemo(() => {
     const options = (dim) =>
-      [...new Set([...rows.map(DIMENSIONS[dim].value), ...filters[dim]])]
+      [...new Set([...(rangeFilterValues[dim] || []), ...filters[dim]])]
         .map((value) => ({ value, label: DIMENSIONS[dim].text(value, ctx) }))
         .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
     return { machine: options("machine"), operator: options("operator"), item: options("item") };
-  }, [rows, ctx, filters]);
+  }, [rangeFilterValues, ctx, filters]);
 
-  const onFilterSet = useCallback((dim, values) => setFilters((f) => ({ ...f, [dim]: values })), []);
-  const onRangeChange = useCallback((next) => setRange(next), []);
+  // Page resets to 1 alongside the filter/range change itself (not in a
+  // separate effect reacting to it) so the two state updates land in the
+  // same render and the sheet fetches page 1 of the new selection exactly
+  // once, instead of once for the old page and again once it's corrected.
+  const onFilterSet = useCallback((dim, values) => {
+    setFilters((f) => ({ ...f, [dim]: values }));
+    setPage(1);
+    setGoTo("");
+  }, []);
+  const onRangeChange = useCallback((next) => {
+    setRange(next);
+    setPage(1);
+    setGoTo("");
+  }, []);
   const isDefaultRange = range.join() === baseRange.join();
   const filtersActive = !isDefaultRange || hasFilters(filters);
   const clearAll = () => {
@@ -325,7 +410,14 @@ const ProductionSheet = () => {
     const fresh = defaultEntryRange();
     setBaseRange(fresh);
     setRange(fresh);
+    setPage(1);
+    setGoTo("");
   };
+
+  // This page's own rows only — Operator/Item still narrow the view here
+  // (Machine was already narrowed server-side), same applyFilters the
+  // process dashboards use.
+  const filteredRows = useMemo(() => applyFilters(rows, filters), [rows, filters]);
 
   const sortedRows = useMemo(
     () =>
@@ -338,27 +430,11 @@ const ProductionSheet = () => {
     [filteredRows, machineName],
   );
 
-  // The distinct dates actually present, in the same newest-first order as
-  // sortedRows — what gets paged is this list, not the raw rows.
-  const activeDays = useMemo(() => [...new Set(sortedRows.map((r) => r.date))], [sortedRows]);
-  const totalPages = Math.max(1, Math.ceil(activeDays.length / PAGE_SIZE_DAYS));
-
-  // A new month/machine filter (or a load that shrinks the day count) can
-  // leave `page` pointing past the end — pull it back in range rather than
-  // showing an empty page.
-  useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), totalPages));
-  }, [totalPages]);
-
-  const pagedRows = useMemo(() => {
-    const pageDays = new Set(activeDays.slice((page - 1) * PAGE_SIZE_DAYS, page * PAGE_SIZE_DAYS));
-    return sortedRows.filter((r) => pageDays.has(r.date));
-  }, [sortedRows, activeDays, page]);
-
   const goToPage = () => {
+    if (goTo === "") return;
     const n = Number(goTo);
     if (Number.isInteger(n) && n >= 1 && n <= totalPages) setPage(n);
-    setGoTo(String(Math.min(Math.max(1, Number.isInteger(n) ? n : page), totalPages)));
+    setGoTo("");
   };
 
   // dayCalc looks at a machine's whole date (this row + the following rows
@@ -427,12 +503,24 @@ const ProductionSheet = () => {
   }, []);
 
   const handleRejectChange = useCallback((index, reason, value) => {
-    setEntries((list) =>
-      list.map((v, i) =>
+    setEntries((list) => {
+      const nextList = list.map((v, i) =>
         i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v,
-      ),
-    );
-  }, []);
+      );
+      // Live-clears (or updates) the split-mismatch error as the boxes are
+      // edited, instead of leaving Save's last error message stuck on
+      // screen after they now add up correctly — every other field's error
+      // still only refreshes on the next Save attempt.
+      setFormErrors((errs) => {
+        if (!errs[index]) return errs;
+        const { rejectBreakdown } = validate(nextList[index]);
+        const { rejectBreakdown: _drop, ...rest } = errs[index];
+        const nextEntry = rejectBreakdown ? { ...rest, rejectBreakdown } : rest;
+        return errs.map((e, i) => (i === index ? nextEntry : e));
+      });
+      return nextList;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- validate is a pure fn of its argument, redefined harmlessly every render
 
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
@@ -589,21 +677,17 @@ const ProductionSheet = () => {
     return `${d}/${m}/${y}`;
   };
   const periodLabel = useMemo(() => `${fmtShort(fromDate)} – ${fmtShort(toDate)}`, [fromDate, toDate]);
-  const extent = useMemo(() => {
-    if (!rows.length) return null;
-    const dates = rows.map((r) => r.date);
-    return { from: dates.reduce((a, b) => (b < a ? b : a)), to: dates.reduce((a, b) => (b > a ? b : a)) };
-  }, [rows]);
 
-  // Search matches Part Name, Operator, or Drawing No. — the sheet's own
-  // rows, not the day-level aggregate figures next to them.
+  // Search matches Part Name, Operator, or Drawing No. — only within this
+  // page's own loaded rows, not the whole selection (see the `extent` state
+  // above and getProductionExtent for what covers the full range).
   const searchedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pagedRows;
-    return pagedRows.filter((r) =>
+    if (!q) return sortedRows;
+    return sortedRows.filter((r) =>
       [r.itemName, r.operator, r.drawingNo].some((v) => String(v || "").toLowerCase().includes(q)),
     );
-  }, [pagedRows, search]);
+  }, [sortedRows, search]);
 
   document.title = `Production Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
@@ -668,7 +752,7 @@ const ProductionSheet = () => {
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  Previous
+                  Prev
                 </button>
                 <button
                   type="button"
@@ -680,11 +764,12 @@ const ProductionSheet = () => {
                   Next
                 </button>
                 <span className="small text-muted ms-2">Go to</span>
-                <Input
-                  type="number"
-                  bsSize="sm"
-                  min={1}
+                <NumberInput
+                  name="goTo"
+                  decimals={false}
+                  maxLength={4}
                   max={totalPages}
+                  placeholder={String(page)}
                   value={goTo}
                   onChange={(e) => setGoTo(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && goToPage()}
@@ -709,6 +794,10 @@ const ProductionSheet = () => {
                   setRemoveId(r._id);
                   setDeleteOpen(true);
                 }}
+                lockInfo={lockInfo}
+                isAdmin={isAdmin}
+                onUnlock={handleUnlock}
+                unlockingId={unlockingId}
                 fillHeight
               />
             </CardBody>

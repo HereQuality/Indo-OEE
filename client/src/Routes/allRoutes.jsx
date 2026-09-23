@@ -45,6 +45,7 @@ const Profile = lazyWithRetry(() => import("../pages/Profile"));
 const MenuGroup = lazyWithRetry(() => import("../pages/MenuGroup"));
 const MenuMaster = lazyWithRetry(() => import("../pages/MenuMaster"));
 const Department = lazyWithRetry(() => import("../pages/Department"));
+const CompanyHolidays = lazyWithRetry(() => import("../pages/CompanyHolidays"));
 const ProductionSheet = lazyWithRetry(() => import("../pages/ProductionSheet"));
 const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
@@ -98,6 +99,7 @@ const protectedRoutes = [
   // Shared by SuperAdmin and every Operator role alike — what each one
   // actually sees/can edit inside these pages is still narrowed by their
   // menu permissions (MenuContext), not by a second copy of the page.
+  { path: "/employee-management/company-holidays", component: <CompanyHolidays /> },
   { path: "/employee-management/department", component: <Department /> },
   { path: "/employee-management/role", component: <RoleMaster /> },
   { path: "/employee-management/employee", component: <Operator /> },

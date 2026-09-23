@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Eye, Pencil, Trash2, X } from "lucide-react";
+﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
 import {
   CYCLE_OP_FIELDS,
   REJECT_REASONS,
@@ -170,6 +170,45 @@ const min = (v) => (v === null || v === undefined || v === "" ? "—" : fmtNum(N
 // scan and add up by eye than a row mixing dashes and numbers. Display only:
 // the formulas already treat a blank the same as 0.
 const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 : Number(v));
+
+// Remarks used to sit in the table as full wrapped text, which forced the
+// column wide and pushed most rows down whether or not that entry actually
+// had one. Now it's just an eye icon — click to see the text in a small
+// popover, same idea as the header's "how this is calculated" icon.
+const RemarkCell = ({ text }) => {
+  const [open, setOpen] = useState(false);
+  if (!text) return <span className="text-slate-300 dark:text-slate-600">—</span>;
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        title="View remark"
+        aria-label="View remark"
+        className="inline-flex items-center justify-center text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 transition-colors"
+      >
+        <Eye size={14} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-1 w-64 max-w-[80vw] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-lg p-2.5 text-left whitespace-normal">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <span className="font-semibold text-xs text-slate-800 dark:text-slate-100">Remark</span>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex-shrink-0">
+                <X size={14} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-0">{text}</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 // The downtime columns are headed with the same wording as the form, rather
 // than the longer labels the old Excel grid used.
@@ -343,7 +382,7 @@ const COLUMNS = [
     tone: "oee",
     merge: "machineDay",
   },
-  { key: "remarks", label: "Remarks", get: (r) => dash(r.remarks), wrap: true },
+  { key: "remarks", label: "Remarks", get: (r) => <RemarkCell text={r.remarks} />, align: "text-center" },
 ];
 
 const ProductionEntriesTable = ({
@@ -356,6 +395,19 @@ const ProductionEntriesTable = ({
   canDelete = true,
   onEdit,
   onDelete,
+  // (row) => a lock deadline string ("locked as of DD/MM/YYYY") or "" when
+  // the row is still editable — see ProductionSheet.jsx's rowLockInfo.
+  // Locked rows show a lock icon instead of the Edit/Delete buttons; the
+  // server enforces the same rule regardless of what this says.
+  lockInfo = () => "",
+  // Super Admin only: a locked row shows an "Unlock" button instead of
+  // Edit/Delete, calling onUnlock(row) — grants 24h access on that one
+  // entry (see ProductionSheet.jsx's handleUnlock). unlockingId marks
+  // whichever row's unlock request is in flight, so its button can show a
+  // spinner instead of being clickable twice.
+  isAdmin = false,
+  onUnlock,
+  unlockingId = null,
   // When true, the table fills whatever vertical space its flex parent
   // gives it (that parent — ProductionSheet's Card/CardBody — is itself a
   // flex column sized to the page's own viewport slice) and scrolls
@@ -370,7 +422,35 @@ const ProductionEntriesTable = ({
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
   const [open, setOpen] = useState({ cycle: false, downtime: false });
-  const toggle = (key) => setOpen((o) => ({ ...o, [key]: !o[key] }));
+  // Expanding/collapsing a breakdown changes how many columns sit to its
+  // right without moving anything to its left — but the browser doesn't
+  // know that, so when the table gets narrower it just clamps the native
+  // scrollLeft down to the new (smaller) max, which reads as being thrown
+  // to the far right regardless of where the toggled column actually was.
+  // This remembers that column's on-screen position right before the
+  // toggle and restores it once the new column set has rendered, so the
+  // same header stays under the same spot on screen either way.
+  const scrollAnchorRef = useRef(null);
+  const toggle = (key) => {
+    const th = bodyRef.current?.querySelector(`th[data-col-key="${key}"]`);
+    if (th && bodyRef.current) {
+      scrollAnchorRef.current = { key, offsetFromContainerLeft: th.getBoundingClientRect().left - bodyRef.current.getBoundingClientRect().left };
+    }
+    setOpen((o) => ({ ...o, [key]: !o[key] }));
+  };
+  useLayoutEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    scrollAnchorRef.current = null;
+    if (!anchor || !bodyRef.current) return;
+    const th = bodyRef.current.querySelector(`th[data-col-key="${anchor.key}"]`);
+    if (!th) return;
+    const containerLeft = bodyRef.current.getBoundingClientRect().left;
+    const thAbsoluteLeft = th.getBoundingClientRect().left - containerLeft + bodyRef.current.scrollLeft;
+    const desired = Math.max(0, thAbsoluteLeft - anchor.offsetFromContainerLeft);
+    bodyRef.current.scrollLeft = desired;
+    if (topBarRef.current) topBarRef.current.scrollLeft = desired;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // A second, top-side horizontal scrollbar mirroring the table's own —
   // with a tall/wide sheet like this one, the browser's native horizontal
@@ -531,6 +611,7 @@ const ProductionEntriesTable = ({
               {visible.map((c) => (
                 <th
                   key={c.key}
+                  data-col-key={c.key}
                   className={`${thBase} ${c.frozen ? `${FROZEN[c.frozen]} z-30` : ""} ${HEAD_BG} ${
                     HEAD_TEXT[c.tone] || HEAD_TEXT_DEFAULT
                   } ${c.align || ""}`}
@@ -623,28 +704,57 @@ const ProductionEntriesTable = ({
                       );
                     })}
                     <td className={`${td} ${dayBg} ${boundary} ${FROZEN.action} z-10`}>
-                      <div className="flex gap-1.5">
-                        {canEdit && (
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
-                            title="Edit"
-                            onClick={() => onEdit(r)}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
-                            title="Remove"
-                            onClick={() => onDelete(r)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
+                      {(() => {
+                        const locked = lockInfo(r);
+                        if (locked) {
+                          if (isAdmin) {
+                            const busy = unlockingId === r._id;
+                            return (
+                              <div className="flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  className="inline-flex items-center gap-1 px-2 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60 text-xs font-medium"
+                                  title={`${locked} — click to unlock for 24 hours`}
+                                  onClick={() => onUnlock?.(r)}
+                                >
+                                  <LockOpen size={13} />
+                                  {busy ? "Unlocking…" : "Unlock"}
+                                </button>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center justify-center" title={locked}>
+                              <Lock size={14} className="text-slate-400 dark:text-slate-500" />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex gap-1.5">
+                            {canEdit && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
+                                title="Edit"
+                                onClick={() => onEdit(r)}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
+                                title="Remove"
+                                onClick={() => onDelete(r)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

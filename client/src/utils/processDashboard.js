@@ -285,12 +285,13 @@ export const defaultRange = () => QUICK_RANGES.find((q) => q.key === DEFAULT_RAN
 // live — defaulting it to "this month" (or even "this year") hid a machine's
 // earlier entries the moment the calendar rolled over, which read as data
 // having vanished. It defaults to a rolling window ending today and going
-// back as far as the sheet's own endpoint allows in one request (see
-// MAX_RANGE_DAYS in productionSheet.controller.js — 5 years), so it reads as
-// "everything so far" rather than looking like a specific year was picked.
-// A dashboard's own default stays DEFAULT_RANGE_KEY/defaultRange above,
-// unaffected.
-const ENTRY_RANGE_DAYS = 366 * 5;
+// back one year — wide enough that real data doesn't look like it "vanished"
+// across a month/year rollover, without pulling years of rows on every
+// visit the way the old 5-year default did. The Filters panel's own Year/
+// Date range tabs can still reach further back whenever that's actually
+// wanted (up to MAX_RANGE_DAYS below). A dashboard's own default stays
+// DEFAULT_RANGE_KEY/defaultRange above, unaffected.
+const ENTRY_RANGE_DAYS = 366;
 export const defaultEntryRange = () => [isoDate(daysAgo(ENTRY_RANGE_DAYS - 1)), isoDate(new Date())];
 
 // The API accepts at most this many days in one request (server: MAX_RANGE_DAYS).

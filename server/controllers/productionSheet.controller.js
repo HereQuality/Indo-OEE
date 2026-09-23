@@ -4,16 +4,41 @@ const { STOPPAGE_KEYS, REJECT_REASONS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { CYCLE_OP_FIELDS } = require("../models/Item");
 const { normalizeCycleOps } = require("./item.controller");
+const CompanyHoliday = require("../models/CompanyHoliday");
+const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const { isEntryLocked } = require("../utils/workingDays");
+
+// An existing entry can only be edited/deleted within 2 *working* days of
+// its own date (see utils/workingDays.js) — past that it's treated as
+// closed, the same way a finalized ledger period would be — for Super Admin
+// too; the only way past it (for anyone, Super Admin included) is a still-
+// current `unlockedUntil` (see unlockRow below), a Super Admin-granted,
+// 24-hour, one-entry exception. Deliberately explicit rather than a silent
+// SuperAdmin bypass, so unlocking an old entry is always its own visible
+// action, not an invisible standing power.
+const LOCK_WORKING_DAYS = 2;
+
+const checkNotLocked = async (entryDateISO, user, unlockedUntil) => {
+  if (unlockedUntil && new Date(unlockedUntil) > new Date()) return null;
+  const [{ weeklyOffDays }, holidays] = await Promise.all([
+    WeeklyOffSetting.findOne().lean().then((d) => d || { weeklyOffDays: [0] }),
+    CompanyHoliday.find({ isActive: true }).lean(),
+  ]);
+  if (isEntryLocked(entryDateISO, weeklyOffDays, holidays, undefined, LOCK_WORKING_DAYS)) {
+    return `This entry is more than ${LOCK_WORKING_DAYS} working days old and is locked. Ask a Super Admin to unlock it.`;
+  }
+  return null;
+};
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-// The Data Entry sheet defaults to as much history as it can show in one
-// request (see defaultEntryRange in client/src/utils/processDashboard.js),
-// and the Filters panel's own "Year"/custom-range pickers can ask for
-// several years too — so this matches the dashboard endpoint's own cap
-// (process.controller.js) rather than being its own, smaller one. The client
-// still pages the result 10 days at a time, so years of raw rows never
-// render at once even though this fetches all of them.
+// The Filters panel's "Year"/custom-range pickers can ask for several years —
+// this is only a sanity cap on how wide a single request's date window can
+// be, not how much data comes back. What actually comes back is always just
+// one page's worth (see PAGE_SIZE_DAYS in getSheet below), however wide the
+// window is.
 const MAX_RANGE_DAYS = 366 * 5;
+// How many distinct dates' worth of entries one page of the sheet returns.
+const PAGE_SIZE_DAYS = 10;
 // Entries a machine can have on one date — the sheet's three rows per machine.
 const MAX_SLOTS = 3;
 const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
@@ -149,7 +174,15 @@ const isRowEmpty = (doc) =>
   !Object.keys(doc.rejectBreakdown || {}).length &&
   !(doc.cycleOpsSec || []).some((v) => v !== null && v !== undefined);
 
-// GET /production-sheet?from=YYYY-MM-DD&to=YYYY-MM-DD[&machine=id]
+// "id1,id2" -> ["id1","id2"], dropping blanks.
+const parseList = (raw) => String(raw || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+// GET /production-sheet?from&to&page[&machine=id1,id2][&operator=a,b][&item=name1,name2]
+// Paginated by distinct date, newest first, PAGE_SIZE_DAYS per page — a
+// date's entries are merged into one block on the sheet, so pagination is
+// by whole date, never mid-date. Only the requested page's own rows are
+// fetched from the DB and sent — the whole date range is never pulled at
+// once, however wide `from`..`to` is.
 exports.getSheet = async (req, res) => {
   try {
     const from = parseDay(req.query.from);
@@ -161,21 +194,98 @@ exports.getSheet = async (req, res) => {
       return res.status(400).json({ isOk: false, message: `Date range can't exceed ${MAX_RANGE_DAYS} days` });
     }
 
+    // Only Machine narrows the actual fetch — Operator/Item stay
+    // client-side row filters (see applyFilters in processDashboard.js), so
+    // a date's fetched rows are always a machine's *whole* day, which
+    // dayCalc/summarize need to get that day's OEE/unreported figures right.
+    // Operator/Item still narrow which *dates* qualify for pagination below,
+    // so paging through a filtered view doesn't show dates with no matches.
     const query = { date: { $gte: from, $lte: to } };
     if (req.query.machine) {
-      if (!mongoose.isValidObjectId(req.query.machine)) {
+      const ids = parseList(req.query.machine);
+      if (!ids.length || ids.some((id) => !mongoose.isValidObjectId(id))) {
         return res.status(400).json({ isOk: false, message: "Invalid machine" });
       }
-      query.machine = req.query.machine;
+      query.machine = { $in: ids };
     }
+    // Filtered by itemName, not the `item` reference id — the client's Part
+    // filter (DIMENSIONS.item in processDashboard.js) slices on the entry's
+    // own stored itemName text, the same field the sheet's Part Name column
+    // shows, so older rows with no `item` link still filter correctly.
+    const dateFilterQuery = { ...query };
+    if (req.query.operator) dateFilterQuery.operator = { $in: parseList(req.query.operator) };
+    if (req.query.item) dateFilterQuery.itemName = { $in: parseList(req.query.item) };
 
-    const entries = await ProductionEntry.find(query)
-      .select("-__v -createdAt -updatedBy -updatedByModel")
-      .lean();
+    const distinctDates = await ProductionEntry.find(dateFilterQuery).distinct("date");
+    const sortedDates = distinctDates.map((d) => d.toISOString().slice(0, 10)).sort().reverse();
+    const totalDays = sortedDates.length;
+    const totalPages = Math.max(1, Math.ceil(totalDays / PAGE_SIZE_DAYS));
+    const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), totalPages);
+    const pageDates = sortedDates
+      .slice((page - 1) * PAGE_SIZE_DAYS, page * PAGE_SIZE_DAYS)
+      .map(parseDay);
 
-    res.status(200).json({ isOk: true, data: entries.map(toRow) });
+    const entries = pageDates.length
+      ? await ProductionEntry.find({ ...query, date: { $in: pageDates } })
+          .select("-__v -createdAt -updatedBy -updatedByModel")
+          .lean()
+      : [];
+
+    res.status(200).json({
+      isOk: true,
+      data: entries.map(toRow),
+      meta: { page, totalPages, totalDays },
+    });
   } catch (error) {
     console.error("Error loading production sheet:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /production-sheet/extent — the earliest and latest entry date across
+// every saved record, regardless of any filter. Since the sheet itself now
+// only ever holds one page of rows, the Filters panel's Year tab needs this
+// to know how far back data actually goes.
+exports.getExtent = async (req, res) => {
+  try {
+    const [oldest, newest] = await Promise.all([
+      ProductionEntry.findOne().sort({ date: 1 }).select("date").lean(),
+      ProductionEntry.findOne().sort({ date: -1 }).select("date").lean(),
+    ]);
+    const data = oldest && newest
+      ? { from: oldest.date.toISOString().slice(0, 10), to: newest.date.toISOString().slice(0, 10) }
+      : null;
+    res.status(200).json({ isOk: true, data });
+  } catch (error) {
+    console.error("Error loading production sheet extent:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /production-sheet/filter-options?from&to — the distinct Machine/
+// Operator/Item values present anywhere in that date range, for the Filters
+// panel's pickers. Kept as its own lightweight endpoint (not derived from the
+// sheet's own page of rows) so the picker options don't shrink to whatever
+// happens to be on the current page.
+exports.getFilterOptions = async (req, res) => {
+  try {
+    const from = parseDay(req.query.from);
+    const to = parseDay(req.query.to);
+    if (!from || !to || to < from) {
+      return res.status(400).json({ isOk: false, message: "Valid 'from' and 'to' dates (YYYY-MM-DD) are required" });
+    }
+    const query = { date: { $gte: from, $lte: to } };
+    const [machine, operator, itemName] = await Promise.all([
+      ProductionEntry.distinct("machine", query),
+      ProductionEntry.distinct("operator", { ...query, operator: { $nin: ["", null] } }),
+      ProductionEntry.distinct("itemName", { ...query, itemName: { $nin: ["", null] } }),
+    ]);
+    res.status(200).json({
+      isOk: true,
+      data: { machine: machine.map(String), operator, item: itemName },
+    });
+  } catch (error) {
+    console.error("Error loading production sheet filter options:", error);
     res.status(500).json({ isOk: false, message: error.message });
   }
 };
@@ -211,6 +321,12 @@ exports.saveRow = async (req, res) => {
       if (!SLOT_NUMBERS.includes(slotNo)) {
         return res.status(400).json({ isOk: false, message: `Slot must be 1–${MAX_SLOTS}` });
       }
+      // Only an edit of an already-saved row can be locked — a brand new
+      // entry (slot "auto", handled above) is never blocked just because
+      // its own date is old; catching up on late-entered data is fine.
+      const existing = await ProductionEntry.findOne({ date: day, machine, slot: slotNo }).select("unlockedUntil").lean();
+      const lockMessage = await checkNotLocked(date, req.user, existing?.unlockedUntil);
+      if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
     }
 
     const { set, unset } = buildFields(req.body);
@@ -259,11 +375,35 @@ exports.deleteRow = async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ isOk: false, message: "Invalid entry" });
     }
+    const existing = await ProductionEntry.findById(req.params.id).select("date unlockedUntil").lean();
+    if (!existing) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    const lockMessage = await checkNotLocked(new Date(existing.date).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
+    if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+
     const deleted = await ProductionEntry.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ isOk: false, message: "Entry not found" });
     res.status(200).json({ isOk: true, message: "Entry deleted" });
   } catch (error) {
     console.error("Error deleting production row:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// PUT /production-sheet/row/:id/unlock — Super Admin only (route-level
+// authorize check). Grants exactly 24 hours of edit/delete access on this
+// one entry regardless of the normal 2-working-day lock, so an Operator can
+// fix it themselves instead of Super Admin doing the edit.
+exports.unlockRow = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ isOk: false, message: "Invalid entry" });
+    }
+    const unlockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const entry = await ProductionEntry.findByIdAndUpdate(req.params.id, { $set: { unlockedUntil } }, { new: true }).lean();
+    if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    res.status(200).json({ isOk: true, data: toRow(entry), message: "Unlocked for 24 hours" });
+  } catch (error) {
+    console.error("Error unlocking production row:", error);
     res.status(500).json({ isOk: false, message: error.message });
   }
 };

@@ -142,6 +142,7 @@ const EntryBlock = ({
   onItemSelect,
   onRejectChange,
   onRemove,
+  registerRef,
 }) => {
   const { warning } = useAlert();
   const calc = useMemo(() => rowCalc(values), [values]);
@@ -173,17 +174,6 @@ const EntryBlock = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmit, errorKeys]);
 
-  // With several machine blocks on the page, opening one (or "Add another
-  // machine" appending and opening a fresh one) collapses whichever block
-  // was open before — see expandedIndex in ProductionEntryForm below — but
-  // the newly opened block can still land off-screen below the fold. Scroll
-  // it into view the moment it opens, so the accordion actually reads as
-  // "this one's now active" instead of the page silently jumping around.
-  const blockRef = useRef(null);
-  useEffect(() => {
-    if (expanded) blockRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [expanded]);
-
   const machineSelect = (
     <Input type="select" bsSize="sm" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
       <option value="">Select machine</option>
@@ -212,7 +202,7 @@ const EntryBlock = ({
   if (!expanded) {
     return (
       <div
-        ref={blockRef}
+        ref={registerRef}
         className={`entry-block-in border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
       >
         <Row className="align-items-start g-1">
@@ -255,7 +245,7 @@ const EntryBlock = ({
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
-    <div ref={blockRef} className="entry-block-in border border-primary rounded mb-2 transition-colors">
+    <div ref={registerRef} className="entry-block-in border border-primary rounded mb-2 transition-colors">
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <button
           type="button"
@@ -549,6 +539,24 @@ const ProductionEntryForm = ({
   // block, always open.
   const [expandedIndex, setExpandedIndex] = useState(isEdit ? 0 : null);
 
+  // One scroll owned by the parent, not one independent effect per block —
+  // expanding block B while collapsing block A changes both of their
+  // `expanded` props in the same render, and two competing scrollIntoView
+  // calls raced each other (whichever ran last silently won, so a plain
+  // collapse-to-none often ended up wherever some *other* block's effect
+  // last pointed rather than back at the block just closed). This fires
+  // exactly once per expandedIndex change: to the newly opened block, or —
+  // when collapsing back to none — to whichever block was just closed.
+  const blockRefs = useRef({});
+  const lastExpandedRef = useRef(expandedIndex);
+  useEffect(() => {
+    const target = expandedIndex ?? lastExpandedRef.current;
+    if (target !== null && target !== undefined) {
+      blockRefs.current[target]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    lastExpandedRef.current = expandedIndex;
+  }, [expandedIndex]);
+
   return (
     <>
       {entries.map((values, i) => (
@@ -569,6 +577,9 @@ const ProductionEntryForm = ({
           onItemSelect={onItemSelect}
           onRejectChange={onRejectChange}
           onRemove={onRemove}
+          registerRef={(el) => {
+            blockRefs.current[i] = el;
+          }}
         />
       ))}
 

@@ -59,9 +59,9 @@ app.use(compression());
 // 6. HTTP REQUEST LOGGING (Morgan → Winston)
 // ─────────────────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev", {
-    skip: function (req, res) { return res.statusCode < 400 } // Only log errors in dev to reduce spam
-  }));
+  // Every request logs — status 200s included, not just errors — so the
+  // dev console shows exactly what the client is calling and how it went.
+  app.use(morgan("dev"));
 } else {
   app.use(
     morgan("combined", {

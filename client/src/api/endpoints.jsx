@@ -50,6 +50,14 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/departments/search`,
     },
 
+    // Company Holidays + Weekly Off (Operator Management > Company Holidays)
+    COMPANY_HOLIDAYS: {
+        BASE: `${V1}/company-holidays`,
+        BY_ID: (id) => `${V1}/company-holidays/${id}`,
+        WEEKLY_OFF: `${V1}/company-holidays/weekly-off`,
+        WEEKLY_OFF_UPDATE: `${V1}/company-holidays/weekly-off/update`,
+    },
+
     // Machine master endpoints (Production > Machines)
     MACHINES: {
         BASE: `${V1}/machines`,
@@ -82,6 +90,8 @@ export const ENDPOINTS = {
     PRODUCTION_SHEET: {
         BASE: `${V1}/production-sheet`,
         ROW: `${V1}/production-sheet/row`,
+        EXTENT: `${V1}/production-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/production-sheet/filter-options`,
         OPERATORS: `${V1}/production-sheet/operators`,
         REJECT_REASONS: `${V1}/production-sheet/reject-reasons`,
     },

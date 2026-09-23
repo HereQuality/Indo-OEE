@@ -62,9 +62,10 @@ const PRODUCTION_MENUS = [
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
-  { menuName: "Department", menuUrl: "/hqepl/employee-management/department", sequence: 1, icon: "Building" },
-  { menuName: "Teams", menuUrl: "/hqepl/teams", sequence: 2, icon: "UsersRound" },
-  { menuName: "Role", menuUrl: "/hqepl/employee-management/role", sequence: 3, icon: "ShieldCheck" },
+  { menuName: "Company Holidays", menuUrl: "/hqepl/employee-management/company-holidays", sequence: 1, icon: "CalendarOff" },
+  { menuName: "Department", menuUrl: "/hqepl/employee-management/department", sequence: 2, icon: "Building" },
+  { menuName: "Teams", menuUrl: "/hqepl/teams", sequence: 3, icon: "UsersRound" },
+  { menuName: "Role", menuUrl: "/hqepl/employee-management/role", sequence: 4, icon: "ShieldCheck" },
   { menuName: "Employee", menuUrl: "/hqepl/employee-management/employee", sequence: 5, icon: "User" },
   { menuName: "Manage Role", menuUrl: "/hqepl/employee-management/manage-role", sequence: 6, icon: "UserCog" },
 ];
