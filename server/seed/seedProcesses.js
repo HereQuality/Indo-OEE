@@ -4,11 +4,10 @@
  * ────────────────────────────
  * The Indo process list, as laid out on the dashboard landing page:
  *
- *   Hood/Housing   SPM · PRESS · Rivet · VMC · CNC
- *   Plug Pin       TRAUB M/C · Second Operation (Drilling)
+ *   SPM · PRESS · Rivet · VMC · CNC · TRAUB M/C · Second Operation (Drilling)
  *
  * Safe to re-run: a process that already exists (by name) is left exactly as
- * it is — its group, machines and chosen visuals are never overwritten. The
+ * it is — its machines and chosen visuals are never overwritten. The
  * existing machines come from the "Section Wise Eff. — CNC" sheet, so any
  * machine that isn't in a process yet is put under CNC; move them in
  * Production › Processes if that's wrong.
@@ -23,13 +22,13 @@ const Process = require("../models/Process");
 const Machine = require("../models/Machine");
 
 const PROCESSES = [
-  { processName: "SPM", group: "Hood/Housing" },
-  { processName: "PRESS", group: "Hood/Housing" },
-  { processName: "Rivet", group: "Hood/Housing" },
-  { processName: "VMC", group: "Hood/Housing" },
-  { processName: "CNC", group: "Hood/Housing" },
-  { processName: "TRAUB M/C", group: "Plug Pin" },
-  { processName: "Second Operation (Drilling)", group: "Plug Pin" },
+  { processName: "SPM" },
+  { processName: "PRESS" },
+  { processName: "Rivet" },
+  { processName: "VMC" },
+  { processName: "CNC" },
+  { processName: "TRAUB M/C" },
+  { processName: "Second Operation (Drilling)" },
 ];
 
 async function run() {

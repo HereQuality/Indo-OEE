@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { AuthContext } from '../../context/AuthContext';
+import React, { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 
-const FormsHeader = ({ 
+const FormsHeader = ({
   formName, filter, handleFilter, tog_list, setQuery, showAddButton = true,
   showForm = false, updateForm = false, handleSave, handleCancel, isSaveDisabled, isLoading, formId
 }) => {
-  const { adminData } = useContext(AuthContext);
   const [localSearch, setLocalSearch] = useState('');
   const debouncedSearch = useDebounce(localSearch, 300);
 
@@ -73,7 +71,7 @@ const FormsHeader = ({
           className="w-full sm:w-56 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 transition-all placeholder:text-slate-400 text-slate-800"
         />
 
-        {adminData?.roleType === 'SuperAdmin' && typeof filter === 'string' ? (
+        {typeof filter === 'string' ? (
           <select
             value={filter}
             onChange={handleFilter}
@@ -83,7 +81,7 @@ const FormsHeader = ({
             <option value="Active">Active Only</option>
             <option value="Inactive">Inactive Only</option>
           </select>
-        ) : adminData?.roleType === 'SuperAdmin' && (
+        ) : filter !== undefined && (
           <label className="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none" title="Show Active Only">
             <span className="text-xs font-medium text-slate-500 whitespace-nowrap hidden sm:inline">
               Active only

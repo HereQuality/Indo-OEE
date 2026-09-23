@@ -1,6 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Eye, Pencil, Trash2, X } from "lucide-react";
-import { CYCLE_OP_FIELDS, STOPPAGE_FIELDS, displayDay, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
+import {
+  CYCLE_OP_FIELDS,
+  REJECT_REASONS,
+  STOPPAGE_FIELDS,
+  displayDay,
+  fmtNum,
+  fmtPct,
+  rowCalc,
+} from "../../utils/productionSheet";
 
 // The plain-English formula behind every calculated column — shown in a
 // popover from the eye icon next to its header, so nobody has to remember or
@@ -10,21 +18,21 @@ const FORMULAS = {
   shift: "Machine Shift Time = MOD(Machine OFF Time − Machine ON Time, 1) × 24",
   idealQty:
     "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time). There's no typed Actual Quantity — this stands in for it.",
-  rejectedQty: "Rejected Quantity = Ideal Quantity − OK Quantity",
+  rejectedQty:
+    "Rejected Quantity = Ideal Quantity − OK Quantity. The breakdown shows how that total splits across the reasons entered on the form.",
   pctOk: "% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)",
-  unutilized:
-    "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, over this entry + the next 2 entries of the same machine and date.",
+  unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
   totalStoppage: "Total Stoppage = sum of the ten downtime columns.",
   effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600",
   unreported:
-    "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, over this entry + the next 2 entries.",
+    "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   setupEff: "Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time",
   oeeLosses:
-    "OEE considering losses = Effective Run Time ÷ (Shift Hours − Total Downtime ÷ 60), over this entry + the next 2 entries.",
+    "OEE considering losses = Effective Run Time ÷ (Shift Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",
   oeeLunch:
-    "OEE not considering losses but lunch = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60), over this entry + the next 2 entries.",
+    "OEE not considering losses but lunch = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
   oeeLunchCot:
-    "OEE not considering losses but lunch and COT = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60 − Setup Time ÷ 60), over this entry + the next 2 entries.",
+    "OEE not considering losses but lunch and COT = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
 };
 
 /**
@@ -42,49 +50,114 @@ const FORMULAS = {
  * formulas the entry form uses fill every calculated cell, so the table
  * can't disagree with the form.
  *
- * A calculated cell carries a neutral grey tint (typed cells stay plain);
- * the three OEE percentage columns get their own indigo tint so the sheet's
- * headline numbers stand out from the rest. Every calculated header gets an
- * eye-icon button showing the formula behind it, and most headers wrap onto
- * a couple of lines rather than stretching their column wide. Rows of the
- * same date share a faint shade that flips as the date changes, and Date/
- * Machine are frozen at the left while the rest of the sheet scrolls under
- * them — with several entries per day, one Date cell spans that date's rows
- * and one Machine cell spans that machine's entries within it, so a
- * machine's shifts read as one day's work instead of repeating cells.
+ * Columns are told apart by colour, not by a dense grid of ruled lines: a
+ * calculated cell carries a soft indigo wash with matching bold text (typed
+ * cells stay plain), the day-window figures (Unutilized/Unreported) get
+ * their own teal, and the three OEE percentage columns get blue so the
+ * sheet's headline numbers stand out from the rest — see TONE/OEE_TINT/
+ * HEAD_TEXT below. Every calculated header gets an eye-icon button showing
+ * the formula behind it, and most headers wrap onto a couple of lines
+ * rather than stretching their column wide. Rows of the same date share a
+ * faint shade that flips as the date changes, and Date/Machine are frozen
+ * at the left (Action frozen at the right) while the rest of the sheet
+ * scrolls under them — with several entries per day, one Date cell spans
+ * that date's rows and one Machine cell spans that machine's entries within
+ * it, so a machine's shifts read as one day's work instead of repeating
+ * cells.
  */
 
-// Headers wrap onto 2–3 lines instead of forcing their column wide — a
-// column's width is set by `headW` below (auto/unconstrained where a value
-// genuinely needs the room, e.g. Part Name or Remarks).
-const thBase =
-  "sticky top-0 z-20 align-bottom px-2 py-1.5 font-semibold whitespace-normal leading-tight border-r border-b border-slate-300 dark:border-slate-700";
-const td = "px-2 py-1.5 whitespace-nowrap border-r border-b border-slate-300 dark:border-slate-700";
+// Headers wrap onto a second line only once their own label passes 20
+// characters — under that, a column gets its label's full width on one
+// line rather than being squeezed down to some shared size. `ch` tracks the
+// table's own font size rather than a guessed pixel count. This has to be
+// an inline style, not a Tailwind class: the width is computed per-column
+// at render time, and Tailwind's build-time scan can't see a class name
+// assembled from a JS variable, so a `w-[Nch]` string built in JS never
+// makes it into the compiled CSS. It's a minimum, not a cap — table layout
+// is auto, so a column still grows past it for a wider value underneath
+// (e.g. a long operator name); `headStyle` overrides it outright for the
+// couple of columns (Part Name, Drawing No.) whose values run far longer
+// than their own label.
+// 24, not 20: a handful of labels (e.g. "Total Cycle Time (sec)", 23 chars;
+// "Machine Shift Time (hr)", 24) sat just past 20, so their trailing "(sec)"/
+// "(hr)" unit was wrapping onto a line by itself. 24 lets those sit on one
+// line while the genuinely long OEE labels still wrap.
+const HEAD_CH_CAP = 24;
+// The eye (formula) and chevron (expand) buttons sit on the same line as the
+// label, past its last character — so a column with one needs extra room
+// beyond the label's own length, or that last word gets pushed onto a line
+// of its own even though the label alone would have fit.
+const ICON_CH = 3;
+const autoHeadStyle = (label, { hasFormula = false, hasExpand = false } = {}) => {
+  const ch = Math.min(label.length, HEAD_CH_CAP) + (hasFormula ? ICON_CH : 0) + (hasExpand ? ICON_CH : 0);
+  return { width: `${ch}ch`, minWidth: `${ch}ch` };
+};
 
-// Date and Machine stay put while the rest of the columns scroll past. The
-// last frozen column carries the shadow that marks the freeze line.
+// Columns are told apart by colour (a pastel wash + matching bold text per
+// column family — see TONE/OEE_TINT/HEAD_TEXT below) *and* by a visible
+// ruled grid — dropping the vertical rules read as too flat/washed-out, so
+// they're back, darker than the row-separator lines to frame the header.
+const thBase =
+  "sticky top-0 z-20 align-bottom px-2 py-1.5 font-bold whitespace-normal leading-tight border-r-2 border-b-2 border-slate-400 dark:border-slate-500";
+const td = "px-2 py-1.5 whitespace-nowrap border-r border-b border-slate-300 dark:border-slate-600";
+
+// The row where one date's block of entries ends and the next begins gets a
+// heavier top border than the plain row-to-row ones, so a day boundary is
+// visibly darker than an ordinary line — not just a shade change.
+const dayBoundary = "border-t-2 border-t-slate-400 dark:border-t-slate-500";
+
+// Date and Machine stay put on the left while the rest of the columns
+// scroll past underneath them; Action stays put on the right the same way.
+// Whichever frozen column borders the scrolling middle carries the shadow
+// that marks that freeze line.
 const FROZEN = {
   date: "sticky left-0 w-[104px] min-w-[104px]",
   machine: "sticky left-[104px] w-[96px] min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
+  action: "sticky right-0 w-[96px] min-w-[96px] shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
 };
 
-// One neutral colour for the header row — no per-section hues.
-const HEAD_BG = "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200";
+// A white header, with each column family's own colour carried in its text
+// rather than a solid header fill — keyed by `c.tone`, same key the body
+// tones below use, so a column's header and its values always read as the
+// same colour. Columns with no tone (Date, Part Name, typed values, …) fall
+// back to a plain neutral header.
+const HEAD_BG = "bg-white dark:bg-slate-900";
+const HEAD_TEXT = {
+  date: "text-blue-700 dark:text-blue-300",
+  machine: "text-emerald-700 dark:text-emerald-300",
+  calc: "text-indigo-700 dark:text-indigo-300",
+  day: "text-teal-700 dark:text-teal-300",
+  oee: "text-blue-700 dark:text-blue-300",
+};
+const HEAD_TEXT_DEFAULT = "text-slate-600 dark:text-slate-300";
 
-// Body cell tints, by what the cell is rather than where it sits. Both
-// calculated tones share one shade — the point is just "not typed in", not
-// which formula produced it. Machine is frozen (needs its own opaque
-// background so scrolling columns can't show through underneath it);
-// Operator isn't frozen, so it just takes the row's own tint plus weight.
+// Body cell tints, by what the cell is rather than where it sits. `calc`
+// and `day` each carry a soft pastel wash with matching bold text, so a
+// calculated column stands apart from a typed one by colour, not by a flat
+// grey fill. Date/Operator are text-only tones (see TEXT_ONLY_TONES below):
+// they take the row's own alternating background rather than their own,
+// since they're identity columns, not calculated ones. Machine is frozen
+// and needs its own opaque background regardless, so scrolling columns
+// can't show through underneath it.
 const TONE = {
-  calc: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium",
-  day: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium",
-  // The three OEE percentage columns get their own colour so they stand out
-  // from the rest of the calculated (grey) cells as the sheet's headline numbers.
-  oee: "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200 font-semibold",
-  machine: "bg-slate-50 dark:bg-slate-900 font-semibold",
+  calc: "bg-indigo-50/60 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 font-semibold",
+  day: "bg-teal-50/60 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300 font-semibold",
+  machine: "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-semibold",
+  date: "text-blue-700 dark:text-blue-300 font-semibold",
   operator: "font-medium",
 };
+// Tones that colour only the text, keeping the row's own alternating
+// background rather than replacing it with their own opaque fill.
+const TEXT_ONLY_TONES = new Set(["date", "operator"]);
+
+// The three OEE percentage columns get their own colour so they stand out as
+// the sheet's headline numbers — but still alternate by day (two blue
+// shades, paired with DAY_TINT below) instead of sitting as one flat block
+// that makes every row look the same regardless of date.
+const OEE_TINT = [
+  "bg-blue-50/70 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-bold",
+  "bg-blue-100/50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold",
+];
 
 // Rows of one date share a faint shade; it flips as the date changes.
 const DAY_TINT = ["bg-white dark:bg-slate-900", "bg-slate-50 dark:bg-slate-900/60"];
@@ -94,6 +167,11 @@ const n = (v) => dash(fmtNum(v));
 const pct = (v) => dash(fmtPct(v));
 // A blank input reads better as a dash than as a 0 nobody typed.
 const min = (v) => (v === null || v === undefined || v === "" ? "—" : fmtNum(Number(v)));
+// The downtime/stoppage breakdown reads easier as 0 than as a dash — these are
+// the figures added up into Total Stoppage, so a row of numbers is quicker to
+// scan and add up by eye than a row mixing dashes and numbers. Display only:
+// the formulas already treat a blank the same as 0.
+const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 : Number(v));
 
 // The downtime columns are headed with the same wording as the form, rather
 // than the longer labels the old Excel grid used.
@@ -115,10 +193,11 @@ const DOWNTIME_LABEL = {
 // always show their own `summary` (the total); opening them additionally
 // appends their `columns` breakdown right after it — the total is never
 // hidden, only the breakdown behind it folds away.
-// `headW` caps a header's width (so its label wraps instead of stretching
-// the column) — left unset for columns whose values genuinely need the room.
+// `headStyle` overrides the label-length-based default (`autoHeadStyle`,
+// applied at render time) for the few columns whose values genuinely need
+// more room than their own label implies.
 const COLUMNS = [
-  { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date" },
+  { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date", tone: "date" },
   {
     key: "machine",
     label: "Machine",
@@ -128,8 +207,8 @@ const COLUMNS = [
     frozen: "machine",
   },
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
-  { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName) },
-  { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo) },
+  { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
+  { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   {
     key: "cycle",
     label: "Total Cycle Time (sec)",
@@ -140,7 +219,6 @@ const COLUMNS = [
       get: (r, c) => n(c.totalCycleSec),
       align: "text-end",
       tone: "calc",
-      headW: "w-[104px]",
     },
     columns: CYCLE_OP_FIELDS.map((f) => ({
       key: f.key,
@@ -149,19 +227,47 @@ const COLUMNS = [
       align: "text-end",
     })),
   },
-  { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime) },
-  { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime) },
-  { key: "shift", label: "Machine Shift Time (hr)", get: (r, c) => n(c.shiftHours), align: "text-end", tone: "calc" },
-  { key: "idealQty", label: "Ideal Quantity", get: (r, c) => n(c.idealQty), align: "text-end", tone: "calc" },
+  { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime), align: "text-end" },
+  { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-end" },
+  {
+    key: "shift",
+    label: "Machine Shift Time (hr)",
+    get: (r, c) => n(c.shiftHours),
+    align: "text-end",
+    tone: "calc",
+  },
+  {
+    key: "idealQty",
+    label: "Ideal Quantity",
+    get: (r, c) => n(c.idealQty),
+    align: "text-end",
+    tone: "calc",
+  },
   { key: "okQty", label: "Actual OK Quantity", get: (r) => min(r.okQty), align: "text-end" },
-  { key: "rejectedQty", label: "Rejected Quantity", get: (r, c) => n(c.rejectedQty), align: "text-end", tone: "calc" },
+  {
+    key: "rejectedQty",
+    label: "Rejected Quantity",
+    expandable: true,
+    summary: {
+      key: "rejectedQty",
+      label: "Rejected Quantity",
+      get: (r, c) => n(c.rejectedQty),
+      align: "text-end",
+      tone: "calc",
+    },
+    columns: REJECT_REASONS.map((reason) => ({
+      key: reason,
+      label: reason,
+      get: (r) => min(r.rejectBreakdown?.[reason]),
+      align: "text-end",
+    })),
+  },
   { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-end", tone: "calc" },
   {
     key: "plannedShift",
     label: "Planned Operator Shift Time (hr)",
     get: (r) => min(r.plannedOperatorShiftHours),
     align: "text-end",
-    headW: "w-[116px]",
   },
   {
     key: "unutilized",
@@ -170,7 +276,6 @@ const COLUMNS = [
     get: (r, c, d) => pct(d.unutilized),
     align: "text-end",
     tone: "day",
-    headW: "w-[110px]",
   },
   {
     key: "downtime",
@@ -182,12 +287,11 @@ const COLUMNS = [
       get: (r, c) => n(c.totalStoppageMin),
       align: "text-end",
       tone: "calc",
-      headW: "w-[100px]",
     },
     columns: STOPPAGE_FIELDS.map((f) => ({
       key: f.key,
       label: DOWNTIME_LABEL[f.key] || f.label,
-      get: (r) => min(r[f.key]),
+      get: (r) => zeroIfBlank(r[f.key]),
       align: "text-end",
     })),
   },
@@ -197,7 +301,6 @@ const COLUMNS = [
     get: (r, c) => n(c.effectiveHours),
     align: "text-end",
     tone: "calc",
-    headW: "w-[110px]",
   },
   {
     key: "unreported",
@@ -205,15 +308,26 @@ const COLUMNS = [
     get: (r, c, d) => n(d.unreportedMin),
     align: "text-end",
     tone: "day",
+    // Combined across every entry of this machine's date (see dayCalc), so
+    // it's shown once per machine/date group — spanning its rows exactly
+    // like Machine does — rather than repeating the same figure down every
+    // one of that machine's entries for the day.
+    merge: "machineDay",
   },
-  { key: "setupEff", label: "Setup Efficiency (%)", get: (r, c) => pct(c.setupEfficiency), align: "text-end", tone: "calc" },
+  {
+    key: "setupEff",
+    label: "Setup Efficiency (%)",
+    get: (r, c) => pct(c.setupEfficiency),
+    align: "text-end",
+    tone: "calc",
+  },
   {
     key: "oeeLosses",
     label: "OEE considering losses (%)",
     get: (r, c, d) => pct(d.oeeLosses),
     align: "text-end",
     tone: "oee",
-    headW: "w-[120px]",
+    merge: "machineDay",
   },
   {
     key: "oeeLunch",
@@ -221,7 +335,7 @@ const COLUMNS = [
     get: (r, c, d) => pct(d.oeeLunch),
     align: "text-end",
     tone: "oee",
-    headW: "w-[120px]",
+    merge: "machineDay",
   },
   {
     key: "oeeLunchCot",
@@ -229,7 +343,7 @@ const COLUMNS = [
     get: (r, c, d) => pct(d.oeeLunchCot),
     align: "text-end",
     tone: "oee",
-    headW: "w-[130px]",
+    merge: "machineDay",
   },
   { key: "remarks", label: "Remarks", get: (r) => dash(r.remarks), wrap: true },
 ];
@@ -244,37 +358,21 @@ const ProductionEntriesTable = ({
   canDelete = true,
   onEdit,
   onDelete,
-  // When true, the table box measures the real gap between itself and the
-  // bottom of the window (via ref, not a guessed CSS number) and fills it —
-  // so it's never too short (dead space below) or too tall (rows clipped
-  // off the bottom of a small laptop screen) on any screen size.
+  // When true, the table fills whatever vertical space its flex parent
+  // gives it (that parent — ProductionSheet's Card/CardBody — is itself a
+  // flex column sized to the page's own viewport slice) and scrolls
+  // internally, instead of growing past it and leaving the whole page to
+  // scroll. Pure CSS (height: 100% down a `min-height: 0` flex chain), not
+  // a JS measurement of window height — that snapshot goes stale the
+  // moment anything above the table changes size (a wrapped filter row, a
+  // loading state, pagination text), which is what let the page scroll
+  // grow underneath the table's own scrollbar.
   fillHeight = false,
 }) => {
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
   const [open, setOpen] = useState({ cycle: false, downtime: false });
   const toggle = (key) => setOpen((o) => ({ ...o, [key]: !o[key] }));
-
-  // Measures live rather than guessing: the box's own top (which already
-  // accounts for the header, filters row, and pagination bar above it,
-  // whatever their actual height turns out to be) to the bottom of the
-  // window, minus a little breathing room — recomputed on resize so it
-  // keeps up with the sidebar collapsing, the window resizing, or the
-  // filters row wrapping to a second line.
-  const scrollRef = useRef(null);
-  const [scrollHeight, setScrollHeight] = useState(null);
-  useEffect(() => {
-    if (!fillHeight) return undefined;
-    const el = scrollRef.current;
-    if (!el) return undefined;
-    const update = () => {
-      const top = el.getBoundingClientRect().top;
-      setScrollHeight(Math.max(240, Math.floor(window.innerHeight - top - 16)));
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [fillHeight]);
 
   // The formula popover, anchored to whichever eye icon was clicked — fixed-
   // position so it isn't clipped by the table's own scroll container.
@@ -348,8 +446,8 @@ const ProductionEntriesTable = ({
       }}
       title={expand.isOpen ? `Collapse ${expand.label}` : `Expand ${expand.label}`}
       aria-label={expand.isOpen ? `Collapse ${expand.label}` : `Expand ${expand.label}`}
-      className="inline-flex items-center justify-center rounded bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-900 transition-colors flex-shrink-0"
-      style={{ width: 18, height: 18 }}
+      className="inline-flex items-center justify-center rounded-full bg-slate-300 dark:bg-slate-600 text-slate-700 dark:text-slate-100 hover:bg-slate-400 dark:hover:bg-slate-500 flex-shrink-0 transition-colors"
+      style={{ width: 16, height: 16 }}
     >
       {expand.isOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
     </button>
@@ -358,13 +456,10 @@ const ProductionEntriesTable = ({
   return (
     <>
       <div
-        ref={scrollRef}
-        className="table-scroll-x border border-slate-300 dark:border-slate-700 rounded-lg overflow-auto"
-        style={
-          fillHeight
-            ? { maxHeight: scrollHeight ? `${scrollHeight}px` : "calc(100vh - 300px)" }
-            : { maxHeight: "calc(100vh - 300px)" }
-        }
+        className={`table-scroll-x border border-slate-200 dark:border-slate-700 rounded-xl overflow-auto ${
+          fillHeight ? "h-full" : ""
+        }`}
+        style={fillHeight ? undefined : { maxHeight: "calc(100vh - 300px)" }}
       >
         <table className="w-full text-xs sm:text-sm border-separate border-spacing-0">
           <thead>
@@ -372,17 +467,25 @@ const ProductionEntriesTable = ({
               {visible.map((c) => (
                 <th
                   key={c.key}
-                  className={`${thBase} ${c.frozen ? `${FROZEN[c.frozen]} z-30` : ""} ${HEAD_BG} ${c.align || ""} ${c.headW || ""}`}
+                  className={`${thBase} ${c.frozen ? `${FROZEN[c.frozen]} z-30` : ""} ${HEAD_BG} ${
+                    HEAD_TEXT[c.tone] || HEAD_TEXT_DEFAULT
+                  } ${c.align || ""}`}
+                  style={
+                    c.frozen
+                      ? undefined
+                      : c.headStyle ||
+                        autoHeadStyle(c.label, { hasFormula: !!FORMULAS[c.key], hasExpand: !!c.expand })
+                  }
                 >
-                  <span className="inline-flex items-start gap-1">
-                    {c.label}
+                  <span className="inline-flex items-center gap-1">
+                    <span>{c.label}</span>
                     {FORMULAS[c.key] && (
                       <button
                         type="button"
                         onClick={(e) => showFormula(e, c.key, c.label)}
                         title="How this is calculated"
                         aria-label={`How ${c.label} is calculated`}
-                        className="inline-flex items-center justify-center rounded-full text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 flex-shrink-0"
+                        className="inline-flex items-center justify-center text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 flex-shrink-0 transition-colors"
                       >
                         <Eye size={13} />
                       </button>
@@ -391,7 +494,7 @@ const ProductionEntriesTable = ({
                   </span>
                 </th>
               ))}
-              <th className={`${thBase} ${HEAD_BG} text-center`}>Action</th>
+              <th className={`${thBase} ${HEAD_BG} ${HEAD_TEXT_DEFAULT} text-center ${FROZEN.action} z-30`}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -415,6 +518,10 @@ const ProductionEntriesTable = ({
                 const day = dayResultByKey[r._id] || {};
                 const span = layout[i];
                 const dayBg = DAY_TINT[span.dayIndex % 2];
+                // The row that starts a new date (other than the sheet's
+                // very first row) gets the heavier top border marking where
+                // one day's block ends and the next begins.
+                const boundary = span.dateStart && span.dayIndex > 0 ? dayBoundary : "";
 
                 return (
                   <tr key={r._id} className="group">
@@ -431,30 +538,32 @@ const ProductionEntriesTable = ({
                       // tint; every other tone (or none) carries its own
                       // opaque bg.
                       const bg =
-                        c.tone === "operator"
-                          ? `${dayBg} ${TONE.operator}`
-                          : c.tone
-                            ? TONE[c.tone]
-                            : `${dayBg} text-slate-700 dark:text-slate-200`;
+                        c.tone === "oee"
+                          ? OEE_TINT[span.dayIndex % 2]
+                          : c.tone && TEXT_ONLY_TONES.has(c.tone)
+                            ? `${dayBg} ${TONE[c.tone]}`
+                            : c.tone
+                              ? TONE[c.tone]
+                              : `${dayBg} text-slate-700 dark:text-slate-200`;
                       return (
                         <td
                           key={c.key}
                           rowSpan={rowSpan > 1 ? rowSpan : undefined}
-                          className={`${td} ${bg} ${c.align || ""} ${c.frozen ? `${FROZEN[c.frozen]} z-10` : ""} ${
-                            c.merge ? "align-middle" : ""
-                          }`}
+                          className={`${td} ${bg} ${boundary} ${c.align || ""} ${
+                            c.frozen ? `${FROZEN[c.frozen]} z-10` : ""
+                          } ${c.merge ? "align-middle" : ""}`}
                           style={c.wrap ? { whiteSpace: "normal", minWidth: 220 } : undefined}
                         >
                           {c.get(r, calc, day, ctx)}
                         </td>
                       );
                     })}
-                    <td className={`${td} ${dayBg}`}>
+                    <td className={`${td} ${dayBg} ${boundary} ${FROZEN.action} z-10`}>
                       <div className="flex gap-1.5">
                         {canEdit && (
                           <button
                             type="button"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
                             title="Edit"
                             onClick={() => onEdit(r)}
                           >
@@ -464,7 +573,7 @@ const ProductionEntriesTable = ({
                         {canDelete && (
                           <button
                             type="button"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
                             title="Remove"
                             onClick={() => onDelete(r)}
                           >

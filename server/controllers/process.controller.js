@@ -5,7 +5,7 @@ const ProductionEntry = require("../models/ProductionEntry");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
-const SORTABLE = ["processName", "group", "isActive", "createdAt"];
+const SORTABLE = ["processName", "isActive", "createdAt"];
 // Dashboards look across years, unlike the entry sheet's two-month window.
 const MAX_RANGE_DAYS = 366 * 5;
 
@@ -15,9 +15,8 @@ const parseDay = (s) => {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
 };
 
-const pickProcess = ({ processName, group, description, stats, charts, isActive }) => ({
+const pickProcess = ({ processName, description, stats, charts, isActive }) => ({
   processName,
-  group,
   description,
   isActive,
   ...(Array.isArray(stats) ? { stats } : {}),
@@ -29,21 +28,6 @@ const isDuplicateName = async (processName, excludeId) => {
   const query = { processName: { $regex: `^${escaped}$`, $options: "i" } };
   if (excludeId) query._id = { $ne: excludeId };
   return !!(await Process.exists(query));
-};
-
-// A group is only a name shared between processes, so "hood/housing" typed on
-// one process and "Hood/Housing" on another would silently become two
-// headings on the dashboard. Whatever is sent is tidied (trimmed, inner
-// whitespace collapsed) and then snapped to the spelling already in use by
-// the OTHER processes — so the last process in a group can still re-spell it.
-const canonicalGroup = async (group, excludeId) => {
-  const name = String(group ?? "").trim().replace(/\s+/g, " ");
-  if (!name) return "";
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const query = { group: { $regex: `^${escaped}$`, $options: "i" } };
-  if (excludeId) query._id = { $ne: excludeId };
-  const existing = await Process.findOne(query).select("group").lean();
-  return existing ? existing.group : name;
 };
 
 const validMachineIds = (machineIds) =>
@@ -85,7 +69,6 @@ exports.createProcess = async (req, res) => {
     if (await isDuplicateName(data.processName)) {
       return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
     }
-    data.group = await canonicalGroup(data.group);
     const process = await Process.create(data);
     if (machineIds) await syncMachines(process._id, machineIds);
     res.status(201).json({ isOk: true, data: process, message: "Process created successfully" });
@@ -106,9 +89,6 @@ exports.updateProcess = async (req, res) => {
     if (data.processName !== undefined && (await isDuplicateName(data.processName, processId))) {
       return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
     }
-    // Only when the request carries a group — Customize on the dashboard
-    // sends just { stats, charts } and must leave the group alone.
-    if (data.group !== undefined) data.group = await canonicalGroup(data.group, processId);
     const process = await Process.findByIdAndUpdate(processId, data, { new: true, runValidators: true });
     if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
     if (machineIds) await syncMachines(process._id, machineIds);
@@ -154,18 +134,6 @@ exports.getProcessById = async (req, res) => {
   }
 };
 
-// Every group name in use (active or not), A–Z — the options the Process
-// Master's Group dropdown offers.
-exports.listProcessGroups = async (req, res) => {
-  try {
-    const groups = await Process.distinct("group", { group: { $nin: ["", null] } });
-    res.status(200).json({ isOk: true, data: groups.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })) });
-  } catch (error) {
-    console.error("Error listing process groups:", error);
-    res.status(500).json({ isOk: false, message: error.message });
-  }
-};
-
 // Active processes with their active machines, in display order (the order
 // they were created) — what the dashboard landing page lays out.
 exports.listProcesses = async (req, res) => {
@@ -185,10 +153,7 @@ exports.listProcessByParams = async (req, res) => {
     const query = {};
     if (match) {
       const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      query.$or = [
-        { processName: { $regex: escaped, $options: "i" } },
-        { group: { $regex: escaped, $options: "i" } },
-      ];
+      query.$or = [{ processName: { $regex: escaped, $options: "i" } }];
     }
     if (isActive !== undefined) query.isActive = isActive;
 

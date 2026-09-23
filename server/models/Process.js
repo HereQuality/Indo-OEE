@@ -4,14 +4,9 @@ const mongoose = require("mongoose");
  * models/Process.js
  * ────────────────────────────
  * A production process (e.g. "VMC", "PRESS", "TRAUB M/C") — the unit the
- * Production Dashboard is organised around. Processes are shown grouped by
- * `group` (e.g. "Hood/Housing", "Plug Pin") on the dashboard landing page;
- * opening one shows that process's own dashboard.
- *
- * There is no manual ordering: processes (and so their groups) appear in the
- * order they were created. A group is just a shared name — it exists for as
- * long as some process carries it (see canonicalGroup in the controller,
- * which keeps one spelling per group).
+ * Production Dashboard is organised around. Processes are listed on the
+ * dashboard landing page in the order they were created; opening one shows
+ * that process's own dashboard.
  *
  * Which machines belong to a process lives on the machine (Machine.process),
  * so a machine can only ever be in one process. The Process Master form
@@ -36,12 +31,6 @@ const ProcessSchema = new mongoose.Schema(
       required: [true, "Process name is required"],
       trim: true,
       maxlength: [40, "Process name must be 40 characters or fewer"],
-    },
-    group: {
-      type: String,
-      trim: true,
-      maxlength: [40, "Group must be 40 characters or fewer"],
-      default: "",
     },
     description: {
       type: String,

@@ -167,7 +167,6 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           <ArrowLeft size={20} />
         </button>
         <div className="pd-title">
-          {process?.group && <span className="pd-title-group">{process.group}</span>}
           <h4 className="mb-0 fw-bold">{process ? process.processName : "All machines"}</h4>
         </div>
         <div className="ms-auto d-flex flex-wrap align-items-center gap-2">

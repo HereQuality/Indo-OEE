@@ -17,8 +17,5 @@ export const deleteProcess = async (id) => api.delete(ENDPOINTS.PROCESSES.BY_ID(
 
 export const searchProcesses = async (params) => api.post(ENDPOINTS.PROCESSES.SEARCH, params);
 
-// Every group name in use, A–Z — options for the Process Master's Group dropdown.
-export const getProcessGroups = async () => api.get(ENDPOINTS.PROCESSES.GROUPS);
-
 // { from, to, process? } — omit `process` for every machine.
 export const getDashboardEntries = async (params) => api.get(ENDPOINTS.PROCESSES.ENTRIES, { params });

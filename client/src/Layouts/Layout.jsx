@@ -175,7 +175,7 @@ export default function Layout({ children }) {
           boxShadow: isDarkMode ? 'none' : '1px 0 6px rgba(15, 23, 42, 0.08)',
           color: isDarkMode ? '#f1f1f1' : '#1e293b',
         }}
-        className={`fixed inset-y-0 left-0 flex flex-col z-50 transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} ${sidebarCollapsed ? 'md:w-[72px] w-64' : 'w-64'}`}
+        className={`fixed inset-y-0 left-0 flex flex-col z-50 transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 shrink-0 ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} ${sidebarCollapsed ? 'md:w-[72px] w-64' : 'w-64 md:w-56 xl:w-64'}`}
       >
         {/* Logo header */}
         <div
@@ -424,7 +424,7 @@ export default function Layout({ children }) {
             background: isDarkMode ? '#0f0f0f' : '#ffffff',
             borderBottom: isDarkMode ? '1px solid #272727' : '1px solid #e2e8f0',
           }}
-          className="h-16 flex items-center justify-between px-4 lg:px-8 z-40 shrink-0 relative"
+          className="h-16 flex items-center justify-between gap-3 px-4 lg:px-8 z-40 shrink-0 relative min-w-0"
         >
           <div className="flex items-center gap-4 md:hidden">
             <button
@@ -442,19 +442,19 @@ export default function Layout({ children }) {
             )}
           </div>
 
-          <div className="hidden md:flex items-center text-sm font-medium"
+          <div className="hidden md:flex items-center text-sm font-medium min-w-0 flex-1"
             style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}
           >
-            <span style={{ color: isDarkMode ? '#64748b' : '#94a3b8' }} className="mr-2">{isSuperAdmin ? "Owner Portal" : APP_NAME}</span>
-            <span style={{ color: isDarkMode ? '#374151' : '#cbd5e1' }} className="mx-2">/</span>
-            <span style={{ color: isDarkMode ? '#e2e8f0' : '#1e293b' }} className="font-semibold">{currentPageTitle}</span>
+            <span style={{ color: isDarkMode ? '#64748b' : '#94a3b8' }} className="mr-2 shrink-0">{isSuperAdmin ? "Owner Portal" : APP_NAME}</span>
+            <span style={{ color: isDarkMode ? '#374151' : '#cbd5e1' }} className="mx-2 shrink-0">/</span>
+            <span style={{ color: isDarkMode ? '#e2e8f0' : '#1e293b' }} className="font-semibold truncate">{currentPageTitle}</span>
           </div>
 
-          <div className="flex items-center gap-3 ml-auto relative" ref={dropdownRef}>
+          <div className="flex items-center gap-3 ml-auto shrink-0 relative" ref={dropdownRef}>
             <NotificationBell />
-            <div className="hidden sm:flex flex-col items-end leading-tight">
-              <span style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-sm font-medium">{displayName}</span>
-              <span style={{ color: isDarkMode ? '#aaaaaa' : '#64748b' }} className="text-xs">{roleLabel}</span>
+            <div className="hidden sm:flex flex-col items-end leading-tight max-w-[140px] min-w-0">
+              <span style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-sm font-medium truncate w-full text-right">{displayName}</span>
+              <span style={{ color: isDarkMode ? '#aaaaaa' : '#64748b' }} className="text-xs truncate w-full text-right">{roleLabel}</span>
             </div>
             <div
               className="h-9 w-9 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold text-white shadow-sm cursor-pointer hover:bg-brand-700 transition overflow-hidden border border-brand-700"
@@ -548,7 +548,7 @@ export default function Layout({ children }) {
           style={{ background: isDarkMode ? '#0a0a0a' : '#f1f5f9' }}
           className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 relative"
         >
-          <div className="max-w-7xl mx-auto w-full min-w-0">
+          <div className="max-w-7xl mx-auto w-full min-w-0 h-full">
             {children}
           </div>
         </main>

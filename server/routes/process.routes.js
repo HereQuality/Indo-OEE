@@ -8,7 +8,6 @@ const {
   getProcessById,
   listProcesses,
   listProcessByParams,
-  listProcessGroups,
   getDashboardEntries,
 } = require("../controllers/process.controller");
 
@@ -27,8 +26,6 @@ router.get("/entries", requireMenuPermission(DASHBOARD_URL, "read"), getDashboar
 
 router.post("/", requireMenuPermission(MENU_URL, "write"), createProcess);
 router.post("/search", requireMenuPermission(MENU_URL, "read"), listProcessByParams);
-// Before "/:processId", or "groups" would be read as an id.
-router.get("/groups", requireMenuPermission(MENU_URL, "read"), listProcessGroups);
 router.get("/:processId", requireMenuPermission(MENU_URL, "read"), getProcessById);
 router.put("/:processId", requireMenuPermission(MENU_URL, "write"), updateProcess);
 router.delete("/:processId", requireMenuPermission(MENU_URL, "write"), deleteProcess);

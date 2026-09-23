@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
@@ -38,7 +38,7 @@ const labelClass = "form-label small text-muted mb-1";
 // A calculated box — greyed so nobody tries to type in it.
 const Calc = ({ label, value, md = 3, title }) => (
   <Col md={md}>
-    <div className="mb-2" title={title}>
+    <div className="mb-1" title={title}>
       <Label className={labelClass}>{label}</Label>
       <Input type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
     </div>
@@ -48,7 +48,7 @@ const Calc = ({ label, value, md = 3, title }) => (
 // A typed field.
 const Field = ({ label, required, error, children, md = 3 }) => (
   <Col md={md}>
-    <div className="mb-2">
+    <div className="mb-1">
       <Label className={labelClass}>
         {label} {required && <span className="text-danger">*</span>}
       </Label>
@@ -70,10 +70,27 @@ const LINES = [
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Ideal Qty, OK Qty, Rejected, % OK Qty", fields: ["okQty"] },
   { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
-  { id: 6, title: "Planned Operator Shift Time", fields: ["plannedOperatorShiftHours"] },
-  { id: 7, title: "Setup Time, No Man Power, Material Shifting", fields: ["setupMin", "noManPowerMin", "materialShiftingMin"] },
-  { id: 8, title: "No Material, Breakdown Mechanical, BD Electricity, No Power", fields: ["noMaterialMin", "bdMechMin", "bdEleMin", "noPowerMin"] },
-  { id: 9, title: "Lunch / Rest, Other (min)", fields: ["lunchMin", "otherMin"] },
+  { id: 7, title: "Planned Operator Shift", fields: ["plannedOperatorShiftHours"] },
+  // Every downtime/stoppage reason in one box — they used to be split across
+  // three separate boxes with no real logic to the split (Planned Operator
+  // Shift, which isn't a downtime reason at all, was even grouped in with
+  // them), which just made it harder to see the whole stoppage picture at a
+  // glance and easy to miss one.
+  {
+    id: 8,
+    title: "Downtime / Stoppage (min)",
+    fields: [
+      "setupMin",
+      "noManPowerMin",
+      "materialShiftingMin",
+      "noMaterialMin",
+      "bdMechMin",
+      "bdEleMin",
+      "noPowerMin",
+      "lunchMin",
+      "otherMin",
+    ],
+  },
   { id: 12, title: "Remarks", fields: ["remarks"] },
 ];
 
@@ -87,12 +104,12 @@ const Line = ({ id, errors, isSubmit, children }) => {
   const def = findLine(id);
   const hasError = isSubmit && def.fields.some((f) => errors[f]);
   return (
-    <div className={`border rounded mb-2 ${hasError ? "border-danger" : ""}`}>
+    <div className={`border rounded mb-1 ${hasError ? "border-danger" : ""}`}>
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <span className="fw-semibold small">{def.title}</span>
         {hasError && <span className="badge bg-danger-subtle text-danger ms-auto">Check this line</span>}
       </div>
-      <div className="px-2 pt-2">{children}</div>
+      <div className="px-2 pt-1">{children}</div>
     </div>
   );
 };
@@ -192,6 +209,17 @@ const EntryBlock = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmit, errorKeys]);
 
+  // With several machine blocks on the page, opening one (or "Add another
+  // machine" appending and opening a fresh one) collapses whichever block
+  // was open before — see expandedIndex in ProductionEntryForm below — but
+  // the newly opened block can still land off-screen below the fold. Scroll
+  // it into view the moment it opens, so the accordion actually reads as
+  // "this one's now active" instead of the page silently jumping around.
+  const blockRef = useRef(null);
+  useEffect(() => {
+    if (expanded) blockRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [expanded]);
+
   const machineSelect = (
     <Input type="select" bsSize="sm" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
       <option value="">Select machine</option>
@@ -215,10 +243,15 @@ const EntryBlock = ({
   );
 
   // Collapsed: process, then this process's machines, then this machine's "+".
+  // A filled-in block gets a subtle tint so "press + to reopen it" reads as
+  // "there's saved work here", not indistinguishable from a blank block.
   if (!expanded) {
     return (
-      <div className="border rounded mb-2 px-2 pt-2">
-        <Row className="align-items-start g-2">
+      <div
+        ref={blockRef}
+        className={`border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
+      >
+        <Row className="align-items-start g-1">
           <Field label="Process" md={5}>
             {processSelect}
           </Field>
@@ -263,7 +296,7 @@ const EntryBlock = ({
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
-    <div className="border border-primary rounded mb-3">
+    <div ref={blockRef} className="border border-primary rounded mb-2 transition-colors">
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <button
           type="button"
@@ -281,7 +314,7 @@ const EntryBlock = ({
 
       <div className="p-2">
         <Line id={1} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
+          <Row className="g-1">
             <Field label="Date" required error={err("date")} md={3}>
               <DatePicker name="date" value={values.date} onChange={handle} hasError={!!err("date")} />
             </Field>
@@ -310,7 +343,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
+          <Row className="g-1">
             <Field label="Part Name" error={err("itemName")} md={8}>
               <Input
                 type="select"
@@ -337,7 +370,7 @@ const EntryBlock = ({
               title="The Part's own Total Cycle Time, minus any unticked operation below"
             />
           </Row>
-          <Row className="g-2">
+          <Row className="g-1">
             {CYCLE_OP_FIELDS.map((f) => {
               // Both "Other Operation" boxes carry the sheet's own label; the
               // index tells the two apart without renaming either.
@@ -389,7 +422,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={3} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
+          <Row className="g-1">
             <Field label="Machine ON Time" error={err("machineOnTime")} md={4}>
               <TimePicker
                 name="machineOnTime"
@@ -416,7 +449,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={5} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
+          <Row className="g-1">
             <Calc
               label="Ideal Quantity"
               value={fmtNum(calc.idealQty)}
@@ -435,13 +468,13 @@ const EntryBlock = ({
             </Field>
             <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={4} title="Ideal Quantity − OK Quantity" />
           </Row>
-          <Row className="g-2">
+          <Row className="g-1">
             <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={4} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
 
         <Line id={13} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
+          <Row className="g-1">
             {REJECT_REASONS.map((reason) => (
               <Col md={4} key={reason}>
                 <div className="mb-2">
@@ -466,9 +499,9 @@ const EntryBlock = ({
           </div>
         </Line>
 
-        <Line id={6} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
-            <Field label="Planned Operator Shift Time (hr)" error={err("plannedOperatorShiftHours")} md={6}>
+        <Line id={7} errors={errors} isSubmit={isSubmit}>
+          <Row className="g-1">
+            <Field label="Planned Operator Shift (hr)" error={err("plannedOperatorShiftHours")} md={4}>
               <NumberInput
                 name="plannedOperatorShiftHours"
                 value={values.plannedOperatorShiftHours}
@@ -478,15 +511,15 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={7} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
-            <Field label="Setup Time (min)" error={err("setupMin")} md={4}>
+        <Line id={8} errors={errors} isSubmit={isSubmit}>
+          <Row className="g-1">
+            <Field label="Setup Time (min)" error={err("setupMin")} md={3}>
               <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} />
             </Field>
-            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={4}>
+            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={3}>
               <NumberInput name="noManPowerMin" value={values.noManPowerMin} onChange={handle} decimals={false} />
             </Field>
-            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={4}>
+            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={3}>
               <NumberInput
                 name="materialShiftingMin"
                 value={values.materialShiftingMin}
@@ -494,11 +527,6 @@ const EntryBlock = ({
                 decimals={false}
               />
             </Field>
-          </Row>
-        </Line>
-
-        <Line id={8} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
             <Field label="No Material (min)" error={err("noMaterialMin")} md={3}>
               <NumberInput name="noMaterialMin" value={values.noMaterialMin} onChange={handle} decimals={false} />
             </Field>
@@ -511,15 +539,10 @@ const EntryBlock = ({
             <Field label="No Power (min)" error={err("noPowerMin")} md={3}>
               <NumberInput name="noPowerMin" value={values.noPowerMin} onChange={handle} decimals={false} />
             </Field>
-          </Row>
-        </Line>
-
-        <Line id={9} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-2">
-            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={6}>
+            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={3}>
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} />
             </Field>
-            <Field label="Other (min)" error={err("otherMin")} md={6}>
+            <Field label="Other (min)" error={err("otherMin")} md={3}>
               <NumberInput name="otherMin" value={values.otherMin} onChange={handle} decimals={false} />
             </Field>
           </Row>

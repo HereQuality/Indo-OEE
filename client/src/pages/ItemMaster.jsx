@@ -15,6 +15,14 @@ import NumberInput from "../Components/Production/NumberInput";
 
 const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
 
+// Total Cycle Time is the operation times' own sum — never typed separately.
+// Blank when every operation box is blank, rather than showing a false "0".
+const sumOps = (v) => {
+  const nums = CYCLE_OP_FIELDS.map((f) => v[f.key]).filter((n) => n !== "" && n !== null && n !== undefined);
+  if (!nums.length) return "";
+  return nums.reduce((s, n) => s + Number(n), 0);
+};
+
 const initialState = {
   itemName: "",
   drawingNo: "",
@@ -94,14 +102,20 @@ const ItemMaster = () => {
     setRemove_id(id);
   };
 
-  const handleChange = (e) => setValues({ ...values, [e.target.name]: e.target.value });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setValues((v) => {
+      const next = { ...v, [name]: value };
+      // Total Cycle Time is derived from the operation boxes, so any of
+      // their changes recompute it — it's never typed on its own.
+      if (CYCLE_OP_FIELDS.some((f) => f.key === name)) next.totalCycleSec = sumOps(next);
+      return next;
+    });
+  };
 
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
-    if (v.totalCycleSec !== "" && (!Number.isFinite(Number(v.totalCycleSec)) || Number(v.totalCycleSec) < 0)) {
-      errors.totalCycleSec = "Must be 0 or more";
-    }
     if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
       errors.cycleOps = "Cycle times must be 0 or more";
     }
@@ -283,21 +297,7 @@ const ItemMaster = () => {
                 </div>
               </Col>
             </Row>
-            <div className="form-floating mb-3">
-              <NumberInput
-                name="totalCycleSec"
-                value={values.totalCycleSec}
-                onChange={handleChange}
-                decimals={false}
-                placeholder=" "
-              />
-              <Label>Total Cycle Time (sec)</Label>
-              {isSubmit && formErrors.totalCycleSec && <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>}
-            </div>
-            {/* Every formula uses Total Cycle Time above on its own — these
-                are the breakdown, kept for reference, not summed into it,
-                since the two can genuinely differ on the real sheet. */}
-            <Label className="mb-2 d-block">Operation Times (sec) — reference only</Label>
+            <Label className="mb-2 d-block">Operation Times (sec)</Label>
             <Row className="g-2 align-items-end">
               {CYCLE_OP_FIELDS.map((f) => (
                 <Col key={f.key} xs={6} md={3}>
@@ -317,6 +317,20 @@ const ItemMaster = () => {
               ))}
             </Row>
             {isSubmit && formErrors.cycleOps && <p className="text-danger mt-1">{formErrors.cycleOps}</p>}
+            {/* Never typed on its own — it's this part's operation times'
+                own sum, kept in step by handleChange as soon as any of them
+                changes, so it can't drift out of sync with its own inputs. */}
+            <div className="form-floating mt-3">
+              <NumberInput
+                name="totalCycleSec"
+                value={values.totalCycleSec}
+                onChange={() => {}}
+                decimals={false}
+                placeholder=" "
+                disabled
+              />
+              <Label>Total Cycle Time (sec) — calculated</Label>
+            </div>
             <div className="mt-3">
               <Input
                 type="checkbox"

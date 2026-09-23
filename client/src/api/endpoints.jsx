@@ -62,7 +62,6 @@ export const ENDPOINTS = {
         BASE: `${V1}/processes`,
         BY_ID: (id) => `${V1}/processes/${id}`,
         SEARCH: `${V1}/processes/search`,
-        GROUPS: `${V1}/processes/groups`,
         ENTRIES: `${V1}/processes/entries`,
     },
 

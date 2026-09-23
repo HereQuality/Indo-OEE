@@ -3,7 +3,6 @@ import { Pencil, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, Col, Container, Modal, ModalBody, ModalFooter, ModalHeader, Label, Input, Row } from "reactstrap";
 import DataTable from "react-data-table-component";
 import Select from "react-select";
-import CreatableSelect from "react-select/creatable";
 import DeleteModal from "../Components/Common/DeleteModal";
 import FormsHeader from "../Components/Common/FormsModalHeader";
 import FormsFooter from "../Components/Common/FormAddFooter";
@@ -14,22 +13,20 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines, useInvalidateMachines } from "../hooks/useMachines";
 import { useInvalidateProcesses } from "../hooks/useProcesses";
-import { createProcess, deleteProcess, getProcessById, getProcessGroups, updateProcess, searchProcesses } from "../api/processes.api";
+import { createProcess, deleteProcess, getProcessById, updateProcess, searchProcesses } from "../api/processes.api";
 import { CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, STATS_BY_KEY, resolveWidgets } from "../utils/processDashboard";
 
 /**
  * Production > Processes.
  *
  * A process (VMC, PRESS, TRAUB M/C…) is what the Production Dashboard is
- * organised around. Here each one gets its group (the heading it sits under
- * on the dashboard landing page — picked from the groups already in use, or
- * typed to start a new one), its machines, and the KPI tiles and graphs its
- * own dashboard shows — picked from a gallery with an example of each.
- * Processes are listed in the order they were created; there is no sequence.
+ * organised around. Here each one gets its machines, and the KPI tiles and
+ * graphs its own dashboard shows — picked from a gallery with an example of
+ * each. Processes are listed in the order they were created; there is no
+ * sequence.
  */
 const initialState = {
   processName: "",
-  group: "",
   description: "",
   machineIds: [],
   stats: DEFAULT_STATS,
@@ -53,8 +50,6 @@ const ProcessMaster = () => {
   const invalidateMachines = useInvalidateMachines();
   const invalidateProcesses = useInvalidateProcesses();
   const [query, setQuery] = useState("");
-  // Every group name in use, from the server — not just the rows on this page.
-  const [groups, setGroups] = useState([]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -95,7 +90,6 @@ const ProcessMaster = () => {
         const p = res.data.data;
         setValues({
           processName: p.processName,
-          group: p.group || "",
           description: p.description || "",
           machineIds: (p.machines || []).map((m) => m._id),
           stats: resolveWidgets(p.stats, STATS_BY_KEY, DEFAULT_STATS).map((w) => w.key),
@@ -118,7 +112,6 @@ const ProcessMaster = () => {
     const errors = {};
     if (!v.processName.trim()) errors.processName = "Process name is required!";
     else if (v.processName.length > 40) errors.processName = "Process name must not exceed 40 characters";
-    if (v.group.trim().length > 40) errors.group = "Group must not exceed 40 characters";
     if (v.description && v.description.length > 200) errors.description = "Description must not exceed 200 characters";
     return errors;
   };
@@ -126,7 +119,6 @@ const ProcessMaster = () => {
   const payload = () => ({
     ...values,
     processName: values.processName.trim(),
-    group: values.group.trim(),
   });
 
   const handleSave = (e) => {
@@ -194,23 +186,6 @@ const ProcessMaster = () => {
     }
   };
 
-  const fetchGroups = () =>
-    getProcessGroups()
-      .then((res) => setGroups(res.data.data || []))
-      .catch(() => setGroups([]));
-
-  // Refreshed whenever the form opens, so a group created a moment ago (here
-  // or by someone else) is already on offer.
-  useEffect(() => {
-    if (modalMode) fetchGroups();
-  }, [modalMode]);
-
-  // The group being typed/edited stays selectable even before it is saved.
-  const groupOptions = useMemo(
-    () => [...new Set([...groups, values.group].filter(Boolean))].map((g) => ({ value: g, label: g })),
-    [groups, values.group],
-  );
-
   // A machine lives in one process; picking one that's elsewhere moves it here.
   const machineOptions = useMemo(() => {
     const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
@@ -223,7 +198,6 @@ const ProcessMaster = () => {
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
     { name: "Process", selector: (row) => row.processName, sortable: true, sortField: "processName", minWidth: "140px" },
-    { name: "Group", selector: (row) => row.group || "—", sortable: true, sortField: "group", minWidth: "140px" },
     {
       name: "Machines",
       cell: (row) =>
@@ -320,41 +294,13 @@ const ProcessMaster = () => {
         </ModalHeader>
         <ModalBody>
           <form noValidate onSubmit={handleSave}>
-            <Row>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="text" name="processName" value={values.processName} onChange={handleChange} placeholder=" " maxLength={40} />
-                  <Label>
-                    Process Name <span className="text-danger">*</span>
-                  </Label>
-                  {isSubmit && <p className="text-danger">{formErrors.processName}</p>}
-                </div>
-              </Col>
-              <Col md={6}>
-                {/* form-floating only for its height/padding rules (index.css), so
-                    the dropdown lines up with the floating inputs beside it. */}
-                <div className="form-floating pd-float-select mb-3">
-                  <CreatableSelect
-                    inputId="process-group"
-                    classNamePrefix="select"
-                    options={groupOptions}
-                    value={values.group ? { value: values.group, label: values.group } : null}
-                    onChange={(picked) => setValues({ ...values, group: picked ? picked.value : "" })}
-                    onCreateOption={(typed) => setValues({ ...values, group: typed.trim().replace(/\s+/g, " ").slice(0, 40) })}
-                    formatCreateLabel={(typed) => `Create group "${typed.trim()}"`}
-                    isValidNewOption={(typed, _, options) => {
-                      const name = typed.trim().toLowerCase();
-                      return !!name && !options.some((o) => o.value.toLowerCase() === name);
-                    }}
-                    noOptionsMessage={() => "No groups yet — type a name to create one"}
-                    placeholder="Select a group, or type a new one…"
-                    isClearable
-                  />
-                  <label htmlFor="process-group" className="pd-float-label">Group (heading on the dashboard)</label>
-                  {isSubmit && <p className="text-danger">{formErrors.group}</p>}
-                </div>
-              </Col>
-            </Row>
+            <div className="form-floating mb-3">
+              <Input type="text" name="processName" value={values.processName} onChange={handleChange} placeholder=" " maxLength={40} />
+              <Label>
+                Process Name <span className="text-danger">*</span>
+              </Label>
+              {isSubmit && <p className="text-danger">{formErrors.processName}</p>}
+            </div>
             <div className="form-floating mb-3">
               <Input type="text" name="description" value={values.description} onChange={handleChange} placeholder=" " maxLength={200} />
               <Label>Description</Label>

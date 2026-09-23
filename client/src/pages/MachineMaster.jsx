@@ -13,22 +13,9 @@ import { useInvalidateMachines } from "../hooks/useMachines";
 import { useProcesses, useInvalidateProcesses } from "../hooks/useProcesses";
 import { createMachine, deleteMachine, getMachineById, updateMachine, searchMachines } from "../api/machines.api";
 
-// Same tints the Excel sheet uses on its M.C. No. column.
-const MACHINE_COLORS = [
-  { value: "", label: "None" },
-  { value: "#FFFF00", label: "Yellow" },
-  { value: "#FFC000", label: "Orange" },
-  { value: "#A9D08E", label: "Green" },
-  { value: "#9BC2E6", label: "Blue" },
-  { value: "#F8CBAD", label: "Peach" },
-  { value: "#D9D2E9", label: "Lavender" },
-  { value: "#D9D9D9", label: "Grey" },
-];
-
 const initialState = {
   machineName: "",
   description: "",
-  color: "",
   sequence: "",
   process: "",
   isActive: true,
@@ -95,7 +82,6 @@ const MachineMaster = () => {
         setValues({
           machineName: m.machineName,
           description: m.description || "",
-          color: m.color || "",
           sequence: m.sequence ?? "",
           process: m.process || "",
           isActive: m.isActive,
@@ -203,12 +189,6 @@ const MachineMaster = () => {
     {
       name: "Machine No.",
       selector: (row) => row.machineName,
-      cell: (row) => (
-        <span className="d-inline-flex align-items-center gap-2">
-          <span style={{ width: 14, height: 14, borderRadius: 3, background: row.color || "transparent", border: "1px solid #cbd5e1" }} />
-          {row.machineName}
-        </span>
-      ),
       sortable: true,
       sortField: "machineName",
       minWidth: "130px",
@@ -314,7 +294,7 @@ const MachineMaster = () => {
                 <option value="">Not in any process</option>
                 {processes.map((p) => (
                   <option key={p._id} value={p._id}>
-                    {p.group ? `${p.group} — ${p.processName}` : p.processName}
+                    {p.processName}
                   </option>
                 ))}
               </Input>
@@ -324,28 +304,6 @@ const MachineMaster = () => {
               <Input type="text" name="description" value={values.description} onChange={handleChange} placeholder=" " maxLength={200} />
               <Label>Description</Label>
               {isSubmit && <p className="text-danger">{formErrors.description}</p>}
-            </div>
-            <div className="mb-3">
-              <Label className="mb-2 d-block">Color on the sheet</Label>
-              <div className="d-flex flex-wrap gap-2">
-                {MACHINE_COLORS.map((c) => (
-                  <button
-                    key={c.label}
-                    type="button"
-                    title={c.label}
-                    onClick={() => setValues({ ...values, color: c.value })}
-                    className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded border"
-                    style={{
-                      background: values.color === c.value ? "#eef2ff" : "#fff",
-                      borderColor: values.color === c.value ? "#6366f1" : "#e2e8f0",
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ width: 14, height: 14, borderRadius: 3, background: c.value || "transparent", border: "1px solid #cbd5e1" }} />
-                    {c.label}
-                  </button>
-                ))}
-              </div>
             </div>
             <div className="mb-3">
               <Input

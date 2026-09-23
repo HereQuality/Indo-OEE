@@ -515,9 +515,15 @@ const ProductionSheet = () => {
 
   return (
     <React.Fragment>
-      <div className="page-content pd-root">
-        <Container fluid>
-          <Card className="mb-0">
+      {/* This page fills the exact height the layout hands it and scrolls
+          only inside the table (see the `min-h-0`/`h-100` chain below and
+          `fillHeight` on ProductionEntriesTable) — without that chain, a
+          flex child's default min-height:auto keeps it from shrinking below
+          its content size, so the table would grow past the viewport and
+          the whole page would scroll underneath its own internal scrollbar. */}
+      <div className="page-content pd-root h-100 d-flex flex-column" style={{ minHeight: 0 }}>
+        <Container fluid className="d-flex flex-column flex-grow-1" style={{ minHeight: 0 }}>
+          <Card className="mb-0 d-flex flex-column flex-grow-1" style={{ minHeight: 0 }}>
             <CardHeader>
               <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <h5 className="mb-0 fs-6 fw-semibold">Production Data Entry</h5>
@@ -594,7 +600,7 @@ const ProductionSheet = () => {
                 </button>
               </div>
             </div>
-            <CardBody>
+            <CardBody className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
               <ProductionEntriesTable
                 rows={searchedRows}
                 machineName={machineName}

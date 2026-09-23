@@ -13,25 +13,26 @@
  *                                 Down; floored — a fractional target can't actually be made)
  *   4  Ideal Quantity/Hours     = Ideal Quantity ÷ Shift h
  *   5  % OK Quantity            = OK ÷ (OK + Rejected)
- *   7  Total Stoppage (min)     = sum of the ten stoppage columns (blank while Working
- *                                 Status/Operator is empty)
+ *   7  Total Stoppage (min)     = sum of the ten stoppage columns (whatever is typed,
+ *                                 regardless of Working Status/Operator)
  *   8  Effective Run Time (h)   = OK × Cycle sec ÷ 3600 (as soon as OK Quantity and Cycle Time
  *                                 are there, regardless of Working Status/Operator)
  *   10 Setup Efficiency (%)     = Effective h ÷ Shift h
  *      Rejected Quantity        = Ideal Quantity − OK   (derived, never typed — there's no
  *                                 separate typed Actual Quantity; Ideal Quantity does that job)
+ *   6  Unutilized Machine Time  = (12 − (Shift − Lunch/60)) ÷ 11, this row's own Shift/
+ *                                 Lunch only — never blended with another entry of the
+ *                                 same machine/date.
  *
- * Per row again, but looking forward ("this row + next row + next 2 rows" in
- * Excel — a rolling 3-row window starting at that row, bounded to this
- * machine's own rows on this date, never a single value shared by every row
- * of the day). 9/11/12/13 are pure math off this row's own Machine Shift
- * Time — none of them use Planned Operator Shift Time, so none wait on it;
- * Unutilized instead follows that row's own Working Status:
- *   9  Unreported Time (min)    = Shift×60 − Effective×60 − Stoppage
- *   11 OEE considering losses   = Effective ÷ (Shift − Stoppage/60)
- *   12 OEE … but lunch          = Effective ÷ (Shift − Lunch/60)
- *   13 OEE … but lunch and COT  = Effective ÷ (Shift − Lunch/60 − Setup/60)
- *   6  Unutilized Machine Time  = (12 − (Shift − Lunch/60)) ÷ 11
+ * Combined across every entry of this machine's date (not a per-row or windowed
+ * figure — one machine can have several entries/slots on one date, and these four
+ * are that whole date's totals, so every one of that machine's entries for the day
+ * shows the same number). Pure math off the day's totals — none of them use Planned
+ * Operator Shift Time or Working Status/Operator, so none wait on those:
+ *   9  Unreported Time (min)    = Day Shift×60 − Day Effective×60 − Day Stoppage
+ *   11 OEE considering losses   = Day Effective ÷ (Day Shift − Day Stoppage/60)
+ *   12 OEE … but lunch          = Day Effective ÷ (Day Shift − Day Lunch/60)
+ *   13 OEE … but lunch and COT  = Day Effective ÷ (Day Shift − Day Lunch/60 − Day Setup/60)
  */
 
 export const SLOTS_PER_DAY = 3;
@@ -119,17 +120,11 @@ export const totalCycleSec = (ops) => {
   return vals.length ? vals.reduce((s, v) => s + v, 0) : null;
 };
 
-// The Indo sheet's "Working Status" cell holds the operator's name, or a
-// status such as ABSENT / M/C OFF when nobody ran the machine. Most formulas
-// stay blank until it is filled.
-const workingStatusOf = (row) => String(row?.operator || row?.workingStatus || "").trim();
-
 const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
 const ratio = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? a / b : null);
 
 export function rowCalc(row) {
   if (!row) return {};
-  const working = workingStatusOf(row) !== "";
 
   // 1) Total cycle time is the item's own Total Cycle Time box — typed on
   // its own, not the sum of Drilling/Boring/Threading/… below. On the real
@@ -181,8 +176,11 @@ export function rowCalc(row) {
   const rej = isNum(idealQty) && isNum(ok) ? Math.max(0, idealQty - ok) : num(row.rejectedQty);
   const totalProduced = isNum(idealQty) ? idealQty : (ok || 0) + (rej || 0);
 
-  // 7) Total Stoppage = sum of the ten stoppage columns.
-  const totalStoppageMin = working ? sumOrZero(STOPPAGE_FIELDS.map((f) => num(row[f.key]))) : null;
+  // 7) Total Stoppage = sum of the ten stoppage columns — whatever is
+  // actually typed, regardless of whether Operator is filled in. A
+  // supervisor who logs downtime minutes without yet picking an Operator
+  // shouldn't see that real data thrown away.
+  const totalStoppageMin = sumOrZero(STOPPAGE_FIELDS.map((f) => num(row[f.key])));
 
   // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600.
   // Pure math off two typed values, same as Machine Shift Time above — shown
@@ -207,17 +205,17 @@ export function rowCalc(row) {
   };
 }
 
-// One result per row of one machine's one date, not one shared value for the
-// whole group. The Excel formulas read "this row + next row + next 2 rows" —
-// a rolling 3-row window starting at that row, not a single total spread
-// across every row of the day. So entry 1 of a day looks ahead across
-// entries 1‑3, entry 2 across 2‑3, and entry 3 (or a day with only one or two
-// entries) looks at just what is actually there — three different entries
-// give three different numbers, never one repeated across all of them.
-// The window never reaches past this machine's own rows for this date, so a
-// short day's last entry isn't quietly padded out with the next date's rows.
-// Each row's own Working Status / Planned Operator Shift Time (not the
-// group's) decides whether that row's own figures are blank.
+// Unutilized Machine Time is one result per row of one machine's one date,
+// not one shared value for the whole group: the Excel formula reads "this
+// row + next row + next 2 rows" — a rolling 3-row window starting at that
+// row. So entry 1 of a day looks ahead across entries 1‑3, entry 2 across
+// 2‑3, and entry 3 (or a day with only one or two entries) looks at just
+// what is actually there. The window never reaches past this machine's own
+// rows for this date, so a short day's last entry isn't quietly padded out
+// with the next date's rows. Unreported Time and the three OEE percentages
+// are different: they're combined once across the whole machine/date (see
+// dayCalc), so every entry of that machine/date shares the same number for
+// those four, deliberately.
 // Rows of one machine's one date, in the order "next row" means in every
 // formula below — by actual Machine ON Time, not Entry No. A supervisor can
 // save entries in any order (edit one later, add a missed shift after the
@@ -246,18 +244,26 @@ export function dayCalc(rows) {
   const list = sortByMachineOn(rows);
   const calcs = list.map(rowCalc);
 
+  // Unreported Time and the three OEE percentages are combined across every
+  // entry of this machine's date, not windowed per entry — a day's several
+  // shifts (slots) are really one day's efficiency, so every entry of that
+  // machine/date shows the same combined figure rather than three different
+  // numbers for what is one day's work.
+  const dayShiftH = sumOrZero(calcs.map((c) => c.shiftHours));
+  const dayStoppageMin = sumOrZero(calcs.map((c) => c.totalStoppageMin));
+  const dayEffectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
+  const dayLunchMin = sumOrZero(list.map((r) => num(r.lunchMin)));
+  const daySetupMin = sumOrZero(list.map((r) => num(r.setupMin)));
+  // Blank only when nothing on this machine/date has a Machine Shift Time at
+  // all — otherwise the combined figures use whatever entries do have one.
+  const dayHasShift = calcs.some((c) => isNum(c.shiftHours));
+
+  const dayUnreportedMin = dayHasShift ? dayShiftH * 60 - dayEffectiveH * 60 - dayStoppageMin : null;
+  const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayStoppageMin / 60) : null;
+  const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60) : null;
+  const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60 - daySetupMin / 60) : null;
+
   return list.map((row, i) => {
-    const windowRows = list.slice(i, i + 3);
-    const windowCalcs = calcs.slice(i, i + 3);
-
-    const shiftH = sumOrZero(windowCalcs.map((c) => c.shiftHours));
-    const stoppageMin = sumOrZero(windowCalcs.map((c) => c.totalStoppageMin));
-    const effectiveH = sumOrZero(windowCalcs.map((c) => c.effectiveHours));
-    const lunchMin = sumOrZero(windowRows.map((r) => num(r.lunchMin)));
-    const setupMin = sumOrZero(windowRows.map((r) => num(r.setupMin)));
-
-    const working = workingStatusOf(row) !== "";
-
     // The clock gap between this row's own Machine OFF and the next row's
     // Machine ON — a genuine blind spot with no entry at all, not a typed
     // stoppage reason and not automatically "downtime" of any kind (an
@@ -275,30 +281,26 @@ export function dayCalc(rows) {
     const rawGapMin = thisOff !== null && nextOn !== null ? nextOn - thisOff : null;
     const gapMin = rawGapMin === null ? null : Math.max(0, rawGapMin);
 
+    // Unutilized is this row's own Shift/Lunch only — not the rolling
+    // window the four combined figures above use. With several entries a
+    // day for one machine, a shared window put one number on entry 1 alone;
+    // per-row keeps each entry's own figure.
+    const shiftHi = calcs[i].shiftHours;
+    const lunchMinI = num(row.lunchMin);
+
     return {
-      // 6) Unutilized Machine Time = (12 − (Shift h − Lunch min ÷ 60)) ÷ 11.
-      unutilized: working ? (12 - (shiftH - lunchMin / 60)) / 11 : null,
-      // 9) Unreported Time (min) = Machine Shift Time − Effective Runtime − Total
-      // Stoppage (in minutes). Pure math off those three, same as Machine
-      // Shift/Effective Runtime themselves — not gated on Planned Operator
-      // Shift Time, which this formula never actually uses.
-      unreportedMin: isNum(calcs[i].shiftHours) ? shiftH * 60 - effectiveH * 60 - stoppageMin : null,
-      // 11) OEE considering losses = Effective Runtime ÷ (Shift − Total Stoppage
-      // ÷ 60 — Stoppage is stored in minutes, so it's divided by 60 to match
-      // Shift's hours). Pure math off those two, not gated on Planned Operator
-      // Shift Time, which this formula never actually uses.
-      oeeLosses: isNum(calcs[i].shiftHours) ? ratio(effectiveH, shiftH - stoppageMin / 60) : null,
-      // 12) OEE not considering losses but lunch = Effective Runtime ÷ (Shift −
-      // Lunch ÷ 60 — Lunch is stored in minutes, so it's divided by 60 to
-      // match Shift's hours). Pure math off those two, not gated on Planned
-      // Operator Shift Time, which this formula never actually uses.
-      oeeLunch: isNum(calcs[i].shiftHours) ? ratio(effectiveH, shiftH - lunchMin / 60) : null,
-      // 13) OEE not considering losses but lunch and COT = Effective Runtime ÷
-      // (Shift − Lunch ÷ 60 − Setup Time ÷ 60 — both stored in minutes, so
-      // both are divided by 60 to match Shift's hours). Pure math off those
-      // three, not gated on Planned Operator Shift Time, which this formula
-      // never actually uses.
-      oeeLunchCot: isNum(calcs[i].shiftHours) ? ratio(effectiveH, shiftH - lunchMin / 60 - setupMin / 60) : null,
+      // 6) Unutilized Machine Time = (12 − (Shift h − Lunch min ÷ 60)) ÷ 11,
+      // for this entry alone. Not gated on Operator, so lunch minutes typed
+      // in still count even before an Operator is picked for the row.
+      unutilized: isNum(shiftHi) ? (12 - (shiftHi - lunchMinI / 60)) / 11 : null,
+      // 9) Unreported Time (min), 11) OEE considering losses, 12) OEE not
+      // considering losses but lunch, and 13) … but lunch and COT are all
+      // combined across this machine's whole date (computed once above), so
+      // every entry of that machine/date shows the same figure.
+      unreportedMin: dayUnreportedMin,
+      oeeLosses: dayOeeLosses,
+      oeeLunch: dayOeeLunch,
+      oeeLunchCot: dayOeeLunchCot,
       gapMin,
     };
   });
