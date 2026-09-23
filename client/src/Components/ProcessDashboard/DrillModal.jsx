@@ -50,7 +50,7 @@ const Records = ({ rows, ctx }) => {
         <table className="table table-sm align-middle mb-0 pd-table">
           <thead>
             <tr>
-              {["Date", "Machine", "Operator", "Item", "Actual", "OK", "Rejected", "Shift (hr)", "Effective (hr)", "Stoppage (min)", "Remarks"].map((h, i) => (
+              {["Date", "Machine", "Operator", "Part", "Actual", "OK", "Rejected", "Shift (hr)", "Effective (hr)", "Stoppage (min)", "Remarks"].map((h, i) => (
                 <th key={h} className={i > 3 && i < 10 ? "text-end" : ""}>{h}</th>
               ))}
             </tr>

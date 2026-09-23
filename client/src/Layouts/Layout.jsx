@@ -546,9 +546,9 @@ export default function Layout({ children }) {
         {/* Scrollable Page Content */}
         <main
           style={{ background: isDarkMode ? '#0a0a0a' : '#f1f5f9' }}
-          className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 relative"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 relative"
         >
-          <div className="max-w-7xl mx-auto w-full">
+          <div className="max-w-7xl mx-auto w-full min-w-0">
             {children}
           </div>
         </main>

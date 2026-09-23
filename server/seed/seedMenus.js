@@ -24,8 +24,9 @@ const Operator = require("../models/Operator");
 //   2. Dashboard                  (link — the process dashboards)
 //   3. Administration             (group: Menu Group, Menu Master, Company)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Items, Machines, Processes, Data Entry)
-//   6. Support                    (link)
+//   5. Production                 (group: Part Master, Machines, Processes, Operators)
+//   6. CNC Data Entry             (link — its own top-level item)
+//   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 // Dashboard sits right under Home as its own top-level link. It used to be
 // the last item inside Production — see promoteMenuToLinkGroup below for how
@@ -37,7 +38,12 @@ const DASHBOARD_GROUP = { menuGroupName: "Dashboard", sequence: 2, isLink: true,
 const ADMINISTRATION_GROUP = { menuGroupName: "Administration", sequence: 3, isLink: false, portal: "SuperAdmin", icon: "Settings" };
 const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 4, isLink: false, portal: "Both", icon: "Users" };
 const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 5, isLink: false, portal: "Both", icon: "Factory" };
-const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 6, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
+// Data Entry used to be the last item inside Production — promoted to its
+// own top-level link for the same reason Dashboard was (it's opened far more
+// often than the master lists it used to sit beside). Same promotion
+// mechanism as Dashboard above; the URL is unchanged.
+const DATA_ENTRY_GROUP = { menuGroupName: "CNC Data Entry", sequence: 6, isLink: true, menuUrl: "/hqepl/production/data-entry", portal: "Both", icon: "ClipboardList" };
+const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 7, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [
   { menuName: "Menu Group", menuUrl: "/x/menu-groups", sequence: 1, icon: "FolderTree" },
@@ -46,13 +52,13 @@ const ADMINISTRATION_MENUS = [
 ];
 
 const PRODUCTION_MENUS = [
-  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
+  { menuName: "Part Master", menuUrl: "/hqepl/production/items", sequence: 1, icon: "Package" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 3, icon: "Workflow" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
-  { menuName: "Data Entry", menuUrl: "/hqepl/production/data-entry", sequence: 5, icon: "ClipboardList" },
-  // Dashboard is NOT listed here any more (it is DASHBOARD_GROUP above).
-  // Listing it again would re-activate the retired row on every run.
+  // Dashboard and Data Entry are NOT listed here any more (they are
+  // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
+  // re-activate its retired row on every run.
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
@@ -158,6 +164,9 @@ async function run() {
 
   const productionGroup = await upsertGroup(PRODUCTION_GROUP);
   await upsertMenus(PRODUCTION_MENUS, productionGroup);
+
+  const dataEntryGroup = await upsertGroup(DATA_ENTRY_GROUP);
+  await promoteMenuToLinkGroup(/\/production\/data-entry\/?$/, dataEntryGroup);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
   await upsertMenus(EMPLOYEE_MANAGEMENT_MENUS, empMgmtGroup);

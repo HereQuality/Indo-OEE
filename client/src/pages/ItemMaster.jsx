@@ -85,7 +85,7 @@ const ItemMaster = () => {
           isActive: it.isActive,
         });
       })
-      .catch(() => toast.error("Failed to fetch item details"))
+      .catch(() => toast.error("Failed to fetch part details"))
       .finally(() => setIsLoading(false));
   };
 
@@ -98,7 +98,7 @@ const ItemMaster = () => {
 
   const validate = (v) => {
     const errors = {};
-    if (!v.itemName.trim()) errors.itemName = "Item Name is required!";
+    if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
     if (v.totalCycleSec !== "" && (!Number.isFinite(Number(v.totalCycleSec)) || Number(v.totalCycleSec) < 0)) {
       errors.totalCycleSec = "Must be 0 or more";
     }
@@ -128,12 +128,12 @@ const ItemMaster = () => {
     const request = modalMode === "add" ? createItem(data) : updateItem(_id, data);
     request
       .then(() => {
-        toast.success(modalMode === "add" ? "Item Added Successfully!" : "Item Updated Successfully!");
+        toast.success(modalMode === "add" ? "Part Added Successfully!" : "Part Updated Successfully!");
         closeModal();
         fetchItems();
         invalidateItems();
       })
-      .catch((err) => toast.error(err?.response?.data?.message || "Failed to save item. Please try again."))
+      .catch((err) => toast.error(err?.response?.data?.message || "Failed to save part. Please try again."))
       .finally(() => setIsLoading(false));
   };
 
@@ -143,13 +143,13 @@ const ItemMaster = () => {
     deleteItem(remove_id)
       .then((res) => {
         setmodal_delete(false);
-        toast.success(res?.data?.message || "Item Removed Successfully!");
+        toast.success(res?.data?.message || "Part Removed Successfully!");
         fetchItems();
         invalidateItems();
       })
       .catch(() => {
         setmodal_delete(false);
-        toast.error("Failed to delete item. Please try again.");
+        toast.error("Failed to delete part. Please try again.");
       })
       .finally(() => setIsDeleteLoading(false));
   };
@@ -174,7 +174,7 @@ const ItemMaster = () => {
       setTotalRows(res?.count || 0);
       setItems(res?.data || []);
     } catch (error) {
-      console.error("Error fetching items:", error);
+      console.error("Error fetching parts:", error);
       setItems([]);
     } finally {
       setLoading(false);
@@ -183,7 +183,7 @@ const ItemMaster = () => {
 
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
-    { name: "Item Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
+    { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
     { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
     { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
@@ -208,7 +208,7 @@ const ItemMaster = () => {
     },
   ];
 
-  document.title = `Item Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+  document.title = `Part Master | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
     <React.Fragment>
@@ -219,7 +219,7 @@ const ItemMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Items"
+                    formName="Part"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -258,14 +258,14 @@ const ItemMaster = () => {
 
       <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" keyboard={false} size="lg">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
-          {modalMode === "edit" ? "Update Item" : "Add Item"}
+          {modalMode === "edit" ? "Update Part" : "Add Part"}
         </ModalHeader>
         <form noValidate>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input type="text" name="itemName" value={values.itemName} onChange={handleChange} placeholder=" " maxLength={120} />
               <Label>
-                Item Name <span className="text-danger">*</span>
+                Part Name <span className="text-danger">*</span>
               </Label>
               {isSubmit && <p className="text-danger">{formErrors.itemName}</p>}
             </div>

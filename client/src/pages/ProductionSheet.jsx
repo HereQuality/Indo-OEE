@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import {
   Card,
   CardBody,
@@ -16,6 +16,8 @@ import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import ProductionEntriesTable from "../Components/Production/ProductionEntriesTable";
 import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
+import FilterPanel from "../Components/ProcessDashboard/FilterPanel";
+import "../Components/ProcessDashboard/processDashboard.css";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines } from "../hooks/useMachines";
@@ -32,11 +34,11 @@ import {
   REJECT_REASONS,
   STOPPAGE_FIELDS,
   dayCalc,
-  daysOfMonth,
   isoDay,
   rowCalc,
   sortByMachineOn,
 } from "../utils/productionSheet";
+import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultRange, hasFilters } from "../utils/processDashboard";
 
 /**
  * Production Data Entry — the month's records, and one form per record.
@@ -158,10 +160,24 @@ const ProductionSheet = () => {
   const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
   const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
 
-  const [month, setMonth] = useState(() => isoDay(new Date()).slice(0, 7));
-  const [machineFilter, setMachineFilter] = useState("");
+  // One Filters button holds everything that slices the sheet — period
+  // (date range / month / year), Machine, Operator, Item — the same panel
+  // the process dashboards use, so both pages behave alike. Search stays its
+  // own field beside it, since it searches text the panel can't multi-select.
+  const [range, setRange] = useState(defaultRange);
+  const [baseRange, setBaseRange] = useState(range);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [search, setSearch] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [fromDate, toDate] = range;
+
+  // Paginated by date rather than by raw row — a date's entries are merged
+  // into one block (shared Date/Machine cells), so slicing mid-date would
+  // split a merged block across two pages. 10 days per page.
+  const PAGE_SIZE_DAYS = 10;
+  const [page, setPage] = useState(1);
+  const [goTo, setGoTo] = useState("1");
 
   const { data: machines = [] } = useMachines();
   const { data: processes = [] } = useProcesses();
@@ -180,39 +196,102 @@ const ProductionSheet = () => {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const days = useMemo(() => daysOfMonth(month), [month]);
   const machineName = useMemo(
     () => Object.fromEntries(machines.map((m) => [m._id, m.machineName])),
     [machines],
   );
 
   // ── Load ───────────────────────────────────────────────────────────────
+  // The server is only asked to narrow by date — Machine/Operator/Item are
+  // applied in the browser (like the process dashboards), so ticking more
+  // than one of each in the Filters panel doesn't need a second round trip.
+  const validRange = !!fromDate && !!toDate && fromDate <= toDate;
+
   const fetchRows = useCallback(() => {
+    if (!validRange) return;
     setLoading(true);
-    getProductionSheet({ from: days[0], to: days[days.length - 1], machine: machineFilter || undefined })
+    getProductionSheet({ from: fromDate, to: toDate })
       .then((res) => setRows(res.data.data || []))
       .catch((err) => {
         toast.error(err?.response?.data?.message || "Failed to load entries");
         setRows([]);
       })
       .finally(() => setLoading(false));
-  }, [days, machineFilter]);
+  }, [fromDate, toDate, validRange]);
 
   useEffect(() => {
+    if (!validRange) {
+      toast.error("From Date must be on or before To Date");
+      return;
+    }
     fetchRows();
-  }, [fetchRows]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate]);
 
+  useEffect(() => {
+    setPage(1);
+    setGoTo("1");
+  }, [fromDate, toDate, filters]);
+
+  const ctx = useMemo(() => ({ machineName }), [machineName]);
+
+  const filteredRows = useMemo(() => applyFilters(rows, filters), [rows, filters]);
+
+  // What the Filters panel's Machine/Operator/Item pickers offer: the values
+  // present in the loaded period, plus anything already picked (so a pick
+  // never vanishes from its own list once the period moves past it).
+  const filterOptions = useMemo(() => {
+    const options = (dim) =>
+      [...new Set([...rows.map(DIMENSIONS[dim].value), ...filters[dim]])]
+        .map((value) => ({ value, label: DIMENSIONS[dim].text(value, ctx) }))
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+    return { machine: options("machine"), operator: options("operator"), item: options("item") };
+  }, [rows, ctx, filters]);
+
+  const onFilterSet = useCallback((dim, values) => setFilters((f) => ({ ...f, [dim]: values })), []);
+  const onRangeChange = useCallback((next) => setRange(next), []);
+  const isDefaultRange = range.join() === baseRange.join();
+  const filtersActive = !isDefaultRange || hasFilters(filters);
+  const clearAll = () => {
+    setFilters(EMPTY_FILTERS);
+    const fresh = defaultRange();
+    setBaseRange(fresh);
+    setRange(fresh);
+  };
 
   const sortedRows = useMemo(
     () =>
-      [...rows].sort(
+      [...filteredRows].sort(
         (a, b) =>
           b.date.localeCompare(a.date) ||
           (machineName[a.machine] || "").localeCompare(machineName[b.machine] || "", undefined, { numeric: true }) ||
           a.slot - b.slot,
       ),
-    [rows, machineName],
+    [filteredRows, machineName],
   );
+
+  // The distinct dates actually present, in the same newest-first order as
+  // sortedRows — what gets paged is this list, not the raw rows.
+  const activeDays = useMemo(() => [...new Set(sortedRows.map((r) => r.date))], [sortedRows]);
+  const totalPages = Math.max(1, Math.ceil(activeDays.length / PAGE_SIZE_DAYS));
+
+  // A new month/machine filter (or a load that shrinks the day count) can
+  // leave `page` pointing past the end — pull it back in range rather than
+  // showing an empty page.
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
+
+  const pagedRows = useMemo(() => {
+    const pageDays = new Set(activeDays.slice((page - 1) * PAGE_SIZE_DAYS, page * PAGE_SIZE_DAYS));
+    return sortedRows.filter((r) => pageDays.has(r.date));
+  }, [sortedRows, activeDays, page]);
+
+  const goToPage = () => {
+    const n = Number(goTo);
+    if (Number.isInteger(n) && n >= 1 && n <= totalPages) setPage(n);
+    setGoTo(String(Math.min(Math.max(1, Number.isInteger(n) ? n : page), totalPages)));
+  };
 
   // dayCalc looks at a machine's whole date (this row + the following rows
   // of that same date) but hands back one result per row, not one shared
@@ -244,7 +323,9 @@ const ProductionSheet = () => {
   };
 
   const openAdd = () => {
-    setEntries([{ ...emptyEntry(), machine: machineFilter || "" }]);
+    // Only pre-fills the machine when the Filters panel narrows to exactly
+    // one — with several ticked there's no single machine to default to.
+    setEntries([{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
     setFormErrors([]);
     setIsSubmit(false);
     setModalMode("add");
@@ -409,44 +490,60 @@ const ProductionSheet = () => {
       .finally(() => setIsDeleting(false));
   };
 
-  const periodLabel = useMemo(() => {
-    const [y, m] = month.split("-");
-    return new Date(Number(y), Number(m) - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
-  }, [month]);
+  const fmtShort = (iso) => {
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
+  const periodLabel = useMemo(() => `${fmtShort(fromDate)} – ${fmtShort(toDate)}`, [fromDate, toDate]);
+  const extent = useMemo(() => {
+    if (!rows.length) return null;
+    const dates = rows.map((r) => r.date);
+    return { from: dates.reduce((a, b) => (b < a ? b : a)), to: dates.reduce((a, b) => (b > a ? b : a)) };
+  }, [rows]);
+
+  // Search matches Part Name, Operator, or Drawing No. — the sheet's own
+  // rows, not the day-level aggregate figures next to them.
+  const searchedRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return pagedRows;
+    return pagedRows.filter((r) =>
+      [r.itemName, r.operator, r.drawingNo].some((v) => String(v || "").toLowerCase().includes(q)),
+    );
+  }, [pagedRows, search]);
 
   document.title = `Production Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
     <React.Fragment>
-      <div className="page-content">
+      <div className="page-content pd-root">
         <Container fluid>
-          <Card>
+          <Card className="mb-0">
             <CardHeader>
-              <div className="d-flex flex-wrap align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <h5 className="mb-0 fs-6 fw-semibold">Production Data Entry</h5>
 
-                <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
-                  <Input
-                    type="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                    style={{ width: "165px" }}
-                    bsSize="sm"
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                  <div style={{ position: "relative" }}>
+                    <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: "#9ca3af", pointerEvents: "none" }} />
+                    <Input
+                      type="search"
+                      placeholder="Search part, operator, drawing no…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      style={{ width: "220px", paddingLeft: 32 }}
+                      bsSize="sm"
+                    />
+                  </div>
+                  <FilterPanel
+                    range={range}
+                    onRangeChange={onRangeChange}
+                    extent={extent}
+                    filters={filters}
+                    onFilterSet={onFilterSet}
+                    options={filterOptions}
+                    active={filtersActive}
+                    onClearAll={clearAll}
                   />
-                  <Input
-                    type="select"
-                    value={machineFilter}
-                    onChange={(e) => setMachineFilter(e.target.value)}
-                    style={{ width: "170px" }}
-                    bsSize="sm"
-                  >
-                    <option value="">All machines</option>
-                    {machines.map((m) => (
-                      <option key={m._id} value={m._id}>
-                        {m.machineName}
-                      </option>
-                    ))}
-                  </Input>
                   {canCreate && (
                     <button
                       type="button"
@@ -459,9 +556,47 @@ const ProductionSheet = () => {
                 </div>
               </div>
             </CardHeader>
+            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-bottom">
+              <span className="small text-muted">
+                Page {page} of {totalPages}
+                {activeDays.length > 0 && ` — ${activeDays.length} day${activeDays.length === 1 ? "" : "s"} with entries`}
+              </span>
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+                <span className="small text-muted ms-2">Go to</span>
+                <Input
+                  type="number"
+                  bsSize="sm"
+                  min={1}
+                  max={totalPages}
+                  value={goTo}
+                  onChange={(e) => setGoTo(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && goToPage()}
+                  style={{ width: "64px" }}
+                />
+                <button type="button" className="btn btn-sm btn-primary" onClick={goToPage}>
+                  Go
+                </button>
+              </div>
+            </div>
             <CardBody>
               <ProductionEntriesTable
-                rows={sortedRows}
+                rows={searchedRows}
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}
                 loading={loading}
@@ -473,6 +608,7 @@ const ProductionSheet = () => {
                   setRemoveId(r._id);
                   setDeleteOpen(true);
                 }}
+                fillHeight
               />
             </CardBody>
           </Card>

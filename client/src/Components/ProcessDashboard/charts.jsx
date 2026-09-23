@@ -188,7 +188,7 @@ const OutputByItem = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   const data = useDimBars(rowsFor("item"), "item", ctx, (s) => s.okQty);
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="qty" selected={filters.item} onSelect={(k) => onToggle("item", k)}
-      dimLabel="Item" valueLabel="OK quantity" emptyText="No OK quantity entered." />
+      dimLabel="Part" valueLabel="OK quantity" emptyText="No OK quantity entered." />
   );
 };
 

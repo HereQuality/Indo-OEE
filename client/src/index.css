@@ -28,6 +28,50 @@
     display: none;                /* Chrome/Safari/Opera */
   }
 
+  /* ...except the horizontal scroll strip on wide tables/toolbars. A wide
+     table on a small laptop screen genuinely needs to scroll sideways to see
+     every column — with the scrollbar hidden (the rule above) there was no
+     visual hint that more content existed off to the right, so the only way
+     to see it was zooming the whole browser tab out. A slim, always-visible
+     bar here fixes that without turning every scrollable panel in the app
+     back into a chunky native scrollbar. Covers both react-data-table-
+     component's own horizontal wrapper (used by every Master page's table)
+     and this app's own wide tables (e.g. the Production entries sheet). */
+  .rdt_responsiveWrapperScroll,
+  .rdt_responsiveWrapperFixed,
+  .table-responsive,
+  .table-scroll-x {
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+  }
+  .rdt_responsiveWrapperScroll::-webkit-scrollbar,
+  .rdt_responsiveWrapperFixed::-webkit-scrollbar,
+  .table-responsive::-webkit-scrollbar,
+  .table-scroll-x::-webkit-scrollbar {
+    display: block;
+    height: 8px;
+    width: 8px;
+  }
+  .rdt_responsiveWrapperScroll::-webkit-scrollbar-track,
+  .rdt_responsiveWrapperFixed::-webkit-scrollbar-track,
+  .table-responsive::-webkit-scrollbar-track,
+  .table-scroll-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .rdt_responsiveWrapperScroll::-webkit-scrollbar-thumb,
+  .rdt_responsiveWrapperFixed::-webkit-scrollbar-thumb,
+  .table-responsive::-webkit-scrollbar-thumb,
+  .table-scroll-x::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.4);
+    border-radius: 999px;
+  }
+  .dark .rdt_responsiveWrapperScroll::-webkit-scrollbar-thumb,
+  .dark .rdt_responsiveWrapperFixed::-webkit-scrollbar-thumb,
+  .dark .table-responsive::-webkit-scrollbar-thumb,
+  .dark .table-scroll-x::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.4);
+  }
+
   /* Global transition defaults for interactive elements */
   button, a, input, select, textarea {
     transition-property: color, background-color, border-color, box-shadow, opacity, transform;
@@ -466,6 +510,53 @@ a:hover {
 }
 .dark .btn-light:hover {
   background-color: #3a3a3c !important;
+}
+
+/* Outline / link / soft Bootstrap button variants used across every page —
+   otherwise they keep their light-mode white background and near-invisible
+   border (e.g. the Previous/Next pager on Production Sheet). */
+.dark .btn-outline-secondary {
+  color: #d1d5db !important;
+  border-color: #4b5563 !important;
+  background-color: transparent !important;
+}
+.dark .btn-outline-secondary:hover:not(:disabled) {
+  background-color: #2c2c2e !important;
+  color: #f1f1f1 !important;
+}
+.dark .btn-outline-secondary:disabled {
+  color: #6b7280 !important;
+  border-color: #374151 !important;
+}
+.dark .btn-outline-primary {
+  color: #60a5fa !important;
+  border-color: #3b82f6 !important;
+  background-color: transparent !important;
+}
+.dark .btn-outline-primary:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: #93c5fd !important;
+}
+.dark .btn-link {
+  color: #60a5fa !important;
+}
+.dark .btn-link:hover {
+  color: #93c5fd !important;
+}
+.dark .btn-soft-primary {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: #93c5fd !important;
+  border-color: transparent !important;
+}
+.dark .btn-soft-success {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: #6ee7b7 !important;
+  border-color: transparent !important;
+}
+.dark .btn-soft-danger {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #fca5a5 !important;
+  border-color: transparent !important;
 }
 
 /* Custom Top Scrollbar — always visible */

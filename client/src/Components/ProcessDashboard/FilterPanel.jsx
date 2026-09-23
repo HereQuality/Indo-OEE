@@ -164,7 +164,7 @@ const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, optio
 
         <MultiSelect label="MC No." options={options.machine} selected={filters.machine} onChange={(v) => onFilterSet("machine", v)} placeholder="All machines" />
         <MultiSelect label="Operator" options={options.operator} selected={filters.operator} onChange={(v) => onFilterSet("operator", v)} placeholder="All operators" />
-        <MultiSelect label="Item" options={options.item} selected={filters.item} onChange={(v) => onFilterSet("item", v)} placeholder="All items" />
+        <MultiSelect label="Part" options={options.item} selected={filters.item} onChange={(v) => onFilterSet("item", v)} placeholder="All parts" />
 
         <div className="d-flex justify-content-end pt-1">
           <button type="button" className="btn btn-primary btn-sm px-3" onClick={() => setOpen(false)}>Done</button>

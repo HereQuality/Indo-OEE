@@ -49,7 +49,7 @@ export const STAT_CATALOG = [
   { key: "unreportedMin", label: "Unreported Time", hint: "Shift − stoppage − effective", format: "minutes", example: "212 min" },
   { key: "setupEfficiency", label: "Setup Efficiency", hint: "Effective ÷ shift, per entry", format: "pct", example: "88.40%" },
   { key: "entries", label: "Entries", hint: "Rows on the data entry sheet", format: "qty", example: "3,204" },
-  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "Σ (12 − (Shift − Stoppage ÷ 60)) ÷ 11, per machine-day", format: "days", example: "869.81" },
+  { key: "unutilizedDays", label: "Unutilized Machine Time (Days)", hint: "Σ (12 − (Shift − Lunch ÷ 60)) ÷ 11, per machine-day", format: "days", example: "869.81" },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ export const CHART_CATALOG = [
   { key: "downtimeByCause", measure: "downtimeMin", label: "Downtime (Min) by Cause", hint: "Total minutes lost to each stoppage cause.", size: "md", preview: "hbars", tone: "downtime" },
   { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "hbars", tone: "reject" },
   { key: "okPctByOperator", measure: "okPct", label: "Operator v/s OK QTY %", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
-  { key: "outputByItem", measure: "okQty", label: "OK QTY by Item", hint: "Items ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
+  { key: "outputByItem", measure: "okQty", label: "OK QTY by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
   { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table" },
 ];
 
@@ -105,7 +105,7 @@ export const monthLabel = (yyyymm) => `${MONTHS[Number(yyyymm.slice(5, 7)) - 1]}
 export const DIMENSIONS = {
   machine: { label: "Machine", value: (r) => r.machine, text: (v, ctx) => ctx.machineName[v] || "—" },
   operator: { label: "Operator", value: (r) => r.operator || "", text: (v) => v || "(no operator)" },
-  item: { label: "Item", value: (r) => r.itemName || "", text: (v) => v || "(no item)" },
+  item: { label: "Part", value: (r) => r.itemName || "", text: (v) => v || "(no part)" },
   month: { label: "Month", value: (r) => r.date.slice(0, 7), text: (v) => monthLabel(v) },
   date: { label: "Date", value: (r) => r.date, text: (v) => displayDay(v) },
 };

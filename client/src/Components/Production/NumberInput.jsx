@@ -39,6 +39,7 @@ const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, ma
   return (
     <Input
       type="text"
+      bsSize="sm"
       inputMode={decimals ? "decimal" : "numeric"}
       autoComplete="off"
       name={name}

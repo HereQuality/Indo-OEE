@@ -38,9 +38,9 @@ const labelClass = "form-label small text-muted mb-1";
 // A calculated box — greyed so nobody tries to type in it.
 const Calc = ({ label, value, md = 3, title }) => (
   <Col md={md}>
-    <div className="mb-3" title={title}>
+    <div className="mb-2" title={title}>
       <Label className={labelClass}>{label}</Label>
-      <Input type="text" value={value ?? ""} readOnly disabled className="bg-light" />
+      <Input type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
     </div>
   </Col>
 );
@@ -48,7 +48,7 @@ const Calc = ({ label, value, md = 3, title }) => (
 // A typed field.
 const Field = ({ label, required, error, children, md = 3 }) => (
   <Col md={md}>
-    <div className="mb-3">
+    <div className="mb-2">
       <Label className={labelClass}>
         {label} {required && <span className="text-danger">*</span>}
       </Label>
@@ -87,12 +87,12 @@ const Line = ({ id, errors, isSubmit, children }) => {
   const def = findLine(id);
   const hasError = isSubmit && def.fields.some((f) => errors[f]);
   return (
-    <div className={`border rounded mb-3 ${hasError ? "border-danger" : ""}`}>
-      <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom rounded-top">
+    <div className={`border rounded mb-2 ${hasError ? "border-danger" : ""}`}>
+      <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <span className="fw-semibold small">{def.title}</span>
         {hasError && <span className="badge bg-danger-subtle text-danger ms-auto">Check this line</span>}
       </div>
-      <div className="px-3 pt-3">{children}</div>
+      <div className="px-2 pt-2">{children}</div>
     </div>
   );
 };
@@ -158,7 +158,7 @@ const EntryBlock = ({
   };
 
   const processSelect = (
-    <Input type="select" value={processFilter} onChange={handleProcessFilter} disabled={isEdit}>
+    <Input type="select" bsSize="sm" value={processFilter} onChange={handleProcessFilter} disabled={isEdit}>
       <option value="">All processes</option>
       {processes.map((p) => (
         <option key={p._id} value={p._id}>
@@ -193,7 +193,7 @@ const EntryBlock = ({
   }, [isSubmit, errorKeys]);
 
   const machineSelect = (
-    <Input type="select" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
+    <Input type="select" bsSize="sm" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
       <option value="">Select machine</option>
       {filteredMachines.map((m) => (
         <option key={m._id} value={m._id}>
@@ -217,8 +217,8 @@ const EntryBlock = ({
   // Collapsed: process, then this process's machines, then this machine's "+".
   if (!expanded) {
     return (
-      <div className="border rounded mb-3 px-3 pt-3">
-        <Row className="align-items-start">
+      <div className="border rounded mb-2 px-2 pt-2">
+        <Row className="align-items-start g-2">
           <Field label="Process" md={5}>
             {processSelect}
           </Field>
@@ -226,13 +226,13 @@ const EntryBlock = ({
             {machineSelect}
           </Field>
           <Col md={2}>
-            <div className="mb-3">
+            <div className="mb-2">
               <Label className={`${labelClass} d-block`}>&nbsp;</Label>
               <div className="d-flex align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-primary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
-                  style={{ width: 38, height: 38 }}
+                  style={{ width: 32, height: 32 }}
                   onClick={() => onExpand(index)}
                   disabled={!values.machine}
                   title={values.machine ? "Open the entry fields" : "Select a machine first"}
@@ -263,25 +263,25 @@ const EntryBlock = ({
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
-    <div className="border border-primary rounded mb-4">
-      <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom rounded-top">
+    <div className="border border-primary rounded mb-3">
+      <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <button
           type="button"
           className="btn btn-sm btn-light border d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0"
-          style={{ width: 28, height: 28 }}
+          style={{ width: 24, height: 24 }}
           onClick={() => onExpand(isEdit ? index : null)}
           title="Collapse this machine"
           aria-label="Collapse this machine"
         >
           <Minus size={15} />
         </button>
-        <span className="fw-semibold">Machine {machineLabel || index + 1}</span>
+        <span className="fw-semibold small">Machine {machineLabel || index + 1}</span>
         <span className="ms-auto">{removeButton}</span>
       </div>
 
-      <div className="p-3">
+      <div className="p-2">
         <Line id={1} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Date" required error={err("date")} md={3}>
               <DatePicker name="date" value={values.date} onChange={handle} hasError={!!err("date")} />
             </Field>
@@ -289,7 +289,7 @@ const EntryBlock = ({
               {machineSelect}
             </Field>
             <Field label="Operator" error={err("operator")} md={6}>
-              <Input type="select" name="operator" value={values.operator} onChange={handle}>
+              <Input type="select" bsSize="sm" name="operator" value={values.operator} onChange={handle}>
                 {/* A record saved before this box read from Operator Master, or
                     one whose operator has since been deactivated, still has a
                     name typed here that this list won't contain — keep showing
@@ -310,10 +310,11 @@ const EntryBlock = ({
         </Line>
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Part Name" error={err("itemName")} md={8}>
               <Input
                 type="select"
+                bsSize="sm"
                 name="item"
                 value={values.item || ""}
                 onChange={(e) => onItemSelect(index, e.target.value)}
@@ -336,7 +337,7 @@ const EntryBlock = ({
               title="The Part's own Total Cycle Time, minus any unticked operation below"
             />
           </Row>
-          <Row>
+          <Row className="g-2">
             {CYCLE_OP_FIELDS.map((f) => {
               // Both "Other Operation" boxes carry the sheet's own label; the
               // index tells the two apart without renaming either.
@@ -388,7 +389,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={3} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Machine ON Time" error={err("machineOnTime")} md={4}>
               <TimePicker
                 name="machineOnTime"
@@ -415,7 +416,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={5} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Calc
               label="Ideal Quantity"
               value={fmtNum(calc.idealQty)}
@@ -434,16 +435,16 @@ const EntryBlock = ({
             </Field>
             <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={4} title="Ideal Quantity − OK Quantity" />
           </Row>
-          <Row>
+          <Row className="g-2">
             <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={4} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
 
         <Line id={13} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             {REJECT_REASONS.map((reason) => (
               <Col md={4} key={reason}>
-                <div className="mb-3">
+                <div className="mb-2">
                   <Label className={labelClass}>{reason}</Label>
                   <NumberInput
                     name={reason}
@@ -457,7 +458,7 @@ const EntryBlock = ({
           </Row>
           {/* The split has to account for every rejected piece, so the running
               total is shown next to the figure it must match. */}
-          <div className="mb-3 small">
+          <div className="mb-2 small">
             <span className="text-muted">Split so far: </span>
             <span className={splitMismatch ? "text-danger fw-semibold" : "fw-semibold"}>{splitTotal}</span>
             <span className="text-muted"> of {fmtNum(calc.rejectedQty) || 0} rejected</span>
@@ -466,7 +467,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={6} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Planned Operator Shift Time (hr)" error={err("plannedOperatorShiftHours")} md={6}>
               <NumberInput
                 name="plannedOperatorShiftHours"
@@ -478,7 +479,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={7} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Setup Time (min)" error={err("setupMin")} md={4}>
               <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} />
             </Field>
@@ -497,7 +498,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={8} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="No Material (min)" error={err("noMaterialMin")} md={3}>
               <NumberInput name="noMaterialMin" value={values.noMaterialMin} onChange={handle} decimals={false} />
             </Field>
@@ -514,7 +515,7 @@ const EntryBlock = ({
         </Line>
 
         <Line id={9} errors={errors} isSubmit={isSubmit}>
-          <Row>
+          <Row className="g-2">
             <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={6}>
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} />
             </Field>
@@ -525,15 +526,16 @@ const EntryBlock = ({
         </Line>
 
         <Line id={12} errors={errors} isSubmit={isSubmit}>
-          <div className="mb-3">
+          <div className="mb-2">
             <Label className={labelClass}>Remarks</Label>
             <Input
               type="textarea"
+              bsSize="sm"
               name="remarks"
               value={values.remarks}
               onChange={handle}
               maxLength={500}
-              style={{ height: "90px" }}
+              style={{ height: "60px" }}
             />
           </div>
         </Line>
