@@ -1,5 +1,5 @@
-/// Plain data holders for the dashboard shell. Every field is parsed
-/// defensively: the server can send null / number-or-string / missing.
+// Plain data holders for the dashboard shell. Every field is parsed
+// defensively: the server can send null / number-or-string / missing.
 
 String _str(dynamic v) => v == null ? '' : v.toString();
 

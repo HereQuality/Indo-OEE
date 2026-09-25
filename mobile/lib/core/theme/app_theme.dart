@@ -39,7 +39,7 @@ class AppTheme {
       onSurface: const Color(0xFFE2E8F0),
       onSurfaceVariant: AppColors.slate400,
       outline: const Color(0xFF334155),
-      outlineVariant: const Color(0xFF243247),
+      outlineVariant: const Color(0xFF2B3B55), // was #243247: card borders/dividers vanished on navy800
       error: const Color(0xFFF87171),
       surfaceContainerLowest: AppColors.navy950,
       surfaceContainerLow: AppColors.navy900,
@@ -68,6 +68,8 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 1,
+        // White bar on slate50 (and navy900 on navy950) had no visible edge.
+        shape: Border(bottom: BorderSide(color: s.outlineVariant)),
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: s.onSurface,
@@ -98,6 +100,7 @@ class AppTheme {
         backgroundColor: isDark ? AppColors.navy800 : Colors.white,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
+        clipBehavior: Clip.antiAlias,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),

@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/widgets/common_widgets.dart';
+import '../models/app_user.dart';
+import '../providers/auth_provider.dart';
 import '../providers/unread_provider.dart';
-import 'app_drawer.dart';
-import 'navigation.dart';
+import 'account_sheet.dart';
 
-/// Scaffold for every top-level page: hamburger -> menu drawer, title, the
-/// notification bell, and your own [actions]. Use it as the root of a page
-/// reached from the drawer; detail screens / forms use a plain [Scaffold].
+/// Scaffold for every top-level page: title, your own [actions], and the round
+/// user avatar at the end of the app bar that opens the account menu (profile,
+/// support, notifications, dark mode, sign out). There is no sidebar: the two
+/// main sections live behind the bottom bar (see main_shell.dart), and a page
+/// pushed on top of them (profile, support…) gets the usual Back arrow.
+/// Detail screens / forms use a plain [Scaffold].
 class AppScaffold extends StatelessWidget {
   const AppScaffold({
     super.key,
@@ -18,7 +23,6 @@ class AppScaffold extends StatelessWidget {
     this.floatingActionButtonLocation,
     this.bottom,
     this.bottomNavigationBar,
-    this.showBell = true,
     this.resizeToAvoidBottomInset = true,
   });
 
@@ -29,7 +33,6 @@ class AppScaffold extends StatelessWidget {
   final FloatingActionButtonLocation? floatingActionButtonLocation;
   final PreferredSizeWidget? bottom;
   final Widget? bottomNavigationBar;
-  final bool showBell;
   final bool resizeToAvoidBottomInset;
 
   @override
@@ -38,23 +41,14 @@ class AppScaffold extends StatelessWidget {
       resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       appBar: AppBar(
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            tooltip: 'Menu',
-            icon: const Icon(Icons.menu_rounded),
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
+        centerTitle: false,
         actions: [
           ...actions,
-          if (showBell) const _Bell(),
-          const SizedBox(width: 4),
+          const _AccountButton(),
+          const SizedBox(width: 8),
         ],
         bottom: bottom,
       ),
-      drawer: const AppDrawer(),
-      // Swiping from the left edge is iOS's Back gesture — the hamburger opens the menu.
-      drawerEnableOpenDragGesture: false,
       floatingActionButton: floatingActionButton,
       floatingActionButtonLocation: floatingActionButtonLocation,
       bottomNavigationBar: bottomNavigationBar,
@@ -63,19 +57,36 @@ class AppScaffold extends StatelessWidget {
   }
 }
 
-class _Bell extends StatelessWidget {
-  const _Bell();
+/// Round user avatar at the end of the app bar: opens the account menu. A small
+/// dot on it says there is something unread (notifications or support replies).
+class _AccountButton extends StatelessWidget {
+  const _AccountButton();
 
   @override
   Widget build(BuildContext context) {
-    final count = context.select<UnreadProvider, int>((u) => u.notifications);
-    return IconButton(
-      tooltip: 'Notifications',
-      onPressed: () => AppNav.go(context, '/notifications'),
-      icon: Badge(
-        isLabelVisible: count > 0,
-        label: Text(count > 99 ? '99+' : '$count'),
-        child: const Icon(Icons.notifications_none_rounded),
+    final user = context.select<AuthProvider, AppUser?>((a) => a.user);
+    final unread = context.select<UnreadProvider, int>((u) => u.notifications + u.tickets);
+    return Semantics(
+      button: true,
+      label: unread > 0 ? 'Account menu, $unread unread' : 'Account menu',
+      excludeSemantics: true,
+      child: Tooltip(
+        message: 'Account',
+        child: InkResponse(
+          onTap: () => showAccountSheet(context),
+          radius: 24,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Center(
+              child: Badge(
+                isLabelVisible: unread > 0,
+                smallSize: 11,
+                child: UserAvatar(imageUrl: user?.profilePic, name: user?.name, radius: 16),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

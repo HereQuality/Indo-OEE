@@ -17,6 +17,11 @@ class DashboardRepository {
   /// key and shape as the web's localStorage entry).
   static const allMachinesWidgetsKey = 'allMachinesDashboardWidgets';
 
+  /// The process chip picked last, so the Dashboard tab reopens on it.
+  /// Stores a process id, or [allMachinesChoice] for "All machines".
+  static const lastProcessKey = 'dashboardSelectedProcess';
+  static const allMachinesChoice = '__all__';
+
   /// Active processes with their active machines (GET /processes).
   Future<List<ProcessInfo>> processes() async {
     final res = await Api.get(Endpoints.processes);
@@ -30,7 +35,7 @@ class DashboardRepository {
   Future<DashboardEntries> entries({required String from, required String to, String? processId}) async {
     final res = await Api.get(
       Endpoints.processEntries,
-      query: {'from': from, 'to': to, if (processId != null) 'process': processId},
+      query: {'from': from, 'to': to, 'process': ?processId},
     );
     return DashboardEntries.fromResponse(res);
   }
@@ -58,6 +63,23 @@ class DashboardRepository {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(allMachinesWidgetsKey, jsonEncode({'stats': stats, 'charts': charts}));
+    } catch (_) {}
+  }
+
+  Future<String?> loadLastProcess() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(lastProcessKey);
+      return (v == null || v.isEmpty) ? null : v;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLastProcess(String choice) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(lastProcessKey, choice);
     } catch (_) {}
   }
 }

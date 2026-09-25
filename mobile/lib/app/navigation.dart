@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../core/utils/alerts.dart';
+import 'main_shell.dart';
 import 'page_guard.dart';
 import 'routes.dart';
 
-/// Top-level navigation between the app's pages (drawer, Home tiles,
-/// shortcuts, notification taps). The signed-in root is Home, so going
-/// anywhere else replaces everything above Home and Back returns to Home —
-/// the phone equivalent of clicking a sidebar link.
+/// Top-level navigation between the app's pages (account menu, notification
+/// taps, deep links). The signed-in root is the bottom-bar shell: going to one
+/// of its tabs switches tab; any other page is pushed on top of the shell, so
+/// Back (or the iOS edge-swipe) returns to it.
 ///
 /// Detail screens / forms inside a page are plain `Navigator.push`es.
 class AppNav {
@@ -29,9 +30,12 @@ class AppNav {
       return false;
     }
     final nav = Navigator.of(context);
-    // Close the drawer first when it is open.
-    final scaffold = Scaffold.maybeOf(context);
-    if (scaffold != null && scaffold.isDrawerOpen) nav.pop();
+
+    // The two bottom-bar sections: drop whatever is pushed on top and switch tab.
+    if (MainShell.goToTab(r.path)) {
+      nav.popUntil((route) => route.isFirst);
+      return true;
+    }
 
     String? current;
     nav.popUntil((route) {

@@ -12,8 +12,7 @@ import '../providers/company_provider.dart';
 import '../providers/menu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/unread_provider.dart';
-import 'page_guard.dart';
-import 'routes.dart';
+import 'main_shell.dart';
 
 class IndoApp extends StatelessWidget {
   const IndoApp({super.key});
@@ -97,7 +96,7 @@ class _AuthGate extends StatelessWidget {
       case AuthStatus.blocked:
         return const BlockedScreen();
       case AuthStatus.authenticated:
-        return MaintenanceGate(child: PageGuard(route: AppRoutes.home));
+        return const MaintenanceGate(child: MainShell());
     }
   }
 }
