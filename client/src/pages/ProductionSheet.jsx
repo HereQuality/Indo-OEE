@@ -40,9 +40,9 @@ import {
   STOPPAGE_FIELDS,
   dayCalc,
   isoDay,
-  rowCalc,
   sortByMachineOn,
 } from "../utils/productionSheet";
+import { cleanSplit, firstError, validateEntry } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
@@ -64,11 +64,14 @@ import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
  *
  * Every formula lives in utils/productionSheet.js and is shared with the
  * dashboard page, so the form's read-only boxes and the charts can't disagree.
+ * Every rule the form enforces lives in utils/entryValidation.js; the errors
+ * are worked out live from the entries, so the Save button, the messages and
+ * the scroll to the first incomplete field all read from one answer.
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
 const CYCLE_OP_KEYS = CYCLE_OP_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks"];
+const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = [
   "actualQty",
@@ -90,7 +93,8 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine || v.operator || v.itemName || v.drawingNo || v.remarks) return true;
-    if (v.machineOnTime || v.machineOffTime || v.okQty !== "" || v.plannedOperatorShiftHours !== "") return true;
+    if (v.machineOnTime || v.machineOffTime || v.plannedOperatorShiftHours !== "") return true;
+    if ([v.actualQty, v.okQty].some((q) => q !== "" && q !== undefined && q !== null)) return true;
     if (Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null && Number(n) !== 0)) return true;
     return [...STOPPAGE_KEYS, ...CYCLE_OP_KEYS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
@@ -169,14 +173,6 @@ const toFormValues = (row) => {
   };
 };
 
-// Blank boxes dropped, everything else as a number — what the server stores.
-const cleanSplit = (split) =>
-  Object.fromEntries(
-    Object.entries(split || {})
-      .map(([reason, v]) => [reason, v === "" || v === null || v === undefined ? 0 : Number(v)])
-      .filter(([, n]) => Number.isFinite(n) && n > 0),
-  );
-
 // Form values -> request body. "" tells the server to unset that field.
 // rejectedQty is deliberately absent: the server derives it from Actual − OK.
 const toPayload = (v, isEdit) => {
@@ -185,25 +181,24 @@ const toPayload = (v, isEdit) => {
   // the biggest contributor in the split is saved there too — the table column
   // keeps working without needing a second shape.
   const topReason = Object.entries(split).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-  // There's no typed Actual Quantity any more — Ideal Quantity stands in for
-  // it, so what's sent as actualQty (the server still derives Rejected from
-  // actualQty − okQty) is this entry's own calculated Ideal Quantity.
-  const idealQty = rowCalc(v).idealQty;
   return {
-  date: v.date,
-  machine: v.machine,
-  // An edited record saves back to its own slot; a new one asks the server for
-  // the machine's next free slot on that date, since only the server can see
-  // every entry — the page may be filtered to one machine.
-  slot: isEdit ? Number(v.slot) : "auto",
-  item: v.item || null,
-  excludedOps: v.excludedOps || [],
-  rejectBreakdown: split,
-  rejectReason: topReason,
-  ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
-  ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
-  ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" ? "" : Number(v[k])])),
-  actualQty: idealQty === null ? "" : idealQty,
+    date: v.date,
+    machine: v.machine,
+    // An edited record saves back to its own slot; a new one asks the server for
+    // the machine's next free slot on that date, since only the server can see
+    // every entry — the page may be filtered to one machine.
+    slot: isEdit ? Number(v.slot) : "auto",
+    item: v.item || null,
+    excludedOps: v.excludedOps || [],
+    rejectBreakdown: split,
+    rejectReason: topReason,
+    ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+    // A remark only belongs to an "Other" that is still in use — once that
+    // figure goes back to zero the remark is cleared with it.
+    rejectOtherRemark: split.Other > 0 ? String(v.rejectOtherRemark ?? "").trim() : "",
+    otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
+    ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
+    ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
   };
 };
 
@@ -306,8 +301,10 @@ const ProductionSheet = () => {
   const [modalMode, setModalMode] = useState(null);
   // One entry per machine block in the form; adding starts with a single block.
   const [entries, setEntries] = useState(() => [emptyEntry()]);
-  const [formErrors, setFormErrors] = useState([]);
   const [isSubmit, setIsSubmit] = useState(false);
+  // Set by a failed Save: the first incomplete entry and field, for the form to
+  // scroll to. The nonce makes pressing Save again scroll again.
+  const [focusTarget, setFocusTarget] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const [removeId, setRemoveId] = useState("");
@@ -318,6 +315,11 @@ const ProductionSheet = () => {
     () => Object.fromEntries(machines.map((m) => [m._id, m.machineName])),
     [machines],
   );
+  // Where each machine sits in the sheet order Super Admin sets in Machine
+  // Master — `machines` already arrives in that order. A machine that's since
+  // been deactivated isn't in the list, so it ranks after the rest, by name.
+  const machineRank = useMemo(() => Object.fromEntries(machines.map((m, i) => [m._id, i])), [machines]);
+  const rankOf = useCallback((id) => machineRank[id] ?? Number.MAX_SAFE_INTEGER, [machineRank]);
 
   // ── Load ───────────────────────────────────────────────────────────────
   // Only Machine narrows what's actually fetched — Operator/Item still
@@ -385,9 +387,13 @@ const ProductionSheet = () => {
     const options = (dim) =>
       [...new Set([...(rangeFilterValues[dim] || []), ...filters[dim]])]
         .map((value) => ({ value, label: DIMENSIONS[dim].text(value, ctx) }))
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+        .sort(
+          (a, b) =>
+            (dim === "machine" ? rankOf(a.value) - rankOf(b.value) : 0) ||
+            a.label.localeCompare(b.label, undefined, { numeric: true }),
+        );
     return { machine: options("machine"), operator: options("operator"), item: options("item") };
-  }, [rangeFilterValues, ctx, filters]);
+  }, [rangeFilterValues, ctx, filters, rankOf]);
 
   // Page resets to 1 alongside the filter/range change itself (not in a
   // separate effect reacting to it) so the two state updates land in the
@@ -424,10 +430,11 @@ const ProductionSheet = () => {
       [...filteredRows].sort(
         (a, b) =>
           b.date.localeCompare(a.date) ||
+          rankOf(a.machine) - rankOf(b.machine) ||
           (machineName[a.machine] || "").localeCompare(machineName[b.machine] || "", undefined, { numeric: true }) ||
           a.slot - b.slot,
       ),
-    [filteredRows, machineName],
+    [filteredRows, machineName, rankOf],
   );
 
   const goToPage = () => {
@@ -459,6 +466,13 @@ const ProductionSheet = () => {
   }, [rows]);
 
   // ── Form ───────────────────────────────────────────────────────────────
+  // Every block's problems, worked out live from what's typed — the form shows
+  // them once Save has been pressed, and Save itself stays inactive until there
+  // are none (see canSave).
+  const errorsList = useMemo(() => entries.map(validateEntry), [entries]);
+  const incompleteCount = errorsList.filter((e) => Object.keys(e).length).length;
+  const canSave = incompleteCount === 0;
+
   // discardDraft: true after a successful Save — that data's in the database
   // now, so there's nothing left worth keeping a temporary copy of.
   const closeModal = (discardDraft = false) => {
@@ -468,16 +482,17 @@ const ProductionSheet = () => {
     }
     setModalMode(null);
     setEntries([emptyEntry()]);
-    setFormErrors([]);
+    setFocusTarget(null);
     setIsSubmit(false);
   };
 
   const openAdd = () => {
-    const draft = loadDraft();
+    // A draft saved before a field existed lacks it — fill those in as blank.
+    const draft = loadDraft()?.map((d) => ({ ...emptyEntry(), ...d }));
     // Only pre-fills the machine when the Filters panel narrows to exactly
     // one — with several ticked there's no single machine to default to.
     setEntries(draft || [{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
-    setFormErrors([]);
+    setFocusTarget(null);
     setIsSubmit(false);
     setModalMode("add");
   };
@@ -488,12 +503,13 @@ const ProductionSheet = () => {
     if (!window.confirm("Clear everything typed in this form? This can't be undone.")) return;
     clearDraft();
     setEntries([emptyEntry()]);
-    setFormErrors([]);
+    setFocusTarget(null);
+    setIsSubmit(false);
   };
 
   const openEdit = (row) => {
     setEntries([toFormValues(row)]);
-    setFormErrors([]);
+    setFocusTarget(null);
     setIsSubmit(false);
     setModalMode("edit");
   };
@@ -503,24 +519,10 @@ const ProductionSheet = () => {
   }, []);
 
   const handleRejectChange = useCallback((index, reason, value) => {
-    setEntries((list) => {
-      const nextList = list.map((v, i) =>
-        i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v,
-      );
-      // Live-clears (or updates) the split-mismatch error as the boxes are
-      // edited, instead of leaving Save's last error message stuck on
-      // screen after they now add up correctly — every other field's error
-      // still only refreshes on the next Save attempt.
-      setFormErrors((errs) => {
-        if (!errs[index]) return errs;
-        const { rejectBreakdown } = validate(nextList[index]);
-        const { rejectBreakdown: _drop, ...rest } = errs[index];
-        const nextEntry = rejectBreakdown ? { ...rest, rejectBreakdown } : rest;
-        return errs.map((e, i) => (i === index ? nextEntry : e));
-      });
-      return nextList;
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- validate is a pure fn of its argument, redefined harmlessly every render
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
 
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
@@ -530,7 +532,6 @@ const ProductionSheet = () => {
 
   const handleRemoveBlock = useCallback((index) => {
     setEntries((list) => (list.length > 1 ? list.filter((_, i) => i !== index) : list));
-    setFormErrors((list) => list.filter((_, i) => i !== index));
   }, []);
 
   // Picking an item copies its master values onto the form — still editable,
@@ -564,93 +565,46 @@ const ProductionSheet = () => {
     [items],
   );
 
-  const validate = (v) => {
-    const errors = {};
-    if (!v.date) errors.date = "Date is required";
-    if (!v.machine) errors.machine = "Machine is required";
-
-    // There's no typed Actual Quantity any more — Ideal Quantity (Shift Time ÷
-    // Cycle Time, rounded down) stands in for it, so OK/Rejected are checked
-    // against Ideal Quantity instead.
-    const idealQty = rowCalc(v).idealQty;
-    const ok = v.okQty === "" ? null : Number(v.okQty);
-    if (ok !== null && (!Number.isFinite(ok) || ok < 0)) errors.okQty = "Must be 0 or more";
-    if (ok !== null && idealQty !== null && ok > idealQty) errors.okQty = "OK cannot be more than Ideal Quantity";
-
-    // The per-reason split is what makes rejections readable on the dashboard,
-    // so it has to account for every rejected piece — no more, no less.
-    const rejected = idealQty !== null && ok !== null ? idealQty - ok : 0;
-    const split = cleanSplit(v.rejectBreakdown);
-    const splitTotal = Object.values(split).reduce((s, n) => s + n, 0);
-    if (Object.entries(v.rejectBreakdown || {}).some(([, n]) => n !== "" && (!Number.isFinite(Number(n)) || Number(n) < 0))) {
-      errors.rejectBreakdown = "Rejected quantities must be 0 or more";
-    } else if (rejected > 0 && splitTotal !== rejected) {
-      errors.rejectBreakdown = `Split ${splitTotal} of ${rejected} rejected — the boxes must add up to the rejected quantity`;
-    } else if (rejected <= 0 && splitTotal > 0) {
-      errors.rejectBreakdown = "Nothing was rejected, so these boxes should be empty";
-    }
-
-    for (const key of CYCLE_OP_KEYS) {
-      const n = v[key] === "" ? null : Number(v[key]);
-      if (n !== null && (!Number.isFinite(n) || n < 0)) errors[key] = "Must be 0 or more";
-    }
-    for (const key of STOPPAGE_KEYS) {
-      const n = v[key] === "" ? null : Number(v[key]);
-      if (n !== null && (!Number.isFinite(n) || n < 0 || n > 1440)) errors[key] = "0–1440";
-    }
-    const planned = v.plannedOperatorShiftHours === "" ? null : Number(v.plannedOperatorShiftHours);
-    if (planned !== null && (!Number.isFinite(planned) || planned < 0 || planned > 24)) {
-      errors.plannedOperatorShiftHours = "0–24 hours";
-    }
-    return errors;
-  };
-
-  // A block whose machine was never picked is one the user added and left
-  // alone — skipped rather than reported, so a stray block can't block a save.
-  const isUntouched = (v) => !v.machine;
-
-  // The Save/Update button stays disabled until every required field (Date,
-  // Machine — the only two boxes marked * on the form) is filled in for at
-  // least one machine block. This only gates the required boxes, not the
-  // full validation (mismatched reject splits, out-of-range minutes, …) —
-  // those still surface as the usual field errors once Save is pressed.
-  const canSave = useMemo(
-    () => entries.some((v) => !isUntouched(v)) && entries.every((v) => isUntouched(v) || v.date),
-    [entries],
-  );
-
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     setIsSubmit(true);
-    const errorsPerBlock = entries.map((v) => (isUntouched(v) ? {} : validate(v)));
-    const toSave = entries.filter((v) => !isUntouched(v));
 
-    if (!toSave.length) {
-      setFormErrors(entries.map((_, i) => (i === 0 ? { machine: "Select a machine to save an entry" } : {})));
+    // Nothing is saved while any block is incomplete — the button only looks
+    // inactive so it can still be pressed, and pressing it opens the first
+    // incomplete block and scrolls to its first missing field.
+    const first = firstError(errorsList);
+    if (first) {
+      setFocusTarget({ ...first, nonce: Date.now() });
       return;
     }
 
-    setFormErrors(errorsPerBlock);
-    if (errorsPerBlock.some((errs) => Object.keys(errs).length)) return;
-
     setIsSaving(true);
+    // Saved one after another rather than in parallel, so a mid-way failure
+    // leaves a clear "saved the first N". Those are dropped from the form as
+    // they go, so pressing Save again after fixing the failed one can't add
+    // them a second time.
+    const savedIndexes = new Set();
     try {
-      // Saved one after another rather than in parallel, so a mid-way failure
-      // leaves a clear "saved the first N" rather than a scattered result.
-      let saved = 0;
-      let cleared = 0;
-      for (const v of toSave) {
-        const res = await saveProductionRow(toPayload(v, modalMode === "edit"));
-        if (res?.data?.data) saved += 1;
-        else cleared += 1;
+      for (const [i, v] of entries.entries()) {
+        await saveProductionRow(toPayload(v, modalMode === "edit"));
+        savedIndexes.add(i);
       }
+      const saved = savedIndexes.size;
       if (modalMode === "edit") toast.success("Entry updated successfully!");
       else toast.success(saved === 1 ? "Entry added successfully!" : `${saved} entries added successfully!`);
-      if (cleared) toast.info(`${cleared} block(s) had every field blank, so nothing was saved for them.`);
       closeModal(true);
       fetchRows();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to save. Please try again.");
+      const reason = err?.response?.data?.message || "Failed to save. Please try again.";
+      if (savedIndexes.size) {
+        setEntries((list) => list.filter((_, i) => !savedIndexes.has(i)));
+        setFocusTarget(null);
+        toast.error(`${savedIndexes.size} saved, then: ${reason} The rest are still in the form.`);
+        fetchRows();
+      } else {
+        toast.error(reason);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -827,8 +781,9 @@ const ProductionSheet = () => {
           <ModalBody style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
             <ProductionEntryForm
               entries={entries}
-              errors={formErrors}
+              errors={errorsList}
               isSubmit={isSubmit}
+              focusTarget={focusTarget}
               machines={scopedMachines}
               items={items}
               operators={operators}
@@ -841,10 +796,17 @@ const ProductionSheet = () => {
             />
           </ModalBody>
           <ModalFooter>
+            {isSubmit && !canSave && (
+              <span className="text-danger small me-auto" role="status">
+                {entries.length === 1
+                  ? "This entry is incomplete — fix the highlighted fields to save."
+                  : `${incompleteCount} of ${entries.length} entries are incomplete — fix the highlighted fields to save.`}
+              </span>
+            )}
             {modalMode === "edit" ? (
-              <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={() => closeModal()} isLoading={isSaving} isSaveDisabled={!canSave} />
+              <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={() => closeModal()} isLoading={isSaving} isSaveBlocked={!canSave} />
             ) : (
-              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={() => closeModal()} isLoading={isSaving} isSaveDisabled={!canSave} />
+              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={() => closeModal()} isLoading={isSaving} isSaveBlocked={!canSave} />
             )}
           </ModalFooter>
         </form>

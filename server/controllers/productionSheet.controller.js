@@ -43,7 +43,17 @@ const PAGE_SIZE_DAYS = 10;
 const MAX_SLOTS = 3;
 const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 
-const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "setupNo", "rejectReason", "remarks"];
+const TEXT_KEYS = [
+  "operator",
+  "workingStatus",
+  "itemName",
+  "drawingNo",
+  "setupNo",
+  "rejectReason",
+  "remarks",
+  "rejectOtherRemark",
+  "otherMinRemark",
+];
 const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
 // rejectedQty is NOT here — it is derived from actualQty − okQty below and
 // never accepted from the client.
@@ -174,6 +184,63 @@ const isRowEmpty = (doc) =>
   !Object.keys(doc.rejectBreakdown || {}).length &&
   !(doc.cycleOpsSec || []).some((v) => v !== null && v !== undefined);
 
+const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
+
+// "HH:mm" -> minutes past midnight, or null.
+const clockMinutes = (t) => {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(t ?? ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+// What the entry form always makes mandatory. Lunch / Rest joins them only when
+// the planned shift leaves time over the machine's run (see entryRuleError).
+const REQUIRED_FIELDS = [
+  ["operator", "Operator"],
+  ["itemName", "Part Name"],
+  ["machineOnTime", "Machine ON Time"],
+  ["machineOffTime", "Machine OFF Time"],
+  ["actualQty", "Actual Quantity"],
+  ["okQty", "OK Quantity"],
+  ["plannedOperatorShiftHours", "Planned Operator Shift"],
+];
+
+// The entry form's own rules, re-checked here so a request that skips the form
+// can't save an incomplete entry. Returns a message, or null when it's fine.
+// A body with every field blank is left alone — that is how a row is cleared.
+// Keep in step with client/src/utils/entryValidation.js.
+const entryRuleError = (body) => {
+  const everyBlank = [...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k]));
+  if (everyBlank && !Object.keys(body.rejectBreakdown || {}).length) return null;
+
+  const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
+  if (missing.length) return `Required: ${missing.join(", ")}`;
+
+  const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));
+
+  if (Number(body.rejectBreakdown?.Other) > 0 && isBlank(body.rejectOtherRemark)) {
+    return 'A remark is required when "Other" is used as a reject reason';
+  }
+  if (minutesOf("otherMin") > 0 && isBlank(body.otherMinRemark)) {
+    return "A remark is required when Other downtime is entered";
+  }
+
+  // Total stoppage (Lunch / Rest included, as everywhere else) has to fit in
+  // the part of the operator's planned shift the machine wasn't running.
+  const on = clockMinutes(body.machineOnTime);
+  const off = clockMinutes(body.machineOffTime);
+  if (on === null || off === null) return "Machine ON/OFF Time must be HH:mm";
+  const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
+  const limit = Math.max(0, Math.round(Number(body.plannedOperatorShiftHours) * 60 - shiftMin));
+  // Lunch / Rest may be 0 but not empty — unless the machine ran the whole
+  // planned shift, when there is no room for one and it isn't asked for.
+  if (limit > 0 && isBlank(body.lunchMin)) return "Lunch / Rest is required (enter 0 if none)";
+  const total = STOPPAGE_KEYS.reduce((sum, k) => sum + minutesOf(k), 0);
+  if (total > limit) {
+    return `Total stoppage (${total} min) can't be more than Planned Operator Shift − Machine Shift (${limit} min)`;
+  }
+  return null;
+};
+
 // "id1,id2" -> ["id1","id2"], dropping blanks.
 const parseList = (raw) => String(raw || "").split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -300,6 +367,8 @@ exports.saveRow = async (req, res) => {
     if (!mongoose.isValidObjectId(machine) || !(await Machine.exists({ _id: machine, isActive: true }))) {
       return res.status(400).json({ isOk: false, message: "Machine not found or inactive" });
     }
+    const ruleError = entryRuleError(req.body);
+    if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
     // The entry form no longer asks for a slot — it sends "auto" and this
     // picks the machine's lowest free slot for that date. Done here rather

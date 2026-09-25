@@ -120,6 +120,12 @@ const ProductionEntrySchema = new mongoose.Schema(
     ...Object.fromEntries(STOPPAGE_KEYS.map((k) => [k, minutes])),
 
     remarks: { type: String, trim: true, maxlength: 500, default: "" },
+    // Why "Other" was used — required by the entry form (and re-checked in the
+    // controller) whenever the reject split has pieces against "Other", or the
+    // Other downtime box has minutes, so a catch-all bucket never loses its
+    // explanation. Cleared again when that "Other" figure goes back to zero.
+    rejectOtherRemark: { type: String, trim: true, maxlength: 300, default: "" },
+    otherMinRemark: { type: String, trim: true, maxlength: 300, default: "" },
 
     updatedBy: { type: mongoose.Schema.Types.ObjectId, refPath: "updatedByModel" },
     updatedByModel: { type: String, enum: ["User", "Operator"] },

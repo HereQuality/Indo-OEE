@@ -1,6 +1,10 @@
 import React from 'react';
 
-const FormUpdateFooter = ({ handleUpdate, handleUpdateCancel, isLoading, isSaveDisabled }) => {
+const FormUpdateFooter = ({ handleUpdate, handleUpdateCancel, isLoading, isSaveDisabled, isSaveBlocked }) => {
+  // isSaveBlocked looks like isSaveDisabled but stays clickable, so a form can
+  // answer the click by pointing at whatever is still missing instead of
+  // leaving the user to hunt for it.
+  const looksInactive = (isSaveDisabled || isSaveBlocked) && !isLoading;
   return (
     <div className="flex items-center justify-end gap-3">
       <button
@@ -15,10 +19,11 @@ const FormUpdateFooter = ({ handleUpdate, handleUpdateCancel, isLoading, isSaveD
         type="button"
         onClick={handleUpdate}
         disabled={isLoading || isSaveDisabled}
-        title={isSaveDisabled && !isLoading ? "Fill in the required fields (marked *) first" : undefined}
+        aria-disabled={looksInactive || undefined}
+        title={looksInactive ? "Fill in the required fields (marked *) first" : undefined}
         className={`inline-flex items-center gap-2 rounded-xl text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors ${
-          isSaveDisabled && !isLoading
-            ? "bg-slate-200 text-slate-400 shadow-none cursor-not-allowed"
+          looksInactive
+            ? `bg-slate-200 text-slate-400 shadow-none ${isSaveBlocked && !isSaveDisabled ? "cursor-pointer" : "cursor-not-allowed"}`
             : "bg-brand-600 hover:bg-brand-500 text-white disabled:opacity-70"
         }`}
       >

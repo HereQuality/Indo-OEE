@@ -10,7 +10,7 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateItems } from "../hooks/useItems";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
-import { CYCLE_OP_FIELDS } from "../utils/productionSheet";
+import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
 import NumberInput from "../Components/Production/NumberInput";
 
 const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
@@ -309,9 +309,7 @@ const ItemMaster = () => {
                       decimals={false}
                       placeholder=" "
                     />
-                    {/* Both "Other Operation" boxes carry the sheet's own label;
-                        the index tells the two apart without renaming either. */}
-                    <Label>{f.label.replace(" (sec)", "")}{f.key === "otherOp2Sec" ? " 2" : ""}</Label>
+                    <Label>{cycleOpLabel(f).replace(" (sec)", "")}</Label>
                   </div>
                 </Col>
               ))}

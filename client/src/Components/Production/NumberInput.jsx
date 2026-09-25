@@ -17,9 +17,11 @@ import { Input } from "reactstrap";
  * into a 20-digit number; pass a different `maxLength` to override it.
  *
  * An optional `max` blocks typing past a value entirely (not just an error
- * after the fact) — e.g. OK Quantity can't be typed bigger than Ideal
- * Quantity. Left out, or not yet a real number (still being calculated),
- * there's no ceiling. `onExceedMax` (if given) fires once per blocked
+ * after the fact) — e.g. OK Quantity can't be typed bigger than Actual
+ * Quantity, and the Reject Master boxes can't add up to more than Rejected.
+ * Left out, or not yet a real number (still being calculated), there's no
+ * ceiling. It only stops a value rising past it: shortening one that is
+ * already over is always allowed. `onExceedMax` (if given) fires once per blocked
  * keystroke, so the caller can pop a toast explaining why nothing happened.
  */
 const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, max, onExceedMax, ...rest }) => {
@@ -28,7 +30,12 @@ const NumberInput = ({ name, value, onChange, decimals = true, maxLength = 7, ma
   const handleChange = (e) => {
     const next = e.target.value;
     if (next === "" || pattern.test(next)) {
-      if (Number.isFinite(max) && next !== "" && Number(next) > max) {
+      // The ceiling only stops a value from going UP past it. It can also drop
+      // below what is already typed (e.g. OK Quantity lowered after the reject
+      // boxes were filled in), and backspacing such a value must stay possible —
+      // every step on the way down is still over the ceiling until the last one.
+      const falling = value !== "" && value !== undefined && value !== null && Number(next) < Number(value);
+      if (Number.isFinite(max) && next !== "" && Number(next) > max && !falling) {
         onExceedMax?.(max);
         return;
       }

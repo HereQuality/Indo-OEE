@@ -18,8 +18,9 @@
  *   8  Effective Run Time (h)   = OK × Cycle sec ÷ 3600 (as soon as OK Quantity and Cycle Time
  *                                 are there, regardless of Working Status/Operator)
  *   10 Setup Efficiency (%)     = Effective h ÷ Shift h
- *      Rejected Quantity        = Ideal Quantity − OK   (derived, never typed — there's no
- *                                 separate typed Actual Quantity; Ideal Quantity does that job)
+ *      Actual Quantity          = typed on the form, never more than Ideal Quantity
+ *      Rejected Quantity        = Actual Quantity − OK   (derived, never typed, so OK + Rejected
+ *                                 = Actual always holds; the Reject Master split must add up to it)
  *   6  Unutilized Machine Time  = (12 − (Shift − Lunch/60)) ÷ 11, this row's own Shift/
  *                                 Lunch only — never blended with another entry of the
  *                                 same machine/date.
@@ -32,7 +33,7 @@
  *   9  Unreported Time (min)    = Day Shift×60 − Day Effective×60 − Day Stoppage
  *   11 OEE considering losses   = Day Effective ÷ (Day Shift − Day Stoppage/60)
  *   12 OEE … but lunch          = Day Effective ÷ (Day Shift − Day Lunch/60)
- *   13 OEE … but lunch and COT  = Day Effective ÷ (Day Shift − Day Lunch/60 − Day Setup/60)
+ *   13 OEE … but lunch and Setup Time = Day Effective ÷ (Day Shift − Day Lunch/60 − Day Setup/60)
  */
 
 export const SLOTS_PER_DAY = 3;
@@ -53,6 +54,12 @@ export const CYCLE_OP_FIELDS = [
   { key: "otherOp2Sec", label: "Other Operation (sec)" },
   { key: "clampDeclampSec", label: "Clamp/Declamp (sec)" },
 ];
+
+// What to call an operation wherever it is shown. Both "Other Operation"
+// entries share one label in CYCLE_OP_FIELDS, so the second is told apart here
+// as "Other Operation 2 (sec)" — one place, so the entry form, the entries table
+// and Item Master can't disagree about it.
+export const cycleOpLabel = (f) => (f.key === "otherOp2Sec" ? `${f.label.replace(" (sec)", "")} 2 (sec)` : f.label);
 
 // Offered in the entry form's Reject Reason dropdown and grouped on the
 // dashboard. Keep in step with REJECT_REASONS in server/models/ProductionEntry.js.
@@ -170,11 +177,15 @@ export function rowCalc(row) {
   const idealQty = isNum(idealQtyRaw) ? Math.floor(idealQtyRaw) : null;
 
   const ok = num(row.okQty);
-  // Ideal Quantity now stands in for a typed Actual Quantity — there's no
-  // separate "how many did we actually make" box any more, so Rejected is
-  // Ideal Quantity − OK.
-  const rej = isNum(idealQty) && isNum(ok) ? Math.max(0, idealQty - ok) : num(row.rejectedQty);
-  const totalProduced = isNum(idealQty) ? idealQty : (ok || 0) + (rej || 0);
+  // Actual Quantity is typed (and the form keeps it at or under Ideal
+  // Quantity), so Rejected is whatever of it wasn't OK: OK + Rejected = Actual.
+  // Entries saved while Ideal Quantity stood in for Actual carry that figure
+  // in their own actualQty, so they read exactly as before. A row with no
+  // Actual at all (only the oldest ones) falls back to OK + whatever Rejected
+  // it stored.
+  const actual = num(row.actualQty);
+  const rej = isNum(actual) && isNum(ok) ? Math.max(0, actual - ok) : num(row.rejectedQty);
+  const totalProduced = isNum(actual) ? actual : (ok || 0) + (rej || 0);
 
   // 7) Total Stoppage = sum of the ten stoppage columns — whatever is
   // actually typed, regardless of whether Operator is filled in. A
@@ -190,7 +201,7 @@ export function rowCalc(row) {
 
   return {
     totalCycleSec: cycle,
-    actualQty: isNum(idealQty) ? idealQty : isNum(ok) || isNum(rej) ? totalProduced : null,
+    actualQty: isNum(actual) ? actual : isNum(ok) || isNum(rej) ? totalProduced : null,
     rejectedQty: rej,
     shiftHours,
     idealQty,
@@ -261,6 +272,7 @@ export function dayCalc(rows) {
   const dayUnreportedMin = dayHasShift ? dayShiftH * 60 - dayEffectiveH * 60 - dayStoppageMin : null;
   const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayStoppageMin / 60) : null;
   const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60) : null;
+  // (Named …Cot — the key saved dashboards use — though the column now reads "Setup Time".)
   const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60 - daySetupMin / 60) : null;
 
   return list.map((row, i) => {
@@ -294,7 +306,7 @@ export function dayCalc(rows) {
       // in still count even before an Operator is picked for the row.
       unutilized: isNum(shiftHi) ? (12 - (shiftHi - lunchMinI / 60)) / 11 : null,
       // 9) Unreported Time (min), 11) OEE considering losses, 12) OEE not
-      // considering losses but lunch, and 13) … but lunch and COT are all
+      // considering losses but lunch, and 13) … but lunch and Setup Time are all
       // combined across this machine's whole date (computed once above), so
       // every entry of that machine/date shows the same figure.
       unreportedMin: dayUnreportedMin,
@@ -305,6 +317,31 @@ export function dayCalc(rows) {
     };
   });
 }
+
+// Every remark an entry carries, labelled and in form order: the two the form
+// requires when "Other" is used (as a reject reason, or as downtime — each with
+// the figure it explains) and then the general Remarks box. Empty ones are left
+// out, so an entry with none gives []. Shared by the entries table's eye popover
+// and the dashboard's drill-down so the two can't word them differently.
+export const remarkParts = (r) => {
+  const rejectOther = num(r?.rejectBreakdown?.Other);
+  const downtimeOther = num(r?.otherMin);
+  return [
+    r?.rejectOtherRemark && {
+      key: "reject",
+      title: "Reject · Other",
+      figure: isNum(rejectOther) && rejectOther > 0 ? `${fmtNum(rejectOther)} pcs` : "",
+      text: r.rejectOtherRemark,
+    },
+    r?.otherMinRemark && {
+      key: "downtime",
+      title: "Downtime · Other",
+      figure: isNum(downtimeOther) && downtimeOther > 0 ? `${fmtNum(downtimeOther)} min` : "",
+      text: r.otherMinRemark,
+    },
+    r?.remarks && { key: "general", title: "Remarks", figure: "", text: r.remarks },
+  ].filter(Boolean);
+};
 
 // ── Formatting ─────────────────────────────────────────────────────────────
 export const fmtNum = (v, digits = 2) => {

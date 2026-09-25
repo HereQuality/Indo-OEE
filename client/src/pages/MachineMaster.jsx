@@ -23,7 +23,10 @@ const initialState = {
 
 const MachineMaster = () => {
   const toast = useAlert();
-  const { currentPagePermissions = { read: true, write: true, edit: true, delete: true } } = useContext(MenuContext) || {};
+  // Sequence (a machine's place in the sheet order) is Super Admin's alone —
+  // everyone else neither sees the column nor the box, and the server ignores
+  // it if they send one anyway.
+  const { currentPagePermissions = { read: true, write: true, edit: true, delete: true }, isAdmin } = useContext(MenuContext) || {};
 
   const [values, setValues] = useState(initialState);
   const [formErrors, setFormErrors] = useState({});
@@ -82,7 +85,8 @@ const MachineMaster = () => {
         setValues({
           machineName: m.machineName,
           description: m.description || "",
-          sequence: m.sequence ?? "",
+          // 0 = never positioned: shown blank, and saving leaves it at the end.
+          sequence: m.sequence > 0 ? m.sequence : "",
           process: m.process || "",
           isActive: m.isActive,
         });
@@ -102,16 +106,23 @@ const MachineMaster = () => {
     const errors = {};
     if (!v.machineName.trim()) errors.machineName = "Machine No. is required!";
     else if (v.machineName.length > 20) errors.machineName = "Machine No. must not exceed 20 characters";
-    if (v.sequence !== "" && !Number.isFinite(Number(v.sequence))) errors.sequence = "Sequence must be a number";
+    if (isAdmin && v.sequence !== "" && !(Number.isInteger(Number(v.sequence)) && Number(v.sequence) >= 1)) {
+      errors.sequence = "Sequence must be a whole number, 1 or more";
+    }
     if (v.description && v.description.length > 200) errors.description = "Description must not exceed 200 characters";
     return errors;
   };
 
-  const payload = () => ({
-    ...values,
-    machineName: values.machineName.trim(),
-    sequence: values.sequence === "" ? 0 : Number(values.sequence),
-  });
+  // A blank sequence is simply not sent: the server keeps the machine where it
+  // is (or puts a new one at the end). Non-admins never send it at all.
+  const payload = () => {
+    const { sequence, ...rest } = values;
+    return {
+      ...rest,
+      machineName: values.machineName.trim(),
+      ...(isAdmin && sequence !== "" ? { sequence: Number(sequence) } : {}),
+    };
+  };
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -195,7 +206,9 @@ const MachineMaster = () => {
     },
     { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "130px" },
     { name: "Description", selector: (row) => row.description || "", minWidth: "180px" },
-    { name: "Sequence", selector: (row) => row.sequence ?? 0, sortable: true, sortField: "sequence", maxWidth: "120px" },
+    ...(isAdmin
+      ? [{ name: "Sequence", selector: (row) => (row.sequence > 0 ? row.sequence : "—"), sortable: true, sortField: "sequence", maxWidth: "120px" }]
+      : []),
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "110px" },
     {
       name: "Action",
@@ -272,7 +285,7 @@ const MachineMaster = () => {
         <form noValidate>
           <ModalBody>
             <Row>
-              <Col md={6}>
+              <Col md={isAdmin ? 6 : 12}>
                 <div className="form-floating mb-3">
                   <Input type="text" name="machineName" value={values.machineName} onChange={handleChange} placeholder=" " maxLength={20} />
                   <Label>
@@ -281,14 +294,21 @@ const MachineMaster = () => {
                   {isSubmit && <p className="text-danger">{formErrors.machineName}</p>}
                 </div>
               </Col>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="number" name="sequence" value={values.sequence} onChange={handleChange} placeholder=" " />
-                  <Label>Sequence (sheet order)</Label>
-                  {isSubmit && <p className="text-danger">{formErrors.sequence}</p>}
-                </div>
-              </Col>
+              {isAdmin && (
+                <Col md={6}>
+                  <div className="form-floating mb-3">
+                    <Input type="number" name="sequence" value={values.sequence} onChange={handleChange} placeholder=" " min={1} step={1} />
+                    <Label>Sequence (position)</Label>
+                    {isSubmit && <p className="text-danger">{formErrors.sequence}</p>}
+                  </div>
+                </Col>
+              )}
             </Row>
+            {isAdmin && (
+              <div className="form-text mt-n2 mb-3">
+                Position in the sheet order (1 = first) — other machines shift to make room. Leave blank to keep the current position; a new machine goes last.
+              </div>
+            )}
             <div className="form-floating mb-3">
               <Input type="select" name="process" value={values.process} onChange={handleChange}>
                 <option value="">Not in any process</option>

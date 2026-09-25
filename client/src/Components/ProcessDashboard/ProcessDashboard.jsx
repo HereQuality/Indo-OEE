@@ -8,7 +8,7 @@ import { getDashboardEntries, updateProcess } from "../../api/processes.api";
 import { useInvalidateProcesses } from "../../hooks/useProcesses";
 import {
   CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, DIMENSIONS, EMPTY_FILTERS, FORMATS, MAX_RANGE_DAYS, STATS_BY_KEY,
-  applyFilters, defaultRange, describeRange, hasFilters, quickRangeKey, QUICK_RANGES, rangeDays, resolveWidgets,
+  applyFilters, compareMachines, defaultRange, describeRange, hasFilters, quickRangeKey, QUICK_RANGES, rangeDays, resolveWidgets,
   statMeasure, summarize, timeBucket, toggleFilter,
 } from "../../utils/processDashboard";
 import { THEME } from "./chartTheme";
@@ -105,8 +105,14 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
   // would) but drops a clicked date or month, which may not be in it at all.
   useEffect(() => setFilters((f) => (f.date.length || f.month.length ? { ...f, date: [], month: [] } : f)), [from, to]);
 
+  // `machines` arrives in Sequence order, so a machine's index is its place on
+  // every machine-by-machine chart and in the Machine filter list.
   const ctx = useMemo(
-    () => ({ machineName: { ...entryMachineNames, ...Object.fromEntries(machines.map((m) => [m._id, m.machineName])) }, bucket: timeBucket(rows) }),
+    () => ({
+      machineName: { ...entryMachineNames, ...Object.fromEntries(machines.map((m) => [m._id, m.machineName])) },
+      machineOrder: Object.fromEntries(machines.map((m, i) => [m._id, i])),
+      bucket: timeBucket(rows),
+    }),
     [machines, rows, entryMachineNames],
   );
 
@@ -129,7 +135,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
       // drill-down can pick, so it is offered like any other value.
       [...new Set([...rows.map(DIMENSIONS[dim].value), ...filters[dim]])]
         .map((value) => ({ value, label: DIMENSIONS[dim].text(value, ctx) }))
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+        .sort(dim === "machine" ? compareMachines(ctx, (o) => o.value) : (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
     return { machine: options("machine"), operator: options("operator"), item: options("item") };
   }, [rows, ctx, filters]);
 

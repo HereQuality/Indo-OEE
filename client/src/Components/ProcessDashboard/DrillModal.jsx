@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Modal, ModalBody, ModalHeader } from "reactstrap";
-import { displayDay } from "../../utils/productionSheet";
+import { displayDay, remarkParts } from "../../utils/productionSheet";
 import { DIMENSIONS, FORMATS, calcOf, formatExact, summarize, summarizeBy } from "../../utils/processDashboard";
 
 /**
@@ -70,7 +70,19 @@ const Records = ({ rows, ctx }) => {
                   <td className="text-end">{formatExact("qty", k.shiftHours)}</td>
                   <td className="text-end">{formatExact("qty", k.effectiveHours)}</td>
                   <td className="text-end">{formatExact("qty", k.totalStoppageMin)}</td>
-                  <td className="text-muted">{r.remarks || ""}</td>
+                  <td className="text-muted">
+                    {remarkParts(r).map((p) => (
+                      <div key={p.key}>
+                        {p.key !== "general" && (
+                          <span className="fw-semibold">
+                            {p.title}
+                            {p.figure ? ` (${p.figure})` : ""}:{" "}
+                          </span>
+                        )}
+                        {p.text}
+                      </div>
+                    ))}
+                  </td>
                 </tr>
               );
             })}

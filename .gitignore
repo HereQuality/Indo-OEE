@@ -62,3 +62,10 @@ backups/
 
 # Redis dump files
 *.rdb
+
+# Mobile app signing keys / credentials (mobile/) — never commit, wherever they end up
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision

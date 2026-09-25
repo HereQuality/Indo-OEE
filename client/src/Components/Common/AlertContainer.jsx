@@ -38,8 +38,10 @@ const toastStyles = {
 const AlertContainer = ({ toasts, onDismiss, confirmState, onConfirmResult }) => {
     return (
         <>
-            {/* Toast stack */}
-            <div className="fixed top-4 right-4 z-[200] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+            {/* Toast stack. Above everything else on the page — Bootstrap modals sit
+                at 1055 and the date/select pop-ups at 9999 — or a toast raised from
+                inside a modal (the whole entry form is one) renders underneath it. */}
+            <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
                 {toasts.map((t) => {
                     const style = toastStyles[t.type] || toastStyles.info;
                     return (
@@ -65,9 +67,10 @@ const AlertContainer = ({ toasts, onDismiss, confirmState, onConfirmResult }) =>
                 })}
             </div>
 
-            {/* Confirm dialog (replaces window.confirm) */}
+            {/* Confirm dialog (replaces window.confirm) — above the toasts, and above
+                any modal it is asked from */}
             {confirmState && (
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[10010] flex items-center justify-center p-4">
                     <div
                         className="fixed inset-0 bg-slate-900/50"
                         onClick={() => onConfirmResult(false)}

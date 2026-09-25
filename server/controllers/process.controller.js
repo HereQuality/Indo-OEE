@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Process = require("../models/Process");
 const Machine = require("../models/Machine");
 const ProductionEntry = require("../models/ProductionEntry");
+const { sortMachines } = require("../utils/machineOrder");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
@@ -45,21 +46,26 @@ const syncMachines = async (processId, machineIds) => {
   if (machineIds.length) await Machine.updateMany({ _id: { $in: machineIds } }, { $set: { process: processId } });
 };
 
-// { processId: [machine, …] } in sheet order.
-const machinesByProcess = async (processIds, onlyActive) => {
+// { processId: [machine, …] } in sheet order. The order itself is for everyone;
+// the sequence number is Super Admin's alone (see machine.controller.js), so it
+// is dropped from the payload unless `withSequence`.
+const machinesByProcess = async (processIds, onlyActive, withSequence = false) => {
   const query = { process: { $in: processIds } };
   if (onlyActive) query.isActive = true;
-  const machines = await Machine.find(query)
-    .select("machineName color sequence isActive process")
-    .sort({ sequence: 1, machineName: 1 })
-    .lean();
+  const machines = sortMachines(
+    await Machine.find(query).select("machineName color sequence isActive process").lean(),
+  );
   const map = {};
-  for (const m of machines) (map[String(m.process)] ||= []).push(m);
+  for (const { sequence, ...rest } of machines) {
+    (map[String(rest.process)] ||= []).push(withSequence ? { ...rest, sequence } : rest);
+  }
   return map;
 };
 
-const withMachines = async (processes, onlyActive = false) => {
-  const map = await machinesByProcess(processes.map((p) => p._id), onlyActive);
+const isSuperAdmin = (req) => req.user?.roleType === "SuperAdmin";
+
+const withMachines = async (processes, onlyActive = false, withSequence = false) => {
+  const map = await machinesByProcess(processes.map((p) => p._id), onlyActive, withSequence);
   return processes.map((p) => ({ ...p, machines: map[String(p._id)] || [] }));
 };
 
@@ -130,7 +136,7 @@ exports.getProcessById = async (req, res) => {
   try {
     const process = await Process.findById(req.params.processId).lean();
     if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
-    const [data] = await withMachines([process]);
+    const [data] = await withMachines([process], false, isSuperAdmin(req));
     res.status(200).json({ isOk: true, data });
   } catch (error) {
     console.error("Error fetching process:", error);
@@ -145,7 +151,7 @@ exports.listProcesses = async (req, res) => {
     const processes = await Process.find({ isActive: true })
       .sort({ createdAt: 1 })
       .lean();
-    res.status(200).json({ isOk: true, data: await withMachines(processes, true) });
+    res.status(200).json({ isOk: true, data: await withMachines(processes, true, isSuperAdmin(req)) });
   } catch (error) {
     console.error("Error listing processes:", error);
     res.status(500).json({ isOk: false, message: error.message });
@@ -175,7 +181,7 @@ exports.listProcessByParams = async (req, res) => {
         .lean(),
     ]);
 
-    res.status(200).json({ isOk: true, data: [{ count: totalCount, data: await withMachines(processes) }] });
+    res.status(200).json({ isOk: true, data: [{ count: totalCount, data: await withMachines(processes, false, isSuperAdmin(req)) }] });
   } catch (error) {
     console.error("Error searching processes:", error);
     res.status(500).json({ isOk: false, message: error.message });

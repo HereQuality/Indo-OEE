@@ -199,8 +199,16 @@
 .pd-row-selected > td { background: var(--pd-wash) !important; box-shadow: inset 0 0 0 9999px var(--pd-wash); }
 
 /* Small multiples */
-.pd-multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; align-content: start; }
-.pd-multiple-title { border: 0; background: transparent; padding: 0; font-size: 0.75rem; font-weight: 700; color: var(--pd-ink); }
+/* Many machines: fixed-height panels that scroll. max-content rows, or the card's own height squeezes them together. */
+.pd-multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: max-content; gap: 8px 14px; align-content: start; overflow: auto; }
+/* Few machines: the panels split the card between them instead of sitting in a corner of it. */
+.pd-multiples-fit { overflow: hidden; align-content: stretch; grid-auto-rows: auto; }
+.pd-multiple { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pd-multiple-plot { flex: 1 1 0; min-width: 0; min-height: 0; }
+.pd-multiple-title {
+  border: 0; background: transparent; padding: 0; font-size: 0.75rem; font-weight: 700; color: var(--pd-ink);
+  text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .pd-multiple-title:hover { color: var(--pd-accent); }
 
 /* Drill-down splits */

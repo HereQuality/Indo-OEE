@@ -5,7 +5,8 @@ import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
 import { useAlert } from "../../context/AlertContext";
-import { CYCLE_OP_FIELDS, REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
+import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
+import { DOWNTIME_KEYS, cleanSplit, lunchRequired, stoppageLimitMin } from "../../utils/entryValidation";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -20,10 +21,20 @@ import { CYCLE_OP_FIELDS, REJECT_REASONS, fmtNum, fmtPct, rowCalc } from "../../
  * already open.
  *
  * Typed fields are white; every grey box is calculated live by
- * utils/productionSheet.js. There's no typed Actual Quantity box — Ideal
- * Quantity (Shift Time ÷ Cycle Time, rounded down) does that job, so Rejected
- * Quantity (always Ideal − OK) and the dashboard's Total/Rejected/% OK all
- * read from Ideal Quantity rather than a separately typed count.
+ * utils/productionSheet.js. Actual Quantity is typed (never more than Ideal
+ * Quantity — Shift Time ÷ Cycle Time, rounded down) and OK Quantity is typed
+ * against it, so Rejected is always Actual − OK and the Reject Master split
+ * has to account for every one of those pieces; the dashboard's Total/
+ * Rejected/% OK read the same Actual figure.
+ *
+ * Everything on the form is required except the downtime boxes and the general
+ * remarks — and downtime is only checked if something is typed. Lunch / Rest is
+ * required only while Planned Operator Shift − Machine Shift leaves time over. The rules live
+ * in utils/entryValidation.js, which the page runs live over every block: Save
+ * looks inactive until they all pass, and pressing it anyway sends `focusTarget`
+ * here, which opens the first incomplete block and scrolls to its first missing
+ * field. Using "Other" as a reject reason or as downtime opens a remark box that
+ * is itself required.
  *
  * The form deliberately shows less than the sheet does. Entry No. is assigned
  * by the page rather than picked; Drawing No. and Cycle Time come from the
@@ -45,10 +56,10 @@ const Calc = ({ label, value, md = 3, title }) => (
   </Col>
 );
 
-// A typed field.
-const Field = ({ label, required, error, children, md = 3 }) => (
+// A typed field. `fieldKey` is what Save's scroll-to-first-error looks for.
+const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
   <Col md={md}>
-    <div className="mb-1">
+    <div className="mb-1" data-field={fieldKey}>
       <Label className={labelClass}>
         {label} {required && <span className="text-danger">*</span>}
       </Label>
@@ -68,29 +79,14 @@ const LINES = [
     fields: ["itemName", ...CYCLE_OP_FIELDS.map((f) => f.key)],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Ideal Qty, OK Qty, Rejected, % OK Qty", fields: ["okQty"] },
-  { id: 13, title: "Reject Master", fields: ["rejectBreakdown"] },
-  { id: 7, title: "Planned Operator Shift", fields: ["plannedOperatorShiftHours"] },
-  // Every downtime/stoppage reason in one box — they used to be split across
-  // three separate boxes with no real logic to the split (Planned Operator
-  // Shift, which isn't a downtime reason at all, was even grouped in with
-  // them), which just made it harder to see the whole stoppage picture at a
-  // glance and easy to miss one.
-  {
-    id: 8,
-    title: "Downtime / Stoppage (min)",
-    fields: [
-      "setupMin",
-      "noManPowerMin",
-      "materialShiftingMin",
-      "noMaterialMin",
-      "bdMechMin",
-      "bdEleMin",
-      "noPowerMin",
-      "lunchMin",
-      "otherMin",
-    ],
-  },
+  { id: 5, title: "Ideal Qty, Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
+  { id: 13, title: "Reject Master", fields: ["rejectBreakdown", "rejectOtherRemark"] },
+  // Lunch / Rest is a property of the shift, not of a stoppage, so it sits with
+  // Planned Operator Shift — though it still counts toward total stoppage.
+  { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
+  // Every other downtime/stoppage reason in one box, so the whole stoppage
+  // picture is visible at a glance and none is easy to miss.
+  { id: 8, title: "Downtime / Stoppage (min)", fields: [...DOWNTIME_KEYS, "stoppageTotal", "otherMinRemark"] },
   { id: 12, title: "Remarks", fields: ["remarks"] },
 ];
 
@@ -118,9 +114,9 @@ const Line = ({ id, errors, isSubmit, children }) => {
 // collapsed block that still has typing in it from an untouched one.
 const DATA_KEYS = [
   "operator", "itemName", "drawingNo", "machineOnTime", "machineOffTime",
-  "okQty", "plannedOperatorShiftHours", "remarks",
+  "actualQty", "okQty", "plannedOperatorShiftHours", "remarks",
   ...LINES.flatMap((l) => l.fields),
-].filter((k) => !["date", "machine", "slot", "rejectBreakdown"].includes(k));
+].filter((k) => !["date", "machine", "slot", "rejectBreakdown", "stoppageTotal"].includes(k));
 
 const hasData = (v) =>
   DATA_KEYS.some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null) ||
@@ -153,29 +149,55 @@ const EntryBlock = ({
   // The reject split's running total, against the Rejected figure it has to
   // match. Shown live so the operator sees the gap while typing rather than
   // only after pressing Save.
-  const splitTotal = useMemo(
-    () =>
-      Object.values(values.rejectBreakdown || {}).reduce(
-        (sum, v) => sum + (v === "" || v === null || v === undefined ? 0 : Number(v) || 0),
-        0,
-      ),
-    [values.rejectBreakdown],
-  );
-  const splitMismatch = splitTotal !== (calc.rejectedQty || 0);
+  const splitTotal = useMemo(() => Object.values(cleanSplit(values.rejectBreakdown)).reduce((sum, v) => sum + v, 0), [values.rejectBreakdown]);
+  const rejected = calc.rejectedQty || 0;
+  const splitMismatch = splitTotal !== rejected;
+  const rejectOtherUsed = Number(values.rejectBreakdown?.Other) > 0;
+
+  // The most stoppage this entry can account for, against what's typed.
+  const stoppageLimit = useMemo(() => stoppageLimitMin(values), [values]);
+  const overStoppage = stoppageLimit !== null && calc.totalStoppageMin > stoppageLimit;
+  const lunchNeeded = lunchRequired(values);
+  const otherDowntimeUsed = Number(values.otherMin) > 0;
+
+  // What each capped box may still take. A Reject Master box can hold whatever
+  // of Rejected the other boxes haven't used; a downtime box (Lunch / Rest
+  // included) whatever of the allowed stoppage the others haven't — the same
+  // "can't type past it" rule as Actual and OK Quantity, instead of leaving it
+  // to an error on Save. Downtime has no ceiling until Planned Operator Shift
+  // and the machine times are in, since the allowance can't be worked out yet.
+  const rejectRoom = (reason) =>
+    Math.max(0, rejected - (splitTotal - (Number(values.rejectBreakdown?.[reason]) || 0)));
+  const minutesBox = (key) => {
+    const room =
+      stoppageLimit === null
+        ? 1440
+        : Math.min(1440, Math.max(0, stoppageLimit - ((calc.totalStoppageMin || 0) - (Number(values[key]) || 0))));
+    return {
+      max: room,
+      onExceedMax: () =>
+        warning(
+          stoppageLimit === null
+            ? "Downtime can't be more than 1440 minutes (a day)."
+            : `Total stoppage can't be more than ${stoppageLimit} min (Planned Operator Shift − Machine Shift) — only ${room} min left for this box.`,
+        ),
+    };
+  };
 
   const err = (key) => (isSubmit ? errors[key] : undefined);
+  const errorCount = Object.keys(errors).length;
   const handle = (e) => onChange(index, e.target.name, e.target.value);
 
-  // A collapsed block hides its fields, so a failed save would hide the reason
-  // with them. Reopen the block whenever validation flags something inside it.
-  const errorKeys = Object.keys(errors).join("|");
-  useEffect(() => {
-    if (isSubmit && errorKeys) onExpand(index);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSubmit, errorKeys]);
-
   const machineSelect = (
-    <Input type="select" bsSize="sm" name="machine" value={values.machine} onChange={handle} disabled={isEdit}>
+    <Input
+      type="select"
+      bsSize="sm"
+      name="machine"
+      value={values.machine}
+      onChange={handle}
+      disabled={isEdit}
+      invalid={!!err("machine")}
+    >
       <option value="">Select machine</option>
       {machines.map((m) => (
         <option key={m._id} value={m._id}>
@@ -196,6 +218,14 @@ const EntryBlock = ({
     </button>
   );
 
+  // What a block that still needs something says about itself — the only
+  // place a collapsed block can, since its fields are hidden.
+  const incompleteBadge = isSubmit && errorCount > 0 && (
+    <span className="badge bg-danger-subtle text-danger">
+      Incomplete — {errorCount} field{errorCount === 1 ? "" : "s"} need{errorCount === 1 ? "s" : ""} attention
+    </span>
+  );
+
   // Collapsed: process, then this process's machines, then this machine's "+".
   // A filled-in block gets a subtle tint so "press + to reopen it" reads as
   // "there's saved work here", not indistinguishable from a blank block.
@@ -203,10 +233,13 @@ const EntryBlock = ({
     return (
       <div
         ref={registerRef}
-        className={`entry-block-in border rounded mb-1 px-2 pt-1 transition-colors ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
+        data-entry-index={index}
+        className={`entry-block-in border rounded mb-1 px-2 pt-1 transition-colors ${
+          isSubmit && errorCount > 0 ? "border-danger" : ""
+        } ${hasData(values) ? "bg-primary bg-opacity-10" : ""}`}
       >
         <Row className="align-items-start g-1">
-          <Field label="Machine No." required error={err("machine")} md={4}>
+          <Field label="Machine No." required error={err("machine")} md={4} fieldKey="machine">
             {machineSelect}
           </Field>
           <Col md={2}>
@@ -230,11 +263,12 @@ const EntryBlock = ({
           </Col>
           <Col md={12}>
             <div className="text-muted small mt-n2 mb-2">
-              {!values.machine
-                ? "Select a machine, then press +"
-                : hasData(values)
-                  ? "Entry filled in — press + to reopen it"
-                  : "Press + to fill this machine's entry"}
+              {incompleteBadge ||
+                (!values.machine
+                  ? "Select a machine, then press +"
+                  : hasData(values)
+                    ? "Entry filled in — press + to reopen it"
+                    : "Press + to fill this machine's entry")}
             </div>
           </Col>
         </Row>
@@ -245,7 +279,13 @@ const EntryBlock = ({
   const machineLabel = machines.find((m) => m._id === values.machine)?.machineName;
 
   return (
-    <div ref={registerRef} className="entry-block-in border border-primary rounded mb-2 transition-colors">
+    <div
+      ref={registerRef}
+      data-entry-index={index}
+      className={`entry-block-in border rounded mb-2 transition-colors ${
+        isSubmit && errorCount > 0 ? "border-danger" : "border-primary"
+      }`}
+    >
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
         <button
           type="button"
@@ -258,20 +298,28 @@ const EntryBlock = ({
           <Minus size={15} />
         </button>
         <span className="fw-semibold small">Machine {machineLabel || index + 1}</span>
+        {incompleteBadge}
         <span className="ms-auto">{removeButton}</span>
       </div>
 
       <div className="p-2">
         <Line id={1} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Date" required error={err("date")} md={3}>
+            <Field label="Date" required error={err("date")} md={3} fieldKey="date">
               <DatePicker name="date" value={values.date} onChange={handle} hasError={!!err("date")} />
             </Field>
-            <Field label="Machine No." required error={err("machine")} md={3}>
+            <Field label="Machine No." required error={err("machine")} md={3} fieldKey="machine">
               {machineSelect}
             </Field>
-            <Field label="Operator" error={err("operator")} md={6}>
-              <Input type="select" bsSize="sm" name="operator" value={values.operator} onChange={handle}>
+            <Field label="Operator" required error={err("operator")} md={6} fieldKey="operator">
+              <Input
+                type="select"
+                bsSize="sm"
+                name="operator"
+                value={values.operator}
+                onChange={handle}
+                invalid={!!err("operator")}
+              >
                 {/* A record saved before this box read from Operator Master, or
                     one whose operator has since been deactivated, still has a
                     name typed here that this list won't contain — keep showing
@@ -293,13 +341,14 @@ const EntryBlock = ({
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Part Name" error={err("itemName")} md={8}>
+            <Field label="Part Name" required error={err("itemName")} md={8} fieldKey="itemName">
               <Input
                 type="select"
                 bsSize="sm"
                 name="item"
                 value={values.item || ""}
                 onChange={(e) => onItemSelect(index, e.target.value)}
+                invalid={!!err("itemName")}
               >
                 {/* A record typed into the old grid has a part name but no link to
                     the Item master. Show that name rather than an empty box, so
@@ -324,9 +373,7 @@ const EntryBlock = ({
           </Row>
           <Row className="g-1">
             {CYCLE_OP_FIELDS.map((f) => {
-              // Both "Other Operation" boxes carry the sheet's own label; the
-              // index tells the two apart without renaming either.
-              const label = f.key === "otherOp2Sec" ? `${f.label.replace(" (sec)", "")} 2 (sec)` : f.label;
+              const label = cycleOpLabel(f);
               const checkId = `cycle-op-${index}-${f.key}`;
               // Which operations this Part *has* decides whether the box can
               // be ticked at all — one Item Master doesn't have stays
@@ -375,7 +422,7 @@ const EntryBlock = ({
 
         <Line id={3} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Machine ON Time" error={err("machineOnTime")} md={4}>
+            <Field label="Machine ON Time" required error={err("machineOnTime")} md={4} fieldKey="machineOnTime">
               <TimePicker
                 name="machineOnTime"
                 value={values.machineOnTime}
@@ -383,7 +430,7 @@ const EntryBlock = ({
                 hasError={!!err("machineOnTime")}
               />
             </Field>
-            <Field label="Machine OFF Time" error={err("machineOffTime")} md={4}>
+            <Field label="Machine OFF Time" required error={err("machineOffTime")} md={4} fieldKey="machineOffTime">
               <TimePicker
                 name="machineOffTime"
                 value={values.machineOffTime}
@@ -405,99 +452,191 @@ const EntryBlock = ({
             <Calc
               label="Ideal Quantity"
               value={fmtNum(calc.idealQty)}
-              md={4}
-              title="Machine Shift Time × 3600 ÷ Total Cycle Time, rounded down — stands in for Actual Quantity, so Rejected is measured against it"
+              md={3}
+              title="Machine Shift Time × 3600 ÷ Total Cycle Time, rounded down — the most the shift could make, so Actual Quantity can't go above it"
             />
-            <Field label="OK Quantity" error={err("okQty")} md={4}>
+            <Field label="Actual Quantity" required error={err("actualQty")} md={3} fieldKey="actualQty">
+              <NumberInput
+                name="actualQty"
+                value={values.actualQty}
+                onChange={handle}
+                decimals={false}
+                invalid={!!err("actualQty")}
+                max={calc.idealQty}
+                onExceedMax={(max) => warning(`Actual Quantity can't be more than Ideal Quantity (${fmtNum(max)})`)}
+              />
+            </Field>
+            <Field label="OK Quantity" required error={err("okQty")} md={3} fieldKey="okQty">
               <NumberInput
                 name="okQty"
                 value={values.okQty}
                 onChange={handle}
                 decimals={false}
-                max={calc.idealQty}
-                onExceedMax={(max) => warning(`OK Quantity can't be more than Ideal Quantity (${fmtNum(max)})`)}
+                invalid={!!err("okQty")}
+                max={Number.isFinite(Number(values.actualQty)) && values.actualQty !== "" ? Number(values.actualQty) : calc.idealQty}
+                onExceedMax={(max) => warning(`OK Quantity can't be more than Actual Quantity (${fmtNum(max)})`)}
               />
             </Field>
-            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={4} title="Ideal Quantity − OK Quantity" />
+            <Calc label="Rejected" value={fmtNum(calc.rejectedQty)} md={3} title="Actual Quantity − OK Quantity, so OK + Rejected = Actual" />
           </Row>
           <Row className="g-1">
-            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={4} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
+            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
           </Row>
         </Line>
 
         <Line id={13} errors={errors} isSubmit={isSubmit}>
-          <Row className="g-1">
-            {REJECT_REASONS.map((reason) => (
-              <Col md={4} key={reason}>
-                <div className="mb-2">
-                  <Label className={labelClass}>{reason}</Label>
-                  <NumberInput
-                    name={reason}
-                    value={values.rejectBreakdown?.[reason] ?? ""}
-                    onChange={(e) => onRejectChange(index, reason, e.target.value)}
-                    decimals={false}
-                  />
-                </div>
-              </Col>
-            ))}
-          </Row>
-          {/* The split has to account for every rejected piece, so the running
-              total is shown next to the figure it must match. */}
-          <div className="mb-2 small">
-            <span className="text-muted">Split so far: </span>
-            <span className={splitMismatch ? "text-danger fw-semibold" : "fw-semibold"}>{splitTotal}</span>
-            <span className="text-muted"> of {fmtNum(calc.rejectedQty) || 0} rejected</span>
-            {err("rejectBreakdown") && <p className="text-danger mb-0 mt-1">{err("rejectBreakdown")}</p>}
+          <div data-field="rejectBreakdown">
+            <Row className="g-1">
+              {REJECT_REASONS.map((reason) => (
+                <Col md={4} key={reason}>
+                  <div className="mb-2">
+                    <Label className={labelClass}>{reason}</Label>
+                    <NumberInput
+                      name={reason}
+                      value={values.rejectBreakdown?.[reason] ?? ""}
+                      onChange={(e) => onRejectChange(index, reason, e.target.value)}
+                      decimals={false}
+                      invalid={!!err("rejectBreakdown") && splitMismatch}
+                      max={rejectRoom(reason)}
+                      onExceedMax={(max) =>
+                        warning(
+                          rejected === 0
+                            ? "Rejected Quantity is 0 (Actual − OK), so there is nothing to split."
+                            : `Only ${max} of the ${rejected} rejected pieces are left for “${reason}” — the boxes can't add up to more than Rejected.`,
+                        )
+                      }
+                    />
+                  </div>
+                </Col>
+              ))}
+            </Row>
+            {/* The split has to account for every rejected piece, so the running
+                total is shown next to the figure it must match. */}
+            <div className="mb-2 small">
+              <span className="text-muted">Split so far: </span>
+              <span className={splitMismatch ? "text-danger fw-semibold" : "fw-semibold"}>{splitTotal}</span>
+              <span className="text-muted"> of {fmtNum(calc.rejectedQty) || 0} rejected</span>
+              {splitTotal < rejected && <span className="text-danger"> — {rejected - splitTotal} left to assign</span>}
+              {err("rejectBreakdown") && <p className="text-danger mb-0 mt-1">{err("rejectBreakdown")}</p>}
+            </div>
           </div>
+          {rejectOtherUsed && (
+            <Row className="g-1">
+              <Field label="Remark for “Other” rejection" required error={err("rejectOtherRemark")} md={12} fieldKey="rejectOtherRemark">
+                <Input
+                  type="textarea"
+                  bsSize="sm"
+                  name="rejectOtherRemark"
+                  value={values.rejectOtherRemark || ""}
+                  onChange={handle}
+                  maxLength={300}
+                  placeholder="Why were these pieces rejected as “Other”?"
+                  invalid={!!err("rejectOtherRemark")}
+                  style={{ height: "52px" }}
+                />
+              </Field>
+            </Row>
+          )}
         </Line>
 
         <Line id={7} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Planned Operator Shift (hr)" error={err("plannedOperatorShiftHours")} md={4}>
+            <Field label="Planned Operator Shift (hr)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
                 value={values.plannedOperatorShiftHours}
                 onChange={handle}
+                invalid={!!err("plannedOperatorShiftHours")}
+                max={24}
+                onExceedMax={() => warning("Planned Operator Shift can't be more than 24 hours.")}
               />
             </Field>
+            <Field label="Lunch / Rest (min)" required={lunchNeeded} error={err("lunchMin")} md={4} fieldKey="lunchMin">
+              <NumberInput
+                name="lunchMin"
+                value={values.lunchMin}
+                onChange={handle}
+                decimals={false}
+                invalid={!!err("lunchMin")}
+                {...minutesBox("lunchMin")}
+              />
+              {stoppageLimit === 0 && (
+                <p className="text-muted mb-0 small mt-1">Not needed — the machine ran the whole planned shift.</p>
+              )}
+            </Field>
+            <Calc
+              label="Stoppage Allowed (min)"
+              value={stoppageLimit === null ? "" : String(stoppageLimit)}
+              md={4}
+              title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime below can add up to"
+            />
           </Row>
         </Line>
 
         <Line id={8} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Setup Time (min)" error={err("setupMin")} md={3}>
-              <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} />
+            <Field label="Setup Time (min)" error={err("setupMin")} md={3} fieldKey="setupMin">
+              <NumberInput name="setupMin" value={values.setupMin} onChange={handle} decimals={false} invalid={!!err("setupMin")} {...minutesBox("setupMin")} />
             </Field>
-            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={3}>
-              <NumberInput name="noManPowerMin" value={values.noManPowerMin} onChange={handle} decimals={false} />
+            <Field label="No Man Power (min)" error={err("noManPowerMin")} md={3} fieldKey="noManPowerMin">
+              <NumberInput name="noManPowerMin" value={values.noManPowerMin} onChange={handle} decimals={false} invalid={!!err("noManPowerMin")} {...minutesBox("noManPowerMin")} />
             </Field>
-            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={3}>
+            <Field label="Material Shifting (min)" error={err("materialShiftingMin")} md={3} fieldKey="materialShiftingMin">
               <NumberInput
                 name="materialShiftingMin"
                 value={values.materialShiftingMin}
                 onChange={handle}
                 decimals={false}
+                invalid={!!err("materialShiftingMin")}
+                {...minutesBox("materialShiftingMin")}
               />
             </Field>
-            <Field label="No Material (min)" error={err("noMaterialMin")} md={3}>
-              <NumberInput name="noMaterialMin" value={values.noMaterialMin} onChange={handle} decimals={false} />
+            <Field label="No Material (min)" error={err("noMaterialMin")} md={3} fieldKey="noMaterialMin">
+              <NumberInput name="noMaterialMin" value={values.noMaterialMin} onChange={handle} decimals={false} invalid={!!err("noMaterialMin")} {...minutesBox("noMaterialMin")} />
             </Field>
-            <Field label="Breakdown Mechanical (min)" error={err("bdMechMin")} md={3}>
-              <NumberInput name="bdMechMin" value={values.bdMechMin} onChange={handle} decimals={false} />
+            <Field label="Breakdown Mechanical (min)" error={err("bdMechMin")} md={3} fieldKey="bdMechMin">
+              <NumberInput name="bdMechMin" value={values.bdMechMin} onChange={handle} decimals={false} invalid={!!err("bdMechMin")} {...minutesBox("bdMechMin")} />
             </Field>
-            <Field label="BD Electricity (min)" error={err("bdEleMin")} md={3}>
-              <NumberInput name="bdEleMin" value={values.bdEleMin} onChange={handle} decimals={false} />
+            <Field label="BD Electricity (min)" error={err("bdEleMin")} md={3} fieldKey="bdEleMin">
+              <NumberInput name="bdEleMin" value={values.bdEleMin} onChange={handle} decimals={false} invalid={!!err("bdEleMin")} {...minutesBox("bdEleMin")} />
             </Field>
-            <Field label="No Power (min)" error={err("noPowerMin")} md={3}>
-              <NumberInput name="noPowerMin" value={values.noPowerMin} onChange={handle} decimals={false} />
+            <Field label="No Power (min)" error={err("noPowerMin")} md={3} fieldKey="noPowerMin">
+              <NumberInput name="noPowerMin" value={values.noPowerMin} onChange={handle} decimals={false} invalid={!!err("noPowerMin")} {...minutesBox("noPowerMin")} />
             </Field>
-            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={3}>
-              <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} />
-            </Field>
-            <Field label="Other (min)" error={err("otherMin")} md={3}>
-              <NumberInput name="otherMin" value={values.otherMin} onChange={handle} decimals={false} />
+            <Field label="Other (min)" error={err("otherMin")} md={3} fieldKey="otherMin">
+              <NumberInput name="otherMin" value={values.otherMin} onChange={handle} decimals={false} invalid={!!err("otherMin")} {...minutesBox("otherMin")} />
             </Field>
           </Row>
+          {/* Lunch / Rest and every box above have to fit inside what Planned
+              Operator Shift leaves after the machine's own run, so the running
+              total sits next to that allowance. */}
+          <div className="mb-2 small" data-field="stoppageTotal">
+            <span className="text-muted">Total stoppage (with Lunch / Rest): </span>
+            <span className={overStoppage ? "text-danger fw-semibold" : "fw-semibold"}>{fmtNum(calc.totalStoppageMin) || 0} min</span>
+            <span className="text-muted">
+              {stoppageLimit === null
+                ? " — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance"
+                : ` of ${stoppageLimit} min allowed`}
+            </span>
+            {err("stoppageTotal") && <p className="text-danger mb-0 mt-1">{err("stoppageTotal")}</p>}
+          </div>
+          {otherDowntimeUsed && (
+            <Row className="g-1">
+              <Field label="Remark for Other downtime" required error={err("otherMinRemark")} md={12} fieldKey="otherMinRemark">
+                <Input
+                  type="textarea"
+                  bsSize="sm"
+                  name="otherMinRemark"
+                  value={values.otherMinRemark || ""}
+                  onChange={handle}
+                  maxLength={300}
+                  placeholder="What was the “Other” downtime?"
+                  invalid={!!err("otherMinRemark")}
+                  style={{ height: "52px" }}
+                />
+              </Field>
+            </Row>
+          )}
         </Line>
 
         <Line id={12} errors={errors} isSubmit={isSubmit}>
@@ -523,6 +662,7 @@ const ProductionEntryForm = ({
   entries = [],
   errors = [],
   isSubmit = false,
+  focusTarget = null,
   machines = [],
   items = [],
   operators = [],
@@ -549,16 +689,53 @@ const ProductionEntryForm = ({
   // when collapsing back to none — to whichever block was just closed.
   const blockRefs = useRef({});
   const lastExpandedRef = useRef(expandedIndex);
+  // Set while a failed Save is steering the scroll itself, so this block-level
+  // scroll doesn't fight it.
+  const focusScrollRef = useRef(false);
   useEffect(() => {
-    const target = expandedIndex ?? lastExpandedRef.current;
-    if (target !== null && target !== undefined) {
-      blockRefs.current[target]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (focusScrollRef.current) {
+      focusScrollRef.current = false;
+    } else {
+      const target = expandedIndex ?? lastExpandedRef.current;
+      if (target !== null && target !== undefined) {
+        blockRefs.current[target]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     }
     lastExpandedRef.current = expandedIndex;
   }, [expandedIndex]);
 
+  // A failed Save hands over the first incomplete entry and field ({ index,
+  // field, nonce }). Open that block, then scroll to the field once it has
+  // rendered (a collapsed block only mounts its fields after opening) and put
+  // the cursor in it.
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!focusTarget) return undefined;
+    const { index, field } = focusTarget;
+    if (!isEdit && expandedIndex !== index) {
+      focusScrollRef.current = true;
+      setExpandedIndex(index);
+    }
+    let tries = 0;
+    let frame;
+    const go = () => {
+      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"] [data-field="${field}"]`);
+      if (!el) {
+        tries += 1;
+        if (tries < 20) frame = requestAnimationFrame(go);
+        return;
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.querySelector("input, select, textarea")?.focus({ preventScroll: true });
+    };
+    frame = requestAnimationFrame(go);
+    return () => cancelAnimationFrame(frame);
+    // Only a new request (its nonce) should steer the scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTarget?.nonce]);
+
   return (
-    <>
+    <div ref={rootRef}>
       {entries.map((values, i) => (
         <EntryBlock
           key={i}
@@ -595,7 +772,7 @@ const ProductionEntryForm = ({
           <Plus size={16} /> Add another machine
         </button>
       )}
-    </>
+    </div>
   );
 };
 

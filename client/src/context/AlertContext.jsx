@@ -9,19 +9,43 @@ export const AlertProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
     const [confirmState, setConfirmState] = useState(null); // { message, title, resolve, tone }
     const resolveRef = useRef(null);
+    // Each toast's dismiss timer, and which "type|message" is on screen as which
+    // toast — so a message repeated while it is still showing can be recognised.
+    const timersRef = useRef(new Map());
+    const liveRef = useRef(new Map());
 
     const dismissToast = useCallback((id) => {
+        clearTimeout(timersRef.current.get(id));
+        timersRef.current.delete(id);
+        for (const [key, liveId] of liveRef.current) {
+            if (liveId === id) liveRef.current.delete(key);
+        }
         setToasts((prev) => prev.filter((t) => t.id !== id));
     }, []);
 
     const pushToast = useCallback((message, type = "info", duration = 4000) => {
-        const id = ++idCounter;
-        setToasts((prev) => [...prev, { id, message, type }]);
+        // The same message pushed again while it is still on screen — e.g. one
+        // per keystroke while typing past a limit — keeps a single toast and
+        // just restarts its timer, instead of stacking a copy each time.
+        const key = `${type}|${message}`;
+        let id = liveRef.current.get(key);
+        if (id === undefined) {
+            id = ++idCounter;
+            liveRef.current.set(key, id);
+            setToasts((prev) => [...prev, { id, message, type }]);
+        } else {
+            clearTimeout(timersRef.current.get(id));
+        }
         if (duration > 0) {
-            setTimeout(() => dismissToast(id), duration);
+            timersRef.current.set(id, setTimeout(() => dismissToast(id), duration));
         }
         return id;
     }, [dismissToast]);
+
+    useEffect(() => {
+        const timers = timersRef.current;
+        return () => timers.forEach(clearTimeout);
+    }, []);
 
     const success = useCallback((message, duration) => pushToast(message, "success", duration), [pushToast]);
     const error = useCallback((message, duration) => pushToast(message, "error", duration), [pushToast]);

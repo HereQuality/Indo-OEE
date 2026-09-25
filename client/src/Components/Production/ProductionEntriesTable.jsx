@@ -1,14 +1,18 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
 import {
   CYCLE_OP_FIELDS,
   REJECT_REASONS,
   STOPPAGE_FIELDS,
+  cycleOpLabel,
   displayDay,
   fmtNum,
   fmtPct,
+  remarkParts,
   rowCalc,
 } from "../../utils/productionSheet";
+import { stoppageLimitMin } from "../../utils/entryValidation";
 
 // The plain-English formula behind every calculated column — shown in a
 // popover from the eye icon next to its header, so nobody has to remember or
@@ -17,12 +21,15 @@ const FORMULAS = {
   cycle: "The Part's own Total Cycle Time, minus any operation unticked for this entry.",
   shift: "Machine Shift Time = MOD(Machine OFF Time − Machine ON Time, 1) × 24",
   idealQty:
-    "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time). There's no typed Actual Quantity — this stands in for it.",
+    "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time) — the most the shift could make, so Actual Quantity can't be more than this.",
   rejectedQty:
-    "Rejected Quantity = Ideal Quantity − OK Quantity. The breakdown shows how that total splits across the reasons entered on the form.",
+    "Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.",
   pctOk: "% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)",
   unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
-  totalStoppage: "Total Stoppage = sum of the ten downtime columns.",
+  totalStoppage:
+    "Total Stoppage = Lunch / Rest (open Planned Operator Shift Time) + the downtime columns opened here: Setup Time … Other.",
+  stoppageAllowed:
+    "Stoppage Allowed = Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to. 0 when the machine ran the whole planned shift.",
   effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600",
   unreported:
     "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
@@ -32,7 +39,7 @@ const FORMULAS = {
   oeeLunch:
     "OEE not considering losses but lunch = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
   oeeLunchCot:
-    "OEE not considering losses but lunch and COT = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
+    "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
 };
 
 /**
@@ -42,11 +49,14 @@ const FORMULAS = {
  * the sheet's own order. No section banner above it any more: every column
  * stands on its own name.
  *
- * Only two columns fold: Total Cycle Time (sec) and Total Stoppage (min).
- * Their total is always shown; the chevron beside it opens its breakdown —
- * Drilling…Clamp/Declamp for cycle time, the ten downtime reasons for
- * stoppage — right after it, without hiding the total or disturbing any
- * other column. Collapsing is display only: the same `rowCalc`/`dayCalc`
+ * Four columns fold, each into the same group the entry form shows it in:
+ * Total Cycle Time (sec) → Drilling…Clamp/Declamp; Rejected Quantity → the
+ * Reject Master reasons; Planned Operator Shift Time (hr) → Lunch / Rest and
+ * Stoppage Allowed; Total Stoppage (min) → the downtime boxes. The total is
+ * always shown; the chevron beside it opens its breakdown right after it,
+ * without hiding the total or disturbing any other column. The Other reject
+ * and Other downtime figures carry an eye with their required remark; the
+ * general Remarks column comes last. Collapsing is display only: the same `rowCalc`/`dayCalc`
  * formulas the entry form uses fill every calculated cell, so the table
  * can't disagree with the form.
  *
@@ -173,47 +183,154 @@ const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 
 
 // Remarks used to sit in the table as full wrapped text, which forced the
 // column wide and pushed most rows down whether or not that entry actually
-// had one. Now it's just an eye icon — click to see the text in a small
-// popover, same idea as the header's "how this is calculated" icon.
-const RemarkCell = ({ text }) => {
+// had one. Now it's just an eye icon — click to see them in a small popover,
+// same idea as the header's "how this is calculated" icon.
+//
+// An entry can carry up to three (see remarkParts): why "Other" was used as a
+// reject reason, why it was used as downtime, and the general Remarks box. The
+// Remarks column shows only the general one; the other two open from the eye
+// beside their own figure in the expanded breakdown (WithRemark below). Whatever
+// it shows, the popover gives each remark its own labelled section, with the
+// figure it explains, in the colour that figure has on the dashboard (rejected
+// orange, downtime teal).
+//
+// It is drawn in a portal, positioned from the eye's own screen position,
+// rather than inside the cell: the table scrolls and clips, so a popover
+// anchored in the cell got cut off at the right edge and at the bottom rows.
+// Its right edge lines up with the eye and it flips above the eye when there
+// isn't room below; scrolling or resizing closes it, since the eye moves.
+const REMARK_TONE = {
+  reject: "text-orange-600 dark:text-orange-400",
+  downtime: "text-teal-600 dark:text-teal-400",
+  general: "text-slate-500 dark:text-slate-400",
+};
+// The eye beside a figure takes its section's colour, so a remark stands out
+// from the plain grey eye of the Remarks column.
+const REMARK_EYE = {
+  reject: "text-orange-500 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300",
+  downtime: "text-teal-500 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300",
+  general: "text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200",
+};
+const POP_WIDTH = 300;
+const POP_GAP = 6;
+const POP_MARGIN = 8;
+
+const RemarkCell = ({ parts, inline = false }) => {
   const [open, setOpen] = useState(false);
-  if (!text) return <span className="text-slate-300 dark:text-slate-600">—</span>;
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !popRef.current) {
+      setPos(null);
+      return;
+    }
+    const eye = btnRef.current.getBoundingClientRect();
+    const height = popRef.current.offsetHeight;
+    const left = Math.min(Math.max(POP_MARGIN, eye.right - POP_WIDTH), window.innerWidth - POP_WIDTH - POP_MARGIN);
+    const below = eye.bottom + POP_GAP;
+    const top = below + height + POP_MARGIN <= window.innerHeight ? below : Math.max(POP_MARGIN, eye.top - POP_GAP - height);
+    setPos({ top, left });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    const onScroll = (e) => {
+      if (!popRef.current?.contains(e.target)) close();
+    };
+    const onKey = (e) => e.key === "Escape" && close();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Beside a figure, no remark means nothing to show; in the Remarks column it
+  // means a dash.
+  if (!parts.length) return inline ? null : <span className="text-slate-300 dark:text-slate-600">—</span>;
+
+  const summary = parts.map((p) => p.title).join(" · ");
   return (
-    <div className="relative inline-flex">
+    <div className="inline-flex">
       <button
+        ref={btnRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        title="View remark"
-        aria-label="View remark"
-        className="inline-flex items-center justify-center text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 transition-colors"
+        title={`View remarks — ${summary}`}
+        aria-label="View remarks"
+        aria-expanded={open}
+        className={`inline-flex items-center justify-center transition-colors ${
+          REMARK_EYE[inline ? parts[0].key : "general"]
+        }`}
       >
         <Eye size={14} />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-1 w-64 max-w-[80vw] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-lg p-2.5 text-left whitespace-normal">
-            <div className="flex items-start justify-between gap-2 mb-1">
-              <span className="font-semibold text-xs text-slate-800 dark:text-slate-100">Remark</span>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex-shrink-0">
-                <X size={14} />
-              </button>
+      {open &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[999]" onClick={() => setOpen(false)} />
+            <div
+              ref={popRef}
+              role="dialog"
+              aria-label="Remarks"
+              style={{ position: "fixed", width: POP_WIDTH, top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? "visible" : "hidden" }}
+              className="z-[1000] max-w-[calc(100vw-16px)] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-lg p-3 text-left"
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <span className="font-semibold text-xs text-slate-800 dark:text-slate-100">Remarks</span>
+                <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex-shrink-0">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {parts.map((p, i) => (
+                  <div key={p.key} className={i ? "mt-2.5 pt-2.5 border-t border-slate-200 dark:border-slate-700" : ""}>
+                    {(parts.length > 1 || p.key !== "general") && (
+                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-wide ${REMARK_TONE[p.key]}`}>{p.title}</span>
+                        {p.figure && <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">{p.figure}</span>}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-700 dark:text-slate-200 mb-0 whitespace-pre-line break-words">{p.text}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mb-0">{text}</p>
-          </div>
-        </>
-      )}
+          </>,
+          document.body,
+        )}
     </div>
+  );
+};
+
+// A figure with an eye beside it when a remark explains it — the reject "Other"
+// count and the Other downtime minutes, each of which the form requires a
+// remark for. Used only in the expanded breakdown's Other column, so the remark
+// sits right next to the number it explains rather than out in the Remarks
+// column. `kind` is a remarkParts key.
+const WithRemark = ({ value, row, kind }) => {
+  const parts = remarkParts(row).filter((p) => p.key === kind);
+  if (!parts.length) return value;
+  return (
+    <span className="inline-flex items-center justify-center gap-1.5">
+      {value}
+      <RemarkCell parts={parts} inline />
+    </span>
   );
 };
 
 // The downtime columns are headed with the same wording as the form, rather
 // than the longer labels the old Excel grid used.
 const DOWNTIME_LABEL = {
-  plannedDownMin: "Downtime",
   setupMin: "Setup Time",
   noManPowerMin: "No Man Power",
   materialShiftingMin: "Material Shifting",
@@ -221,7 +338,6 @@ const DOWNTIME_LABEL = {
   bdMechMin: "Breakdown Mechanical",
   bdEleMin: "BD Electricity",
   noPowerMin: "No Power",
-  lunchMin: "Lunch/Tea/Washroom",
   otherMin: "Other",
 };
 
@@ -259,7 +375,7 @@ const COLUMNS = [
     },
     columns: CYCLE_OP_FIELDS.map((f) => ({
       key: f.key,
-      label: f.label,
+      label: cycleOpLabel(f),
       get: (r) => dash(r[f.key]),
       align: "text-center",
     })),
@@ -280,6 +396,7 @@ const COLUMNS = [
     align: "text-center",
     tone: "calc",
   },
+  { key: "actualQty", label: "Actual Quantity", get: (r, c) => n(c.actualQty), align: "text-center" },
   { key: "okQty", label: "Actual OK Quantity", get: (r) => min(r.okQty), align: "text-center" },
   {
     key: "rejectedQty",
@@ -295,16 +412,31 @@ const COLUMNS = [
     columns: REJECT_REASONS.map((reason) => ({
       key: reason,
       label: reason,
-      get: (r) => min(r.rejectBreakdown?.[reason]),
+      get: (r) => {
+        const value = min(r.rejectBreakdown?.[reason]);
+        return reason === "Other" ? <WithRemark value={value} row={r} kind="reject" /> : value;
+      },
       align: "text-center",
     })),
   },
   { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-center", tone: "calc" },
+  // Planned Operator Shift folds into what sits beside it on the form: Lunch /
+  // Rest, and the Stoppage Allowed that Planned − Machine Shift leaves for it
+  // and every downtime.
   {
-    key: "plannedShift",
+    key: "planned",
     label: "Planned Operator Shift Time (hr)",
-    get: (r) => min(r.plannedOperatorShiftHours),
-    align: "text-center",
+    expandable: true,
+    summary: {
+      key: "plannedShift",
+      label: "Planned Operator Shift Time (hr)",
+      get: (r) => min(r.plannedOperatorShiftHours),
+      align: "text-center",
+    },
+    columns: [
+      { key: "lunchMin", label: "Lunch / Rest (min)", get: (r) => zeroIfBlank(r.lunchMin), align: "text-center" },
+      { key: "stoppageAllowed", label: "Stoppage Allowed (min)", get: (r) => n(stoppageLimitMin(r)), align: "text-center", tone: "calc" },
+    ],
   },
   {
     key: "unutilized",
@@ -325,10 +457,16 @@ const COLUMNS = [
       align: "text-center",
       tone: "calc",
     },
-    columns: STOPPAGE_FIELDS.map((f) => ({
+    // The boxes of the form's Downtime / Stoppage group. Lunch / Rest moved to the
+    // Planned Operator Shift group, and plannedDownMin has no box on the form (and
+    // no entry uses it); both still count toward the total.
+    columns: STOPPAGE_FIELDS.filter((f) => !["plannedDownMin", "lunchMin"].includes(f.key)).map((f) => ({
       key: f.key,
       label: DOWNTIME_LABEL[f.key] || f.label,
-      get: (r) => zeroIfBlank(r[f.key]),
+      get: (r) => {
+        const value = zeroIfBlank(r[f.key]);
+        return f.key === "otherMin" ? <WithRemark value={value} row={r} kind="downtime" /> : value;
+      },
       align: "text-center",
     })),
   },
@@ -376,13 +514,21 @@ const COLUMNS = [
   },
   {
     key: "oeeLunchCot",
-    label: "OEE not considering losses but lunch and COT (%)",
+    label: "OEE not considering losses but lunch and setup time (%)",
     get: (r, c, d) => pct(d.oeeLunchCot),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
   },
-  { key: "remarks", label: "Remarks", get: (r) => <RemarkCell text={r.remarks} />, align: "text-center" },
+  // The general Remarks box only. The two "Other" remarks are shown where their
+  // figure is — the Other column of the Rejected Quantity and Total Stoppage
+  // breakdowns (see WithRemark) — not repeated out here.
+  {
+    key: "remarks",
+    label: "Remarks",
+    get: (r) => <RemarkCell parts={remarkParts(r).filter((p) => p.key === "general")} />,
+    align: "text-center",
+  },
 ];
 
 const ProductionEntriesTable = ({

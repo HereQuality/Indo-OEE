@@ -41,7 +41,8 @@ export const STAT_CATALOG = [
   { key: "performance", label: "Actual vs Ideal", hint: "Actual ÷ Ideal quantity", format: "pct", example: "94.70%" },
   { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%" },
   { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%" },
-  { key: "oeeLunchCot", label: "OEE NOT Considering Losses, But Lunch & COT", hint: "Averaged per machine-day", format: "pct", example: "93.85%" },
+  // Key kept as oeeLunchCot: it is what a process's saved dashboard stores, so renaming it would drop the tile.
+  { key: "oeeLunchCot", label: "OEE NOT Considering Losses, But Lunch & Setup Time", hint: "Averaged per machine-day", format: "pct", example: "93.85%" },
   { key: "effectiveHours", label: "Effective Machine Run Time", hint: "OK × cycle time", format: "hours", example: "7,281 hr" },
   { key: "shiftHours", label: "Machine Shift Time", hint: "Machine OFF − ON", format: "hours", example: "8,120 hr" },
   { key: "downtimeMin", label: "Total Downtime", hint: "All stoppage causes", format: "minutes", tone: "downtime", example: "5,160 min" },
@@ -102,6 +103,24 @@ export const DIMENSIONS = {
   date: { label: "Date", value: (r) => r.date, text: (v) => displayDay(v) },
 };
 export const EMPTY_FILTERS = { machine: [], operator: [], item: [], month: [], date: [] };
+
+// Sheet order for machines: ctx.machineOrder is {machineId: position} built
+// from the Machine list, which the API returns in Sequence order (see
+// server/utils/machineOrder.js). A machine not in it — deactivated since it
+// made entries — ranks after every listed one, then by name, numbers compared
+// as numbers. `keyOf` reads the machine id off whatever is being sorted
+// (chart rows carry it as .key, filter options as .value).
+export const compareMachines = (ctx, keyOf = (item) => item.key) => {
+  const order = ctx?.machineOrder || {};
+  const rank = (item) => order[keyOf(item)] ?? Infinity;
+  const name = (item) => ctx?.machineName?.[keyOf(item)] || item.label || "";
+  return (a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra < rb ? -1 : 1;
+    return name(a).localeCompare(name(b), undefined, { numeric: true });
+  };
+};
 
 export const hasFilters = (filters) => Object.values(filters).some((v) => v.length);
 

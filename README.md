@@ -78,6 +78,7 @@ Project_Root/
 │   │   ├── api/     # API integration services
 │   │   ├── pages/   # UI pages and views
 │   │   └── Routes/  # Protected routing and RBAC enforcement
+├── mobile/          # Android + iOS app (Flutter, front end only — same backend, see mobile/README.md)
 └── server/          # Node.js + Express backend API
     ├── controllers/ # Request handling logic
     ├── models/      # Mongoose database schemas

@@ -4,7 +4,7 @@ import {
   ReferenceLine, ResponsiveContainer, Tooltip, Treemap, XAxis, YAxis,
 } from "recharts";
 import {
-  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, formatExact,
+  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, compareMachines, formatExact,
   reasonMeasure, summarize, summarizeBy,
 } from "../../utils/processDashboard";
 import { axisProps, markOpacity, tooltipProps } from "./chartTheme";
@@ -34,13 +34,14 @@ export const Empty = ({ children }) => (
   <div className="d-flex align-items-center justify-content-center h-100 text-muted small text-center px-3">{children}</div>
 );
 
-export const MiniTable = ({ columns, rows, onRowClick, selected = [] }) => (
+// `hints` (optional, parallel to `columns`) become each header's hover text.
+export const MiniTable = ({ columns, hints, rows, onRowClick, selected = [] }) => (
   <div className="h-100 overflow-auto">
     <table className="table table-sm align-middle mb-0 pd-table">
       <thead>
         <tr>
           {columns.map((col, i) => (
-            <th key={col} className={i ? "text-end" : ""}>{col}</th>
+            <th key={col} className={i ? "text-end" : ""} title={hints?.[i]}>{col}</th>
           ))}
         </tr>
       </thead>
@@ -119,6 +120,7 @@ const useDimBars = (rows, dim, ctx, pick, { sort = "value", positiveOnly = true 
     const data = summarizeBy(rows, dim, ctx)
       .map((g) => ({ key: g.key, label: g.label, value: pick(g.summary) }))
       .filter((d) => Number.isFinite(d.value) && (!positiveOnly || d.value > 0));
+    if (sort === "machine") return data.sort(compareMachines(ctx));
     return sort === "label" ? data.sort(naturalSort) : data.sort((a, b) => b.value - a.value);
   }, [rows, dim, ctx]);
 
@@ -162,7 +164,7 @@ const RejectByReason = ({ rowsFor, c, onDrill, ...rest }) => {
 };
 
 const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
-  const data = useDimBars(rowsFor("machine"), "machine", ctx, (s) => pct100(s.oeeLosses), { sort: "label", positiveOnly: false });
+  const data = useDimBars(rowsFor("machine"), "machine", ctx, (s) => pct100(s.oeeLosses), { sort: "machine", positiveOnly: false });
   if (!data.length) return <Empty>Needs machine ON/OFF times and OK quantity.</Empty>;
   if (view === "table") {
     return (
@@ -189,7 +191,7 @@ const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
 const OEE_SERIES = [
   { key: "oeeLosses", label: "Considering losses" },
   { key: "oeeLunch", label: "Not considering losses, but lunch" },
-  { key: "oeeLunchCot", label: "Not considering losses, but lunch & COT" },
+  { key: "oeeLunchCot", label: "Not considering losses, but lunch & setup time" },
 ];
 
 const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
@@ -295,7 +297,7 @@ const DowntimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
         ...Object.fromEntries(STOPPAGE_GROUPS.map((grp) => [grp.key, grp.fields.reduce((sum, f) => sum + g.summary.downtimeByCause[f], 0)])),
       }))
       .filter((d) => STOPPAGE_GROUPS.some((grp) => d[grp.key] > 0))
-      .sort(naturalSort),
+      .sort(compareMachines(ctx)),
     [rows, ctx],
   );
   if (!data.length) return <Empty>No downtime recorded.</Empty>;
@@ -362,14 +364,37 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
-// Nested treemap cell: depth 1 is a machine's whole area (outlined, its name
-// pinned top-left); depth 2 is one stoppage group's slice within it, coloured
-// like Downtime by Machine's stacked bars so the two visuals read as one.
-const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
+// Rounds the value axis every panel shares outward to a 1/2/5 × 10ᵏ step (never
+// finer than 1 minute) with 0 always on a tick, so the labels read as whole
+// numbers instead of raw floats like -96.6666667.
+const niceAxis = (min, max, intervals) => {
+  const span = max - min;
+  if (!(span > 0)) return { domain: [0, 10], ticks: [0, 5, 10] };
+  const raw = span / intervals;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / pow;
+  const step = Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow);
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi; v += step) ticks.push(v);
+  return { domain: [lo, hi], ticks };
+};
+const tickText = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+// Up to this many machines the panels split the card between them (so one, two
+// or three machines fill it instead of huddling in a corner); past it they go
+// into a scrolling grid of small fixed-height panels.
+const FIT_PANELS = 6;
+
+// One small chart per machine, all on one shared scale so the panels compare
+// honestly. 1–3 machines sit side by side and use the card's full height; 4–6
+// make two rows of up to three; more than that scroll.
+const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, expanded }) => {
   const dim = ctx.bucket;
   const rows = rowsFor(null);
-  const { panels, domain } = useMemo(() => {
-    const list = summarizeBy(rows, "machine", ctx).sort(naturalSort).map((m) => ({
+  const { panels, values } = useMemo(() => {
+    const list = summarizeBy(rows, "machine", ctx).sort(compareMachines(ctx)).map((m) => ({
       key: m.key,
       label: m.label,
       total: m.summary.unreportedMin,
@@ -377,34 +402,51 @@ const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
         .map((g) => ({ key: g.key, value: g.summary.unreportedMin }))
         .sort((a, b) => a.key.localeCompare(b.key)),
     }));
-    const values = list.flatMap((p) => p.data.map((d) => d.value));
-    return { panels: list, domain: [Math.min(0, ...values), Math.max(0, ...values)] };
+    return { panels: list, values: list.flatMap((p) => p.data.map((d) => d.value)) };
   }, [rows, dim, ctx]);
 
-  if (!panels.length) return <Empty>Needs machine ON/OFF times.</Empty>;
+  const n = panels.length;
+  const fits = n <= FIT_PANELS;
+  const roomy = n <= 3;
+  const { domain, ticks } = useMemo(
+    () => niceAxis(Math.min(0, ...values), Math.max(0, ...values), fits ? 3 : 2),
+    [values, fits],
+  );
+  const axisWidth = 12 + 7 * Math.max(...ticks.map((t) => tickText(t).length));
+
+  if (!n) return <Empty>Needs machine ON/OFF times.</Empty>;
   if (view === "table") {
     return (
       <MiniTable columns={["Machine", "Unreported time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={panels.map((p) => ({ key: p.key, cells: [p.label, formatExact("minutes", p.total)] }))} />
     );
   }
-  // Small multiples on one shared scale, so the panels compare honestly.
+
+  const cols = Math.min(n, 3);
+  const gridStyle = fits
+    ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))` }
+    : expanded
+      ? { gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }
+      : undefined;
+  const plotHeight = expanded ? 170 : 104;
+  const dateTick = (k) => (dim === "date" ? (roomy ? `${k.slice(8)}/${k.slice(5, 7)}` : k.slice(8)) : DIMENSIONS.month.text(k).slice(0, 3));
+
   return (
-    <div className="h-100 overflow-auto pd-multiples">
+    <div className={`h-100 pd-multiples${fits ? " pd-multiples-fit" : ""}`} style={gridStyle}>
       {panels.map((p) => (
-        <div key={p.key}>
+        <div key={p.key} className="pd-multiple">
           <button type="button" className="pd-multiple-title" onClick={() => onToggle("machine", p.key)} title="Filter the dashboard to this machine">
             {p.label} <span className="text-muted fw-normal">· {FORMATS.minutes(p.total)}</span>
           </button>
-          <div style={{ height: 104 }}>
-            <ResponsiveContainer>
-              <BarChart data={p.data} margin={{ top: 4, right: 4, left: -22, bottom: 0 }}>
+          <div className="pd-multiple-plot" style={fits ? undefined : { height: plotHeight, flex: "none" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={p.data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke={c.grid} vertical={false} />
-                <XAxis dataKey="key" {...axisProps(c)} tickFormatter={(k) => (dim === "date" ? k.slice(8) : DIMENSIONS.month.text(k).slice(0, 3))} minTickGap={12} />
-                <YAxis {...axisProps(c)} domain={domain} tickCount={3} />
+                <XAxis dataKey="key" {...axisProps(c)} tickFormatter={dateTick} minTickGap={roomy ? 16 : 12} />
+                <YAxis {...axisProps(c)} width={axisWidth} domain={domain} ticks={ticks} tickFormatter={tickText} allowDecimals={false} />
                 <ReferenceLine y={0} stroke={c.muted} />
                 <Tooltip {...tooltipProps(c)} labelFormatter={(k) => DIMENSIONS[dim].text(k)} formatter={(v) => [formatExact("minutes", v), "Unreported"]} />
-                <Bar dataKey="value" fill={c.ok} radius={[2, 2, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+                <Bar dataKey="value" fill={c.ok} radius={[2, 2, 0, 0]} maxBarSize={roomy ? 36 : fits ? 28 : 14} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -414,19 +456,51 @@ const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
+// One row per machine. Read left to right: the quantities (Actual, OK, then OK %
+// then the Rejected count and Rejected % that go with it), then run time,
+// downtime and unreported time, and last the three OEE figures each in its own
+// column — the same three the entries table shows — rather than one blended OEE.
+const SUMMARY_COLUMNS = [
+  { label: "Machine" },
+  { label: "Actual", hint: "Actual quantity produced" },
+  { label: "OK", hint: "Pieces that passed" },
+  { label: "% OK", hint: "OK ÷ (OK + Rejected)" },
+  { label: "Rejected", hint: "Actual − OK" },
+  { label: "% Rejected", hint: "Rejected ÷ Actual" },
+  { label: "Effective Run", hint: "OK × cycle time" },
+  { label: "Downtime", hint: "All stoppage causes" },
+  { label: "Unreported", hint: "Shift − effective run − downtime, per machine-day" },
+  { label: "OEE · Losses", hint: "OEE considering losses — averaged over the machine's days" },
+  { label: "OEE · Lunch", hint: "OEE not considering losses, but lunch — averaged over the machine's days" },
+  { label: "OEE · Lunch + Setup Time", hint: "OEE not considering losses, but lunch and setup time — averaged over the machine's days" },
+];
+
 const MachineSummary = ({ rowsFor, ctx, filters, onToggle }) => {
   const rows = rowsFor("machine");
-  const data = useMemo(() => summarizeBy(rows, "machine", ctx).sort(naturalSort), [rows, ctx]);
+  const data = useMemo(() => summarizeBy(rows, "machine", ctx).sort(compareMachines(ctx)), [rows, ctx]);
   if (!data.length) return <Empty>No entries for this period.</Empty>;
   return (
     <MiniTable
-      columns={["Machine", "Actual", "OK", "Rejected", "% OK", "Effective Run", "Downtime", "Unreported", "OEE"]}
+      columns={SUMMARY_COLUMNS.map((c) => c.label)}
+      hints={SUMMARY_COLUMNS.map((c) => c.hint)}
       selected={filters.machine}
       onRowClick={(k) => onToggle("machine", k)}
       rows={data.map(({ key, label, summary: s }) => ({
         key,
-        cells: [label, formatExact("qty", s.totalQty), formatExact("qty", s.okQty), formatExact("qty", s.rejectedQty), FORMATS.pct(s.okPct),
-          FORMATS.hours(s.effectiveHours), FORMATS.minutes(s.downtimeMin), FORMATS.minutes(s.unreportedMin), FORMATS.pct(s.oeeLosses)],
+        cells: [
+          label,
+          formatExact("qty", s.totalQty),
+          formatExact("qty", s.okQty),
+          FORMATS.pct(s.okPct),
+          formatExact("qty", s.rejectedQty),
+          FORMATS.pct(s.rejectionPct),
+          FORMATS.hours(s.effectiveHours),
+          FORMATS.minutes(s.downtimeMin),
+          FORMATS.minutes(s.unreportedMin),
+          FORMATS.pct(s.oeeLosses),
+          FORMATS.pct(s.oeeLunch),
+          FORMATS.pct(s.oeeLunchCot),
+        ],
       }))}
     />
   );
