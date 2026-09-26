@@ -61,15 +61,15 @@ class KpiTileSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const DashCard(
-        padding: EdgeInsets.all(14),
+        padding: EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             SkeletonBox(width: 90, height: 11),
-            SizedBox(height: 14),
-            SkeletonBox(width: 70, height: 24),
-            SizedBox(height: 10),
+            SizedBox(height: 8),
+            SkeletonBox(width: 70, height: 22),
+            SizedBox(height: 6),
             SkeletonBox(width: 110, height: 10),
           ],
         ),
@@ -78,7 +78,7 @@ class KpiTileSkeleton extends StatelessWidget {
 
 /// Placeholder for a chart card.
 class ChartCardSkeleton extends StatelessWidget {
-  const ChartCardSkeleton({super.key, this.height = 220});
+  const ChartCardSkeleton({super.key, this.height = 200});
   final double height;
 
   @override
@@ -87,9 +87,9 @@ class ChartCardSkeleton extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SkeletonBox(width: 180, height: 14),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             const SkeletonBox(width: 240, height: 10),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             SkeletonBox(height: height, radius: 12),
           ],
         ),

@@ -62,6 +62,7 @@ Map<String, dynamic> _ticket(
         ],
     };
 
+const _long = 'A very long ticket subject that will wrap over several lines on a tiny phone';
 const _agentPerms = PagePerms(view: true, create: true, edit: true);
 const _userPerms = PagePerms(view: true, create: true);
 
@@ -116,7 +117,16 @@ class _Server {
 }
 
 Future<void> _open(WidgetTester tester, String subject) async {
+  await tester.ensureVisible(find.text(subject));
+  await tester.pumpAndSettle();
   await tester.tap(find.text(subject));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapVisible(WidgetTester tester, String text) async {
+  await tester.ensureVisible(find.text(text));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(text));
   await tester.pumpAndSettle();
 }
 
@@ -141,14 +151,11 @@ void main() {
       expect(find.text('In Progress (1)'), findsOneWidget);
       expect(find.text('Raised by me'), findsNothing); // only for support agents
 
-      await tester.ensureVisible(find.text('Closed (1)'));
-      await tester.tap(find.text('Closed (1)'));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, 'Closed (1)');
       expect(find.text('Slow report'), findsOneWidget);
       expect(find.text('Login fails'), findsNothing);
 
-      await tester.tap(find.text('All (3)'));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, 'All (3)');
       await tester.enterText(find.byType(TextField).first, 'login');
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pumpAndSettle();
@@ -450,24 +457,20 @@ void main() {
   group('layouts', () {
     testWidgets('dark, 360x640, text scale 1.6: list, detail and create form do not overflow', (tester) async {
       final api = FakeApi.install();
-      FlutterError.onError = (d) => FlutterError.dumpErrorToConsole(d, forceReport: true);
       _Server(api, [
-        _ticket('a', subject: 'A very long ticket subject that will wrap over several lines on a tiny phone', status: 'Confirmation', unread: true, updated: 3, withMessages: true),
+        _ticket('a', subject: _long, status: 'Confirmation', unread: true, updated: 3, withMessages: true),
         _ticket('b', subject: 'Second', status: 'In Progress', priority: 'High', by: 'u7', byName: 'Somebody With A Long Name', updated: 4),
       ]);
       await pumpScreen(tester, const SupportScreen(),
           user: _operator, perms: _agentPerms, dark: true, textScale: 1.6, size: const Size(360, 640));
-      final dbg = tester.takeException();
-      if (dbg is FlutterError) debugPrint(dbg.toStringDeep());
-      expect(dbg, isNull);
+      expect(tester.takeException(), isNull);
 
       await _open(tester, 'Second');
       expect(tester.takeException(), isNull);
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      await tester.tap(find.textContaining('A very long ticket'));
-      await tester.pumpAndSettle();
+      await _open(tester, _long);
       expect(tester.takeException(), isNull);
       expect(find.text('Has your issue been resolved?'), findsOneWidget);
       await tester.tap(find.text('Not resolved'));
@@ -492,6 +495,20 @@ void main() {
       expect(tester.takeException(), isNull);
       await _open(tester, 'Login fails');
       expect(find.text('Start progress'), findsOneWidget);
+    });
+
+    testWidgets('iPad: dark + text scale 1.6 table and the create dialog do not overflow', (tester) async {
+      final api = FakeApi.install();
+      api.list(_list, [_ticket('a', subject: 'Login fails', status: 'Confirmation', by: 'u7', byName: 'Ravi Kumar Sharma', unread: true)]);
+      await pumpScreen(tester, const SupportScreen(),
+          user: _operator, perms: _agentPerms, dark: true, textScale: 1.6, size: const Size(820, 1180));
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('New ticket'));
+      await tester.pumpAndSettle();
+      expect(find.text('Raise support ticket'), findsOneWidget);
+      expect(find.byType(Dialog), findsOneWidget); // centred dialog on iPad, not a full page
+      expect(tester.takeException(), isNull);
     });
 
     for (final dark in [false, true]) {

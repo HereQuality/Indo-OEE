@@ -72,7 +72,7 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         titleSpacing: 0,
-        title: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        title: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         actions: [
           if (!widget.tableOnly) ViewToggleButton(view: _view, onChanged: (v) => setState(() => _view = v)),
           if (widget.onDrill != null) DrillButton(onPressed: widget.onDrill!),
@@ -95,15 +95,15 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
                 final header = (hintText == null || hintText.isEmpty)
                     ? const SizedBox.shrink()
                     : Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(hintText, style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
+                          child: Text(hintText, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                         ),
                       );
                 final card = Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  child: DashCard(padding: const EdgeInsets.all(12), child: stage),
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                  child: DashCard(padding: const EdgeInsets.all(10), child: stage),
                 );
                 return Column(
                   children: [

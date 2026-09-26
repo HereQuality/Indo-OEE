@@ -38,7 +38,7 @@ Future<void> showRemarkSheet(BuildContext context, List<Map<String, dynamic>> pa
                   children: [
                     Icon(Icons.visibility_outlined, size: 20, color: s.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    const Expanded(child: Text('Remarks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                    const Expanded(child: Text('Remarks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
                     IconButton(
                       tooltip: 'Close',
                       icon: const Icon(Icons.close_rounded),
@@ -66,7 +66,7 @@ Future<void> showRemarkSheet(BuildContext context, List<Map<String, dynamic>> pa
                                       '${parts[i]['title']}'.toUpperCase(),
                                       style: TextStyle(
                                         fontSize: 11,
-                                        letterSpacing: 0.6,
+                                        letterSpacing: 0.3,
                                         fontWeight: FontWeight.w800,
                                         color: _partTone(ctx, '${parts[i]['key']}'),
                                       ),
@@ -80,7 +80,7 @@ Future<void> showRemarkSheet(BuildContext context, List<Map<String, dynamic>> pa
                                 ],
                               ),
                             ),
-                          SelectableText('${parts[i]['text']}', style: const TextStyle(fontSize: 15, height: 1.4)),
+                          SelectableText('${parts[i]['text'] ?? ''}', style: const TextStyle(fontSize: 14, height: 1.4)),
                         ],
                       ],
                     ),
@@ -119,7 +119,7 @@ Future<void> showFormulaSheet(BuildContext context, {required String title, requ
                 children: [
                   Icon(Icons.functions_rounded, size: 22, color: AppColors.readable(ctx, s.primary)),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
                   IconButton(
                     tooltip: 'Close',
                     icon: const Icon(Icons.close_rounded),
@@ -138,7 +138,7 @@ Future<void> showFormulaSheet(BuildContext context, {required String title, requ
                         style: TextStyle(fontSize: 12, color: s.onSurfaceVariant, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 6),
-                      Text(text, style: const TextStyle(fontSize: 15, height: 1.45)),
+                      Text(text, style: const TextStyle(fontSize: 14, height: 1.45)),
                     ],
                   ),
                 ),

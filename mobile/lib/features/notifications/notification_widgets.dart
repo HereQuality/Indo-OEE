@@ -61,29 +61,29 @@ class NotificationCard extends StatelessWidget {
         color: bg,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: unread ? s.primary.withValues(alpha: 0.45) : s.outlineVariant),
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: unread ? s.primary.withValues(alpha: 0.40) : s.outlineVariant),
         ),
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 72),
+            constraints: const BoxConstraints(minHeight: 56),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
                       color: look.tone.withValues(alpha: dark ? 0.22 : 0.12),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(look.icon, size: 22, color: tone),
+                    child: Icon(look.icon, size: 18, color: tone),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,8 +96,10 @@ class NotificationCard extends StatelessWidget {
                                 item.title,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: unread ? FontWeight.w800 : FontWeight.w500,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  height: 1.25,
+                                  fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
                                   color: s.onSurface,
                                 ),
                               ),
@@ -105,12 +107,12 @@ class NotificationCard extends StatelessWidget {
                             if (unread) ...[
                               const SizedBox(width: 8),
                               Padding(
-                                padding: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.only(top: 5),
                                 child: Semantics(
                                   label: 'Unread',
                                   child: Container(
-                                    width: 10,
-                                    height: 10,
+                                    width: 8,
+                                    height: 8,
                                     decoration: BoxDecoration(color: s.primary, shape: BoxShape.circle),
                                   ),
                                 ),
@@ -119,33 +121,34 @@ class NotificationCard extends StatelessWidget {
                           ],
                         ),
                         if (item.message.isNotEmpty) ...[
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             item.message,
-                            maxLines: 4,
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.3,
                               color: unread ? s.onSurface.withValues(alpha: 0.85) : s.onSurfaceVariant,
-                              fontWeight: unread ? FontWeight.w500 : FontWeight.w400,
                             ),
                           ),
                         ],
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Row(
                           children: [
-                            Icon(Icons.schedule_rounded, size: 13, color: s.onSurfaceVariant),
+                            Icon(Icons.schedule_rounded, size: 12, color: s.onSurfaceVariant),
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
                                 time,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(color: s.onSurfaceVariant),
+                                style: TextStyle(fontSize: 11.5, color: s.onSurfaceVariant),
                               ),
                             ),
                             if (hasPage) ...[
                               const Spacer(),
-                              Icon(Icons.chevron_right_rounded, size: 20, color: s.onSurfaceVariant),
+                              Icon(Icons.chevron_right_rounded, size: 18, color: s.onSurfaceVariant),
                             ],
                           ],
                         ),
@@ -176,15 +179,15 @@ class DismissBackground extends StatelessWidget {
       padding: const EdgeInsets.only(right: 20),
       decoration: BoxDecoration(
         color: AppColors.critical.withValues(alpha: dark ? 0.25 : 0.12),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: s.error.withValues(alpha: 0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Remove', style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 8),
-          Icon(Icons.delete_outline_rounded, color: fg),
+          Text('Remove', style: TextStyle(fontSize: 13, color: fg, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 6),
+          Icon(Icons.delete_outline_rounded, size: 20, color: fg),
         ],
       ),
     );
@@ -200,13 +203,14 @@ class SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 6),
       child: Text(
         label.toUpperCase(),
-        style: t.textTheme.labelMedium?.copyWith(
+        style: TextStyle(
+          fontSize: 11,
           color: t.colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
+          letterSpacing: 0.4,
         ),
       ),
     );
@@ -226,28 +230,28 @@ class NotificationsEmpty extends StatelessWidget {
     final s = t.colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 72,
-              height: 72,
+              width: 56,
+              height: 56,
               decoration: BoxDecoration(color: s.primary.withValues(alpha: 0.12), shape: BoxShape.circle),
-              child: Icon(icon, size: 34, color: s.primary),
+              child: Icon(icon, size: 26, color: s.primary),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: t.textTheme.bodyMedium?.copyWith(color: s.onSurfaceVariant),
+                style: TextStyle(fontSize: 13, color: s.onSurfaceVariant),
               ),
             ],
           ],
@@ -298,32 +302,30 @@ class _NotificationSkeletonState extends State<NotificationSkeleton> with Single
             for (var i = 0; i < widget.count; i++)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: base,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: s.outlineVariant),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(color: block, borderRadius: BorderRadius.circular(12)),
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(color: block, borderRadius: BorderRadius.circular(10)),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           bar(150, 12),
-                          const SizedBox(height: 8),
-                          bar(double.infinity, 10),
                           const SizedBox(height: 6),
+                          bar(double.infinity, 10),
+                          const SizedBox(height: 4),
                           bar(110, 10),
-                          const SizedBox(height: 10),
-                          bar(64, 8),
                         ],
                       ),
                     ),

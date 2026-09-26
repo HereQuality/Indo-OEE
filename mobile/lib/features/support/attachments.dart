@@ -22,7 +22,8 @@ const _mimeByExt = {
   'heic': 'image/heic',
   'pdf': 'application/pdf',
   'doc': 'application/msword',
-  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'docx':
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'xls': 'application/vnd.ms-excel',
   'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'txt': 'text/plain',
@@ -43,8 +44,12 @@ String formatBytes(int b) {
 /// A file the person picked but has not sent yet. Holds a path (device picks)
 /// or bytes (tests / in-memory sources).
 class PendingAttachment {
-  PendingAttachment({required this.name, this.path, this.bytes, required this.size})
-      : assert(path != null || bytes != null);
+  PendingAttachment({
+    required this.name,
+    this.path,
+    this.bytes,
+    required this.size,
+  }) : assert(path != null || bytes != null);
 
   final String name;
   final String? path;
@@ -59,7 +64,9 @@ class PendingAttachment {
   Future<MultipartFile> toMultipart() {
     final type = DioMediaType.parse(mime ?? 'application/octet-stream');
     return bytes != null
-        ? Future.value(MultipartFile.fromBytes(bytes!, filename: name, contentType: type))
+        ? Future.value(
+            MultipartFile.fromBytes(bytes!, filename: name, contentType: type),
+          )
         : MultipartFile.fromFile(path!, filename: name, contentType: type);
   }
 }
@@ -81,18 +88,27 @@ class DeviceAttachmentSource extends AttachmentSource {
   static const _quality = 72;
 
   Future<List<PendingAttachment>> _fromXFiles(Iterable<XFile> xs) async => [
-        for (final x in xs) PendingAttachment(name: x.name, path: x.path, size: await x.length()),
-      ];
+    for (final x in xs)
+      PendingAttachment(name: x.name, path: x.path, size: await x.length()),
+  ];
 
   @override
   Future<List<PendingAttachment>> photos() async => _fromXFiles(
-        await ImagePicker().pickMultiImage(maxWidth: _maxSide, maxHeight: _maxSide, imageQuality: _quality),
-      );
+    await ImagePicker().pickMultiImage(
+      maxWidth: _maxSide,
+      maxHeight: _maxSide,
+      imageQuality: _quality,
+    ),
+  );
 
   @override
   Future<List<PendingAttachment>> camera() async {
-    final x = await ImagePicker()
-        .pickImage(source: ImageSource.camera, maxWidth: _maxSide, maxHeight: _maxSide, imageQuality: _quality);
+    final x = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: _maxSide,
+      maxHeight: _maxSide,
+      imageQuality: _quality,
+    );
     return x == null ? const [] : _fromXFiles([x]);
   }
 
@@ -100,13 +116,27 @@ class DeviceAttachmentSource extends AttachmentSource {
   Future<List<PendingAttachment>> files() async {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
+      allowedExtensions: const [
+        'pdf',
+        'doc',
+        'docx',
+        'xls',
+        'xlsx',
+        'txt',
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+      ],
     );
     final out = <PendingAttachment>[];
     for (final f in picked) {
       final p = f.path;
       if (p == null) continue;
-      out.add(PendingAttachment(name: f.name, path: p, size: (await f.length()) ?? 0));
+      out.add(
+        PendingAttachment(name: f.name, path: p, size: (await f.length()) ?? 0),
+      );
     }
     return out;
   }
@@ -117,7 +147,10 @@ AttachmentSource attachmentSource = const DeviceAttachmentSource();
 
 /// Adds [incoming] to [current] enforcing the server's limits (5 files, 5 MB
 /// each, allowed types) and toasting what was skipped.
-List<PendingAttachment> mergeAttachments(List<PendingAttachment> current, List<PendingAttachment> incoming) {
+List<PendingAttachment> mergeAttachments(
+  List<PendingAttachment> current,
+  List<PendingAttachment> incoming,
+) {
   final out = [...current];
   var dropped = false;
   for (final f in incoming) {
@@ -139,8 +172,11 @@ enum _Pick { photos, camera, files }
 
 /// Bottom sheet "Camera / Photo library / Files" then the pick itself. Returns
 /// [current] plus whatever was added (limits applied), or null if dismissed.
-Future<List<PendingAttachment>?> chooseAttachments(BuildContext context, List<PendingAttachment> current,
-    {bool imagesOnly = false}) async {
+Future<List<PendingAttachment>?> chooseAttachments(
+  BuildContext context,
+  List<PendingAttachment> current, {
+  bool imagesOnly = false,
+}) async {
   final choice = await showModalBottomSheet<_Pick>(
     context: context,
     useSafeArea: true,
@@ -152,20 +188,20 @@ Future<List<PendingAttachment>?> chooseAttachments(BuildContext context, List<Pe
           ListTile(
             leading: const Icon(Icons.photo_camera_outlined),
             title: const Text('Take a photo'),
-            minTileHeight: 52,
+            minTileHeight: 48,
             onTap: () => Navigator.pop(ctx, _Pick.camera),
           ),
           ListTile(
             leading: const Icon(Icons.photo_library_outlined),
             title: const Text('Photo library'),
-            minTileHeight: 52,
+            minTileHeight: 48,
             onTap: () => Navigator.pop(ctx, _Pick.photos),
           ),
           if (!imagesOnly)
             ListTile(
               leading: const Icon(Icons.attach_file_rounded),
               title: const Text('Files (PDF, Word, Excel, text)'),
-              minTileHeight: 52,
+              minTileHeight: 48,
               onTap: () => Navigator.pop(ctx, _Pick.files),
             ),
         ],
@@ -192,10 +228,12 @@ Future<List<PendingAttachment>?> chooseAttachments(BuildContext context, List<Pe
 Future<void> openAttachment(BuildContext context, String url) async {
   final resolved = AppConfig.toBackendUrl(url) ?? url;
   if (isImageUrl(url)) {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => ImageViewerPage(url: resolved),
-    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => ImageViewerPage(url: resolved),
+      ),
+    );
     return;
   }
   await _launch(resolved);
@@ -203,7 +241,10 @@ Future<void> openAttachment(BuildContext context, String url) async {
 
 Future<void> _launch(String url) async {
   try {
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!ok) Alerts.error('Could not open the file.');
   } catch (_) {
     Alerts.error('Could not open the file.');
@@ -216,39 +257,49 @@ class ImageViewerPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        // A photo viewer is black in both themes on purpose.
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              tooltip: 'Open / download',
-              icon: const Icon(Icons.open_in_new_rounded),
-              onPressed: () => _launch(url),
-            ),
-          ],
+    // A photo viewer is black in both themes on purpose.
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      actions: [
+        IconButton(
+          tooltip: 'Open / download',
+          icon: const Icon(Icons.open_in_new_rounded),
+          onPressed: () => _launch(url),
         ),
-        body: SafeArea(
-          child: InteractiveViewer(
-            minScale: 1,
-            maxScale: 5,
-            child: Center(
-              child: CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.contain,
-                placeholder: (_, _) => const CircularProgressIndicator(color: Colors.white),
-                errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined, color: Colors.white70, size: 48),
-              ),
+      ],
+    ),
+    body: SafeArea(
+      child: InteractiveViewer(
+        minScale: 1,
+        maxScale: 5,
+        child: Center(
+          child: CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.contain,
+            placeholder: (_, _) =>
+                const CircularProgressIndicator(color: Colors.white),
+            errorWidget: (_, _, _) => const Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white70,
+              size: 48,
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// Uploaded attachments of a ticket / message: image thumbnails + file chips.
 class AttachmentGallery extends StatelessWidget {
-  const AttachmentGallery({super.key, required this.urls, this.thumb = 84, this.onFilled = false});
+  const AttachmentGallery({
+    super.key,
+    required this.urls,
+    this.thumb = 84,
+    this.onFilled = false,
+  });
   final List<String> urls;
   final double thumb;
 
@@ -280,10 +331,14 @@ class AttachmentGallery extends StatelessWidget {
                       imageUrl: AppConfig.toBackendUrl(urls[i]) ?? urls[i],
                       fit: BoxFit.cover,
                       memCacheWidth: (thumb * 3).round(),
-                      placeholder: (_, _) => ColoredBox(color: s.surfaceContainerHighest),
+                      placeholder: (_, _) =>
+                          ColoredBox(color: s.surfaceContainerHighest),
                       errorWidget: (_, _, _) => ColoredBox(
                         color: s.surfaceContainerHighest,
-                        child: Icon(Icons.broken_image_outlined, color: s.onSurfaceVariant),
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: s.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
@@ -292,10 +347,22 @@ class AttachmentGallery extends StatelessWidget {
             )
           else
             ActionChip(
-              avatar: Icon(Icons.attach_file_rounded, size: 16, color: onFilled ? s.onPrimary : s.primary),
-              label: Text('File ${i + 1}', style: TextStyle(color: onFilled ? s.onPrimary : null)),
-              backgroundColor: onFilled ? s.onPrimary.withValues(alpha: 0.16) : null,
-              side: onFilled ? BorderSide(color: s.onPrimary.withValues(alpha: 0.4)) : null,
+              visualDensity: VisualDensity.compact,
+              avatar: Icon(
+                Icons.attach_file_rounded,
+                size: 14,
+                color: onFilled ? s.onPrimary : s.primary,
+              ),
+              label: Text(
+                'File ${i + 1}',
+                style: TextStyle(fontSize: 12.5, color: onFilled ? s.onPrimary : null),
+              ),
+              backgroundColor: onFilled
+                  ? s.onPrimary.withValues(alpha: 0.16)
+                  : null,
+              side: onFilled
+                  ? BorderSide(color: s.onPrimary.withValues(alpha: 0.4))
+                  : null,
               onPressed: () => openAttachment(context, urls[i]),
             ),
       ],
@@ -305,7 +372,12 @@ class AttachmentGallery extends StatelessWidget {
 
 /// Files picked but not yet sent, with a remove button on each.
 class PendingAttachmentStrip extends StatelessWidget {
-  const PendingAttachmentStrip({super.key, required this.files, required this.onRemove, this.enabled = true});
+  const PendingAttachmentStrip({
+    super.key,
+    required this.files,
+    required this.onRemove,
+    this.enabled = true,
+  });
   final List<PendingAttachment> files;
   final ValueChanged<int> onRemove;
   final bool enabled;
@@ -315,16 +387,16 @@ class PendingAttachmentStrip extends StatelessWidget {
     if (files.isEmpty) return const SizedBox.shrink();
     final s = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 84,
+      height: 72,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: files.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
           final f = files[i];
           return SizedBox(
-            width: f.isImage ? 84 : 150,
-            height: 84,
+            width: f.isImage ? 72 : 136,
+            height: 72,
             child: Stack(
               children: [
                 Positioned.fill(
@@ -353,8 +425,15 @@ class PendingAttachmentStrip extends StatelessWidget {
                           child: Container(
                             width: 22,
                             height: 22,
-                            decoration: BoxDecoration(color: s.error, shape: BoxShape.circle),
-                            child: Icon(Icons.close_rounded, size: 14, color: s.onError),
+                            decoration: BoxDecoration(
+                              color: s.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 14,
+                              color: s.onError,
+                            ),
                           ),
                         ),
                       ),
@@ -375,22 +454,39 @@ class PendingAttachmentStrip extends StatelessWidget {
       child: Icon(Icons.image_outlined, color: s.onSurfaceVariant),
     );
     return f.bytes != null
-        ? Image.memory(f.bytes!, fit: BoxFit.cover, errorBuilder: (_, _, _) => err)
-        : Image.file(File(f.path!), fit: BoxFit.cover, cacheWidth: 240, errorBuilder: (_, _, _) => err);
+        ? Image.memory(
+            f.bytes!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => err,
+          )
+        : Image.file(
+            File(f.path!),
+            fit: BoxFit.cover,
+            cacheWidth: 240,
+            errorBuilder: (_, _, _) => err,
+          );
   }
 
   Widget _fileTile(PendingAttachment f, ColorScheme s) => Container(
-        color: s.surfaceContainerHighest,
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.insert_drive_file_outlined, size: 20, color: s.primary),
-            const SizedBox(height: 4),
-            Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            Text(formatBytes(f.size), style: TextStyle(fontSize: 11, color: s.onSurfaceVariant)),
-          ],
+    color: s.surfaceContainerHighest,
+    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.insert_drive_file_outlined, size: 18, color: s.primary),
+        const SizedBox(height: 2),
+        Text(
+          f.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
-      );
+        Text(
+          formatBytes(f.size),
+          style: TextStyle(fontSize: 11, color: s.onSurfaceVariant),
+        ),
+      ],
+    ),
+  );
 }

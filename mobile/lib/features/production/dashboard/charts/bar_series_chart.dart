@@ -74,6 +74,11 @@ class BarSeriesChart extends StatelessWidget {
   final double rightPad;
   final String? semanticLabel;
 
+  /// A value the painter can always place: NaN / Infinity become 0, and dust
+  /// (1e-9 next to 1e15, from odd legacy rows) too, which would otherwise
+  /// make fl_chart build a rect with a NaN edge.
+  static double _clean(double? v) => (v == null || !v.isFinite || v.abs() < 1e-6) ? 0.0 : v;
+
   NiceAxis _axisFor() {
     if (axis != null) return axis!;
     var hi = 0.0;
@@ -82,14 +87,14 @@ class BarSeriesChart extends StatelessWidget {
       if (stacked) {
         var sum = 0.0;
         for (final v in p.values) {
-          sum += v ?? 0;
+          sum += _clean(v);
         }
         hi = math.max(hi, sum);
         lo = math.min(lo, sum);
       } else {
         for (final v in p.values) {
-          hi = math.max(hi, v ?? 0);
-          lo = math.min(lo, v ?? 0);
+          hi = math.max(hi, _clean(v));
+          lo = math.min(lo, _clean(v));
         }
       }
     }
@@ -131,7 +136,7 @@ class BarSeriesChart extends StatelessWidget {
         var run = 0.0;
         final items = <BarChartRodStackItem>[];
         for (var s = 0; s < seriesColors.length; s++) {
-          final v = s < p.values.length ? (p.values[s] ?? 0) : 0.0;
+          final v = _clean(s < p.values.length ? p.values[s] : 0);
           items.add(BarChartRodStackItem(run, run + v, seriesColors[s].withValues(alpha: op), borderSide: BorderSide(color: surface, width: 1)));
           run += v;
         }
@@ -143,7 +148,7 @@ class BarSeriesChart extends StatelessWidget {
           rodStackItems: items,
         );
       } else {
-        final v = p.values.isEmpty ? 0.0 : (p.values.first ?? 0);
+        final v = _clean(p.values.isEmpty ? 0 : p.values.first);
         final r = Radius.circular(math.min(compact ? 2 : 4, barW / 2));
         rod = BarChartRodData(
           toY: v,

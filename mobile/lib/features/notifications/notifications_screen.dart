@@ -12,6 +12,7 @@ import '../../core/utils/alerts.dart';
 import '../../core/widgets/states.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_provider.dart';
+import '../profile/compact_field.dart';
 import 'notification_model.dart';
 import 'notification_widgets.dart';
 import 'notifications_repository.dart';
@@ -259,17 +260,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
             children: [
               if (canOpen)
                 ListTile(
+                  dense: true,
                   leading: const Icon(Icons.open_in_new_rounded),
                   title: const Text('Open'),
                   onTap: () => Navigator.pop(ctx, 'open'),
                 ),
               if (!n.isRead)
                 ListTile(
+                  dense: true,
                   leading: const Icon(Icons.done_rounded),
                   title: const Text('Mark as read'),
                   onTap: () => Navigator.pop(ctx, 'read'),
                 ),
               ListTile(
+                dense: true,
                 leading: const Icon(Icons.delete_outline_rounded),
                 title: const Text('Remove'),
                 onTap: () => Navigator.pop(ctx, 'remove'),
@@ -315,14 +319,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
             ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: LayoutBuilder(
-          builder: (context, c) {
-            // iPad / wide: one centred ~720 px column; phones keep a 16 px gutter.
-            final side = math.max(16.0, (c.maxWidth - 720) / 2);
-            return _body(visible, unreadCount, side);
-          },
+      body: TapToDismiss(
+        child: SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, c) {
+              // iPad / wide: one centred ~720 px column; phones keep a 12 px gutter.
+              final side = math.max(12.0, (c.maxWidth - 720) / 2);
+              return _body(visible, unreadCount, side);
+            },
+          ),
         ),
       ),
     );
@@ -332,7 +338,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
     if (_loading && _all.isEmpty) {
       return ListView(
         physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(side, 16, side, 16),
+        padding: EdgeInsets.fromLTRB(side, 12, side, 12),
         children: const [NotificationSkeleton()],
       );
     }
@@ -359,14 +365,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: [
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(side, 12, side, 4),
+            padding: EdgeInsets.fromLTRB(side, 8, side, 2),
             sliver: SliverToBoxAdapter(child: _header(visible, unreadCount)),
           ),
           if (filtered.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: _empty(visible))
           else
             SliverPadding(
-              padding: EdgeInsets.fromLTRB(side, 0, side, 24),
+              padding: EdgeInsets.fromLTRB(side, 0, side, 20),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, i) {
@@ -395,7 +401,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
   }
 
   Widget _row(AppNotification n) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 6),
         child: Dismissible(
           key: ValueKey(n.id),
           direction: DismissDirection.endToStart,
@@ -411,14 +417,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
       );
 
   Widget _cap() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
           'Showing your latest $_serverCap notifications.',
           textAlign: TextAlign.center,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       );
 
@@ -434,9 +437,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
         label: Text(label),
         selected: selected,
         showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         selectedColor: s.primary.withValues(alpha: dark ? 0.22 : 0.10),
         side: BorderSide(color: selected ? s.primary : s.outlineVariant),
         labelStyle: TextStyle(
+          fontSize: 12.5,
           color: selected ? s.primary : s.onSurfaceVariant,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         ),
@@ -447,41 +454,41 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            Expanded(
               child: Text(
                 unreadCount > 0 ? '$unreadCount unread' : 'All read',
-                style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ),
             if (unreadCount > 0)
               TextButton.icon(
                 onPressed: _markAllRead,
-                icon: const Icon(Icons.done_all_rounded, size: 18),
-                label: const Text('Mark all read'),
-                style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                icon: const Icon(Icons.done_all_rounded, size: 16),
+                label: const Text('Mark all read', style: TextStyle(fontSize: 13)),
+                style: TextButton.styleFrom(minimumSize: const Size(40, 40), visualDensity: VisualDensity.compact),
               ),
           ],
         ),
-        const SizedBox(height: 4),
         TextField(
           controller: _search,
           onChanged: (v) => setState(() => _query = v),
           textInputAction: TextInputAction.search,
+          keyboardType: TextInputType.text,
+          autocorrect: false,
+          scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+          style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             hintText: 'Search notifications',
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const Icon(Icons.search, size: 20),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             suffixIcon: _query.isEmpty
                 ? null
                 : IconButton(
                     tooltip: 'Clear search',
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(Icons.close_rounded, size: 18),
                     onPressed: () {
                       _search.clear();
                       setState(() => _query = '');
@@ -489,9 +496,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
                   ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
+          spacing: 6,
           runSpacing: 4,
           children: [
             chip(_Filter.all, 'All'),
@@ -499,7 +506,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
             chip(_Filter.read, 'Read'),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
       ],
     );
   }

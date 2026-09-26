@@ -21,7 +21,7 @@ import 'entry_block.dart';
 /// the field into view and focuses it.
 ///
 /// The widget is a plain Column (no scrolling of its own) meant to sit inside
-/// the caller's scroll view, capped to 720 px wide on tablets.
+/// the caller's scroll view, capped to 960 px wide (two columns of cards from 700 px).
 class ProductionEntryForm extends StatefulWidget {
   const ProductionEntryForm({
     super.key,
@@ -201,7 +201,7 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
+        constraints: const BoxConstraints(maxWidth: 960),
         // A tap on empty space (between fields) puts the keyboard away — the
         // number pad has no Done key on iOS. Taps on a field or button are won
         // by that widget, so this never steals them.
@@ -213,7 +213,7 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (var i = 0; i < entries.length; i++) ...[
-                if (i > 0) const SizedBox(height: 12),
+                if (i > 0) const SizedBox(height: 8),
                 EntryBlock(
                   key: _blockKeys[i],
                   index: i,
@@ -234,11 +234,12 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                 ),
               ],
               if (!widget.isEdit) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 OutlinedButton.icon(
                   key: const ValueKey('entry-add'),
                   onPressed: _add,
-                  icon: const Icon(Icons.add_rounded),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                  icon: const Icon(Icons.add_rounded, size: 20),
                   label: const Text('Add another machine'),
                 ),
               ],

@@ -98,20 +98,29 @@ class _MainShellState extends State<MainShell> {
     );
     if (visible.length == 1) return pages;
 
+    // The pages are Scaffolds of their own and deal with the keyboard themselves,
+    // so this outer one must not shrink for it — and the bar has no business
+    // riding up above the keyboard, so it steps out of the way while one is open.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: pages,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selected,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (i) {
-          if (i == selected) return;
-          _controller.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
-        },
-        destinations: [
-          for (final t in visible)
-            NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
-        ],
-      ),
+      bottomNavigationBar: keyboardOpen
+          ? null
+          : DecoratedBox(
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
+              child: NavigationBar(
+                selectedIndex: selected,
+                onDestinationSelected: (i) {
+                  if (i == selected) return;
+                  _controller.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+                },
+                destinations: [
+                  for (final t in visible)
+                    NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
+                ],
+              ),
+            ),
     );
   }
 }

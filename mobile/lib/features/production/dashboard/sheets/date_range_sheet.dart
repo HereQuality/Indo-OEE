@@ -296,18 +296,18 @@ class _DateRangeSheetState extends State<DateRangeSheet> {
             children: [
               IconButton(
                 tooltip: 'Earlier year',
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 onPressed: idx < monthYears.length - 1 ? () => setState(() => _monthYear = monthYears[idx + 1]) : null,
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
               Expanded(
                 child: Center(
-                  child: Text('$_monthYear', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: t.ink)),
+                  child: Text('$_monthYear', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.ink)),
                 ),
               ),
               IconButton(
                 tooltip: 'Later year',
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 onPressed: idx > 0 ? () => setState(() => _monthYear = monthYears[idx - 1]) : null,
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
@@ -390,7 +390,7 @@ class _QuickChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 40),
           child: Center(
             widthFactor: 1,
             child: Container(
@@ -402,7 +402,7 @@ class _QuickChip extends StatelessWidget {
               ),
               child: Text(
                 label,
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: selected ? t.onAccent : t.ink),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: selected ? t.onAccent : t.ink),
               ),
             ),
           ),

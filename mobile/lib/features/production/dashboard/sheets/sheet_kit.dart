@@ -191,7 +191,7 @@ class SheetHandle extends StatelessWidget {
           child: Container(
             width: 40,
             height: 4,
-            margin: const EdgeInsets.only(top: 10, bottom: 6),
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
             decoration: BoxDecoration(
               color: SheetTone.of(context).muted.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(2),
@@ -227,7 +227,7 @@ class SheetHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SheetTone.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(kSheetGutter, 2, 4, 6),
+      padding: const EdgeInsets.fromLTRB(kSheetGutter, 0, 4, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -238,7 +238,7 @@ class SheetHeader extends StatelessWidget {
                 if (overline != null)
                   Text(
                     overline!.toUpperCase(),
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.7, color: t.muted),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: t.muted),
                   ),
                 Semantics(
                   header: true,
@@ -246,13 +246,13 @@ class SheetHeader extends StatelessWidget {
                     title,
                     maxLines: titleMaxLines,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, height: 1.25, color: t.ink),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.25, color: t.ink),
                   ),
                 ),
                 if (subtitle != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(subtitle!, style: TextStyle(fontSize: 12.5, height: 1.3, color: t.muted)),
+                    child: Text(subtitle!, style: TextStyle(fontSize: 12, height: 1.3, color: t.muted)),
                   ),
               ],
             ),
@@ -260,8 +260,8 @@ class SheetHeader extends StatelessWidget {
           ...actions,
           IconButton(
             tooltip: 'Close',
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-            icon: const Icon(Icons.close_rounded),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            icon: const Icon(Icons.close_rounded, size: 20),
             onPressed: closeEnabled ? (onClose ?? () => Navigator.of(context).maybePop()) : null,
           ),
         ],
@@ -286,7 +286,7 @@ class SheetFooter extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Padding(padding: const EdgeInsets.fromLTRB(kSheetGutter, 10, kSheetGutter, 10), child: child),
+        child: Padding(padding: const EdgeInsets.fromLTRB(kSheetGutter, 8, kSheetGutter, 8), child: child),
       ),
     );
   }
@@ -300,15 +300,20 @@ class FullHeightSheet extends StatelessWidget {
   final double fraction;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: LayoutBuilder(
-          builder: (context, box) {
-            final full = box.maxHeight.isFinite ? box.maxHeight : MediaQuery.sizeOf(context).height;
-            return SizedBox(height: full * fraction, child: child);
-          },
-        ),
-      );
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: inset),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final full = box.maxHeight.isFinite ? box.maxHeight : MediaQuery.sizeOf(context).height;
+          // With the keyboard up the sheet takes every pixel above it, so the
+          // list, the search box and the sticky bar all stay reachable.
+          return SizedBox(height: inset > 0 ? full : full * fraction, child: child);
+        },
+      ),
+    );
+  }
 }
 
 /// One tab of a [SegmentedTabs] / [ChipTabs].
@@ -334,7 +339,7 @@ class SegmentedTabs<T> extends StatelessWidget {
     final t = SheetTone.of(context);
     return Container(
       padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: t.track, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: t.track, borderRadius: BorderRadius.circular(10)),
       child: Row(
         children: [
           for (final item in items)
@@ -354,12 +359,12 @@ class SegmentedTabs<T> extends StatelessWidget {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
                     curve: Curves.easeOut,
-                    constraints: const BoxConstraints(minHeight: 44),
+                    constraints: const BoxConstraints(minHeight: 38),
                     alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                     decoration: BoxDecoration(
                       color: item.value == selected ? Theme.of(context).colorScheme.surface : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(8),
                       boxShadow: item.value == selected && !t.dark
                           ? [BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 3, offset: const Offset(0, 1))]
                           : null,
@@ -406,12 +411,12 @@ class ChipTabs<T> extends StatelessWidget {
                   onSelected(item.value);
                 },
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  constraints: const BoxConstraints(minHeight: 40),
                   child: Center(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 160),
                       curve: Curves.easeOut,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: item.value == selected ? t.accent : Colors.transparent,
                         borderRadius: BorderRadius.circular(999),
@@ -447,20 +452,20 @@ class _TabLabel<T> extends StatelessWidget {
       textAlign: center ? TextAlign.center : TextAlign.start,
       maxLines: center ? 2 : 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.2, color: fg),
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.2, color: fg),
     );
     final count = item.count;
     if (count == null || count <= 0) return label;
     final badge = Container(
       margin: const EdgeInsets.only(left: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 0),
       decoration: BoxDecoration(
         color: filled && on ? t.onAccent.withValues(alpha: 0.22) : t.accent.withValues(alpha: t.dark ? 0.30 : 0.14),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         '$count',
-        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: filled && on ? t.onAccent : t.ink),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: filled && on ? t.onAccent : t.ink),
       ),
     );
     return Row(
@@ -482,7 +487,7 @@ class SheetLabel extends StatelessWidget {
         padding: padding,
         child: Text(
           text.toUpperCase(),
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.7, color: SheetTone.of(context).muted),
+          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: SheetTone.of(context).muted),
         ),
       );
 }
@@ -501,10 +506,10 @@ class SheetBanner extends StatelessWidget {
     return Semantics(
       liveRegion: true,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
         decoration: BoxDecoration(
           color: tone.withValues(alpha: t.dark ? 0.16 : 0.09),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: tone.withValues(alpha: 0.45)),
         ),
         child: Row(
@@ -512,7 +517,7 @@ class SheetBanner extends StatelessWidget {
           children: [
             Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 18, color: tone)),
             const SizedBox(width: 10),
-            Expanded(child: Text(message, style: TextStyle(fontSize: 13, height: 1.35, color: t.ink))),
+            Expanded(child: Text(message, style: TextStyle(fontSize: 12.5, height: 1.3, color: t.ink))),
           ],
         ),
       ),
@@ -522,7 +527,7 @@ class SheetBanner extends StatelessWidget {
 
 /// A rounded, softly elevated container used for rows and summary blocks.
 class SheetCard extends StatelessWidget {
-  const SheetCard({super.key, required this.child, this.padding = const EdgeInsets.all(14), this.onTap, this.selected = false, this.radius = 14});
+  const SheetCard({super.key, required this.child, this.padding = const EdgeInsets.all(12), this.onTap, this.selected = false, this.radius = 12});
 
   final Widget child;
   final EdgeInsets padding;

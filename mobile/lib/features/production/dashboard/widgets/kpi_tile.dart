@@ -38,9 +38,9 @@ class KpiTile extends StatelessWidget {
       label: semanticsLabel,
       onTap: onTap,
       child: DashCard(
-        padding: EdgeInsets.fromLTRB(14, web ? 14 : 12, 14, web ? 14 : 12),
+        padding: EdgeInsets.fromLTRB(12, web ? 10 : 9, 12, web ? 10 : 9),
         tint: tone,
-        radius: web ? 14 : 16,
+        radius: 12,
         onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,8 +51,8 @@ class KpiTile extends StatelessWidget {
               children: [
                 if (tone != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 4, right: 6),
-                    child: Container(width: 8, height: 8, decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
+                    padding: const EdgeInsets.only(top: 4, right: 5),
+                    child: Container(width: 7, height: 7, decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
                   ),
                 Expanded(
                   child: Text(
@@ -60,9 +60,9 @@ class KpiTile extends StatelessWidget {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: web ? 11 : 12,
-                      height: 1.25,
-                      letterSpacing: web ? 0.5 : 0,
+                      fontSize: web ? 10.5 : 12,
+                      height: 1.2,
+                      letterSpacing: web ? 0.3 : 0,
                       fontWeight: web ? FontWeight.w700 : FontWeight.w600,
                       color: cs.onSurfaceVariant,
                     ),
@@ -70,7 +70,7 @@ class KpiTile extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -78,21 +78,21 @@ class KpiTile extends StatelessWidget {
                 value,
                 maxLines: 1,
                 style: TextStyle(
-                  fontSize: web ? 25 : 26,
+                  fontSize: 22,
                   height: 1.15,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: cs.onSurface,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
             if (hint != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 hint!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, height: 1.25, color: AppColors.readable(context, cs.onSurfaceVariant).withValues(alpha: 0.85)),
+                style: TextStyle(fontSize: 11, height: 1.2, color: AppColors.readable(context, cs.onSurfaceVariant).withValues(alpha: 0.85)),
               ),
             ],
           ],
@@ -106,7 +106,7 @@ class KpiTile extends StatelessWidget {
 /// wide screen). Rows size to their tallest tile, so nothing is clipped at
 /// large text sizes.
 class KpiGrid extends StatelessWidget {
-  const KpiGrid({super.key, required this.children, this.spacing = 10});
+  const KpiGrid({super.key, required this.children, this.spacing = 8});
 
   final List<Widget> children;
   final double spacing;
@@ -150,7 +150,7 @@ class KpiGrid extends StatelessWidget {
 /// [minTileWidth], every row stretched to the full width, like the web's
 /// `flex: 1 1 168px` wrap.
 class KpiFlowGrid extends StatelessWidget {
-  const KpiFlowGrid({super.key, required this.children, this.minTileWidth = 168, this.spacing = 12});
+  const KpiFlowGrid({super.key, required this.children, this.minTileWidth = 160, this.spacing = 10});
 
   final List<Widget> children;
   final double minTileWidth;

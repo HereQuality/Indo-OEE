@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -12,11 +13,12 @@ import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../core/utils/alerts.dart';
 import '../../core/utils/validators.dart';
-import '../../core/widgets/common_widgets.dart';
 import '../../core/widgets/form_widgets.dart';
 import '../../core/widgets/states.dart';
 import '../../models/app_user.dart';
 import '../../providers/auth_provider.dart';
+import '../../core/theme/app_colors.dart';
+import 'compact_field.dart';
 import 'profile_rules.dart';
 import 'profile_widgets.dart';
 
@@ -90,8 +92,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  String _sig = '';
+
+  /// Controller listener. Skips pure caret moves (same text) and never calls
+  /// setState in the middle of a build (a controller can notify from one).
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final sig = [_name.text, _mobile.text, _email.text, _address.text, _currentPw.text, _newPw.text, _confirmPw.text].join('\u0001');
+    if (sig == _sig) return;
+    _sig = sig;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
   }
 
   // ── baseline (what the server has) ─────────────────────────────────────
@@ -134,6 +150,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ── username availability (400 ms debounce, like the web) ──────────────
   void _onUsernameChanged() {
+    if (!mounted) return;
     final v = _username.text;
     if (v == _lastUsername) return;
     _lastUsername = v;
@@ -421,182 +438,213 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
-      child: AppScaffold(
-        title: 'My profile',
-        bottomNavigationBar: _SaveBar(visible: dirty, saving: _saving, onSave: _save, onDiscard: _discard),
-        body: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                controller: _scroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          ProfileAvatar(user: user, preview: _photo?.bytes, busy: _removing, onTap: _photoActions),
-                          const SizedBox(height: 4),
-                          TextButton(
-                            onPressed: _removing ? null : _photoActions,
-                            child: Text(_photo != null ? 'Change selected photo' : 'Change photo'),
-                          ),
-                          if (_photo != null)
-                            Text('New photo selected. Save changes to upload it.',
-                                textAlign: TextAlign.center, style: TextStyle(color: s.onSurfaceVariant, fontSize: 12)),
-                          const SizedBox(height: 6),
-                          Text(
-                            user.name.isEmpty ? 'User' : user.name,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 6),
-                          StatusChip(user.roleName ?? 'No Role', color: s.primary),
-                          if (!isSuper) OperatorFacts(raw: user.raw),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Form(
-                    key: _formKey,
-                    child: SectionCard(
-                      title: 'Profile details',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          AppTextField(
-                            label: 'Full name',
-                            controller: _name,
-                            required: true,
-                            hint: 'Your full name',
-                            textCapitalization: TextCapitalization.words,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.name],
-                          ),
-                          const SizedBox(height: 16),
-                          if (isSuper)
-                            AppTextField(
-                              key: ValueKey('email-${user.raw['email']}'),
-                              label: 'Email',
-                              initialValue: (user.raw['email'] ?? '').toString(),
-                              enabled: false,
-                              suffix: const Icon(Icons.lock_outline_rounded, size: 18),
-                            )
-                          else ...[
-                            AppTextField(
-                              key: ValueKey('role-${user.roleName}'),
-                              label: 'Role',
-                              initialValue: user.roleName ?? '—',
-                              enabled: false,
-                              suffix: const Icon(Icons.lock_outline_rounded, size: 18),
+      // A plain Scaffold (not the shell one): the Save bar lives in the body so
+      // it rides on top of the keyboard instead of hiding behind it.
+      child: Scaffold(
+        appBar: AppBar(title: const Text('My profile')),
+        body: TapToDismiss(
+          child: Column(
+            children: [
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  bottom: !dirty,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: RefreshIndicator(
+                        onRefresh: _refresh,
+                        child: ListView(
+                          controller: _scroll,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                          children: [
+                            CompactCard(
+                              padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    ProfileAvatar(user: user, preview: _photo?.bytes, busy: _removing, onTap: _photoActions),
+                                    TextButton(
+                                      style: TextButton.styleFrom(minimumSize: const Size(40, 36), visualDensity: VisualDensity.compact),
+                                      onPressed: _removing ? null : _photoActions,
+                                      child: Text(_photo != null ? 'Change selected photo' : 'Change photo'),
+                                    ),
+                                    if (_photo != null)
+                                      Text('New photo selected. Save changes to upload it.',
+                                          textAlign: TextAlign.center, style: TextStyle(color: s.onSurfaceVariant, fontSize: 12)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      user.name.isEmpty ? 'User' : user.name,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    MiniPill(user.roleName ?? 'No Role', color: s.primary, fg: AppColors.readable(context, s.primary)),
+                                    if (!isSuper) OperatorFacts(raw: user.raw),
+                                  ],
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 16),
-                            AppTextField(
-                              label: 'Mobile number (optional)',
-                              controller: _mobile,
-                              hint: '10-digit mobile number',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [MobileFormatter()],
-                              maxLength: 10,
-                              validator: (v) => Validators.phone(v),
-                              textInputAction: TextInputAction.next,
-                              autofillHints: const [AutofillHints.telephoneNumber],
+                            const SizedBox(height: 10),
+                            Form(
+                              key: _formKey,
+                              child: CompactCard(
+                                title: 'Profile details',
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    CompactField(
+                                      label: 'Full name',
+                                      controller: _name,
+                                      required: true,
+                                      hint: 'Your full name',
+                                      textCapitalization: TextCapitalization.words,
+                                      keyboardType: TextInputType.name,
+                                      textInputAction: TextInputAction.next,
+                                      autofillHints: const [AutofillHints.name],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    if (isSuper)
+                                      CompactField(
+                                        key: ValueKey('email-${user.raw['email']}'),
+                                        label: 'Email',
+                                        initialValue: (user.raw['email'] ?? '').toString(),
+                                        enabled: false,
+                                        suffix: const Icon(Icons.lock_outline_rounded, size: 16),
+                                      )
+                                    else ...[
+                                      CompactField(
+                                        key: ValueKey('role-${user.roleName}'),
+                                        label: 'Role',
+                                        initialValue: user.roleName ?? '—',
+                                        enabled: false,
+                                        suffix: const Icon(Icons.lock_outline_rounded, size: 16),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      CompactField(
+                                        label: 'Mobile number (optional)',
+                                        controller: _mobile,
+                                        hint: '10-digit mobile number',
+                                        // Digits only (the formatter strips everything else), so the
+                                        // plain number pad - no +*# keys that would be swallowed.
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
+                                        inputFormatters: [MobileFormatter()],
+                                        maxLength: 10,
+                                        validator: (v) => Validators.phone(v),
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [AutofillHints.telephoneNumber],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      CompactField(
+                                        label: 'Office email (optional)',
+                                        controller: _email,
+                                        hint: 'you@company.com',
+                                        keyboardType: TextInputType.emailAddress,
+                                        autocorrect: false,
+                                        enableSuggestions: false,
+                                        maxLength: 30,
+                                        validator: (v) => Validators.email(v),
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [AutofillHints.email],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      CompactField(
+                                        label: 'Address (optional)',
+                                        controller: _address,
+                                        hint: 'Enter your address...',
+                                        keyboardType: TextInputType.multiline,
+                                        textInputAction: TextInputAction.newline,
+                                        maxLines: 3,
+                                        minLines: 2,
+                                        maxLength: 150,
+                                        textCapitalization: TextCapitalization.sentences,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 10),
+                                    CompactField(
+                                      label: 'Username',
+                                      controller: _username,
+                                      hint: 'your.username',
+                                      keyboardType: TextInputType.text,
+                                      inputFormatters: [UsernameFormatter()],
+                                      autocorrect: false,
+                                      enableSuggestions: false,
+                                      textInputAction: TextInputAction.done,
+                                      autofillHints: const [AutofillHints.username],
+                                      validator: (v) => (v ?? '').isNotEmpty && v!.length < 3 ? 'Min. 3 characters' : null,
+                                      helper: 'Visible to admins and team members. Lowercase letters, numbers and _ @ - only.',
+                                    ),
+                                    UsernameStatusLine(_uStatus),
+                                  ],
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 16),
-                            AppTextField(
-                              label: 'Office email (optional)',
-                              controller: _email,
-                              hint: 'you@company.com',
-                              keyboardType: TextInputType.emailAddress,
-                              maxLength: 30,
-                              validator: (v) => Validators.email(v),
-                              textInputAction: TextInputAction.next,
-                              autofillHints: const [AutofillHints.email],
-                            ),
-                            const SizedBox(height: 16),
-                            AppTextField(
-                              label: 'Address (optional)',
-                              controller: _address,
-                              hint: 'Enter your address...',
-                              maxLines: 3,
-                              minLines: 2,
-                              maxLength: 150,
-                              textCapitalization: TextCapitalization.sentences,
+                            const SizedBox(height: 10),
+                            CompactCard(
+                              title: 'Change password',
+                              child: AutofillGroup(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    PasswordInput(
+                                      label: 'Current password',
+                                      controller: _currentPw,
+                                      hint: 'Current password',
+                                      textInputAction: TextInputAction.next,
+                                      errorText: _pwErrorField == PasswordField.current ? _pwError : null,
+                                      onChanged: (_) => _clearPwError(),
+                                      autofillHints: const [AutofillHints.password],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    PasswordInput(
+                                      label: 'New password',
+                                      controller: _newPw,
+                                      hint: 'Min. 8 characters',
+                                      textInputAction: TextInputAction.next,
+                                      errorText: _pwErrorField == PasswordField.newPassword ? _pwError : null,
+                                      onChanged: (_) => _clearPwError(),
+                                      autofillHints: const [AutofillHints.newPassword],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    PasswordChecklist(password: _newPw.text, confirm: _confirmPw.text),
+                                    const SizedBox(height: 10),
+                                    PasswordInput(
+                                      label: 'Confirm new password',
+                                      controller: _confirmPw,
+                                      hint: 'Repeat new password',
+                                      textInputAction: TextInputAction.done,
+                                      errorText: _pwErrorField == PasswordField.confirm ? _pwError : null,
+                                      onChanged: (_) => _clearPwError(),
+                                      onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                                      autofillHints: const [AutofillHints.newPassword],
+                                    ),
+                                    const SizedBox(height: 14),
+                                    PrimaryButton(
+                                      label: 'Change password',
+                                      icon: Icons.lock_reset_rounded,
+                                      loading: _savingPw,
+                                      onPressed: (_currentPw.text.isEmpty || _newPw.text.isEmpty || _confirmPw.text.isEmpty) ? null : _changePassword,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
-                          const SizedBox(height: 16),
-                          AppTextField(
-                            label: 'Username',
-                            controller: _username,
-                            hint: 'your.username',
-                            inputFormatters: [UsernameFormatter()],
-                            autofillHints: const [AutofillHints.username],
-                            validator: (v) => (v ?? '').isNotEmpty && v!.length < 3 ? 'Min. 3 characters' : null,
-                            helper: 'Visible to admins and team members. Lowercase letters, numbers and _ @ - only.',
-                          ),
-                          UsernameStatusLine(_uStatus),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  SectionCard(
-                    title: 'Change password',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        PasswordInput(
-                          label: 'Current password',
-                          controller: _currentPw,
-                          hint: 'Current password',
-                          textInputAction: TextInputAction.next,
-                          errorText: _pwErrorField == PasswordField.current ? _pwError : null,
-                          onChanged: (_) => _clearPwError(),
-                          autofillHints: const [AutofillHints.password],
-                        ),
-                        const SizedBox(height: 16),
-                        PasswordInput(
-                          label: 'New password',
-                          controller: _newPw,
-                          hint: 'Min. 8 characters',
-                          textInputAction: TextInputAction.next,
-                          errorText: _pwErrorField == PasswordField.newPassword ? _pwError : null,
-                          onChanged: (_) => _clearPwError(),
-                          autofillHints: const [AutofillHints.newPassword],
-                        ),
-                        const SizedBox(height: 8),
-                        PasswordChecklist(password: _newPw.text, confirm: _confirmPw.text),
-                        const SizedBox(height: 16),
-                        PasswordInput(
-                          label: 'Confirm new password',
-                          controller: _confirmPw,
-                          hint: 'Repeat new password',
-                          textInputAction: TextInputAction.done,
-                          errorText: _pwErrorField == PasswordField.confirm ? _pwError : null,
-                          onChanged: (_) => _clearPwError(),
-                          autofillHints: const [AutofillHints.newPassword],
-                        ),
-                        const SizedBox(height: 20),
-                        PrimaryButton(
-                          label: 'Change password',
-                          icon: Icons.lock_reset_rounded,
-                          loading: _savingPw,
-                          onPressed: (_currentPw.text.isEmpty || _newPw.text.isEmpty || _confirmPw.text.isEmpty) ? null : _changePassword,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              _SaveBar(visible: dirty, saving: _saving, onSave: _save, onDiscard: _discard),
+            ],
           ),
         ),
       ),
@@ -627,15 +675,19 @@ class _SaveBar extends StatelessWidget {
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                   child: Center(
                     heightFactor: 1,
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 720),
                       child: Row(
                         children: [
-                          OutlinedButton(onPressed: saving ? null : onDiscard, child: const Text('Discard')),
-                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                            onPressed: saving ? null : onDiscard,
+                            child: const Text('Discard'),
+                          ),
+                          const SizedBox(width: 10),
                           Expanded(child: PrimaryButton(label: 'Save changes', icon: Icons.check_rounded, loading: saving, onPressed: onSave)),
                         ],
                       ),

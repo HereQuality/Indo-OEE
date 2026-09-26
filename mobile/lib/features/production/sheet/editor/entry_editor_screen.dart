@@ -167,7 +167,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         i == index
             ? {
                 ..._entries[i],
-                'rejectBreakdown': <String, dynamic>{if (current is Map) ...Map<String, dynamic>.from(current), reason: value},
+                'rejectBreakdown': <String, dynamic>{
+                  if (current is Map) ...Map<String, dynamic>.from(current),
+                  reason: value,
+                },
               }
             : _entries[i],
     ]);
@@ -233,11 +236,13 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       if (!mounted) return;
       _anySaved = true;
       if (!_isEdit) await EntryDraftStore.clear();
-      Alerts.success(_isEdit
-          ? 'Entry updated successfully!'
-          : saved.length == 1
-              ? 'Entry added successfully!'
-              : '${saved.length} entries added successfully!');
+      Alerts.success(
+        _isEdit
+            ? 'Entry updated successfully!'
+            : saved.length == 1
+            ? 'Entry added successfully!'
+            : '${saved.length} entries added successfully!',
+      );
       _haptic(HapticFeedback.mediumImpact);
       if (!mounted) return;
       leaving = true;
@@ -354,10 +359,12 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    // With the keyboard up on a short screen the bar would leave the form
-    // almost no room — it comes back the moment the keyboard closes.
-    final keyboardCrowds = media.viewInsets.bottom > 0 && media.size.height - media.viewInsets.bottom < 480;
+    // While the keyboard is up the save bar would eat the little room the form
+    // has left, so it folds away as the keyboard rises (over its first ~100 px,
+    // so nothing jumps) and is back the moment the keyboard closes. This
+    // context sits above the Scaffold, so it still sees the keyboard's height.
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final barFactor = (1 - keyboard / 100).clamp(0.0, 1.0);
     final showClear = !_isEdit && _ready && hasAnyEntryData(_entries);
 
     return PopScope<Object?>(
@@ -366,6 +373,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         if (!didPop) unawaited(_attemptClose());
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           leading: IconButton(
             tooltip: 'Close',
@@ -383,21 +391,24 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
             const SizedBox(width: 4),
           ],
         ),
-        body: SafeArea(
-          top: false,
-          child: _ready ? _buildForm(context) : const LoadingView(),
-        ),
-        bottomNavigationBar: _ready && !keyboardCrowds
-            ? EntryActionBar(
-                isEdit: _isEdit,
-                entryCount: _entries.length,
-                canSave: _canSave,
-                saving: _saving,
-                savingIndex: _savingIndex,
-                incompleteMessage: _incompleteMessage,
-                errorMessage: _saveError,
-                onSave: () => unawaited(_save()),
-                onCancel: () => unawaited(_attemptClose()),
+        body: SafeArea(top: false, child: _ready ? _buildForm(context) : const LoadingView()),
+        bottomNavigationBar: _ready && barFactor > 0
+            ? ClipRect(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: barFactor,
+                  child: EntryActionBar(
+                    isEdit: _isEdit,
+                    entryCount: _entries.length,
+                    canSave: _canSave,
+                    saving: _saving,
+                    savingIndex: _savingIndex,
+                    incompleteMessage: _incompleteMessage,
+                    errorMessage: _saveError,
+                    onSave: () => unawaited(_save()),
+                    onCancel: () => unawaited(_attemptClose()),
+                  ),
+                ),
               )
             : null,
       ),
@@ -405,39 +416,45 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   }
 
   Widget _buildForm(BuildContext context) {
-    return SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_draftRestored) _DraftBanner(onStartOver: () => unawaited(_clearForm())),
-              // The blocks can't be edited while a save is in flight (their
-              // indexes are what is being saved).
-              AbsorbPointer(
-                absorbing: _saving,
-                child: ProductionEntryForm(
-                  key: ValueKey(_formGeneration),
-                  entries: _entries,
-                  errors: _errors,
-                  isSubmit: _isSubmit,
-                  focusTarget: _focusTarget,
-                  machines: _machinesForForm,
-                  items: widget.items,
-                  operators: widget.operators,
-                  isEdit: _isEdit,
-                  onChange: _onChange,
-                  onItemSelect: _onItemSelect,
-                  onRejectChange: _onRejectChange,
-                  onAdd: _onAdd,
-                  onRemove: _onRemove,
+    // A tap on empty space or a drag puts the keyboard away (the number pad has
+    // no return key on iOS); taps on a box or button are won by that widget.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_draftRestored) _DraftBanner(onStartOver: () => unawaited(_clearForm())),
+                // The blocks can't be edited while a save is in flight (their
+                // indexes are what is being saved).
+                AbsorbPointer(
+                  absorbing: _saving,
+                  child: ProductionEntryForm(
+                    key: ValueKey(_formGeneration),
+                    entries: _entries,
+                    errors: _errors,
+                    isSubmit: _isSubmit,
+                    focusTarget: _focusTarget,
+                    machines: _machinesForForm,
+                    items: widget.items,
+                    operators: widget.operators,
+                    isEdit: _isEdit,
+                    onChange: _onChange,
+                    onItemSelect: _onItemSelect,
+                    onRejectChange: _onRejectChange,
+                    onAdd: _onAdd,
+                    onRemove: _onRemove,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -455,8 +472,8 @@ class _DraftBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 0, 2, 0),
       decoration: BoxDecoration(
         color: cs.primary.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
@@ -464,13 +481,10 @@ class _DraftBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.history_rounded, size: 20, color: cs.primary),
-          const SizedBox(width: 10),
+          Icon(Icons.history_rounded, size: 18, color: cs.primary),
+          const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              'Restored what you were typing.',
-              style: TextStyle(fontSize: 13.5, color: cs.onSurface),
-            ),
+            child: Text('Restored what you were typing.', style: TextStyle(fontSize: 13, color: cs.onSurface)),
           ),
           TextButton(onPressed: onStartOver, child: const Text('Start over')),
         ],

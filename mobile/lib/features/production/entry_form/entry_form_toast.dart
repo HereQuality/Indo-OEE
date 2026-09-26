@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../core/utils/alerts.dart';
 
 /// The form's "you can't type more than that" toasts. The same message asked
@@ -26,7 +28,13 @@ class EntryFormToast {
     if (_last == message && at != null && now.difference(at) < window) return;
     _last = message;
     _at = now;
-    sink(message);
+    // Asked for from inside the text box's input formatter: show it once that
+    // edit is done, and never let a toast failure break typing.
+    scheduleMicrotask(() {
+      try {
+        sink(message);
+      } catch (_) {}
+    });
   }
 
   /// Forgets the last toast (test isolation).

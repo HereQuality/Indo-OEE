@@ -54,27 +54,42 @@ class SheetFilterBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, wide ? 10 : 4, wide ? 16 : 12, 8),
+            padding: EdgeInsets.fromLTRB(wide ? 16 : 12, wide ? 8 : 6, wide ? 16 : 12, 6),
             child: Row(
               children: [
                 Expanded(
+                  flex: wide ? 3 : 1,
                   child: TextField(
                     key: const ValueKey('sheet-search'),
                     controller: controller,
                     onChanged: onSearchChanged,
+                    // Part / operator / drawing no.: plain text, but no autocorrect
+                    // (it mangles codes) and a Search key.
+                    keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.search,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textCapitalization: TextCapitalization.none,
+                    onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                    // A tap anywhere else closes the keyboard (mobile does not by default).
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                    style: const TextStyle(fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'Search part, operator, drawing…',
-                      prefixIcon: const Icon(Icons.search),
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 40),
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                       suffixIcon: ValueListenableBuilder<TextEditingValue>(
                         valueListenable: controller,
                         builder: (_, v, _) => v.text.isEmpty
                             ? const SizedBox.shrink()
                             : IconButton(
                                 tooltip: 'Clear search',
-                                icon: const Icon(Icons.close_rounded, size: 20),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                icon: const Icon(Icons.close_rounded, size: 18),
                                 onPressed: () {
                                   controller.clear();
                                   onSearchChanged('');
@@ -84,58 +99,66 @@ class SheetFilterBar extends StatelessWidget {
                     ),
                   ),
                 ),
-                SizedBox(width: wide ? 8 : 6),
+                const SizedBox(width: 8),
                 Badge(
                   isLabelVisible: activeCount > 0,
                   label: Text('$activeCount'),
-                  offset: const Offset(-4, 4),
+                  offset: const Offset(-2, 2),
                   child: wide
                       ? FilledButton.tonalIcon(
                           key: const ValueKey('sheet-filter-btn'),
-                          style: FilledButton.styleFrom(minimumSize: const Size(0, 48), padding: const EdgeInsets.symmetric(horizontal: 16)),
-                          icon: const Icon(Icons.tune_rounded, size: 20),
+                          style: FilledButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 14)),
+                          icon: const Icon(Icons.tune_rounded, size: 18),
                           label: const Text('Filters'),
                           onPressed: onOpenFilters,
                         )
                       : IconButton.filledTonal(
                           key: const ValueKey('sheet-filter-btn'),
                           tooltip: activeCount > 0 ? 'Filters ($activeCount active)' : 'Filters',
-                          style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                          style: IconButton.styleFrom(minimumSize: const Size(40, 40), fixedSize: const Size(40, 40)),
+                          iconSize: 20,
                           icon: const Icon(Icons.tune_rounded),
                           onPressed: onOpenFilters,
                         ),
                 ),
-                for (final e in extras) ...[SizedBox(width: wide ? 8 : 6), e],
+                for (final e in extras) ...[const SizedBox(width: 8), e],
               ],
             ),
           ),
           if (chips.isNotEmpty)
             SizedBox(
-              height: 44,
+              height: 38,
               child: ListView(
                 key: const ValueKey('sheet-active-chips'),
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 0, 12, 6),
+                padding: EdgeInsets.fromLTRB(wide ? 16 : 12, 0, 8, 6),
                 children: [
                   for (final c in chips)
                     Padding(
-                      padding: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.only(right: 6),
                       child: InputChip(
                         key: ValueKey('chip-${c.id}'),
                         label: Text(c.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                         onPressed: c.onTap,
                         onDeleted: c.onRemove,
+                        deleteIcon: const Icon(Icons.close_rounded, size: 16),
                         deleteButtonTooltipMessage: 'Remove filter',
                         visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
                         backgroundColor: s.primary.withValues(alpha: 0.10),
                         side: BorderSide(color: s.primary.withValues(alpha: 0.35)),
-                        labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.readable(context, s.primary)),
+                        labelStyle: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.readable(context, s.primary)),
                       ),
                     ),
                   TextButton.icon(
                     key: const ValueKey('sheet-clear'),
                     onPressed: onClearAll,
-                    style: TextButton.styleFrom(foregroundColor: s.error, visualDensity: VisualDensity.compact),
+                    style: TextButton.styleFrom(
+                      foregroundColor: s.error,
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
                     icon: const Icon(Icons.close_rounded, size: 16),
                     label: const Text('Clear'),
                   ),

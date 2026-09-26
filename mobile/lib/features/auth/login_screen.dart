@@ -26,6 +26,15 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    // Pick up a logo / name the Super Admin changed since the app last asked.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<CompanyProvider>().load();
+    });
+  }
+
+  @override
   void dispose() {
     _username.dispose();
     _password.dispose();
@@ -158,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 26),
                   Center(
                     child: Text(
-                      '${AppConfig.apiHost}',
+                      AppConfig.apiHost,
                       style: TextStyle(fontSize: 11, color: s.onSurfaceVariant),
                     ),
                   ),
@@ -172,40 +181,53 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+/// The company's own logo (or, when it has none, its name) from the Company
+/// page. Nothing is invented while it loads or when the company set neither:
+/// the space is simply held so the form does not jump when the logo arrives.
 class _Brand extends StatelessWidget {
   const _Brand({this.logo, this.name = ''});
   final String? logo;
   final String name;
 
+  static const double _height = 52;
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (logo != null && logo!.isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: logo!,
-        height: 52,
+    final url = logo;
+    if (url != null && url.isNotEmpty) {
+      final image = CachedNetworkImage(
+        imageUrl: url,
+        height: _height,
         fit: BoxFit.contain,
-        errorWidget: (_, __, ___) => _mark(isDark),
+        fadeInDuration: const Duration(milliseconds: 150),
+        placeholder: (_, __) => const SizedBox(height: _height),
+        errorWidget: (_, __, ___) => _label(context),
       );
+      // A dark logo on transparent would vanish on the dark background.
+      return isDark
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: image,
+            )
+          : image;
     }
-    return _mark(isDark);
+    return _label(context);
   }
 
-  Widget _mark(bool isDark) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white : AppColors.navy950,
-              borderRadius: BorderRadius.circular(12),
+  Widget _label(BuildContext context) => name.isEmpty
+      ? const SizedBox(height: _height)
+      : SizedBox(
+          height: _height,
+          child: Center(
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
-            child: Text('IN', style: TextStyle(fontWeight: FontWeight.w800, color: isDark ? AppColors.navy950 : Colors.white)),
           ),
-          const SizedBox(width: 12),
-          Text(name.isEmpty ? 'Indo' : name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-        ],
-      );
+        );
 }

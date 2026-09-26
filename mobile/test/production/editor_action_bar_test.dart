@@ -135,8 +135,8 @@ void main() {
       expect(tester.getSize(find.byType(FilledButton)).height, greaterThanOrEqualTo(44));
       expect(tester.getSize(find.byType(TextButton)).height, greaterThanOrEqualTo(44));
       expect(tester.getRect(find.byType(FilledButton)).right, lessThanOrEqualTo(size.width));
-      // Tablets cap the content column.
-      expect(tester.getSize(find.byType(FilledButton)).width, lessThanOrEqualTo(720));
+      // Tablets cap the content column (the iPad form is a two-column ~960 px sheet).
+      expect(tester.getSize(find.byType(FilledButton)).width, lessThanOrEqualTo(960));
 
       await pumpScreen(
         tester,

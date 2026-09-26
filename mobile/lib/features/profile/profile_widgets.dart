@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/common_widgets.dart';
-import '../../core/widgets/form_widgets.dart';
 import '../../models/app_user.dart';
+import 'compact_field.dart';
 import 'profile_rules.dart';
 
 /// Round avatar with a camera badge. Shows [preview] (a picked but unsaved
@@ -19,13 +19,13 @@ class ProfileAvatar extends StatelessWidget {
   final bool busy;
   final VoidCallback onTap;
 
-  static const double radius = 48;
+  static const double radius = 38;
 
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     final Widget avatar = preview != null
-        ? CircleAvatar(radius: radius, backgroundImage: MemoryImage(preview!))
+        ? CircleAvatar(radius: radius, backgroundImage: MemoryImage(preview!), onBackgroundImageError: (_, _) {})
         : UserAvatar(imageUrl: user.profilePic, name: user.name, radius: radius);
     return Semantics(
       button: true,
@@ -34,14 +34,14 @@ class ProfileAvatar extends StatelessWidget {
         onTap: busy ? null : onTap,
         radius: radius + 12,
         child: SizedBox(
-          width: radius * 2 + 8,
-          height: radius * 2 + 8,
+          width: radius * 2 + 10,
+          height: radius * 2 + 10,
           child: Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: s.outlineVariant, width: 2)),
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: s.outlineVariant, width: 1.5)),
                 child: avatar,
               ),
               if (busy)
@@ -55,14 +55,14 @@ class ProfileAvatar extends StatelessWidget {
                 right: 0,
                 bottom: 0,
                 child: Container(
-                  width: 34,
-                  height: 34,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
                     color: s.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: s.surface, width: 2),
                   ),
-                  child: Icon(Icons.photo_camera_rounded, size: 17, color: s.onPrimary),
+                  child: Icon(Icons.photo_camera_rounded, size: 14, color: s.onPrimary),
                 ),
               ),
             ],
@@ -108,15 +108,15 @@ class OperatorFacts extends StatelessWidget {
     if (departments.isEmpty && skills.isEmpty && joining == null && remark.isEmpty) return const SizedBox.shrink();
 
     Widget block(String label, Widget child) => Padding(
-          padding: const EdgeInsets.only(top: 14),
+          padding: const EdgeInsets.only(top: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label.toUpperCase(),
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1, color: s.onSurfaceVariant),
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: s.onSurfaceVariant),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               child,
             ],
           ),
@@ -125,18 +125,18 @@ class OperatorFacts extends StatelessWidget {
     Widget chips(List<String> items, Color tone) => Wrap(
           spacing: 6,
           runSpacing: 6,
-          children: [for (final t in items) StatusChip(t, color: tone)],
+          children: [for (final t in items) MiniPill(t, color: tone, fg: AppColors.readable(context, tone))],
         );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Divider(height: 1, color: s.outlineVariant),
-        if (departments.isNotEmpty) block('Departments', Text(departments.join(', '), style: const TextStyle(fontWeight: FontWeight.w500))),
+        if (departments.isNotEmpty) block('Departments', Text(departments.join(', '), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
         if (skills.isNotEmpty) block('Skills', chips(skills, s.primary)),
-        if (joining != null) block('Joining date', Text(Fmt.date(joining), style: const TextStyle(fontWeight: FontWeight.w500))),
-        if (remark.isNotEmpty) block('Remark', Text(remark)),
+        if (joining != null) block('Joining date', Text(Fmt.date(joining), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+        if (remark.isNotEmpty) block('Remark', Text(remark, style: const TextStyle(fontSize: 13))),
       ],
     );
   }
@@ -160,7 +160,7 @@ class UsernameStatusLine extends StatelessWidget {
       _ => ("Couldn't check availability", s.onSurfaceVariant, null),
     };
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 4),
       child: Row(
         children: [
           if (status == UsernameStatus.checking)
@@ -186,6 +186,7 @@ class PasswordInput extends StatefulWidget {
     this.hint,
     this.errorText,
     this.onChanged,
+    this.onSubmitted,
     this.textInputAction,
     this.autofillHints,
   });
@@ -195,6 +196,7 @@ class PasswordInput extends StatefulWidget {
   final String? hint;
   final String? errorText;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
   final TextInputAction? textInputAction;
   final Iterable<String>? autofillHints;
 
@@ -207,31 +209,28 @@ class _PasswordInputState extends State<PasswordInput> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        FieldLabel(widget.label, required: true),
-        const SizedBox(height: 6),
-        TextField(
-          controller: widget.controller,
-          obscureText: !_show,
-          enableSuggestions: false,
-          autocorrect: false,
-          onChanged: widget.onChanged,
-          textInputAction: widget.textInputAction,
-          autofillHints: widget.autofillHints,
-          decoration: InputDecoration(
-            hintText: widget.hint,
-            errorText: widget.errorText,
-            errorMaxLines: 3,
-            suffixIcon: IconButton(
-              tooltip: _show ? 'Hide password' : 'Show password',
-              icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-              onPressed: () => setState(() => _show = !_show),
-            ),
-          ),
-        ),
-      ],
+    return CompactField(
+      label: widget.label,
+      required: true,
+      validator: (_) => null, // required only draws the asterisk; submit-time rules live in passwordProblem()
+      controller: widget.controller,
+      hint: widget.hint,
+      errorText: widget.errorText,
+      obscureText: !_show,
+      keyboardType: TextInputType.visiblePassword,
+      autocorrect: false,
+      enableSuggestions: false,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      textInputAction: widget.textInputAction,
+      autofillHints: widget.autofillHints,
+      suffix: IconButton(
+        tooltip: _show ? 'Hide password' : 'Show password',
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        padding: EdgeInsets.zero,
+        icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+        onPressed: () => setState(() => _show = !_show),
+      ),
     );
   }
 }
@@ -246,8 +245,8 @@ class PasswordChecklist extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = PasswordChecks.of(password);
     return Wrap(
-      spacing: 14,
-      runSpacing: 4,
+      spacing: 12,
+      runSpacing: 2,
       children: [
         _Tick('8+ characters', c.length),
         _Tick('Uppercase letter', c.upper),
@@ -271,9 +270,9 @@ class _Tick extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, size: 15, color: color),
+        Icon(ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, size: 14, color: color),
         const SizedBox(width: 5),
-        Flexible(child: Text(text, style: TextStyle(fontSize: 12, color: color, fontWeight: ok ? FontWeight.w600 : FontWeight.w400))),
+        Flexible(child: Text(text, style: TextStyle(fontSize: 11.5, color: color, fontWeight: ok ? FontWeight.w600 : FontWeight.w400))),
       ],
     );
   }

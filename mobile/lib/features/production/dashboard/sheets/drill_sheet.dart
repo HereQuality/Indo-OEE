@@ -130,7 +130,7 @@ class _DrillSheetState extends State<DrillSheet> {
     final t = SheetTone.of(context);
     final n = widget.rows.length;
     final scaler = MediaQuery.textScalerOf(context);
-    final tabsExtent = (16 + scaler.scale(13.5) * 1.2 + 2).clamp(44.0, 200.0) + 16;
+    final tabsExtent = (12 + scaler.scale(13) * 1.2 + 2).clamp(40.0, 200.0) + 12;
 
     return Column(
       children: [
@@ -151,7 +151,7 @@ class _DrillSheetState extends State<DrillSheet> {
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(kSheetGutter, 2, kSheetGutter, 10),
+                  padding: const EdgeInsets.fromLTRB(kSheetGutter, 0, kSheetGutter, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -163,19 +163,19 @@ class _DrillSheetState extends State<DrillSheet> {
                           alignment: Alignment.centerLeft,
                           child: Text(
                             _formatTotal(_total),
-                            style: TextStyle(fontSize: 34, height: 1.1, fontWeight: FontWeight.w800, color: t.ink),
+                            style: TextStyle(fontSize: 26, height: 1.1, fontWeight: FontWeight.w700, color: t.ink),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         'for the current filters · ${plural(n, 'entry', 'entries')}',
-                        style: TextStyle(fontSize: 13, height: 1.3, color: t.muted),
+                        style: TextStyle(fontSize: 12, height: 1.3, color: t.muted),
                       ),
                       if (_tab != 'records')
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Text('Tap a row to filter the dashboard to it', style: TextStyle(fontSize: 12.5, height: 1.3, color: t.muted)),
+                          child: Text('Tap a row to filter the dashboard to it', style: TextStyle(fontSize: 12, height: 1.3, color: t.muted)),
                         ),
                     ],
                   ),
@@ -240,7 +240,7 @@ class _DrillSheetState extends State<DrillSheet> {
         padding: const EdgeInsets.symmetric(horizontal: kSheetGutter),
         sliver: SliverList.separated(
           itemCount: shown.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (context, i) => _EntryCard(row: shown[i], ctx: widget.ctx),
         ),
       ),
@@ -290,11 +290,11 @@ class _Nothing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 40, color: SheetTone.of(context).muted.withValues(alpha: 0.7)),
+            Icon(Icons.inbox_outlined, size: 32, color: SheetTone.of(context).muted.withValues(alpha: 0.7)),
             const SizedBox(height: 10),
             Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: SheetTone.of(context).muted)),
           ],
@@ -323,29 +323,39 @@ class _SplitRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 56),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: kSheetGutter, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: kSheetGutter, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, height: 1.25, fontWeight: FontWeight.w600, color: t.ink)),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(value, style: TextStyle(fontSize: 14.5, height: 1.25, fontWeight: FontWeight.w700, color: t.ink, fontFeatures: const [FontFeature.tabularFigures()])),
-                    const SizedBox(width: 2),
-                    Icon(Icons.chevron_right_rounded, size: 18, color: t.muted),
-                  ],
+                LayoutBuilder(
+                  builder: (context, box) => Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w600, color: t.ink)),
+                      ),
+                      const SizedBox(width: 12),
+                      // A huge figure shrinks instead of pushing the row wider.
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: box.maxWidth * 0.55),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(value, maxLines: 1, style: TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w700, color: t.ink, fontFeatures: const [FontFeature.tabularFigures()])),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded, size: 18, color: t.muted),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(3),
                   child: SizedBox(
-                    height: 8,
+                    height: 6,
                     child: Stack(
                       children: [
                         Positioned.fill(child: ColoredBox(color: t.track)),
@@ -400,11 +410,11 @@ class _EntryCard extends StatelessWidget {
     final colors = DashboardColors.of(context);
     final calc = eng.calcOf(row);
     String q(Object? v) => eng.formatExact('qty', v is num ? v : null);
-    final machine = ctx.machineName['${row['machine']}'] ?? '—';
+    final machine = _firstText([ctx.machineName['${row['machine']}']]);
     final remarks = remarkParts(row);
 
     return SheetCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -412,23 +422,23 @@ class _EntryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Text(displayDay('${row['date'] ?? ''}'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: t.ink)),
+                child: Text(displayDay('${row['date'] ?? ''}'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.ink)),
               ),
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(color: t.wash, borderRadius: BorderRadius.circular(999)),
-                  child: Text(machine, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: t.ink)),
+                  child: Text(machine, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: t.ink)),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           _IconLine(icon: Icons.person_outline_rounded, text: _firstText([row['operator'], row['workingStatus']])),
           const SizedBox(height: 2),
           _IconLine(icon: Icons.category_outlined, text: _firstText([row['itemName']])),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -437,7 +447,7 @@ class _EntryCard extends StatelessWidget {
               _Metric(label: 'Rejected', value: q(calc['rejectedQty']), dot: colors.reject),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -474,7 +484,7 @@ class _IconLine extends StatelessWidget {
       children: [
         Padding(padding: const EdgeInsets.only(top: 1.5), child: Icon(icon, size: 16, color: t.muted)),
         const SizedBox(width: 6),
-        Expanded(child: Text(text, style: TextStyle(fontSize: 13.5, height: 1.3, color: t.ink))),
+        Expanded(child: Text(text, style: TextStyle(fontSize: 13, height: 1.3, color: t.ink))),
       ],
     );
   }
@@ -506,7 +516,7 @@ class _Metric extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: t.ink)),
+            child: Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.ink)),
           ),
         ],
       ),

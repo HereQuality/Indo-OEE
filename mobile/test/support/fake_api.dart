@@ -50,6 +50,10 @@ class FakeApi implements HttpClientAdapter {
     final f = FakeApi._();
     final dio = ApiClient.instance.dio;
     dio.httpClientAdapter = f;
+    // Dio parses a big (> 50 KB) response in a background isolate, which never
+    // completes under the tests' fake clock and would leave a screen loading
+    // forever. On a device it works; here parse on the spot.
+    dio.transformer = SyncTransformer();
     return f;
   }
 

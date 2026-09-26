@@ -38,9 +38,11 @@ class EntryMetrics {
         splitTotal = cleanSplit(values['rejectBreakdown']).values.fold<double>(0, (s, n) => s + n),
         stoppageLimit = stoppageLimitMin(values),
         lunchNeeded = lunchRequired(values) {
-    rejected = _or0(calc['rejectedQty'] as double?);
-    totalStoppage = (calc['totalStoppageMin'] as double?) ?? 0;
+    rejected = _or0(_dbl(calc['rejectedQty']));
+    totalStoppage = _dbl(calc['totalStoppageMin']) ?? 0;
   }
+
+  static double? _dbl(Object? v) => (v is num && v.isFinite) ? v.toDouble() : null;
 
   final Map<String, dynamic> values;
   final Map<String, dynamic> calc;
@@ -54,7 +56,7 @@ class EntryMetrics {
   late final double rejected;
   late final double totalStoppage;
 
-  double? get idealQty => calc['idealQty'] as double?;
+  double? get idealQty => _dbl(calc['idealQty']);
   bool get splitMismatch => splitTotal != rejected;
   bool get overStoppage => stoppageLimit != null && totalStoppage > stoppageLimit!;
 
@@ -85,6 +87,27 @@ class EntryMetrics {
           ? "Downtime can't be more than 1440 minutes (a day)."
           : "Total stoppage can't be more than ${jsNumStr(limit)} min (Planned Operator Shift − Machine Shift) — only ${jsNumStr(room)} min left for this box.",
     );
+  }
+
+  /// Whether Actual and OK are both numbers (Rejected is then Actual − OK).
+  bool get rejectedKnown => entryNum(values['actualQty']) != null &&
+      !isBlankValue(values['actualQty']) &&
+      entryNum(values['okQty']) != null &&
+      !isBlankValue(values['okQty']);
+
+  /// Why the Reject Master boxes that are shut cannot take digits — shown under
+  /// them, so the boxes never just look broken.
+  String get rejectLockReason {
+    if (!rejectedKnown) return 'Enter Actual and OK Quantity first — the reject boxes open once some pieces are rejected.';
+    if (rejected <= 0) return 'Nothing to reject — Actual and OK are equal.';
+    return 'All ${jsNumStr(rejected)} rejected piece(s) are already assigned.';
+  }
+
+  /// Why the downtime boxes that are shut cannot take digits.
+  String get downtimeLockReason {
+    final limit = stoppageLimit;
+    if (limit == null || limit <= 0) return 'No stoppage time left — the machine ran the whole planned shift.';
+    return 'No stoppage time left — all ${jsNumStr(limit)} min allowed are used.';
   }
 
   /// Ceiling for OK Quantity: the typed Actual when it is a number, else Ideal.

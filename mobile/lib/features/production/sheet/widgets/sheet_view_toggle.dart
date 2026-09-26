@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 /// date-grouped cards.
 enum SheetView { table, cards }
 
-/// The small segmented "Table | Cards" switch in the toolbar. Two 48 px
+/// The small segmented "Table | Cards" switch in the toolbar. Two 40 px
 /// segments (icon only on a phone, icon + label on the iPad).
 class SheetViewToggle extends StatelessWidget {
   const SheetViewToggle({super.key, required this.value, required this.onChanged, this.labels = false});
@@ -30,17 +30,17 @@ class SheetViewToggle extends StatelessWidget {
             key: ValueKey('view-${v.name}'),
             onTap: selected ? null : () => onChanged(v),
             child: Container(
-              constraints: BoxConstraints(minWidth: labels ? 0 : 46, minHeight: 46),
-              padding: EdgeInsets.symmetric(horizontal: labels ? 14 : 0),
+              constraints: BoxConstraints(minWidth: labels ? 0 : 40, minHeight: 40),
+              padding: EdgeInsets.symmetric(horizontal: labels ? 12 : 0),
               alignment: Alignment.center,
               color: selected ? s.primaryContainer : Colors.transparent,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 20, color: fg),
+                  Icon(icon, size: 18, color: fg),
                   if (labels) ...[
                     const SizedBox(width: 6),
-                    Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: fg)),
+                    Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg)),
                   ],
                 ],
               ),
@@ -53,7 +53,7 @@ class SheetViewToggle extends StatelessWidget {
     return Container(
       key: const ValueKey('sheet-view-toggle'),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(11),
         border: Border.all(color: s.outline),
       ),
       clipBehavior: Clip.antiAlias,

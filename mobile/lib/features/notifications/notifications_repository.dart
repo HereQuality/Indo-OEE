@@ -13,10 +13,22 @@ class NotificationsRepository {
   /// Newest first.
   static Future<List<AppNotification>> list() async {
     final res = await Api.get(_base);
-    final items = asList(res).map(AppNotification.fromJson).where((n) => n.id.isNotEmpty).toList();
+    final seen = <String>{};
+    final items = <AppNotification>[];
+    for (final row in asList(res)) {
+      try {
+        final n = AppNotification.fromJson(row);
+        if (n.id.isNotEmpty && seen.add(n.id)) items.add(n);
+      } catch (_) {
+        // One malformed row must not blank the whole list.
+      }
+    }
+    // Consistent order even with missing dates (they sink to the bottom).
     items.sort((a, b) {
       final x = a.createdAt, y = b.createdAt;
-      if (x == null || y == null) return 0;
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
       return y.compareTo(x);
     });
     return items;

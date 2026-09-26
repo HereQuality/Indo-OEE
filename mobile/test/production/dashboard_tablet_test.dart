@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:indo/features/production/dashboard/sheets/filter_sheet.dart';
+import 'package:indo/features/production/dashboard/widgets/chart_maximize_page.dart';
 import 'package:indo/features/production/production_dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,6 +84,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a narrow card keeps its actions in a menu; Filters opens on the tablet header', (tester) async {
+    await pumpTab(tester, const Size(1024, 768));
+    // The 4/12 card is only ~320 px wide: one overflow menu keeps the title readable.
+    await tester.tap(find.byTooltip('Chart actions').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Show as table'), findsOneWidget);
+    expect(find.text('Break down'), findsOneWidget);
+    await tester.tap(find.text('Maximize'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ChartMaximizePage), findsOneWidget);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FilterSheet), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('phone 390x844: one column, 2-column KPI tiles, chart cards stacked', (tester) async {
     await pumpTab(tester, const Size(390, 844));
     final t1 = tester.getRect(kpi('totalQty'));
@@ -91,8 +112,8 @@ void main() {
     expect(t3.top, greaterThan(t1.bottom));
 
     final trend = tester.getRect(card('oeeTrend'));
-    expect(trend.left, 16);
-    expect(trend.right, 374);
+    expect(trend.left, 12); // compact 12 px gutters
+    expect(trend.right, 378);
     // The header stays compact: chips + period row.
     expect(tester.getRect(find.text('September 2026')).top, lessThan(200));
     expect(tester.takeException(), isNull);

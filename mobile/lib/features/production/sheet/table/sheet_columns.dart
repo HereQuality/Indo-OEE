@@ -25,10 +25,13 @@ class CellData {
 /// The chevron that rides beside an expandable column (its summary or, while
 /// open, the last breakdown column).
 class ColExpand {
-  const ColExpand({required this.id, required this.isOpen, required this.label});
+  const ColExpand({required this.id, required this.isOpen, required this.label, this.end = false});
   final String id;
   final bool isOpen;
   final String label;
+
+  /// The collapse chevron on an opened breakdown's last column.
+  final bool end;
 }
 
 typedef CellText = String Function(CellData d);
@@ -52,7 +55,7 @@ class SheetCol {
   final String key;
   final String label;
 
-  /// Design width in px at the phone's 12.5 px text; the table scales it.
+  /// Design width in px at the phone's 12 px text; the table scales it.
   final double width;
   final CellText text;
   final ColTone tone;
@@ -111,7 +114,7 @@ class SheetColumns {
 /// The open breakdowns: each id is one expandable column.
 const List<String> expandIds = ['cycle', 'rejectedQty', 'planned', 'downtime'];
 
-const double actionsWidth = 112;
+const double actionsWidth = 104;
 
 String _text(Object? v) => textStr(v);
 
@@ -125,7 +128,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'date',
       label: 'Date',
-      width: 96,
+      width: 92,
       merge: ColMerge.date,
       bold: true,
       start: true,
@@ -134,7 +137,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'machine',
       label: 'Machine',
-      width: 84,
+      width: 78,
       merge: ColMerge.machineDay,
       bold: true,
       start: true,
@@ -147,7 +150,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     out.add(summary.withExpand(ColExpand(id: id, isOpen: isOpen, label: label)));
     if (isOpen) {
       for (var i = 0; i < subs.length; i++) {
-        out.add(i == subs.length - 1 ? subs[i].withExpand(ColExpand(id: id, isOpen: true, label: label)) : subs[i]);
+        out.add(i == subs.length - 1 ? subs[i].withExpand(ColExpand(id: id, isOpen: true, label: label, end: true)) : subs[i]);
       }
     }
   }
@@ -288,7 +291,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'oeeLunch',
       label: 'OEE not considering losses but lunch (%)',
-      width: 148,
+      width: 164,
       tone: ColTone.oee,
       formulaKey: 'oeeLunch',
       merge: ColMerge.machineDay,
@@ -297,7 +300,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'oeeLunchCot',
       label: 'OEE not considering losses but lunch and setup time (%)',
-      width: 168,
+      width: 204,
       tone: ColTone.oee,
       formulaKey: 'oeeLunchCot',
       merge: ColMerge.machineDay,

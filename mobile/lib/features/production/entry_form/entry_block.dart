@@ -303,7 +303,7 @@ class EntryBlockState extends State<EntryBlock> {
         onPressed: _confirmRemove,
         icon: const Icon(Icons.delete_outline_rounded),
         style: IconButton.styleFrom(
-          minimumSize: const Size(48, 48),
+          minimumSize: const Size(40, 40),
           foregroundColor: Theme.of(context).colorScheme.error,
           backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.10),
         ),
@@ -331,7 +331,7 @@ class EntryBlockState extends State<EntryBlock> {
                 : hasData
                     ? 'Entry filled in — press + to reopen it'
                     : "Press + to fill this machine's entry",
-            style: TextStyle(color: s.onSurfaceVariant, fontSize: 12.5, height: 1.3),
+            style: TextStyle(color: s.onSurfaceVariant, fontSize: EntryStyle.noteSize, height: 1.25),
           );
 
     final summary = <String>[
@@ -342,10 +342,10 @@ class EntryBlockState extends State<EntryBlock> {
 
     return Container(
       key: ValueKey('entry$_i/collapsed'),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: hasData ? Color.alphaBlend(s.primary.withValues(alpha: 0.07), card) : card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: incomplete ? s.error : (hasData ? s.primary.withValues(alpha: 0.4) : s.outlineVariant),
           width: incomplete ? 1.4 : 1,
@@ -358,7 +358,7 @@ class EntryBlockState extends State<EntryBlock> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const FieldLabel('Machine No.', required: true),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Row(
             children: [
               Expanded(child: _k('machine@collapsed', _machineBox(enabled: !w.isEdit))),
@@ -368,13 +368,13 @@ class EntryBlockState extends State<EntryBlock> {
                 tooltip: hasMachine ? 'Open the entry fields' : 'Select a machine first',
                 onPressed: hasMachine ? () => widget.onExpand(_i) : null,
                 icon: const Icon(Icons.add_rounded),
-                style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
               ),
               if (w.canRemove) ...[const SizedBox(width: 4), _removeButton()],
             ],
           ),
           if (_err('machine') != null) EntryErrorText(_err('machine')!),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: hasMachine ? () => widget.onExpand(_i) : null,
@@ -390,7 +390,7 @@ class EntryBlockState extends State<EntryBlock> {
                       summary,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: s.onSurface, fontSize: 13, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: s.onSurface, fontSize: 13, fontWeight: FontWeight.w600, height: 1.25),
                     ),
                   ],
                 ],
@@ -427,10 +427,10 @@ class EntryBlockState extends State<EntryBlock> {
 
     final header = Container(
       key: ValueKey('entry$_i/header'),
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
       decoration: BoxDecoration(
         color: Color.alphaBlend(s.primary.withValues(alpha: 0.08), card),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: incomplete ? s.error : s.primary.withValues(alpha: 0.55), width: incomplete ? 1.4 : 1.2),
       ),
       child: Row(
@@ -441,11 +441,11 @@ class EntryBlockState extends State<EntryBlock> {
               tooltip: 'Collapse this machine',
               onPressed: () => widget.onExpand(null),
               icon: const Icon(Icons.remove_rounded),
-              style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+              style: IconButton.styleFrom(minimumSize: const Size(40, 40)),
             )
           else
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Icon(Icons.edit_note_rounded)),
-          const SizedBox(width: 8),
+            const Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Icon(Icons.edit_note_rounded, size: 22)),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,10 +454,10 @@ class EntryBlockState extends State<EntryBlock> {
                   'Machine ${name.isEmpty ? _i + 1 : name}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
                 if (incomplete) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   EntryBadge(incompleteBadgeText(errorCount)),
                 ],
               ],
@@ -468,25 +468,41 @@ class EntryBlockState extends State<EntryBlock> {
       ),
     );
 
-    final lines = <Widget>[
-      _dateMachineOperator(),
-      _partLine(m),
-      _timeLine(m),
-      _quantityLine(m),
-      _rejectLine(m),
-      _shiftLine(m),
-      _downtimeLine(m),
-      _remarksLine(),
-    ];
+    // Left column then right column is also the order "next" walks the boxes.
+    final left = <Widget>[_dateMachineOperator(), _partLine(m), _timeLine(m), _quantityLine(m)];
+    final right = <Widget>[_rejectLine(m), _shiftLine(m), _downtimeLine(m), _remarksLine()];
+
+    Widget stack(List<Widget> cards) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var n = 0; n < cards.length; n++) ...[if (n > 0) const SizedBox(height: 8), cards[n]],
+          ],
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         header,
-        for (final l in lines) ...[const SizedBox(height: 10), l],
+        const SizedBox(height: 8),
+        // An iPad dialog or a landscape phone gets two columns of cards.
+        LayoutBuilder(
+          builder: (context, c) => c.maxWidth >= _twoColumnsFrom
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: FocusTraversalGroup(child: stack(left))),
+                    const SizedBox(width: 8),
+                    Expanded(child: FocusTraversalGroup(child: stack(right))),
+                  ],
+                )
+              : stack([...left, ...right]),
+        ),
       ],
     );
   }
+
+  /// Width from which the cards sit in two columns.
+  static const double _twoColumnsFrom = 700;
 
   // The typed-number box every numeric field shares.
   Widget _num(
@@ -515,6 +531,8 @@ class EntryBlockState extends State<EntryBlock> {
     final limit = m.minutesLimit(field);
     return _num(field, max: limit.max, onExceed: (_) => EntryFormToast.warn(limit.message), label: label);
   }
+
+  bool _locked(String field, double? max) => EntryTextField.capLocks(entryText(_v[field]), max);
 
   Widget _calc(String key, String value, String label) =>
       EntryCalcBox(key: ValueKey('entry$_i/calc/$key'), value: value, semanticsLabel: label);
@@ -620,7 +638,7 @@ class EntryBlockState extends State<EntryBlock> {
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         Text(
           hasItem || item != null ? 'Operations in this cycle' : 'Operations (pick a part first)',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurface),
@@ -628,12 +646,12 @@ class EntryBlockState extends State<EntryBlock> {
         const SizedBox(height: 2),
         Text(
           "Untick one to leave it out of this entry's cycle time.",
-          style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant, height: 1.3),
+          style: TextStyle(fontSize: EntryStyle.noteSize, color: s.onSurfaceVariant, height: 1.25),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: [for (final f in cycleOpFields) _opTile(f, item, excluded)],
         ),
       ],
@@ -727,6 +745,9 @@ class EntryBlockState extends State<EntryBlock> {
                 label: 'Actual Quantity',
                 required: true,
                 error: _err('actualQty'),
+                hint: _locked('actualQty', m.idealQty)
+                    ? 'Ideal Quantity is 0 — check the Machine ON/OFF times and the Part.'
+                    : null,
                 child: _k(
                   'actualQty',
                   _num(
@@ -741,6 +762,7 @@ class EntryBlockState extends State<EntryBlock> {
                 label: 'OK Quantity',
                 required: true,
                 error: _err('okQty'),
+                hint: _locked('okQty', m.okMax) ? 'Actual Quantity is 0, so OK can only be 0.' : null,
                 child: _k(
                   'okQty',
                   _num(
@@ -801,12 +823,13 @@ class EntryBlockState extends State<EntryBlock> {
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
+              if (_rejectLockNote(m) case final note?) EntryHintText(note),
+              const SizedBox(height: 8),
               // The split has to account for every rejected piece, so the
               // running total sits next to the figure it must match.
               Text.rich(
                 key: ValueKey('entry$_i/splitSummary'),
-                style: const TextStyle(fontSize: 13, height: 1.35),
+                style: const TextStyle(fontSize: 13, height: 1.3),
                 TextSpan(
                   children: [
                     TextSpan(text: 'Split so far: ', style: muted),
@@ -825,7 +848,7 @@ class EntryBlockState extends State<EntryBlock> {
           ),
         ),
         if (m.rejectOtherUsed) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           EntryGrid(
             cells: [
               EntryCell(
@@ -886,7 +909,11 @@ class EntryBlockState extends State<EntryBlock> {
               // Only asked for while the planned shift leaves time over the run.
               required: m.lunchNeeded,
               error: _err('lunchMin'),
-              hint: limit == 0 ? 'Not needed — the machine ran the whole planned shift.' : null,
+              hint: limit == 0
+                  ? 'Not needed — the machine ran the whole planned shift.'
+                  : _locked('lunchMin', lunch.max)
+                      ? 'No stoppage time left.'
+                      : null,
               child: _k(
                 'lunchMin',
                 _num('lunchMin', max: lunch.max, label: 'Lunch / Rest (min)', onExceed: (_) => EntryFormToast.warn(lunch.message)),
@@ -914,10 +941,11 @@ class EntryBlockState extends State<EntryBlock> {
                 EntryCell(label: label, error: _err(key), child: _k(key, _minutesBox(m, key, label))),
             ],
           ),
-          const SizedBox(height: 14),
+          if (_downtimeLockNote(m) case final note?) EntryHintText(note),
+          const SizedBox(height: 10),
           _k('stoppageTotal', _stoppageMeter(m)),
           if (m.otherDowntimeUsed) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             EntryGrid(
               cells: [
                 EntryCell(
@@ -947,6 +975,25 @@ class EntryBlockState extends State<EntryBlock> {
         ],
       );
 
+  /// Why some Reject Master boxes are shut (or null while none is).
+  String? _rejectLockNote(EntryMetrics m) {
+    final split = _v['rejectBreakdown'];
+    final anyLocked = rejectReasons.any(
+      (r) => _locked2(split is Map ? split[r] : null, m.rejectRoom(r)),
+    );
+    if (!anyLocked) return null;
+    return m.rejectLockReason;
+  }
+
+  /// Why some downtime boxes are shut (or null while none is).
+  String? _downtimeLockNote(EntryMetrics m) {
+    final anyLocked = [..._downtimeBoxes.map((b) => b.$1)].any((k) => _locked(k, m.minutesLimit(k).max));
+    if (!anyLocked) return null;
+    return m.downtimeLockReason;
+  }
+
+  bool _locked2(Object? value, double max) => EntryTextField.capLocks(entryText(value), max);
+
   // Lunch / Rest and every box above have to fit inside what Planned Operator
   // Shift leaves after the machine's own run, so the running total sits next to
   // that allowance — with a bar that fills as the allowance is used up.
@@ -966,7 +1013,7 @@ class EntryBlockState extends State<EntryBlock> {
       children: [
         Text.rich(
           key: ValueKey('entry$_i/stoppageSummary'),
-          style: const TextStyle(fontSize: 13, height: 1.35),
+          style: const TextStyle(fontSize: 13, height: 1.3),
           TextSpan(
             children: [
               TextSpan(text: 'Total stoppage (with Lunch / Rest): ', style: TextStyle(color: s.onSurfaceVariant)),
@@ -985,12 +1032,12 @@ class EntryBlockState extends State<EntryBlock> {
         ),
         if (limit != null)
           Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.only(top: 6),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: frac,
-                minHeight: 6,
+                minHeight: 5,
                 backgroundColor: s.outlineVariant,
                 color: over ? s.error : (frac > 0.85 ? AppColors.warn : s.primary),
               ),
@@ -1074,17 +1121,17 @@ class _OpTile extends StatelessWidget {
           child: Material(
             color: tint,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EntryStyle.radius),
               side: BorderSide(color: ticked ? s.primary.withValues(alpha: 0.55) : s.outlineVariant),
             ),
             child: InkWell(
               canRequestFocus: false,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EntryStyle.radius),
               onTap: enabled ? onToggle : null,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 44),
+                constraints: const BoxConstraints(minHeight: 40),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 4, 12, 4),
+                  padding: const EdgeInsets.fromLTRB(4, 2, 10, 2),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1102,7 +1149,7 @@ class _OpTile extends StatelessWidget {
                       Flexible(
                         child: Text.rich(
                           TextSpan(
-                            style: const TextStyle(fontSize: 13, height: 1.3),
+                            style: const TextStyle(fontSize: 12.5, height: 1.25),
                             children: [
                               TextSpan(text: label, style: TextStyle(color: excluded ? s.onSurfaceVariant : s.onSurface)),
                               if (value.isNotEmpty) TextSpan(text: ' — $value', style: valueStyle),

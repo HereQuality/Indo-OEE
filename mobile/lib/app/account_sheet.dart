@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
-import '../core/config.dart';
 import '../core/theme/app_colors.dart';
 import '../core/utils/alerts.dart';
 import '../core/widgets/common_widgets.dart';
@@ -301,17 +300,17 @@ class _Version extends StatefulWidget {
 
 class _VersionState extends State<_Version> {
   late final Future<String> _label = PackageInfo.fromPlatform()
-      .then((p) => '${AppConfig.appName} · v${p.version} (${p.buildNumber})')
-      .catchError((_) => AppConfig.appName);
+      .then((p) => 'Version ${p.version} (${p.buildNumber})')
+      .catchError((_) => '');
 
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     return FutureBuilder<String>(
       future: _label,
-      initialData: AppConfig.appName,
+      initialData: '',
       builder: (_, snap) => Text(
-        snap.data ?? AppConfig.appName,
+        snap.data ?? '',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 12, color: s.onSurfaceVariant),
       ),

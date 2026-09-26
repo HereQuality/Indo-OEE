@@ -150,7 +150,7 @@ class _UnreportedByMachineChartState extends State<UnreportedByMachineChart> {
     final cs = Theme.of(context).colorScheme;
     final points = [for (final pt in m.points) TimePoint(pt.$1, pt.$1, [pt.$2])];
     String tick(TimePoint t) =>
-        dim == 'date' ? (roomy ? '${t.key.substring(8)}/${t.key.substring(5, 7)}' : t.key.substring(8)) : eng.monthLabel(t.key).substring(0, 3);
+        dim == 'date' ? (roomy ? '${jsSlice(t.key, 8)}/${jsSlice(t.key, 5, 7)}' : jsSlice(t.key, 8)) : jsSlice(eng.monthLabel(t.key), 0, 3);
     final titleStyle = chartText(context, size: 12, color: c.ink, weight: FontWeight.w700, tabular: false);
     final totalStyle = chartText(context, size: 12, color: cs.onSurfaceVariant, tabular: true);
 

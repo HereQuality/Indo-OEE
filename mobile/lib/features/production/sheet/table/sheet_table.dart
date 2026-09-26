@@ -68,22 +68,33 @@ List<SheetTableItem> buildTableItems(List<SheetDay> days) {
   return out;
 }
 
+/// The single position of [c], or null while nothing (or, for a frame while the
+/// table is being rebuilt, two scroll views) is attached — `c.position` throws
+/// in both of those cases.
+ScrollPosition? soleScrollPosition(ScrollController c) => c.positions.length == 1 ? c.positions.first : null;
+
+double _hOffset(ScrollController h) {
+  final p = soleScrollPosition(h);
+  return p != null && p.hasPixels ? p.pixels : 0;
+}
+
 /// Row height, font and column scale for the phone / the iPad.
 class TableMetrics {
   TableMetrics(BuildContext context, {required this.tablet}) {
     final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
-    k = (tablet ? 1.12 : 1.0) * scale.clamp(1.0, 1.3);
-    head = 60 * scale.clamp(1.0, 1.6) * (tablet ? 1.0 : 0.96);
+    k = (tablet ? 1.1 : 1.0) * scale.clamp(1.0, 1.3);
+    // A header is two lines at most: room for exactly that at this text size.
+    head = math.max(40.0, (2 * headFont * 1.15 * scale.clamp(1.0, 1.6) + 12).ceilToDouble());
   }
 
   final bool tablet;
   late final double k;
   late final double head;
 
-  static double rowHeight(bool tablet) => tablet ? 48 : 44;
+  static double rowHeight(bool tablet) => tablet ? 44 : 40;
   double get row => rowHeight(tablet);
-  double get font => tablet ? 13.5 : 12.5;
-  double get headFont => tablet ? 12.5 : 11.5;
+  double get font => tablet ? 13 : 12;
+  double get headFont => tablet ? 12 : 11;
 }
 
 /// Data Entry as a real table: a sticky header, Date + Machine frozen at the
@@ -138,9 +149,8 @@ class _SheetTableState extends State<SheetTable> {
     // this breakdown belongs to back into view instead of being thrown to the
     // far right.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final h = widget.hController;
-      if (!mounted || !h.hasClients) return;
-      final m = h.position;
+      final m = soleScrollPosition(widget.hController);
+      if (!mounted || m == null || !m.hasPixels || !m.hasContentDimensions) return;
       if (m.pixels > m.maxScrollExtent) m.jumpTo(m.maxScrollExtent);
     });
   }
@@ -153,9 +163,12 @@ class _SheetTableState extends State<SheetTable> {
     final metrics = TableMetrics(context, tablet: tablet);
     final cols = buildSheetColumns(_open);
     final k = metrics.k;
-    final leftW = cols.leftWidth(k);
+    // The frozen columns keep close to their design width however large the
+    // text is (their text ellipsises instead), or they would eat the screen.
+    final kf = math.min(k, 1.15);
+    final leftW = cols.leftWidth(kf);
     final midW0 = cols.middleWidth(k);
-    final actW = actionsWidth * math.max(1.0, k * 0.96);
+    final actW = actionsWidth;
 
     Widget table = LayoutBuilder(
       builder: (context, box) {
@@ -165,24 +178,30 @@ class _SheetTableState extends State<SheetTable> {
         final extra = totalW - natural;
         final midW = midW0 + extra;
         final widths = <String, double>{
-          for (final c in cols.left) c.key: c.width * k,
+          for (final c in cols.left) c.key: c.width * kf,
           for (final c in cols.middle) c.key: c.width * k,
         };
         if (extra > 0 && cols.middle.isNotEmpty) widths[cols.middle.last.key] = widths[cols.middle.last.key]! + extra;
 
+        // On a very narrow screen at a large text size there is no room left for
+        // the scrolling middle: let Actions (then Date + Machine) scroll instead.
+        final freezeLeft = vw - leftW >= 140;
+        final freezeRight = vw - leftW - actW >= 100;
         final palette = _Palette(context);
         final h = widget.hController;
         final items = widget.items;
         final rowH = metrics.row;
 
-        Widget frozen(double Function(double h) dx, Widget child) => ListenableBuilder(
-              listenable: h,
-              child: child,
-              builder: (context, child) => Transform.translate(
-                offset: Offset(dx(h.hasClients && h.position.hasPixels ? h.offset : 0), 0),
+        Widget frozen(bool on, double Function(double h) dx, Widget child) => !on
+            ? child
+            : ListenableBuilder(
+                listenable: h,
                 child: child,
-              ),
-            );
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(dx(_hOffset(h)), 0),
+                  child: child,
+                ),
+              );
 
         Widget headerRow() {
           return SizedBox(
@@ -204,6 +223,7 @@ class _SheetTableState extends State<SheetTable> {
                   bottom: 0,
                   width: leftW,
                   child: frozen(
+                    freezeLeft,
                     (o) => o,
                     Row(children: [for (final c in cols.left) _HeadCell(col: c, width: widths[c.key]!, metrics: metrics, palette: palette, onToggle: _toggle)]),
                   ),
@@ -213,7 +233,7 @@ class _SheetTableState extends State<SheetTable> {
                   top: 0,
                   bottom: 0,
                   width: actW,
-                  child: frozen((o) => o + vw - totalW, _HeadCell.actions(width: actW, metrics: metrics, palette: palette)),
+                  child: frozen(freezeRight, (o) => o + vw - totalW, _HeadCell.actions(width: actW, metrics: metrics, palette: palette)),
                 ),
               ],
             ),
@@ -246,13 +266,14 @@ class _SheetTableState extends State<SheetTable> {
               clipBehavior: Clip.none,
               children: [
                 Positioned(left: leftW, top: 0, bottom: 0, width: midW, child: Row(children: [for (final c in cols.middle) cell(c)])),
-                Positioned(left: 0, top: 0, bottom: 0, width: leftW, child: frozen((o) => o, Row(children: [for (final c in cols.left) cell(c)]))),
+                Positioned(left: 0, top: 0, bottom: 0, width: leftW, child: frozen(freezeLeft, (o) => o, Row(children: [for (final c in cols.left) cell(c)]))),
                 Positioned(
                   left: totalW - actW,
                   top: 0,
                   bottom: 0,
                   width: actW,
                   child: frozen(
+                    freezeRight,
                     (o) => o + vw - totalW,
                     _ActionsCell(
                       item: it,
@@ -292,6 +313,7 @@ class _SheetTableState extends State<SheetTable> {
                       bottom: 0,
                       width: vw,
                       child: frozen(
+                        true,
                         (o) => o,
                         Align(
                           alignment: Alignment.topCenter,
@@ -331,8 +353,9 @@ class _SheetTableState extends State<SheetTable> {
                 child: ListenableBuilder(
                   listenable: h,
                   builder: (context, _) {
-                    final has = h.hasClients && h.position.hasPixels && h.position.hasContentDimensions;
-                    final show = has && (left ? h.offset > 0.5 : h.offset < h.position.maxScrollExtent - 0.5);
+                    final pos = soleScrollPosition(h);
+                    final has = pos != null && pos.hasPixels && pos.hasContentDimensions;
+                    final show = has && (left ? pos.pixels > 0.5 : pos.pixels < pos.maxScrollExtent - 0.5);
                     return AnimatedOpacity(
                       opacity: show ? 1 : 0,
                       duration: const Duration(milliseconds: 120),
@@ -366,8 +389,8 @@ class _SheetTableState extends State<SheetTable> {
               child: Stack(
                 children: [
                   Positioned.fill(child: scroller),
-                  shadow(left: true),
-                  shadow(left: false),
+                  if (freezeLeft) shadow(left: true),
+                  if (freezeRight) shadow(left: false),
                 ],
               ),
             ),
@@ -378,10 +401,10 @@ class _SheetTableState extends State<SheetTable> {
 
     if (tablet) {
       table = Container(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         decoration: BoxDecoration(
           color: s.surface,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: s.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
@@ -462,10 +485,10 @@ class _HeadCell extends StatelessWidget {
     );
     final text = Text(
       label,
-      maxLines: 3,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
       textAlign: _actions || !(c?.start ?? false) ? TextAlign.center : TextAlign.start,
-      style: TextStyle(fontSize: metrics.headFont, height: 1.15, fontWeight: FontWeight.w800, color: color),
+      style: TextStyle(fontSize: metrics.headFont, height: 1.15, fontWeight: FontWeight.w700, color: color),
     );
     Widget content = Padding(
       padding: EdgeInsets.only(left: 6, right: expand == null ? 6 : 2),
@@ -508,18 +531,18 @@ class _Chevron extends StatelessWidget {
       child: Tooltip(
         message: label,
         child: InkResponse(
-          key: ValueKey('expand-${expand.id}-${expand.isOpen ? 'open' : 'closed'}'),
+          key: ValueKey('expand-${expand.id}-${expand.isOpen ? (expand.end ? 'open-end' : 'open') : 'closed'}'),
           radius: 20,
           onTap: () => onToggle(expand.id),
           child: SizedBox(
-            width: 34,
-            height: 44,
+            width: 32,
+            height: 40,
             child: Center(
               child: Container(
-                width: 22,
-                height: 22,
+                width: 20,
+                height: 20,
                 decoration: BoxDecoration(color: s.surfaceContainerHigh, shape: BoxShape.circle, border: Border.all(color: s.outline)),
-                child: Icon(expand.isOpen ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 17, color: s.onSurface),
+                child: Icon(expand.isOpen ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 16, color: s.onSurface),
               ),
             ),
           ),
@@ -647,7 +670,7 @@ class _RemarkEye extends StatelessWidget {
         key: ValueKey('eye-$kind-$id'),
         tooltip: label,
         padding: EdgeInsets.zero,
-        iconSize: 19,
+        iconSize: 18,
         color: tone,
         icon: const Icon(Icons.visibility_outlined),
         onPressed: () => showRemarkSheet(context, parts),
@@ -693,7 +716,7 @@ class _ActionsCell extends StatelessWidget {
     Widget iconBtn({required Key key, required IconData icon, required String tip, required Color color, VoidCallback? onTap}) => SizedBox(
           width: 44,
           height: side,
-          child: IconButton(key: key, tooltip: tip, padding: EdgeInsets.zero, iconSize: 20, color: color, icon: Icon(icon), onPressed: onTap),
+          child: IconButton(key: key, tooltip: tip, padding: EdgeInsets.zero, iconSize: 19, color: color, icon: Icon(icon), onPressed: onTap),
         );
 
     Widget child;
@@ -796,7 +819,7 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton> with SingleTick
             physics: const NeverScrollableScrollPhysics(),
             children: [
               Container(
-                height: 52,
+                height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(border: Border(bottom: BorderSide(color: s.outline, width: 2))),
                 child: Row(children: [bone(64, 14), const SizedBox(width: 24), bone(54, 14), const SizedBox(width: 24), bone(90, 14), const Spacer(), bone(70, 14)]),
@@ -806,7 +829,7 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton> with SingleTick
                   height: rowH,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(border: Border(bottom: BorderSide(color: s.outlineVariant))),
-                  child: Row(children: [bone(70, 12), const SizedBox(width: 24), bone(44, 12), const SizedBox(width: 24), bone(100, 12), const Spacer(), bone(56, 12), const SizedBox(width: 16), bone(40, 12)]),
+                  child: Row(children: [bone(70, 12), const SizedBox(width: 24), bone(44, 12), const SizedBox(width: 24), bone(100, 12), const Spacer(), bone(56, 12)]),
                 ),
             ],
           ),

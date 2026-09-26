@@ -11,6 +11,7 @@ import '../../core/config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/alerts.dart';
 import '../../core/widgets/common_widgets.dart';
+import '../profile/compact_field.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/company_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -139,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             children: [
               if (user != null) ...[
                 Card(
@@ -147,20 +148,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: InkWell(
                     onTap: () => AppNav.go(context, '/profile'),
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
-                          UserAvatar(imageUrl: user.profilePic, name: user.name, radius: 26),
-                          const SizedBox(width: 14),
+                          UserAvatar(imageUrl: user.profilePic, name: user.name, radius: 22),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(user.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 2),
+                                Text(user.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 1),
                                 Text(
                                   [user.roleName, if (user.username.isNotEmpty) '@${user.username}'].whereType<String>().join(' · '),
-                                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
                                 ),
                               ],
                             ),
@@ -171,24 +174,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
               ],
-              SectionCard(
+              CompactCard(
                 title: 'Appearance',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Theme mode', style: TextStyle(fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 2),
-                    Text('Toggle between Light and Dark mode.', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
-                    const SizedBox(height: 12),
+                    const Text('Theme mode', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 1),
+                    Text('Toggle between Light and Dark mode.', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5)),
+                    const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: SegmentedButton<bool>(
                         showSelectedIcon: false,
+                        style: const ButtonStyle(visualDensity: VisualDensity.compact, textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 13))),
                         segments: const [
-                          ButtonSegment(value: false, icon: Icon(Icons.light_mode_outlined), label: Text('Light')),
-                          ButtonSegment(value: true, icon: Icon(Icons.dark_mode_outlined), label: Text('Dark')),
+                          ButtonSegment(value: false, icon: Icon(Icons.light_mode_outlined, size: 18), label: Text('Light')),
+                          ButtonSegment(value: true, icon: Icon(Icons.dark_mode_outlined, size: 18), label: Text('Dark')),
                         ],
                         selected: {theme.isDark},
                         onSelectionChanged: (s) => _setDark(s.first),
@@ -197,26 +201,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              SectionCard(
+              const SizedBox(height: 10),
+              CompactCard(
                 title: 'Dashboard preferences',
-                padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
                 child: SwitchListTile(
+                  dense: true,
                   contentPadding: EdgeInsets.zero,
-                  secondary: Icon(Icons.schedule_rounded, color: scheme.primary),
-                  title: const Text('Real-time clock', style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Show or hide the real-time clock on your dashboard.'),
+                  secondary: Icon(Icons.schedule_rounded, size: 20, color: scheme.primary),
+                  title: const Text('Real-time clock', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Show or hide the real-time clock on your dashboard.', style: TextStyle(fontSize: 12.5)),
                   value: clock,
                   onChanged: user == null ? null : _setClock,
                 ),
               ),
-              const SizedBox(height: 16),
-              SectionCard(
+              const SizedBox(height: 10),
+              CompactCard(
                 title: 'About this device',
                 trailing: IconButton(
                   tooltip: 'Copy details',
                   onPressed: _copyDiagnostics,
-                  icon: const Icon(Icons.copy_rounded, size: 20),
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  style: IconButton.styleFrom(minimumSize: const Size(36, 36), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  padding: EdgeInsets.zero,
                 ),
                 child: Column(
                   children: [
@@ -230,8 +237,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              SectionCard(
+              const SizedBox(height: 10),
+              CompactCard(
                 title: 'Data on this device',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,32 +246,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Text(
                       'Clears an unsent data-entry draft and saved dashboard widget picks stored on this phone. '
                       'Your account, theme and sign-in are not affected.',
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), visualDensity: VisualDensity.compact),
                       onPressed: _clearing ? null : _clearLocal,
                       icon: _clearing
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.cleaning_services_outlined, size: 20),
+                          : const Icon(Icons.cleaning_services_outlined, size: 18),
                       label: const Text('Clear local data'),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
                   foregroundColor: AppColors.readable(context, AppColors.critical),
                   side: BorderSide(color: AppColors.critical.withValues(alpha: 0.5)),
                 ),
                 onPressed: _signingOut ? null : _signOut,
                 icon: _signingOut
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.logout_rounded, size: 20),
+                    : const Icon(Icons.logout_rounded, size: 18),
                 label: const Text('Sign out'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Center(
                 child: Text(
                   _info == null ? AppConfig.appName : '${AppConfig.appName} · v$_versionText',
@@ -289,15 +298,15 @@ class _KeyValue extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(flex: 2, child: Text(label, style: TextStyle(color: s.onSurfaceVariant, fontSize: 13))),
+          Expanded(flex: 2, child: Text(label, style: TextStyle(color: s.onSurfaceVariant, fontSize: 12.5))),
           const SizedBox(width: 12),
-          Flexible(
+          Expanded(
             flex: 3,
-            child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+            child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5)),
           ),
         ],
       ),

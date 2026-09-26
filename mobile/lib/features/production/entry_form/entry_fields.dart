@@ -1,11 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:flutter/cupertino.dart' show CupertinoPicker, CupertinoPickerDefaultSelectionOverlay;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import 'entry_form_logic.dart';
 import 'entry_style.dart';
@@ -125,8 +122,8 @@ class _EntryPickerBoxState extends State<EntryPickerBox> {
                           : EntryStyle.text(context, color: EntryStyle.hint(context)),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(widget.icon, size: 20, color: s.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Icon(widget.icon, size: 18, color: s.onSurfaceVariant),
                 ],
               ),
             ),
@@ -169,7 +166,7 @@ class EntryCalcBox extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.functions_rounded, size: 16, color: s.onSurfaceVariant.withValues(alpha: 0.6)),
+            Icon(Icons.functions_rounded, size: 15, color: s.onSurfaceVariant.withValues(alpha: 0.6)),
           ],
         ),
       ),
@@ -225,8 +222,8 @@ class EntryDateField extends StatelessWidget {
   }
 }
 
-/// Time box: the value is "HH:mm" and a five-minute wheel opens on tap (the
-/// web's clock picker steps in fives too).
+/// Time box: the value is "HH:mm", shown as "hh:mm AM/PM". Tapping it opens a
+/// clock dial (the web's clock picker) that picks in fives.
 class EntryTimeField extends StatelessWidget {
   const EntryTimeField({
     super.key,
@@ -261,173 +258,52 @@ class EntryTimeField extends StatelessWidget {
   }
 }
 
-/// Resolves to "HH:mm", '' when the user cleared it, null when dismissed.
-Future<String?> showEntryTimePicker(BuildContext context, {required String title, String? initial}) {
-  return showModalBottomSheet<String>(
+/// "HH:mm" of [t] moved to the nearest five minutes (58 rolls over to the next
+/// hour), the step the web's clock picker works in.
+String snapToFiveMinutes(TimeOfDay t) {
+  final total = (t.hour * 60 + (t.minute / 5).round() * 5) % 1440;
+  return '${(total ~/ 60).toString().padLeft(2, '0')}:${(total % 60).toString().padLeft(2, '0')}';
+}
+
+/// Opens the clock dial and resolves to "HH:mm" (five-minute steps, 12-hour
+/// AM/PM dial in every locale), or null when dismissed. A stored time that is not
+/// on a five-minute mark (an older record) is kept if the dial was not moved.
+Future<String?> showEntryTimePicker(BuildContext context, {required String title, String? initial}) async {
+  final stored = entryTime(initial);
+  TimeOfDay start;
+  if (stored != null) {
+    start = TimeOfDay(hour: int.parse(stored.substring(0, 2)), minute: int.parse(stored.substring(3, 5)));
+  } else {
+    final now = DateTime.now();
+    start = TimeOfDay(hour: now.hour, minute: now.minute - now.minute % 5);
+  }
+  final picked = await showTimePicker(
     context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => EntryTimeSheet(title: title, initial: initial),
-  );
-}
-
-/// Hour / minute (fives) / AM-PM wheels. A stored minute that is not a
-/// multiple of five (an older record) is kept unless the minute wheel moves.
-class EntryTimeSheet extends StatefulWidget {
-  const EntryTimeSheet({super.key, required this.title, this.initial});
-
-  final String title;
-  final String? initial;
-
-  @override
-  State<EntryTimeSheet> createState() => _EntryTimeSheetState();
-}
-
-class _EntryTimeSheetState extends State<EntryTimeSheet> {
-  late int _h12; // 1..12
-  late bool _pm;
-  late int _minute;
-  late final FixedExtentScrollController _hourC;
-  late final FixedExtentScrollController _minuteC;
-  late final FixedExtentScrollController _ampmC;
-
-  @override
-  void initState() {
-    super.initState();
-    final t = entryTime(widget.initial);
-    int h24;
-    if (t != null) {
-      h24 = int.parse(t.substring(0, 2));
-      _minute = int.parse(t.substring(3, 5));
-    } else {
-      final now = DateTime.now();
-      h24 = now.hour;
-      _minute = now.minute - now.minute % 5;
-    }
-    _pm = h24 >= 12;
-    _h12 = h24 % 12 == 0 ? 12 : h24 % 12;
-    _hourC = FixedExtentScrollController(initialItem: _h12 - 1);
-    _minuteC = FixedExtentScrollController(initialItem: (_minute / 5).round() % 12);
-    _ampmC = FixedExtentScrollController(initialItem: _pm ? 1 : 0);
-  }
-
-  @override
-  void dispose() {
-    _hourC.dispose();
-    _minuteC.dispose();
-    _ampmC.dispose();
-    super.dispose();
-  }
-
-  String get _label => '${_h12.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')} ${_pm ? 'PM' : 'AM'}';
-
-  String get _value {
-    final h24 = (_h12 % 12) + (_pm ? 12 : 0);
-    return '${h24.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}';
-  }
-
-  Widget _wheel(Key key, FixedExtentScrollController c, List<String> labels, ValueChanged<int> onChanged, {bool looping = true}) {
-    final s = Theme.of(context).colorScheme;
-    return CupertinoPicker(
-      key: key,
-      scrollController: c,
-      itemExtent: 44,
-      looping: looping,
-      selectionOverlay: CupertinoPickerDefaultSelectionOverlay(background: s.primary.withValues(alpha: 0.12)),
-      onSelectedItemChanged: (i) {
-        HapticFeedback.selectionClick();
-        onChanged(i % labels.length);
-      },
-      children: [
-        for (final l in labels)
-          Center(
-            child: Text(
-              l,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: s.onSurface, fontFeatures: const [FontFeature.tabularFigures()]),
-            ),
+    initialTime: start,
+    initialEntryMode: TimePickerEntryMode.dialOnly,
+    helpText: title.toUpperCase(),
+    builder: (ctx, child) {
+      final theme = Theme.of(ctx);
+      final s = theme.colorScheme;
+      return Theme(
+        data: theme.copyWith(
+          timePickerTheme: theme.timePickerTheme.copyWith(
+            dialHandColor: s.primary,
+            hourMinuteShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            dayPeriodShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            helpTextStyle: theme.textTheme.labelMedium?.copyWith(letterSpacing: 0.4, color: s.onSurfaceVariant),
           ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = Theme.of(context).colorScheme;
-    final hasValue = entryTime(widget.initial) != null;
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(widget.title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text(
-              _label,
-              key: const Key('time-preview'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: AppColors.readable(context, s.primary),
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 176,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _wheel(
-                      const Key('time-hour'),
-                      _hourC,
-                      [for (var h = 1; h <= 12; h++) h.toString().padLeft(2, '0')],
-                      (i) => setState(() => _h12 = i + 1),
-                    ),
-                  ),
-                  Text(':', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: s.onSurfaceVariant)),
-                  Expanded(
-                    child: _wheel(
-                      const Key('time-minute'),
-                      _minuteC,
-                      [for (var m = 0; m < 60; m += 5) m.toString().padLeft(2, '0')],
-                      (i) => setState(() => _minute = i * 5),
-                    ),
-                  ),
-                  Expanded(
-                    child: _wheel(
-                      const Key('time-ampm'),
-                      _ampmC,
-                      const ['AM', 'PM'],
-                      (i) => setState(() => _pm = i == 1),
-                      looping: false,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                if (hasValue) ...[
-                  OutlinedButton(onPressed: () => Navigator.pop(context, ''), child: const Text('Clear')),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context, _value),
-                    child: const Text('Set time'),
-                  ),
-                ),
-              ],
-            ),
-          ],
         ),
-      ),
-    );
-  }
+        child: MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: false),
+          child: child ?? const SizedBox.shrink(),
+        ),
+      );
+    },
+  );
+  if (picked == null) return null;
+  if (stored != null && picked.hour == start.hour && picked.minute == start.minute) return stored;
+  return snapToFiveMinutes(picked);
 }
 
 /// Convenience for the layout code: text scale of [context].

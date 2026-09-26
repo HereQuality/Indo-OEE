@@ -55,15 +55,15 @@ class DashboardControlBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (leading != null) Padding(padding: const EdgeInsets.only(top: 6), child: leading),
+          if (leading != null) Padding(padding: const EdgeInsets.only(top: 4), child: leading),
           Padding(
-            padding: EdgeInsets.fromLTRB(16, leading != null ? 4 : 4, 16, 8),
+            padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
             child: Row(
               children: [
                 Expanded(
                   child: PeriodChip(label: periodLabel, resettable: !isDefaultRange, onTap: onPickRange, onReset: onResetRange),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 FiltersButton(count: filterCount, onPressed: onOpenFilters),
               ],
             ),
@@ -75,13 +75,13 @@ class DashboardControlBar extends StatelessWidget {
             child: chips.isEmpty
                 ? const SizedBox(width: double.infinity)
                 : Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
                       children: [
                         Expanded(
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.only(left: 16, right: 4),
+                            padding: const EdgeInsets.only(left: 12, right: 4),
                             child: Row(
                               children: [
                                 for (final chip in chips) ...[
@@ -93,14 +93,18 @@ class DashboardControlBar extends StatelessWidget {
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.only(right: 4),
                           child: TextButton(
                             onPressed: () {
                               HapticFeedback.mediumImpact();
                               onClearAll();
                             },
-                            style: TextButton.styleFrom(foregroundColor: AppColors.readable(context, AppColors.critical)),
-                            child: const Text('Clear all', style: TextStyle(fontWeight: FontWeight.w700)),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(40, 36),
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              foregroundColor: AppColors.readable(context, AppColors.critical),
+                            ),
+                            child: const Text('Clear all', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                           ),
                         ),
                       ],
@@ -138,16 +142,16 @@ class PeriodChip extends StatelessWidget {
           onTap();
         },
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 40),
           child: Padding(
-            padding: const EdgeInsets.only(left: 14, right: 4),
+            padding: const EdgeInsets.only(left: 12, right: 2),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.calendar_month_rounded, size: 18, color: fg),
-                const SizedBox(width: 8),
+                Icon(Icons.calendar_month_rounded, size: 17, color: fg),
+                const SizedBox(width: 6),
                 Flexible(
-                  child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
+                  child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: fg)),
                 ),
                 if (resettable)
                   IconButton(
@@ -156,11 +160,11 @@ class PeriodChip extends StatelessWidget {
                       HapticFeedback.selectionClick();
                       onReset();
                     },
-                    icon: Icon(Icons.close_rounded, size: 18, color: fg),
-                    style: IconButton.styleFrom(minimumSize: const Size(40, 40), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    icon: Icon(Icons.close_rounded, size: 17, color: fg),
+                    style: IconButton.styleFrom(minimumSize: const Size(40, 40), padding: EdgeInsets.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                   )
                 else
-                  Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Icon(Icons.expand_more_rounded, size: 20, color: fg)),
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Icon(Icons.expand_more_rounded, size: 19, color: fg)),
               ],
             ),
           ),
@@ -196,19 +200,19 @@ class FiltersButton extends StatelessWidget {
             onPressed();
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
+            constraints: const BoxConstraints(minHeight: 40),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Badge(
                     isLabelVisible: count > 0,
                     label: Text('$count'),
-                    child: Icon(Icons.tune_rounded, size: 19, color: cs.onSurface),
+                    child: Icon(Icons.tune_rounded, size: 18, color: cs.onSurface),
                   ),
-                  const SizedBox(width: 8),
-                  Text('Filters', style: TextStyle(fontWeight: FontWeight.w700, color: cs.onSurface)),
+                  const SizedBox(width: 6),
+                  Text('Filters', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: cs.onSurface)),
                 ],
               ),
             ),
@@ -245,15 +249,15 @@ class RemovableChip extends StatelessWidget {
             onRemove();
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44, maxWidth: 260),
+            constraints: const BoxConstraints(minHeight: 34, maxWidth: 260),
             child: Padding(
-              padding: const EdgeInsets.only(left: 14, right: 10),
+              padding: const EdgeInsets.only(left: 12, right: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: fg))),
-                  const SizedBox(width: 6),
-                  Icon(Icons.close_rounded, size: 16, color: fg),
+                  Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: fg))),
+                  const SizedBox(width: 4),
+                  Icon(Icons.close_rounded, size: 15, color: fg),
                 ],
               ),
             ),
@@ -314,37 +318,37 @@ class TabletHeaderBar extends StatelessWidget {
             HapticFeedback.mediumImpact();
             onClearAll();
           },
-          icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
-          label: const Text('Clear', style: TextStyle(fontWeight: FontWeight.w700)),
+          icon: const Icon(Icons.filter_alt_off_outlined, size: 17),
+          label: const Text('Clear', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
           style: TextButton.styleFrom(
-            minimumSize: const Size(44, 44),
+            minimumSize: const Size(40, 40),
             foregroundColor: AppColors.readable(context, AppColors.critical),
           ),
         ),
       if (onCustomize != null)
         OutlinedButton.icon(
           onPressed: onCustomize,
-          icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
-          label: const Text('Customize', style: TextStyle(fontWeight: FontWeight.w700)),
-          style: OutlinedButton.styleFrom(minimumSize: const Size(44, 44), shape: const StadiumBorder(), foregroundColor: cs.onSurface),
+          icon: const Icon(Icons.dashboard_customize_outlined, size: 17),
+          label: const Text('Customize', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          style: OutlinedButton.styleFrom(minimumSize: const Size(40, 40), shape: const StadiumBorder(), foregroundColor: cs.onSurface),
         ),
     ];
 
-    Widget controlsWrap() => Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: controls);
+    Widget controlsWrap() => Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: controls);
 
     final card = DecoratedBox(
       decoration: BoxDecoration(
         color: DashCard.surfaceOf(context),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cs.outlineVariant),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: LayoutBuilder(
                 builder: (context, box) {
                   final oneRow = box.maxWidth >= 900 || selector == null;
@@ -389,10 +393,10 @@ class TabletHeaderBar extends StatelessWidget {
           child: chips.isEmpty
               ? const SizedBox(width: double.infinity)
               : Padding(
-                  padding: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.only(top: 8),
                   child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: 6,
+                    runSpacing: 6,
                     children: [for (final chip in chips) RemovableChip(label: chip.label, onRemove: () => onRemoveChip(chip))],
                   ),
                 ),

@@ -10,20 +10,20 @@ import '../../core/utils/alerts.dart';
 import '../../core/widgets/page_permissions.dart';
 import '../../core/widgets/states.dart';
 import '../../providers/auth_provider.dart';
+import 'shared/production_sheet_calc.dart' show jsNumber;
 import 'sheet/editor/entry_editor_screen.dart';
 import 'sheet/sheet_controller.dart';
 import 'sheet/sheet_model.dart';
 import 'sheet/sheet_period.dart';
 import 'sheet/table/sheet_table.dart';
 import 'sheet/widgets/machine_day_card.dart';
-import 'sheet/widgets/sheet_date_strip.dart';
+import 'sheet/widgets/sheet_day_header.dart';
 import 'sheet/widgets/sheet_filter_bar.dart';
 import 'sheet/widgets/sheet_filter_sheet.dart';
 import 'sheet/widgets/sheet_states.dart';
-import 'sheet/widgets/sheet_style.dart';
 import 'sheet/widgets/sheet_view_toggle.dart';
 
-const double _headerExtent = 44;
+const double _headerExtent = 36;
 const String _viewPref = 'sheet_view_mode';
 
 /// Data Entry — the production sheet (client/src/pages/ProductionSheet.jsx):
@@ -54,15 +54,9 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
 
   Timer? _debounce;
   SheetView _view = SheetView.table;
-  bool _jumpOpen = false;
   bool _opening = false;
   bool _checkQueued = false;
   bool _tablet = false;
-  String? _topDate;
-  // Set by a jump so the strip shows the date asked for even when the list
-  // cannot scroll far enough to put it at the very top; cleared by a drag.
-  String? _pinnedTop;
-  String? _machineCursor;
 
   List<SheetDay>? _itemsDays;
   List<SheetTableItem> _items = const [];
@@ -104,15 +98,12 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
 
   Future<void> _setView(SheetView v) async {
     if (v == _view) return;
-    final keep = _topDate;
-    setState(() {
-      _view = v;
-      _pinnedTop = null;
-      _machineCursor = null;
-    });
+    // Keep the same date at the top when the layout changes underneath.
+    final keep = _topDateNow();
+    setState(() => _view = v);
     if (keep != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_scrollToDate(keep, animate: false));
+        if (mounted) unawaited(_scrollToDate(keep));
       });
     }
     try {
@@ -226,7 +217,8 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
 
   String _describe(Json row) {
     final name = _c.machineName['${row['machine']}'] ?? 'machine';
-    final slot = (row['slot'] is num) ? (row['slot'] as num).toInt() : int.tryParse('${row['slot']}') ?? 0;
+    final n = jsNumber(row['slot']);
+    final slot = (n == null || !n.isFinite) ? 0 : n.truncate();
     return '$name, entry #$slot on ${dmy('${row['date']}')}';
   }
 
@@ -258,7 +250,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     await _c.unlockRow(row);
   }
 
-  // ── scrolling / navigation between dates ────────────────────────────────
+  // ── scrolling ────────────────────────────────────────────────────────────
 
   bool get _isTable => _view == SheetView.table;
   ScrollController get _activeScroll => _isTable ? _tableV : _scroll;
@@ -281,65 +273,25 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     _checkQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkQueued = false;
-      if (!mounted) return;
-      _updateTop();
-      _autoLoad();
+      if (mounted) _autoLoad();
     });
   }
 
   void _autoLoad({bool scrolled = false}) {
-    final ctl = _activeScroll;
-    if (!ctl.hasClients || !ctl.position.hasContentDimensions || _c.moreError != null || !_c.hasMore) return;
+    final pos = soleScrollPosition(_activeScroll);
+    if (pos == null || !pos.hasContentDimensions || _c.moreError != null || !_c.hasMore) return;
     if (_c.search.isNotEmpty && !scrolled) return;
-    if (ctl.position.extentAfter > 700) return;
+    if (pos.extentAfter > 700) return;
     unawaited(_c.loadMore());
   }
 
   void _onTableScroll() {
-    if (!_isTable || !_tableV.hasClients) return;
-    _updateTop();
+    if (!_isTable) return;
     _autoLoad(scrolled: true);
-  }
-
-  void _updateTop() {
-    if (_pinnedTop != null) return;
-    final days = _c.days;
-    if (days.isEmpty) return;
-    String? current;
-    if (_isTable) {
-      final items = _tableItems();
-      if (items.isEmpty || !_tableV.hasClients || !_tableV.position.hasPixels) return;
-      final idx = (_tableV.offset / _rowH).floor().clamp(0, items.length - 1);
-      current = items[idx].date;
-    } else {
-      final vbox = _viewportKey.currentContext?.findRenderObject();
-      if (vbox is! RenderBox || !vbox.attached) return;
-      final top = vbox.localToGlobal(Offset.zero).dy;
-      // The date of the first list item (day header or card) still showing below
-      // the top edge.
-      outer:
-      for (final d in days) {
-        final keys = [_anchorKeys[d.date], for (final m in d.machines) _cardKeys[m.key]];
-        for (final k in keys) {
-          final rb = k?.currentContext?.findRenderObject();
-          if (rb is! RenderBox || !rb.attached || !rb.hasSize) continue;
-          if (rb.localToGlobal(Offset.zero).dy + rb.size.height > top + 1) {
-            current = d.date;
-            break outer;
-          }
-        }
-      }
-    }
-    current ??= days.last.date;
-    if (current != _topDate) setState(() => _topDate = current);
   }
 
   bool _onScroll(ScrollNotification n) {
     if (n.depth != 0) return false;
-    if (n is ScrollStartNotification && n.dragDetails != null) {
-      _pinnedTop = null;
-      _machineCursor = null;
-    }
     if (n is ScrollUpdateNotification || n is ScrollEndNotification) {
       _scheduleCheck();
       _autoLoad(scrolled: true);
@@ -347,125 +299,43 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     return false;
   }
 
-  bool _onTableNotification(ScrollNotification n) {
-    if (n.metrics.axis != Axis.vertical) return false;
-    if (n is ScrollStartNotification && n.dragDetails != null) {
-      _pinnedTop = null;
-      _machineCursor = null;
-    }
-    return false;
-  }
-
-  Future<void> _scrollToDate(String date, {bool animate = true}) async {
+  /// The date of the first row / card showing at the top of the list right now
+  /// (null when there is nothing to measure yet).
+  String? _topDateNow() {
+    final days = _c.days;
+    if (days.isEmpty) return null;
     if (_isTable) {
       final items = _tableItems();
-      final idx = items.indexWhere((i) => i.date == date);
-      if (idx < 0 || !_tableV.hasClients) return;
-      setState(() {
-        _pinnedTop = date;
-        _topDate = date;
-      });
-      await _tableTo(idx, animate: animate);
+      final pos = soleScrollPosition(_tableV);
+      if (items.isEmpty || pos == null || !pos.hasPixels) return null;
+      final idx = (pos.pixels / _rowH).floor().clamp(0, items.length - 1);
+      return items[idx].date;
+    }
+    final vbox = _viewportKey.currentContext?.findRenderObject();
+    if (vbox is! RenderBox || !vbox.attached) return null;
+    final top = vbox.localToGlobal(Offset.zero).dy;
+    for (final d in days) {
+      final keys = [_anchorKeys[d.date], for (final m in d.machines) _cardKeys[m.key]];
+      for (final k in keys) {
+        final rb = k?.currentContext?.findRenderObject();
+        if (rb is! RenderBox || !rb.attached || !rb.hasSize) continue;
+        if (rb.localToGlobal(Offset.zero).dy + rb.size.height > top + 1) return d.date;
+      }
+    }
+    return days.last.date;
+  }
+
+  Future<void> _scrollToDate(String date) async {
+    if (_isTable) {
+      final idx = _tableItems().indexWhere((i) => i.date == date);
+      final pos = soleScrollPosition(_tableV);
+      if (idx < 0 || pos == null || !pos.hasContentDimensions) return;
+      pos.jumpTo((idx * _rowH).clamp(0.0, pos.maxScrollExtent));
       return;
     }
     final ctx = _anchorKeys[date]?.currentContext;
-    if (ctx == null) return;
-    setState(() {
-      _pinnedTop = date;
-      _topDate = date;
-    });
-    await Scrollable.ensureVisible(ctx, duration: animate ? const Duration(milliseconds: 280) : Duration.zero, curve: Curves.easeOutCubic);
-  }
-
-  Future<void> _tableTo(int index, {bool animate = true}) async {
-    if (!_tableV.hasClients || !_tableV.position.hasContentDimensions) return;
-    final target = (index * _rowH).clamp(0.0, _tableV.position.maxScrollExtent);
-    if (!animate) {
-      _tableV.jumpTo(target);
-      return;
-    }
-    await _tableV.animateTo(target, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
-  }
-
-  Future<void> _step(int delta) async {
-    final days = _c.days;
-    if (days.isEmpty) return;
-    var idx = days.indexWhere((d) => d.date == (_topDate ?? days.first.date));
-    if (idx < 0) idx = 0;
-    var next = idx + delta;
-    if (next >= days.length && _c.hasMore) {
-      await _c.loadMore();
-      if (!mounted) return;
-      next = idx + delta;
-    }
-    final now = _c.days;
-    if (next < 0 || next >= now.length) return;
-    await _scrollToDate(now[next].date);
-  }
-
-  void _jumpToMonth(String month) {
-    final hit = _c.days.where((d) => d.date.startsWith(month));
-    if (hit.isEmpty) return;
-    setState(() => _jumpOpen = false);
-    unawaited(_scrollToDate(hit.first.date));
-  }
-
-  void _jumpToMachine(String machineId) {
-    final days = _c.days;
-    final cards = <(int, SheetMachineDay)>[
-      for (var i = 0; i < days.length; i++)
-        for (final m in days[i].machines)
-          if (m.machineId == machineId) (i, m),
-    ];
-    if (cards.isEmpty) return;
-    var start = days.indexWhere((d) => d.date == (_topDate ?? days.first.date));
-    if (start < 0) start = 0;
-    var pick = -1;
-    final cursor = cards.indexWhere((c) => c.$2.key == _machineCursor);
-    if (cursor >= 0) {
-      pick = cursor + 1 < cards.length ? cursor + 1 : 0;
-    } else {
-      pick = cards.indexWhere((c) => c.$1 >= start);
-      if (pick < 0) pick = 0;
-    }
-    final target = cards[pick];
-    _machineCursor = target.$2.key;
-    setState(() => _jumpOpen = false);
-    if (_isTable) {
-      final items = _tableItems();
-      final idx = items.indexWhere((i) => i.date == target.$2.date && i.machineId == target.$2.machineId);
-      if (idx >= 0) {
-        setState(() {
-          _pinnedTop = target.$2.date;
-          _topDate = target.$2.date;
-        });
-        unawaited(_tableTo(idx));
-      }
-      return;
-    }
-    unawaited(_revealCard(target.$2));
-  }
-
-  Future<void> _revealCard(SheetMachineDay card) async {
-    await _scrollToDate(card.date);
-    for (var i = 0; i < 60 && mounted; i++) {
-      final ctx = _cardKeys[card.key]?.currentContext;
-      if (ctx != null && ctx.mounted) {
-        final h = _scroll.hasClients ? _scroll.position.viewportDimension : 600.0;
-        await Scrollable.ensureVisible(
-          ctx,
-          alignment: 8 / math.max(h, 1),
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-        );
-        return;
-      }
-      if (!_scroll.hasClients) return;
-      final p = _scroll.position;
-      if (p.pixels >= p.maxScrollExtent) return;
-      _scroll.jumpTo(math.min(p.maxScrollExtent, p.pixels + p.viewportDimension * 0.7));
-      await WidgetsBinding.instance.endOfFrame;
-    }
+    if (ctx == null || !ctx.mounted) return;
+    await Scrollable.ensureVisible(ctx);
   }
 
   // ── build ────────────────────────────────────────────────────────────────
@@ -479,10 +349,13 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     final size = MediaQuery.sizeOf(context);
     _tablet = size.shortestSide >= 600;
     final wide = size.width >= 700;
+    // The keyboard takes the floating button out of the way (it would sit on
+    // top of the list, right above the keys).
+    final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
     return AppScaffold(
       title: 'Data entry',
       // Wide screens carry an Add Entry button in the toolbar instead.
-      floatingActionButton: perms.create && !wide
+      floatingActionButton: perms.create && !wide && !keyboardUp
           ? FloatingActionButton.extended(
               key: const ValueKey('sheet-add'),
               onPressed: () => _openEditor(null),
@@ -520,8 +393,6 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     final chips = _chips();
     final showSkeleton = _c.loading && _c.rows.isEmpty && _c.error == null;
     final showError = _c.error != null && _c.rows.isEmpty;
-    final top = days.any((d) => d.date == _topDate) ? _topDate! : (days.isEmpty ? null : days.first.date);
-    final topIndex = top == null ? 0 : days.indexWhere((d) => d.date == top);
     if (!showSkeleton && !showError) _scheduleCheck();
 
     Widget body;
@@ -535,41 +406,17 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
       body = _isTable ? _table(days, access, wide) : _list(days, access, width);
     }
 
-    final hasDays = days.isNotEmpty && top != null;
-    // One toolbar row on a wide screen; narrower ones put the date strip under it.
-    final inlineStrip = wide && width >= 980 && hasDays;
-    final showRange = wide && width >= 1180;
-
-    Widget strip() => SheetDateStrip(
-          date: top!,
-          position: topIndex + 1,
-          loadedDays: days.length,
-          totalDays: _c.totalDays,
-          canNewer: topIndex > 0,
-          canOlder: topIndex < days.length - 1 || _c.hasMore,
-          onNewer: () => unawaited(_step(-1)),
-          onOlder: () => unawaited(_step(1)),
-          onToggleJump: () => setState(() => _jumpOpen = !_jumpOpen),
-          jumpOpen: _jumpOpen,
-        );
+    // Judge the width in text-scaled terms: big text needs more room per control.
+    final eff = width / math.max(1.0, MediaQuery.textScalerOf(context).scale(16) / 16);
 
     final extras = <Widget>[
-      if (showRange)
-        OutlinedButton.icon(
-          key: const ValueKey('sheet-range'),
-          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48), padding: const EdgeInsets.symmetric(horizontal: 14)),
-          onPressed: _openFilters,
-          icon: const Icon(Icons.date_range_rounded, size: 18),
-          label: Text(describeRange(_c.range)),
-        ),
-      if (inlineStrip) SizedBox(width: 290, child: ClipRRect(borderRadius: BorderRadius.circular(12), child: strip())),
-      SheetViewToggle(value: _view, onChanged: (v) => unawaited(_setView(v)), labels: wide),
+      SheetViewToggle(value: _view, onChanged: (v) => unawaited(_setView(v)), labels: wide && eff >= 800),
       if (wide && canCreate)
         FilledButton.icon(
           key: const ValueKey('sheet-add'),
-          style: FilledButton.styleFrom(minimumSize: const Size(0, 48), padding: const EdgeInsets.symmetric(horizontal: 18)),
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 14)),
           onPressed: () => _openEditor(null),
-          icon: const Icon(Icons.add_rounded),
+          icon: const Icon(Icons.add_rounded, size: 18),
           label: const Text('Add Entry'),
         ),
     ];
@@ -586,58 +433,22 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
           onClearAll: _clearAll,
           wide: wide,
           extras: extras,
-          below: hasDays
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!inlineStrip) strip(),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.topCenter,
-                      child: _jumpOpen ? _jumpPanel(days, top) : const SizedBox(width: double.infinity),
-                    ),
-                  ],
-                )
-              : null,
         ),
         Expanded(
           child: Stack(
             children: [
-              Positioned.fill(key: _viewportKey, child: body),
+              // With the keyboard up in landscape the list can be left with a
+              // few pixels: keep it mounted but skip drawing it (no overflow).
+              Positioned.fill(
+                key: _viewportKey,
+                child: LayoutBuilder(builder: (context, box) => Offstage(offstage: box.maxHeight < 110, child: body)),
+              ),
               if (_c.refreshing || (_c.loading && _c.rows.isNotEmpty))
                 const Positioned(top: 0, left: 0, right: 0, child: LinearProgressIndicator(minHeight: 2)),
             ],
           ),
         ),
       ],
-    );
-  }
-
-  Widget _jumpPanel(List<SheetDay> days, String top) {
-    final months = <String, int>{};
-    final machineIds = <String>{};
-    for (final d in days) {
-      months.update(d.date.substring(0, 7), (n) => n + 1, ifAbsent: () => 1);
-      for (final m in d.machines) {
-        machineIds.add(m.machineId);
-      }
-    }
-    final machines = machineIds.toList()
-      ..sort((a, b) {
-        final byRank = _c.rankOf(a).compareTo(_c.rankOf(b));
-        return byRank != 0 ? byRank : naturalCompare(_c.machineName[a] ?? '', _c.machineName[b] ?? '');
-      });
-    return SheetJumpPanel(
-      months: [for (final e in months.entries) JumpChip(id: e.key, label: monthTitle('${e.key}-01'), count: e.value)],
-      machines: [
-        for (final id in machines)
-          JumpChip(id: id, label: _c.machineName[id] ?? '—', tone: MachineColors.of(_c.machineOf(id), _c.rankOf(id))),
-      ],
-      currentMonth: top.substring(0, 7),
-      onMonth: _jumpToMonth,
-      onMachine: _jumpToMachine,
     );
   }
 
@@ -710,24 +521,21 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
       totalDays: _c.totalDays,
       searching: _c.search.trim().isNotEmpty,
       onLoadMore: () => unawaited(_c.loadMore()),
-      bottomPad: wide ? 16 : 84,
+      bottomPad: wide ? 12 : 64,
     );
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onTableNotification,
-      child: SheetTable(
-        controller: _c,
-        items: _tableItems(),
-        access: access,
-        tablet: _tablet,
-        vController: _tableV,
-        hController: _tableH,
-        onEdit: _edit,
-        onDelete: _delete,
-        onUnlock: _unlock,
-        onRefresh: _c.refresh,
-        footer: footer,
-        footerExtent: wide ? 104 : 156,
-      ),
+    return SheetTable(
+      controller: _c,
+      items: _tableItems(),
+      access: access,
+      tablet: _tablet,
+      vController: _tableV,
+      hController: _tableH,
+      onEdit: _edit,
+      onDelete: _delete,
+      onUnlock: _unlock,
+      onRefresh: _c.refresh,
+      footer: footer,
+      footerExtent: wide ? 96 : 132,
     );
   }
 
@@ -738,8 +546,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     final cols = width >= 1000 ? 3 : (width >= 700 ? 2 : 1);
     // One flat list: a header row per date, then its machine cards (in rows of
     // [cols] on a wide screen). (Pinned headers inside SliverMainAxisGroup trip
-    // a SliverGeometry assertion on Flutter 3.47, so the date strip above is the
-    // sticky header instead.)
+    // a SliverGeometry assertion on Flutter 3.47, so the headers just scroll.)
     final items = <(SheetDay, List<SheetMachineDay>?)>[];
     for (final day in days) {
       items.add((day, null));
@@ -754,7 +561,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
             controller: _c,
             access: access,
             expanded: _expanded,
-            margin: multi ? const EdgeInsets.fromLTRB(8, 0, 8, 12) : const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            margin: multi ? const EdgeInsets.fromLTRB(6, 0, 6, 8) : const EdgeInsets.fromLTRB(12, 0, 12, 8),
             onToggle: (id) => setState(() => _expanded.contains(id) ? _expanded.remove(id) : _expanded.add(id)),
             onEdit: _edit,
             onDelete: _delete,
@@ -777,19 +584,19 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
                 final (day, group) = items[i];
                 if (group == null) {
                   return Padding(
-                    padding: EdgeInsets.only(top: i == 0 ? 4 : 10),
+                    padding: EdgeInsets.only(top: i == 0 ? 2 : 6),
                     child: KeyedSubtree(
                       key: _keyFor(_anchorKeys, day.date),
                       child: SizedBox(
                         height: _headerExtent,
-                        child: SheetDayHeader(day: day, calendar: _c.calendar, elevated: false, now: now),
+                        child: SheetDayHeader(day: day, calendar: _c.calendar, now: now),
                       ),
                     ),
                   );
                 }
                 if (cols == 1) return card(group.first, multi: false);
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -808,7 +615,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
                 totalDays: _c.totalDays,
                 searching: _c.search.trim().isNotEmpty,
                 onLoadMore: () => unawaited(_c.loadMore()),
-                bottomPad: width >= 700 ? 24 : 104,
+                bottomPad: width >= 700 ? 16 : 72,
               ),
             ),
           ],

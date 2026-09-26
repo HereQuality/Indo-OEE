@@ -52,10 +52,10 @@ class _SheetSkeletonState extends State<SheetSkeleton> with SingleTickerProvider
           ),
         );
     Widget card() => Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
           decoration: BoxDecoration(
             color: Theme.of(context).cardTheme.color ?? s.surface,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: s.outlineVariant),
           ),
           child: Column(
@@ -75,8 +75,8 @@ class _SheetSkeletonState extends State<SheetSkeleton> with SingleTickerProvider
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Row(children: [b(140, 16), const Spacer(), b(90, 12)]),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+              child: Row(children: [b(140, 14), const Spacer(), b(90, 12)]),
             ),
             card(),
             card(),
@@ -133,14 +133,14 @@ class SheetListFooter extends StatelessWidget {
         children: [
           const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4)),
           const SizedBox(width: 12),
-          Text('Loading more days…', style: TextStyle(color: s.onSurfaceVariant)),
+          Text('Loading more days…', style: TextStyle(fontSize: 13, color: s.onSurfaceVariant)),
         ],
       );
     } else if (moreError != null) {
       body = Column(
         key: const ValueKey('footer-error'),
         children: [
-          Text(moreError!, textAlign: TextAlign.center, style: TextStyle(color: s.error)),
+          Text(moreError!, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: s.error)),
           const SizedBox(height: 8),
           OutlinedButton.icon(onPressed: onLoadMore, icon: const Icon(Icons.refresh), label: const Text('Try again')),
         ],
@@ -176,7 +176,7 @@ class SheetListFooter extends StatelessWidget {
       );
     }
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPad),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, bottomPad),
       child: Center(child: body),
     );
   }

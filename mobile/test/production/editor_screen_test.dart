@@ -901,8 +901,8 @@ void main() {
         expect(tester.getSize(cancelBtn()).height, greaterThanOrEqualTo(44));
         expect(tester.getRect(saveBtn()).right, lessThanOrEqualTo(size.width));
 
-        if (size.width > 720) {
-          expect(tester.getSize(find.byType(ProductionEntryForm)).width, lessThanOrEqualTo(720));
+        if (size.width > 960) {
+          expect(tester.getSize(find.byType(ProductionEntryForm)).width, lessThanOrEqualTo(960));
         }
       });
     }
@@ -933,22 +933,24 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    editorTest('with the keyboard up on a short screen the bar steps aside; on a tall one it stays', (tester) async {
-      await open(tester, size: const Size(360, 640));
-      expect(find.byType(EntryActionBar), findsOneWidget);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pump();
-      expect(find.byType(EntryActionBar), findsNothing);
-      tester.view.viewInsets = FakeViewPadding.zero;
-      await tester.pump();
-      expect(find.byType(EntryActionBar), findsOneWidget);
-
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      await tester.pump();
-      expect(find.byType(EntryActionBar), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
+    for (final size in const [Size(360, 640), Size(390, 844)]) {
+      editorTest('with the keyboard up the bar folds away as it rises and is back when it closes: ${size.width.toInt()}', (tester) async {
+        await open(tester, size: size);
+        expect(find.byType(EntryActionBar), findsOneWidget);
+        final full = tester.getSize(find.byType(EntryActionBar)).height;
+        // Half way up the bar is half folded (no jump), all the way up it is gone.
+        tester.view.viewInsets = const FakeViewPadding(bottom: 50);
+        await tester.pump();
+        expect(tester.getSize(find.byType(ClipRect).last).height, lessThan(full));
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await tester.pump();
+        expect(find.byType(EntryActionBar), findsNothing);
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pump();
+        expect(find.byType(EntryActionBar), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }
 

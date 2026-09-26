@@ -269,8 +269,23 @@ void main() {
     expect(tester.takeException(), isNull);
     await tapKey(tester, 'toggle-r1');
     expect(tester.takeException(), isNull);
-    await tester.tap(byKey('strip-label'));
+    // The Filters sheet (period + machine / operator / part) has to fit too.
+    await tester.tap(byKey('sheet-filter-btn'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('no separate date strip: the period lives in Filters with the other filters', (tester) async {
+    install();
+    await open(tester);
+    expect(byKey('strip-label'), findsNothing);
+    expect(byKey('sheet-range'), findsNothing);
+    await tester.tap(byKey('sheet-filter-btn'));
+    await tester.pumpAndSettle();
+    expect(find.text('PERIOD'), findsOneWidget, reason: 'the section label is drawn upper-case');
+    expect(find.text('Date range'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Year'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

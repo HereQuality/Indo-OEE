@@ -240,7 +240,7 @@ class SheetController extends ChangeNotifier {
     final weekly = results[5] as Json?;
     final off = weekly?['weeklyOffDays'];
     calendar = WorkingCalendar(
-      weeklyOffDays: off is List ? off.whereType<num>().map((e) => e.toInt()).toList() : null,
+      weeklyOffDays: off is List ? [for (final e in off) if (e is num && e.isFinite) e.toInt()] : null,
       holidays: holidays,
     );
     final ext = results[6] as Json?;
@@ -299,10 +299,11 @@ class SheetController extends ChangeNotifier {
 
   List<Json> _normalize(Json res) {
     final out = <Json>[];
+    final seen = <String>{};
     for (final r in asList(res)) {
       final id = r['_id'];
       final date = '${r['date'] ?? ''}';
-      if (id == null || date.length < 10) continue;
+      if (id == null || date.length < 10 || !seen.add('$id')) continue;
       final machine = r['machine'];
       out.add({
         ...r,
@@ -316,7 +317,7 @@ class SheetController extends ChangeNotifier {
 
   ({int page, int totalPages, int totalDays}) _meta(Json res, int asked) {
     final meta = res['meta'];
-    int intOf(Object? v, int d) => v is num ? v.toInt() : (int.tryParse('$v') ?? d);
+    int intOf(Object? v, int d) => v is num ? (v.isFinite ? v.toInt() : d) : (int.tryParse('$v') ?? d);
     if (meta is! Map) return (page: asked, totalPages: 1, totalDays: 0);
     final tp = intOf(meta['totalPages'], 1);
     return (page: intOf(meta['page'], asked), totalPages: tp < 1 ? 1 : tp, totalDays: intOf(meta['totalDays'], 0));
@@ -483,7 +484,7 @@ class SheetController extends ChangeNotifier {
       final off = weekly['weeklyOffDays'];
       if (_disposed) return;
       calendar = WorkingCalendar(
-        weeklyOffDays: off is List ? off.whereType<num>().map((e) => e.toInt()).toList() : null,
+        weeklyOffDays: off is List ? [for (final e in off) if (e is num && e.isFinite) e.toInt()] : null,
         holidays: holidays,
       );
       notifyListeners();

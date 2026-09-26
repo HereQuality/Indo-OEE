@@ -55,6 +55,9 @@ void main() {
   testWidgets('switching on a hidden graph appends it', (tester) async {
     await open(tester);
     await tester.scrollUntilVisible(find.text('Rejected QTY by Reason'), 300, scrollable: scroller());
+    // Bring the row clear of the sticky Save bar before tapping it.
+    await tester.drag(scroller(), const Offset(0, -140));
+    await tester.pump();
     await tester.tap(find.text('Rejected QTY by Reason'));
     await tester.pump();
     await tester.tap(find.text('Save'));

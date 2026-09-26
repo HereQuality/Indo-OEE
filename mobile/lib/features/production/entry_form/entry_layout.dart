@@ -91,7 +91,7 @@ class EntryGrid extends StatelessWidget {
 
         final out = <Widget>[];
         for (final chunk in chunks) {
-          if (out.isNotEmpty) out.add(const SizedBox(height: 14));
+          if (out.isNotEmpty) out.add(const SizedBox(height: EntryStyle.rowGap));
           out.add(
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +102,7 @@ class EntryGrid extends StatelessWidget {
                     CrossAxisAlignment.end,
                     (c) => c.label == null
                         ? const SizedBox.shrink()
-                        : Padding(padding: const EdgeInsets.only(bottom: 6), child: FieldLabel(c.label!, required: c.required)),
+                        : Padding(padding: const EdgeInsets.only(bottom: 4), child: FieldLabel(c.label!, required: c.required)),
                   ),
                 row(chunk, CrossAxisAlignment.start, (c) => c.child),
                 if (chunk.any((c) => c.error != null || c.hint != null))
@@ -131,10 +131,10 @@ class EntryErrorText extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 4),
       child: Semantics(
         liveRegion: true,
-        child: Text(message, style: TextStyle(color: s.error, fontSize: 12.5, height: 1.3)),
+        child: Text(message, style: TextStyle(color: s.error, fontSize: EntryStyle.noteSize, height: 1.25)),
       ),
     );
   }
@@ -148,10 +148,10 @@ class EntryHintText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.only(top: 4),
         child: Text(
           message,
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12.5, height: 1.3),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: EntryStyle.noteSize, height: 1.25),
         ),
       );
 }
@@ -179,12 +179,13 @@ class EntryLineCard extends StatelessWidget {
     return Card(
       elevation: dark ? 0 : 1,
       shadowColor: s.shadow.withValues(alpha: 0.12),
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: hasError ? s.error : s.outlineVariant, width: hasError ? 1.4 : 1),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(EntryStyle.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -192,32 +193,32 @@ class EntryLineCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 30,
-                  height: 30,
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
                     color: s.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, size: 17, color: AppColors.readable(context, s.primary)),
+                  child: Icon(icon, size: 15, color: AppColors.readable(context, s.primary)),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Semantics(
                     header: true,
-                    child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, height: 1.25)),
+                    child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.25)),
                   ),
                 ),
               ],
             ),
             if (hasError)
               Padding(
-                padding: const EdgeInsets.only(top: 8, left: 40),
+                padding: const EdgeInsets.only(top: 6, left: 34),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: const EntryBadge('Check this line'),
                 ),
               ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             ...children,
           ],
         ),
@@ -238,18 +239,18 @@ class EntryBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = AppColors.readable(context, AppColors.critical);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: AppColors.critical.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.error_outline_rounded, size: 13, color: fg)),
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.error_outline_rounded, size: 12, color: fg)),
           const SizedBox(width: 4),
-          Flexible(child: Text(label, style: TextStyle(fontSize: 12, height: 1.25, fontWeight: FontWeight.w600, color: fg))),
+          Flexible(child: Text(label, style: TextStyle(fontSize: 11.5, height: 1.25, fontWeight: FontWeight.w600, color: fg))),
         ],
       ),
     );

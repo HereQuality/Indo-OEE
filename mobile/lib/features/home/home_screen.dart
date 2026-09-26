@@ -59,31 +59,31 @@ class HomeScreen extends StatelessWidget {
       title: 'Home',
       body: LayoutBuilder(
         builder: (context, box) {
-          final gutter = math.max(16.0, (box.maxWidth - 720) / 2);
-          final inner = math.min(box.maxWidth, 720.0) - 32;
+          final gutter = math.max(12.0, (box.maxWidth - 720) / 2);
+          final inner = math.min(box.maxWidth, 720.0) - 24;
           return RefreshIndicator(
             onRefresh: () => _refresh(context),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 32),
+              padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 24),
               children: [
                 _Greeting(firstName: first, companyName: company.name, logo: company.logo),
                 if (loading) const HomeSkeleton(),
                 if (failed)
                   SizedBox(
-                    height: 320,
+                    height: 280,
                     child: ErrorView(message: menu.error!, onRetry: () => _refresh(context)),
                   ),
                 if (nothing)
                   const SizedBox(
-                    height: 320,
+                    height: 280,
                     child: EmptyView(
                       message: 'No pages are assigned to your role yet. Ask your administrator to grant access.',
                       icon: Icons.lock_outline_rounded,
                     ),
                   ),
                 if (showDashboard || showEntry) ...[
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 14),
                   _Launchers(
                     width: inner,
                     dashboard: showDashboard
@@ -213,24 +213,24 @@ class _Greeting extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(_hello(), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: s.onSurfaceVariant)),
-        const SizedBox(height: 2),
+        Text(_hello(), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurfaceVariant)),
+        const SizedBox(height: 1),
         Text(
           firstName.isEmpty ? 'Welcome' : firstName,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, height: 1.15),
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, height: 1.15),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Row(
           children: [
-            Icon(Icons.calendar_today_rounded, size: 14, color: s.onSurfaceVariant),
+            Icon(Icons.calendar_today_rounded, size: 13, color: s.onSurfaceVariant),
             const SizedBox(width: 6),
-            Flexible(child: Text(date, style: TextStyle(fontSize: 13, color: s.onSurfaceVariant))),
+            Flexible(child: Text(date, style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant))),
           ],
         ),
         if (companyName.isNotEmpty || (logo != null && logo!.isNotEmpty)) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           CompanyBadge(name: companyName, logo: logo),
         ],
       ],
@@ -251,14 +251,14 @@ class _Launchers extends StatelessWidget {
       return IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [Expanded(child: cards[0]), const SizedBox(width: 12), Expanded(child: cards[1])],
+          children: [Expanded(child: cards[0]), const SizedBox(width: 10), Expanded(child: cards[1])],
         ),
       );
     }
     return Column(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) const SizedBox(height: 12),
+          if (i > 0) const SizedBox(height: 10),
           cards[i],
         ],
       ],
@@ -273,8 +273,8 @@ class _Grid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const gap = 10.0;
-    final cols = width >= 560 ? 5 : (width >= 420 ? 4 : 3);
+    const gap = 8.0;
+    final cols = width >= 560 ? 6 : (width >= 420 ? 4 : 3);
     final tile = (width - gap * (cols - 1)) / cols;
     return Wrap(
       spacing: gap,

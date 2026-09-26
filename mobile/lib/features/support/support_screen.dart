@@ -10,6 +10,7 @@ import '../../core/widgets/page_permissions.dart';
 import '../../core/widgets/states.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/unread_provider.dart';
+import '../profile/compact_field.dart';
 import 'create_ticket.dart';
 import 'support_models.dart';
 import 'support_repository.dart';
@@ -59,8 +60,7 @@ class _SupportScreenState extends State<SupportScreen> {
       'refresh_unread_count': (_) => _scheduleRefresh(),
       'ticket_updated': (_) => _scheduleRefresh(),
       'new_message': (_) => _scheduleRefresh(),
-    })
-      ..start();
+    })..start();
     _load();
   }
 
@@ -81,7 +81,7 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (!silent) {
+    if (!silent && mounted) {
       setState(() {
         _loading = true;
         _error = null;
@@ -94,7 +94,9 @@ class _SupportScreenState extends State<SupportScreen> {
         _all = list;
         _loading = false;
         _error = null;
-        if (_selectedId != null && !list.any((t) => t.id == _selectedId)) _selectedId = null;
+        if (_selectedId != null && !list.any((t) => t.id == _selectedId)) {
+          _selectedId = null;
+        }
       });
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -107,7 +109,7 @@ class _SupportScreenState extends State<SupportScreen> {
       if (!mounted) return;
       if (silent && _all.isNotEmpty) return;
       setState(() {
-        _error = e.toString();
+        _error = 'Could not load tickets. Please try again.';
         _loading = false;
       });
     }
@@ -131,20 +133,25 @@ class _SupportScreenState extends State<SupportScreen> {
       if (_mineOnly && !acc.isCreator(t)) return false;
       return t.matches(q);
     }).toList();
-    out.sort((a, b) => (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0)));
+    out.sort(
+      (a, b) =>
+          (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0)),
+    );
     return out;
   }
 
   List<TicketAction> _actionsFor(Ticket t, TicketAccess acc) => [
-        if (acc.canForward(t)) TicketAction.forward,
-        if (acc.canDelete(t)) TicketAction.delete,
-      ];
+    if (acc.canForward(t)) TicketAction.forward,
+    if (acc.canDelete(t)) TicketAction.delete,
+  ];
 
   Future<void> _runAction(Ticket t, TicketAction a) async {
     final isDelete = a == TicketAction.delete;
     final yes = await Alerts.confirm(
       context,
-      isDelete ? 'This cannot be undone.' : 'SuperAdmin will receive full access to this ticket.',
+      isDelete
+          ? 'This cannot be undone.'
+          : 'SuperAdmin will receive full access to this ticket.',
       title: isDelete ? 'Delete this ticket?' : 'Forward to SuperAdmin?',
       confirmText: isDelete ? 'Delete' : 'Forward',
       danger: isDelete,
@@ -164,6 +171,8 @@ class _SupportScreenState extends State<SupportScreen> {
       _load(silent: true);
     } on ApiException catch (e) {
       Alerts.error(e.message);
+    } catch (_) {
+      Alerts.error('Something went wrong. Please try again.');
     }
   }
 
@@ -173,7 +182,9 @@ class _SupportScreenState extends State<SupportScreen> {
       return;
     }
     await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TicketDetailPage(summary: t, access: acc, repo: _repo)),
+      MaterialPageRoute(
+        builder: (_) => TicketDetailPage(summary: t, access: acc, repo: _repo),
+      ),
     );
     if (mounted) _load(silent: true);
   }
@@ -181,10 +192,14 @@ class _SupportScreenState extends State<SupportScreen> {
   Future<void> _create({required bool tablet, required bool split}) async {
     final created = tablet
         ? await showCreateTicketDialog(context, repo: _repo)
-        : await Navigator.of(context).push<Ticket>(MaterialPageRoute(builder: (_) => CreateTicketPage(repo: _repo)));
+        : await Navigator.of(context).push<Ticket>(
+            MaterialPageRoute(builder: (_) => CreateTicketPage(repo: _repo)),
+          );
     if (created == null || !mounted) return;
     context.read<UnreadProvider>().refresh();
-    if (split && created.id.isNotEmpty) setState(() => _selectedId = created.id);
+    if (split && created.id.isNotEmpty) {
+      setState(() => _selectedId = created.id);
+    }
     _load(silent: true);
   }
 
@@ -196,6 +211,7 @@ class _SupportScreenState extends State<SupportScreen> {
     final tablet = size.shortestSide >= 600;
     final split = tablet && size.width >= 900;
     final showNew = perms.create && acc.canCreate;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return AppScaffold(
       title: 'Support',
@@ -204,82 +220,120 @@ class _SupportScreenState extends State<SupportScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 4),
             child: FilledButton.icon(
-              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                visualDensity: VisualDensity.compact,
+              ),
               onPressed: () => _create(tablet: tablet, split: split),
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('New ticket'),
             ),
           ),
       ],
-      floatingActionButton: showNew && !split
+      floatingActionButton: showNew && !split && !keyboardOpen
           ? FloatingActionButton.extended(
               onPressed: () => _create(tablet: tablet, split: split),
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('New ticket'),
             )
           : null,
-      body: LayoutBuilder(builder: (context, c) {
-        final table = tablet && !split && c.maxWidth >= 640;
-        final filtered = _filtered(acc);
-        final filters = Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TicketFilters(
-            searchController: _search,
-            onSearch: (v) {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 300), () {
-                if (mounted) setState(() => _q = v);
-              });
-            },
-            tickets: _all,
-            status: _status,
-            priority: _priority,
-            platform: _platform,
-            onStatus: (v) => setState(() => _status = v),
-            onPriority: (v) => setState(() => _priority = v),
-            onPlatform: (v) => setState(() => _platform = v),
-            showScope: acc.canAct && !acc.isAdmin,
-            mineOnly: _mineOnly,
-            onScope: (v) => setState(() => _mineOnly = v),
-          ),
-        );
-        final list = _listBody(acc, filtered, split: split, table: table);
-
-        if (split) {
-          final leftW = (c.maxWidth * 0.36).clamp(360.0, 460.0);
-          final sel = _all.where((t) => t.id == _selectedId).firstOrNull;
-          return Row(
-            children: [
-              SizedBox(width: leftW, child: Column(children: [filters, Expanded(child: list)])),
-              VerticalDivider(width: 1, color: Theme.of(context).colorScheme.outlineVariant),
-              Expanded(
-                child: sel == null
-                    ? const EmptyView(message: 'Select a ticket to see the conversation.', icon: Icons.forum_outlined)
-                    : TicketDetail(
-                        key: ValueKey(sel.id),
-                        summary: sel,
-                        access: acc,
-                        repo: _repo,
-                        onChanged: () => _load(silent: true),
-                        onDeleted: () {
-                          setState(() => _selectedId = null);
-                          _load(silent: true);
-                        },
-                      ),
+      body: TapToDismiss(
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final table = tablet && !split && c.maxWidth >= 640;
+            final filtered = _filtered(acc);
+            final filters = Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: TicketFilters(
+                searchController: _search,
+                onSearch: (v) {
+                  _debounce?.cancel();
+                  _debounce = Timer(const Duration(milliseconds: 300), () {
+                    if (mounted) setState(() => _q = v);
+                  });
+                },
+                tickets: _all,
+                status: _status,
+                priority: _priority,
+                platform: _platform,
+                onStatus: (v) => setState(() => _status = v),
+                onPriority: (v) => setState(() => _priority = v),
+                onPlatform: (v) => setState(() => _platform = v),
+                showScope: acc.canAct && !acc.isAdmin,
+                mineOnly: _mineOnly,
+                onScope: (v) => setState(() => _mineOnly = v),
               ),
-            ],
-          );
-        }
-        return Column(children: [filters, Expanded(child: list)]);
-      }),
+            );
+            final list = _listBody(acc, filtered, split: split, table: table);
+
+            if (split) {
+              final leftW = (c.maxWidth * 0.36).clamp(360.0, 460.0);
+              final sel = _all.where((t) => t.id == _selectedId).firstOrNull;
+              return Row(
+                children: [
+                  SizedBox(
+                    width: leftW,
+                    child: Column(
+                      children: [
+                        filters,
+                        Expanded(child: list),
+                      ],
+                    ),
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  Expanded(
+                    child: sel == null
+                        ? const EmptyView(
+                            message: 'Select a ticket to see the conversation.',
+                            icon: Icons.forum_outlined,
+                          )
+                        : TicketDetail(
+                            key: ValueKey(sel.id),
+                            summary: sel,
+                            access: acc,
+                            repo: _repo,
+                            onChanged: () => _load(silent: true),
+                            onDeleted: () {
+                              setState(() => _selectedId = null);
+                              _load(silent: true);
+                            },
+                          ),
+                  ),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                filters,
+                Expanded(child: list),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
-  Widget _listBody(TicketAccess acc, List<Ticket> tickets, {required bool split, required bool table}) {
+  Widget _listBody(
+    TicketAccess acc,
+    List<Ticket> tickets, {
+    required bool split,
+    required bool table,
+  }) {
     if (_loading && _all.isEmpty) return const TicketListSkeleton();
-    if (_error != null && _all.isEmpty) return ErrorView(message: _error!, onRetry: _load);
+    if (_error != null && _all.isEmpty) {
+      return ErrorView(message: _error!, onRetry: _load);
+    }
 
-    final filtersOn = _q.trim().isNotEmpty || _status != 'all' || _priority != null || _platform != null || _mineOnly;
+    final filtersOn =
+        _q.trim().isNotEmpty ||
+        _status != 'all' ||
+        _priority != null ||
+        _platform != null ||
+        _mineOnly;
     if (tickets.isEmpty) {
       // Scrollable so pull-to-refresh still works on an empty list.
       return RefreshIndicator(
@@ -291,7 +345,9 @@ class _SupportScreenState extends State<SupportScreen> {
               SizedBox(
                 height: c.maxHeight,
                 child: EmptyView(
-                  message: filtersOn ? 'No tickets match your filters.' : 'No tickets found.',
+                  message: filtersOn
+                      ? 'No tickets match your filters.'
+                      : 'No tickets found.',
                   icon: Icons.support_agent_rounded,
                 ),
               ),
@@ -301,13 +357,14 @@ class _SupportScreenState extends State<SupportScreen> {
       );
     }
 
-    final bottomPad = split ? 16.0 : 96.0; // room for the New ticket button
+    final bottomPad = split ? 12.0 : 76.0; // room for the New ticket button
     if (table) {
       return RefreshIndicator(
         onRefresh: () => _load(silent: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPad),
           children: [
             TicketTable(
               tickets: tickets,
@@ -325,9 +382,10 @@ class _SupportScreenState extends State<SupportScreen> {
       onRefresh: () => _load(silent: true),
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
+        padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPad),
         itemCount: tickets.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (_, i) {
           final t = tickets[i];
           return TicketCard(

@@ -200,7 +200,15 @@ List<SummaryRow> machineSummaryRows(Rows rows, DashboardCtx ctx) {
 
 /// Text of a time-bucket tick: "dd/MM" for a date, "Sep 2026" for a month.
 String bucketTick(String key, String dim) =>
-    dim == 'date' ? '${key.substring(8)}/${key.substring(5, 7)}' : eng.monthLabel(key);
+    dim == 'date' ? '${jsSlice(key, 8)}/${jsSlice(key, 5, 7)}' : eng.monthLabel(key);
+
+/// JS `s.slice(from, to)`: never throws on a short or empty key (a legacy
+/// entry with no / an odd date lands in a bucket named '' or '—').
+String jsSlice(String s, int from, [int? to]) {
+  final a = from.clamp(0, s.length);
+  final b = (to ?? s.length).clamp(0, s.length);
+  return a >= b ? '' : s.substring(a, b);
+}
 
 /// The full label of a bucket ("05/09/2026" / "Sep 2026") for tooltips.
 String bucketText(String key, String dim, DashboardCtx ctx) => eng.dimensions[dim]!.text(key, ctx);

@@ -6,12 +6,27 @@ import 'package:indo/features/production/sheet/table/sheet_table.dart';
 import 'package:indo/models/menu_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../support/fake_api.dart';
 import 'sheet_list_test.dart' show byKey, install, open, oldDay, row, sheetGets, today, yesterday;
 
+/// Scrolls the table sideways (a real drag on a row) until [key] sits between the
+/// frozen Date + Machine columns and the frozen Actions column, then taps it.
 Future<void> tapK(WidgetTester tester, String key) async {
-  await tester.ensureVisible(byKey(key));
-  await tester.pump();
+  final vw = tester.view.physicalSize.width;
+  for (var i = 0; i < 30; i++) {
+    final lo = tester.getTopRight(byKey('head-machine')).dx + 14;
+    final actions = tester.getTopLeft(byKey('head-actions')).dx;
+    final hi = (actions < vw - 1 ? actions : vw) - 14;
+    final x = tester.getCenter(byKey(key)).dx;
+    if (x > lo && x < hi) break;
+    await tester.dragFrom(Offset(vw / 2, 400), Offset((hi + lo) / 2 - x, 0));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(byKey(key));
+  await tester.pumpAndSettle();
+}
+
+/// Taps a control of the frozen Actions column (no sideways scrolling needed).
+Future<void> tapA(WidgetTester tester, String key) async {
   await tester.tap(byKey(key));
   await tester.pumpAndSettle();
 }
@@ -70,13 +85,13 @@ void main() {
     expect(find.text('Drilling (sec)'), findsOneWidget);
     expect(find.text('Clamp/Declamp (sec)'), findsOneWidget);
     expect(byKey('expand-cycle-open'), findsOneWidget);
+    expect(byKey('expand-cycle-open-end'), findsOneWidget);
 
     await tapK(tester, 'expand-rejectedQty-closed');
     expect(find.text('Tool Mark'), findsOneWidget);
     expect(find.text('Porosity / Blow Hole'), findsOneWidget);
     expect(byKey('eye-reject-r1'), findsOneWidget);
-    await tester.tap(byKey('eye-reject-r1'));
-    await tester.pumpAndSettle();
+    await tapK(tester, 'eye-reject-r1');
     expect(find.text('Burrs on the edge'), findsOneWidget);
     expect(find.text('Operator changed shift'), findsNothing, reason: 'the reject eye shows only its own remark');
     await tester.tapAt(const Offset(20, 40));
@@ -85,17 +100,17 @@ void main() {
     await tapK(tester, 'expand-downtime-closed');
     expect(find.text('Breakdown Mechanical'), findsOneWidget);
     expect(byKey('eye-downtime-r1'), findsOneWidget);
-    await tester.tap(byKey('eye-downtime-r1'));
-    await tester.pumpAndSettle();
+    await tapK(tester, 'eye-downtime-r1');
     expect(find.text('Power dip'), findsOneWidget);
     await tester.tapAt(const Offset(20, 40));
     await tester.pumpAndSettle();
 
-    await tester.tap(byKey('eye-general-r1'));
-    await tester.pumpAndSettle();
+    await tapK(tester, 'eye-general-r1');
     expect(find.text('Operator changed shift'), findsOneWidget);
     expect(find.text('Burrs on the edge'), findsNothing, reason: 'the Remarks column shows the general remark only');
-    await tapK(tester, 'expand-downtime-open');
+    await tester.tapAt(const Offset(20, 40));
+    await tester.pumpAndSettle();
+    await tapK(tester, 'expand-downtime-open-end');
     expect(find.text('Breakdown Mechanical'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -108,7 +123,7 @@ void main() {
     final opX = tester.getTopLeft(byKey('head-operator')).dx;
     final actionsX = tester.getTopLeft(byKey('head-actions')).dx;
 
-    await tester.drag(byKey('sheet-table-list'), const Offset(-700, 0));
+    await tester.dragFrom(const Offset(200, 300), const Offset(-700, 0));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(byKey('head-date')).dx, dateX);
     expect(tester.getTopLeft(byKey('head-machine')).dx, machineX);
@@ -117,8 +132,7 @@ void main() {
     // The body rows keep their frozen cells too.
     expect(tester.getTopLeft(find.byKey(const ValueKey('r1:date'))).dx, dateX);
 
-    await tester.tap(byKey('formula-shift'));
-    await tester.pumpAndSettle();
+    await tapK(tester, 'formula-shift');
     expect(find.textContaining('MOD(Machine OFF Time'), findsOneWidget);
     await tester.tapAt(const Offset(20, 40));
     await tester.pumpAndSettle();
@@ -147,14 +161,14 @@ void main() {
     expect(byKey('delete-r9'), findsNothing);
     expect(byKey('unlock-r9'), findsOneWidget);
 
-    await tapK(tester, 'delete-r1');
+    await tapA(tester, 'delete-r1');
     expect(find.text('Delete entry'), findsOneWidget);
     await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Delete')));
     await tester.pumpAndSettle();
     expect(api.called('DELETE', '${Endpoints.productionSheetRow}/r1').length, 1);
     expect(sheetGets(api).length, 2, reason: 'reloads the loaded pages after a delete');
 
-    await tapK(tester, 'unlock-r9');
+    await tapA(tester, 'unlock-r9');
     await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Unlock')));
     await tester.pumpAndSettle();
     expect(api.called('PUT', '${Endpoints.productionSheetRow}/r9/unlock').length, 1);
@@ -175,7 +189,7 @@ void main() {
   testWidgets('edit opens the editor; Table | Cards switches the view and remembers it', (tester) async {
     install();
     await open(tester);
-    await tapK(tester, 'edit-r1');
+    await tapA(tester, 'edit-r1');
     var editor = tester.widget<EntryEditorScreen>(find.byType(EntryEditorScreen));
     expect(editor.row?['_id'], 'r1');
     tester.state<NavigatorState>(find.byType(Navigator).first).pop();
@@ -192,8 +206,20 @@ void main() {
     expect(byKey('sheet-table-list'), findsOneWidget);
     expect((await SharedPreferences.getInstance()).getString('sheet_view_mode'), 'table');
 
-    editor = tester.widget<EntryEditorScreen>(find.byType(EntryEditorScreen).evaluate().isEmpty ? (await _openAdd(tester)) : find.byType(EntryEditorScreen));
+    await tester.tap(byKey('sheet-add'));
+    await tester.pumpAndSettle();
+    editor = tester.widget<EntryEditorScreen>(find.byType(EntryEditorScreen));
     expect(editor.row, isNull);
+  });
+
+  testWidgets('pull down on the table refreshes the first page', (tester) async {
+    final api = install();
+    await open(tester);
+    final before = sheetGets(api).length;
+    await tester.dragFrom(const Offset(200, 300), const Offset(0, 320));
+    await tester.pumpAndSettle();
+    expect(sheetGets(api).length, greaterThan(before));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('infinite scroll asks for the next page of dates; search narrows the rows', (tester) async {
@@ -218,13 +244,13 @@ void main() {
   testWidgets('iPad 1024x768: full width table, Add Entry in the toolbar, editor as a dialog', (tester) async {
     install();
     await open(tester, size: const Size(1024, 768));
-    expect(TableMetrics.rowHeight(true), 48);
+    expect(TableMetrics.rowHeight(true), 44);
     expect(tester.getSize(byKey('sheet-table-h')).width, greaterThan(900), reason: 'no 720 px cap');
     expect(find.byType(FloatingActionButton), findsNothing);
     expect(byKey('sheet-add'), findsOneWidget);
     expect(find.text('Filters'), findsOneWidget);
-    expect(byKey('sheet-range'), findsNothing, reason: 'the period button needs a wider screen');
-    expect(tester.getSize(byKey('trow-r1')).height, 48);
+    expect(byKey('sheet-range'), findsNothing, reason: 'the period lives in Filters, not a separate button');
+    expect(tester.getSize(byKey('trow-r1')).height, 44);
 
     await tester.tap(byKey('sheet-add'));
     await tester.pumpAndSettle();
@@ -237,40 +263,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('phone 390x844: compact 44 px rows, FAB adds; dark / 360x640 / text 1.6 and iPad dark do not overflow', (tester) async {
+  testWidgets('phone 390x844: compact 40 px rows, FAB adds; dark / 360x640 / text 1.6 and iPad dark do not overflow', (tester) async {
     install();
     await open(tester);
-    expect(tester.getSize(byKey('trow-r1')).height, 44);
+    expect(tester.getSize(byKey('trow-r1')).height, 40);
     expect(byKey('sheet-add'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsOneWidget);
 
+    await tester.pumpWidget(const SizedBox.shrink());
     await open(tester, dark: true, size: const Size(360, 640), textScale: 1.6);
     expect(tester.takeException(), isNull);
     await tapK(tester, 'expand-cycle-closed');
     await tapK(tester, 'expand-rejectedQty-closed');
     await tapK(tester, 'expand-downtime-closed');
-    await tester.drag(byKey('sheet-table-list'), const Offset(-900, 0));
+    await tester.dragFrom(const Offset(180, 300), const Offset(-900, 0));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.tap(byKey('strip-label'));
+    await tester.tap(byKey('sheet-filter-btn'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop(); // dismiss the Filters sheet
+    await tester.pumpAndSettle();
     await tester.tap(byKey('view-cards'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
+    await tester.pumpWidget(const SizedBox.shrink());
     await open(tester, dark: true, size: const Size(1024, 768), textScale: 1.6);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
     await open(tester, size: const Size(768, 1024));
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await open(tester, size: const Size(844, 390));
+    expect(byKey('sheet-add'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
     await open(tester, dark: true, size: const Size(1366, 1024));
-    expect(byKey('sheet-range'), findsOneWidget);
+    expect(byKey('sheet-range'), findsNothing);
+    expect(byKey('sheet-filter-btn'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-}
-
-Future<Finder> _openAdd(WidgetTester tester) async {
-  await tester.tap(byKey('sheet-add'));
-  await tester.pumpAndSettle();
-  return find.byType(EntryEditorScreen);
 }

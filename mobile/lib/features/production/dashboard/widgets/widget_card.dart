@@ -7,7 +7,7 @@ import 'dash_card.dart';
 /// Builds a chart body for a given view (chart / table) and size.
 typedef ChartBodyBuilder = Widget Function(BuildContext context, ChartView view, bool expanded);
 
-/// A small square icon action in a card header (44 px hit area).
+/// A small square icon action in a card header (40 px hit area).
 class CardIconButton extends StatelessWidget {
   const CardIconButton({super.key, required this.icon, required this.tooltip, required this.onPressed, this.active = false});
 
@@ -22,10 +22,11 @@ class CardIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       tooltip: tooltip,
-      icon: Icon(icon, size: 20),
+      icon: Icon(icon, size: 18),
       isSelected: active,
       style: IconButton.styleFrom(
-        minimumSize: const Size(44, 44),
+        minimumSize: const Size(40, 40),
+        padding: EdgeInsets.zero,
         tapTargetSize: MaterialTapTargetSize.padded,
         foregroundColor: active ? cs.primary : cs.onSurfaceVariant,
         backgroundColor: active ? cs.primary.withValues(alpha: 0.12) : Colors.transparent,
@@ -85,7 +86,7 @@ class WidgetCard extends StatelessWidget {
     this.onDrill,
     required this.onMaximize,
     required this.builder,
-    this.height = 300,
+    this.height = 264,
     this.fixedHeader = false,
   });
 
@@ -110,7 +111,7 @@ class WidgetCard extends StatelessWidget {
     final scaler = MediaQuery.textScalerOf(context);
     // At large text sizes the title needs the full width, so the actions
     // drop to their own row instead of squeezing it into a sliver.
-    final roomy = scaler.scale(15) <= 20;
+    final roomy = scaler.scale(14) <= 19;
 
     void toggleView() {
       HapticFeedback.selectionClick();
@@ -138,8 +139,8 @@ class WidgetCard extends StatelessWidget {
 
     final menuActions = PopupMenuButton<String>(
       tooltip: 'Chart actions',
-      icon: const Icon(Icons.more_vert_rounded, size: 20),
-      style: IconButton.styleFrom(minimumSize: const Size(44, 44), foregroundColor: cs.onSurfaceVariant),
+      icon: const Icon(Icons.more_vert_rounded, size: 18),
+      style: IconButton.styleFrom(minimumSize: const Size(40, 40), padding: EdgeInsets.zero, foregroundColor: cs.onSurfaceVariant),
       onSelected: (v) => switch (v) {
         'view' => toggleView(),
         'drill' => drill(),
@@ -160,10 +161,10 @@ class WidgetCard extends StatelessWidget {
             title,
             maxLines: reserve ? 2 : 4,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w600),
           ),
           if (hint != null && hint!.isNotEmpty) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               hint!,
               maxLines: reserve ? 1 : 3,
@@ -174,15 +175,20 @@ class WidgetCard extends StatelessWidget {
         ],
       );
       if (!reserve) return text;
-      final h = scaler.scale(15) * 1.25 * 2 + 2 + scaler.scale(12) * 1.3;
-      return SizedBox(height: h + 1, child: ClipRect(child: text));
+      final h = scaler.scale(14) * 1.25 * 2 + 1 + scaler.scale(12) * 1.3;
+      // Reserve exactly two title lines + one hint line; anything longer is
+      // clipped, never an overflow error.
+      return SizedBox(
+        height: h + 1,
+        child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minHeight: 0, maxHeight: double.infinity, child: text)),
+      );
     }
 
     final effectiveView = tableOnly ? ChartView.table : view;
     final body = builder(context, effectiveView, false);
 
     Widget stage() => Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.only(right: 4),
           // A chart needs a fixed stage to fill; a table-only card is only as
           // tall as its rows (up to the stage height) — one machine shouldn't
           // leave a few hundred pixels of blank card below it.
@@ -206,7 +212,7 @@ class WidgetCard extends StatelessWidget {
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: Padding(padding: const EdgeInsets.only(top: 6), child: heading(fixedHeader))),
+                  Expanded(child: Padding(padding: const EdgeInsets.only(top: 4), child: heading(fixedHeader))),
                   menuActions,
                 ],
               )
@@ -214,22 +220,22 @@ class WidgetCard extends StatelessWidget {
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: Padding(padding: const EdgeInsets.only(top: 6), child: heading(fixedHeader))),
+                      Expanded(child: Padding(padding: const EdgeInsets.only(top: 4), child: heading(fixedHeader))),
                       fullActions,
                     ],
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(padding: const EdgeInsets.only(top: 6, right: 8), child: heading(false)),
+                      Padding(padding: const EdgeInsets.only(top: 4, right: 8), child: heading(false)),
                       Align(alignment: Alignment.centerRight, child: fullActions),
                     ],
                   );
         return DashCard(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          padding: const EdgeInsets.fromLTRB(12, 6, 4, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [top, const SizedBox(height: 4), stage()],
+            children: [top, const SizedBox(height: 2), stage()],
           ),
         );
       },

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../dashboard_engine.dart' show monthLabels;
 import 'sheet_kit.dart';
 
-const double _cellHeight = 44;
+const double _cellHeight = 40;
 
 DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 bool _same(DateTime? a, DateTime? b) => a != null && b != null && a.year == b.year && a.month == b.month && a.day == b.day;
@@ -91,7 +91,7 @@ class _RangeCalendarState extends State<RangeCalendar> {
           children: [
             IconButton(
               tooltip: 'Previous month',
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               onPressed: _jump || _page <= 0 ? null : () => _go(_page - 1),
               icon: const Icon(Icons.chevron_left_rounded),
             ),
@@ -107,7 +107,7 @@ class _RangeCalendarState extends State<RangeCalendar> {
                     setState(() => _jump = !_jump);
                   },
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 44),
+                    constraints: const BoxConstraints(minHeight: 40),
                     child: Center(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -117,7 +117,7 @@ class _RangeCalendarState extends State<RangeCalendar> {
                               title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: t.ink),
+                              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: t.ink),
                             ),
                           ),
                           const SizedBox(width: 2),
@@ -131,7 +131,7 @@ class _RangeCalendarState extends State<RangeCalendar> {
             ),
             IconButton(
               tooltip: 'Next month',
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               onPressed: _jump || _page >= _count - 1 ? null : () => _go(_page + 1),
               icon: const Icon(Icons.chevron_right_rounded),
             ),
@@ -395,19 +395,19 @@ class _JumpPanelState extends State<_JumpPanel> {
           children: [
             IconButton(
               tooltip: 'Previous year',
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               onPressed: _year > widget.firstDate.year ? () => setState(() => _year--) : null,
               icon: const Icon(Icons.remove_rounded),
             ),
             SizedBox(
               width: 88,
               child: Center(
-                child: Text('$_year', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: t.ink)),
+                child: Text('$_year', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: t.ink)),
               ),
             ),
             IconButton(
               tooltip: 'Next year',
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               onPressed: _year < widget.lastDate.year ? () => setState(() => _year++) : null,
               icon: const Icon(Icons.add_rounded),
             ),

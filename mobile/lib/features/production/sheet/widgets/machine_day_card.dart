@@ -80,27 +80,27 @@ class MachineDayCard extends StatelessWidget {
         key: ValueKey('card-${group.key}'),
         decoration: BoxDecoration(
           color: Theme.of(context).cardTheme.color ?? s.surface,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: s.outlineVariant),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.28 : 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.22 : 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 1),
             ),
           ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            Positioned(left: 0, top: 0, bottom: 0, width: 5, child: ColoredBox(color: tone)),
+            Positioned(left: 0, top: 0, bottom: 0, width: 4, child: ColoredBox(color: tone)),
             Padding(
-              padding: const EdgeInsets.only(left: 5),
+              padding: const EdgeInsets.only(left: 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 10, 6),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -112,12 +112,12 @@ class MachineDayCard extends StatelessWidget {
                                 group.machineName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                                style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 1),
                               Text(
                                 anyOk ? '$entriesLabel · OK ${fmtNum(ok)} / ${fmtNum(actual)}' : entriesLabel,
-                                style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant),
+                                style: TextStyle(fontSize: 12, color: s.onSurfaceVariant),
                               ),
                             ],
                           ),
@@ -162,16 +162,16 @@ class _OeeChip extends StatelessWidget {
     return Semantics(
       label: 'Day OEE considering losses $text',
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(color: SheetTones.wash(context, SheetTones.oee), borderRadius: BorderRadius.circular(999)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('OEE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: tone.withValues(alpha: 0.85))),
-            const SizedBox(width: 6),
+            Text('OEE', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: tone.withValues(alpha: 0.85))),
+            const SizedBox(width: 5),
             Text(
               text,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tone, fontFeatures: const [FontFeature.tabularFigures()]),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: tone, fontFeatures: const [FontFeature.tabularFigures()]),
             ),
           ],
         ),
@@ -227,7 +227,7 @@ class EntryRow extends StatelessWidget {
                 : DismissDirection.none;
 
     final remarks = remarkParts(row);
-    final slot = (jsNumber(row['slot']) ?? 0).toInt();
+    final slot = slotOf(row['slot']);
     final operator = '${row['operator'] ?? ''}'.trim();
     final part = '${row['itemName'] ?? ''}'.trim();
     final drawing = '${row['drawingNo'] ?? ''}'.trim();
@@ -244,19 +244,19 @@ class EntryRow extends StatelessWidget {
       },
       onLongPress: () => _showMenu(context, canEdit: canEdit, canDelete: canDelete, canUnlock: canUnlock, hasRemarks: remarks.isNotEmpty),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+        padding: const EdgeInsets.fromLTRB(10, 8, 2, 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 26,
-              height: 26,
+              width: 24,
+              height: 24,
               alignment: Alignment.center,
               margin: const EdgeInsets.only(top: 1),
-              decoration: BoxDecoration(color: s.surfaceContainerHigh, borderRadius: BorderRadius.circular(8)),
-              child: Text('#$slot', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: s.onSurfaceVariant)),
+              decoration: BoxDecoration(color: s.surfaceContainerHigh, borderRadius: BorderRadius.circular(7)),
+              child: Text('#$slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: s.onSurfaceVariant)),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +265,7 @@ class EntryRow extends StatelessWidget {
                     operator.isEmpty ? '(no operator)' : operator,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: operator.isEmpty ? s.onSurfaceVariant : s.onSurface),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: operator.isEmpty ? s.onSurfaceVariant : s.onSurface),
                   ),
                   if (part.isNotEmpty || drawing.isNotEmpty)
                     Padding(
@@ -274,13 +274,13 @@ class EntryRow extends StatelessWidget {
                         [if (part.isNotEmpty) part, if (drawing.isNotEmpty) drawing].join(' · '),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, color: s.onSurfaceVariant),
+                        style: TextStyle(fontSize: 12, color: s.onSurfaceVariant),
                       ),
                     ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                    spacing: 5,
+                    runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (on.isNotEmpty || off.isNotEmpty) _Pill(icon: Icons.schedule_rounded, text: '${textStr(on)} – ${textStr(off)}'),
@@ -294,9 +294,9 @@ class EntryRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 118),
+              constraints: const BoxConstraints(maxWidth: 108),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -306,28 +306,28 @@ class EntryRow extends StatelessWidget {
                     child: Text.rich(
                       TextSpan(
                         children: [
-                          TextSpan(text: okText, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: s.onSurface)),
-                          TextSpan(text: ' / $actualText', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: s.onSurfaceVariant)),
+                          TextSpan(text: okText, style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: s.onSurface)),
+                          TextSpan(text: ' / $actualText', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: s.onSurfaceVariant)),
                         ],
                       ),
                       style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     isNum(calc['pctOk']) ? '${fmtPct(calc['pctOk'])} OK' : 'OK / Actual',
-                    style: TextStyle(fontSize: 11.5, color: s.onSurfaceVariant),
+                    style: TextStyle(fontSize: 11, color: s.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
             SizedBox(
-              width: 32,
-              height: 26,
+              width: 28,
+              height: 24,
               child: AnimatedRotation(
                 turns: expanded ? 0.5 : 0,
                 duration: const Duration(milliseconds: 200),
-                child: Icon(Icons.keyboard_arrow_down_rounded, color: s.onSurfaceVariant),
+                child: Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: s.onSurfaceVariant),
               ),
             ),
           ],
@@ -405,7 +405,7 @@ class EntryRow extends StatelessWidget {
   }) async {
     if (!canEdit && !canDelete && !canUnlock && !hasRemarks) return;
     HapticFeedback.mediumImpact();
-    final title = '${controller.machineName['${row['machine']}'] ?? ''} · #${(jsNumber(row['slot']) ?? 0).toInt()}';
+    final title = '${controller.machineName['${row['machine']}'] ?? ''} · #${slotOf(row['slot'])}';
     final choice = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
@@ -417,7 +417,7 @@ class EntryRow extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
             if (canEdit) ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Edit entry'), onTap: () => Navigator.pop(ctx, 'edit')),
             if (canUnlock)
@@ -468,8 +468,8 @@ class _SwipeBackground extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 22),
-          const SizedBox(width: 8),
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(width: 6),
           Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         ],
       ),
@@ -489,16 +489,16 @@ class _Pill extends StatelessWidget {
     final fg = tone == null ? s.onSurfaceVariant : SheetTones.text(context, tone!);
     final bg = tone == null ? s.surfaceContainerHigh : SheetTones.wash(context, tone!);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 12.5, color: fg), const SizedBox(width: 4)],
+          if (icon != null) ...[Icon(icon, size: 12, color: fg), const SizedBox(width: 3)],
           Flexible(
             child: Text(
               text,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg, fontFeatures: const [FontFeature.tabularFigures()]),
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: fg, fontFeatures: const [FontFeature.tabularFigures()]),
             ),
           ),
         ],

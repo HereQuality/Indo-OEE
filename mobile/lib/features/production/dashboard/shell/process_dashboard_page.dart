@@ -173,7 +173,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
 
         final Widget header = tablet
             ? Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                 child: TabletHeaderBar(
                   selector: selector,
                   periodLabel: _ctl.periodLabel,
@@ -247,17 +247,17 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
     required List<Map<String, dynamic>> charts,
     required bool isAdmin,
   }) {
-    final bottom = MediaQuery.paddingOf(context).bottom + 28;
-    final gutter = tablet ? 20.0 : 16.0;
+    final bottom = MediaQuery.paddingOf(context).bottom + 16;
+    final gutter = tablet ? 20.0 : 12.0;
     final density = tablet ? densityFor(width - 2 * gutter) : GridDensity.single;
-    Widget pad(Widget child, {double below = 12}) =>
+    Widget pad(Widget child, {double below = 8}) =>
         Padding(padding: EdgeInsets.fromLTRB(gutter, 0, gutter, below), child: child);
 
     if (_ctl.loading && _ctl.rows.isEmpty && _ctl.error == null) {
       return [
         SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(gutter, 14, gutter, bottom),
+            padding: EdgeInsets.fromLTRB(gutter, 8, gutter, bottom),
             child: DashboardSkeleton(tablet: tablet, density: density),
           ),
         ),
@@ -275,7 +275,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
       return [
         SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(gutter, 14, gutter, bottom),
+            padding: EdgeInsets.fromLTRB(gutter, 8, gutter, bottom),
             child: _NoEntries(
               name: process?.name,
               period: _ctl.periodLabel,
@@ -333,7 +333,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
         opacity: _ctl.loading && !_pulling ? 0.55 : 1,
         duration: const Duration(milliseconds: 150),
         sliver: SliverPadding(
-          padding: EdgeInsets.only(top: tablet ? 0 : 12, bottom: bottom),
+          padding: EdgeInsets.only(top: tablet ? 0 : 8, bottom: bottom),
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, i) => pad(blocks[i]),
@@ -407,9 +407,9 @@ class DashboardSkeleton extends StatelessWidget {
         child: const Column(
           children: [
             KpiGrid(children: [KpiTileSkeleton(), KpiTileSkeleton(), KpiTileSkeleton(), KpiTileSkeleton()]),
-            SizedBox(height: 12),
+            SizedBox(height: 8),
             ChartCardSkeleton(),
-            SizedBox(height: 12),
+            SizedBox(height: 8),
             ChartCardSkeleton(),
           ],
         ),
@@ -421,7 +421,7 @@ class DashboardSkeleton extends StatelessWidget {
       child: Column(
         children: [
           KpiFlowGrid(children: [for (var i = 0; i < 6; i++) const KpiTileSkeleton()]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           SpanRow(items: [
             SpanItem(span: wide ? 8 : 6, child: const ChartCardSkeleton()),
             SpanItem(span: wide ? 4 : 6, child: const ChartCardSkeleton()),
@@ -451,7 +451,7 @@ class _EntriesCaption extends StatelessWidget {
         : '${_count(entries)} of ${_count(total)} entries';
     return Padding(
       padding: const EdgeInsets.only(left: 2),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cs.onSurfaceVariant)),
     );
   }
 }
@@ -467,9 +467,9 @@ class _NoMatches extends StatelessWidget {
     return DashCard(
       child: Row(
         children: [
-          Icon(Icons.filter_alt_off_outlined, color: cs.onSurfaceVariant),
-          const SizedBox(width: 12),
-          Expanded(child: Text('No entries match these filters.', style: TextStyle(color: cs.onSurfaceVariant))),
+          Icon(Icons.filter_alt_off_outlined, size: 20, color: cs.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(child: Text('No entries match these filters.', style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant))),
           TextButton(onPressed: onClear, child: const Text('Clear all')),
         ],
       ),
@@ -496,19 +496,19 @@ class _NoEntries extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final small = TextStyle(fontSize: 13, height: 1.4, color: cs.onSurfaceVariant);
+    final small = TextStyle(fontSize: 12, height: 1.35, color: cs.onSurfaceVariant);
     final from = extent?['from'];
     final to = extent?['to'];
     return DashCard(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Icon(Icons.insights_outlined, size: 40, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
-          const SizedBox(height: 12),
+          Icon(Icons.insights_outlined, size: 32, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+          const SizedBox(height: 8),
           Text(
             'No entries for ${name ?? 'any machine'} in $period.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: cs.onSurface),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface),
           ),
           if (from is String && to is String) ...[
             const SizedBox(height: 8),
@@ -522,7 +522,7 @@ class _NoEntries extends StatelessWidget {
             const SizedBox(height: 8),
             Text('This process has no machines yet — assign them in Production › Processes.', textAlign: TextAlign.center, style: small),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           FilledButton.tonalIcon(
             onPressed: onChangePeriod,
             icon: const Icon(Icons.calendar_month_rounded, size: 18),
@@ -544,20 +544,20 @@ class _NothingSelected extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return DashCard(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Icon(Icons.dashboard_customize_outlined, size: 36, color: cs.onSurfaceVariant),
-          const SizedBox(height: 10),
+          Icon(Icons.dashboard_customize_outlined, size: 30, color: cs.onSurfaceVariant),
+          const SizedBox(height: 8),
           Text(
             canCustomize
                 ? 'No KPI tiles or graphs are selected for this process — use Customize to add some.'
                 : 'No KPI tiles or graphs are selected for this process.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
+            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.35),
           ),
           if (canCustomize) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             FilledButton.tonalIcon(onPressed: onCustomize, icon: const Icon(Icons.tune_rounded, size: 18), label: const Text('Customize')),
           ],
         ],

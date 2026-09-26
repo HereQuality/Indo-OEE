@@ -92,7 +92,7 @@ class _ProcessSelectorState extends State<ProcessSelector> {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) SizedBox(width: widget.tabs ? 2 : 8),
+          if (i > 0) SizedBox(width: widget.tabs ? 2 : 6),
           items[i],
         ],
       ],
@@ -101,10 +101,10 @@ class _ProcessSelectorState extends State<ProcessSelector> {
     final scroller = SingleChildScrollView(
       controller: _scroll,
       scrollDirection: Axis.horizontal,
-      padding: widget.tabs ? const EdgeInsets.all(3) : const EdgeInsets.symmetric(horizontal: 16),
+      padding: widget.tabs ? const EdgeInsets.all(3) : const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: row,
     );
-    if (!widget.tabs) return SizedBox(height: 44, child: scroller);
+    if (!widget.tabs) return SizedBox(height: 40, child: scroller);
     return DecoratedBox(
       decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(12)),
       child: scroller,
@@ -141,12 +141,12 @@ class _Pill extends StatelessWidget {
             onTap();
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40, minWidth: 44),
+            constraints: const BoxConstraints(minHeight: 36, minWidth: 44),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Center(
                 widthFactor: 1,
-                child: Text(label, maxLines: 1, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: fg)),
+                child: Text(label, maxLines: 1, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: fg)),
               ),
             ),
           ),
@@ -187,12 +187,12 @@ class _Tab extends StatelessWidget {
             onTap();
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40, minWidth: 44),
+            constraints: const BoxConstraints(minHeight: 36, minWidth: 44),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Center(
                 widthFactor: 1,
-                child: Text(label, maxLines: 1, style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 14, color: fg)),
+                child: Text(label, maxLines: 1, style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w600, fontSize: 13, color: fg)),
               ),
             ),
           ),

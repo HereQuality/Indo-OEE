@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/utils/alerts.dart';
 import '../../core/widgets/form_widgets.dart';
+import '../profile/compact_field.dart';
 import 'attachments.dart';
 import 'support_models.dart';
 import 'support_repository.dart';
@@ -14,45 +15,61 @@ class CreateTicketPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Raise support ticket')),
-        body: SafeArea(top: false, child: CreateTicketForm(repo: repo)),
-      );
+    appBar: AppBar(title: const Text('Raise support ticket')),
+    // sticky: the Create button rides on top of the keyboard.
+    body: TapToDismiss(child: CreateTicketForm(repo: repo, sticky: true)),
+  );
 }
 
 /// iPad: the same form in a centred dialog.
-Future<Ticket?> showCreateTicketDialog(BuildContext context, {SupportRepository repo = const SupportRepository()}) =>
-    showDialog<Ticket>(
-      context: context,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.all(24),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 760),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('Raise support ticket', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
-                    IconButton(tooltip: 'Close', onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close_rounded)),
-                  ],
+Future<Ticket?> showCreateTicketDialog(
+  BuildContext context, {
+  SupportRepository repo = const SupportRepository(),
+}) => showDialog<Ticket>(
+  context: context,
+  builder: (ctx) => Dialog(
+    insetPadding: const EdgeInsets.all(24),
+    clipBehavior: Clip.antiAlias,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 600, maxHeight: 760),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Raise support ticket',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              Flexible(child: CreateTicketForm(repo: repo)),
-            ],
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
           ),
-        ),
+          Flexible(child: CreateTicketForm(repo: repo)),
+        ],
       ),
-    );
+    ),
+  ),
+);
 
 /// Port of the web CreateModal: subject + description required, platform
 /// (Web/App), priority (Low/Medium/High), up to 5 attachments of 5 MB each.
 /// Pops its route with the created [Ticket].
 class CreateTicketForm extends StatefulWidget {
-  const CreateTicketForm({super.key, this.repo = const SupportRepository()});
+  const CreateTicketForm({super.key, this.repo = const SupportRepository(), this.sticky = false});
   final SupportRepository repo;
+
+  /// true: the Create button is a bar pinned under the form (full page). false:
+  /// it is the last item of the scrolling form (dialog).
+  final bool sticky;
 
   @override
   State<CreateTicketForm> createState() => _CreateTicketFormState();
@@ -120,63 +137,84 @@ class _CreateTicketFormState extends State<CreateTicketForm> {
     }
   }
 
+  /// Chips wrap onto a new line at large text sizes (a SegmentedButton cannot).
+  Widget _choice(String label, IconData? icon, bool selected, VoidCallback onTap) => ChoiceChip(
+        avatar: icon == null ? null : Icon(icon, size: 16),
+        label: Text(label),
+        selected: selected,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        labelStyle: TextStyle(fontSize: 13, fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
+        onSelected: _busy ? null : (_) => onTap(),
+      );
+
+  Widget _label(String text) => Text(text, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600));
+
+  Widget _submitButton() => PrimaryButton(
+        label: 'Create ticket',
+        icon: Icons.send_rounded,
+        loading: _busy,
+        onPressed: _submit,
+      );
+
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
-    return Form(
+    final form = Form(
       key: _formKey,
       child: SingleChildScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, widget.sticky ? 16 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_error != null)
               Container(
                 width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: s.error.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                child: Text(_error!, style: TextStyle(color: s.error, fontWeight: FontWeight.w600)),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: s.error.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _error!,
+                  style: TextStyle(fontSize: 13, color: s.error, fontWeight: FontWeight.w600),
+                ),
               ),
-            AppTextField(
+            CompactField(
               label: 'Subject',
               required: true,
               controller: _subject,
               hint: 'Briefly describe the issue…',
+              keyboardType: TextInputType.text,
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.sentences,
               enabled: !_busy,
             ),
-            const SizedBox(height: 16),
-            const FieldLabel('Platform'),
+            const SizedBox(height: 12),
+            _label('Platform'),
             const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'Web', icon: Icon(Icons.desktop_windows_outlined, size: 18), label: Text('Web')),
-                  ButtonSegment(value: 'App', icon: Icon(Icons.phone_iphone_rounded, size: 18), label: Text('App')),
-                ],
-                selected: {_platform},
-                onSelectionChanged: _busy ? null : (v) => setState(() => _platform = v.first),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _choice('Web', Icons.desktop_windows_outlined, _platform == 'Web', () => setState(() => _platform = 'Web')),
+                _choice('App', Icons.phone_iphone_rounded, _platform == 'App', () => setState(() => _platform = 'App')),
+              ],
             ),
-            const SizedBox(height: 16),
-            const FieldLabel('Priority'),
+            const SizedBox(height: 12),
+            _label('Priority'),
             const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: [for (final p in kTicketPriorities) ButtonSegment(value: p, label: Text(p))],
-                selected: {_priority},
-                onSelectionChanged: _busy ? null : (v) => setState(() => _priority = v.first),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final p in kTicketPriorities) _choice(p, null, _priority == p, () => setState(() => _priority = p)),
+              ],
             ),
-            const SizedBox(height: 16),
-            AppTextField(
+            const SizedBox(height: 12),
+            CompactField(
               label: 'Description',
               required: true,
               controller: _description,
@@ -184,32 +222,59 @@ class _CreateTicketFormState extends State<CreateTicketForm> {
               minLines: 4,
               maxLines: 8,
               keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
               textCapitalization: TextCapitalization.sentences,
               enabled: !_busy,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Expanded(child: FieldLabel('Attachments (optional · max 5 MB each)')),
-                Text('${_files.length}/$kMaxAttachments', style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant)),
+                Expanded(child: _label('Attachments (optional · max 5 MB each)')),
+                Text(
+                  '${_files.length}/$kMaxAttachments',
+                  style: TextStyle(fontSize: 12, color: s.onSurfaceVariant),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             if (_files.isNotEmpty) ...[
-              PendingAttachmentStrip(files: _files, enabled: !_busy, onRemove: (i) => setState(() => _files = [..._files]..removeAt(i))),
-              const SizedBox(height: 8),
+              PendingAttachmentStrip(
+                files: _files,
+                enabled: !_busy,
+                onRemove: (i) => setState(() => _files = [..._files]..removeAt(i)),
+              ),
+              const SizedBox(height: 6),
             ],
             OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), visualDensity: VisualDensity.compact),
               onPressed: _busy || _files.length >= kMaxAttachments ? null : _addFiles,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
               label: const Text('Add photo or file'),
             ),
-            const SizedBox(height: 24),
-            PrimaryButton(label: 'Create ticket', icon: Icons.send_rounded, loading: _busy, onPressed: _submit),
+            if (!widget.sticky) ...[
+              const SizedBox(height: 16),
+              _submitButton(),
+            ],
           ],
         ),
       ),
+    );
+    if (!widget.sticky) return form;
+    return Column(
+      children: [
+        Expanded(child: form),
+        Material(
+          color: s.surface,
+          elevation: 6,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: _submitButton(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

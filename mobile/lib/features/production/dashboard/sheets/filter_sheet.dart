@@ -41,6 +41,12 @@ const Map<String, String> _dimLabel = {
 };
 const Map<String, String> _allLabel = {'machine': 'All machines', 'operator': 'All operators', 'item': 'All parts'};
 
+final ButtonStyle _quietButton = TextButton.styleFrom(
+  minimumSize: const Size(40, 36),
+  padding: const EdgeInsets.symmetric(horizontal: 10),
+  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+);
+
 bool _sameSet(List<String> a, List<String> b) => a.length == b.length && a.toSet().containsAll(b);
 
 class FilterSheet extends StatefulWidget {
@@ -146,7 +152,8 @@ class _FilterSheetState extends State<FilterSheet> {
     setState(() {
       _queries[_tab] = _search.text;
       _tab = dim;
-      _search.text = _queries[dim] ?? '';
+      final q = _queries[dim] ?? '';
+      _search.value = TextEditingValue(text: q, selection: TextSelection.collapsed(offset: q.length));
     });
   }
 
@@ -168,6 +175,7 @@ class _FilterSheetState extends State<FilterSheet> {
   @override
   Widget build(BuildContext context) {
     final t = SheetTone.of(context);
+    final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
     final total = _total;
     final subtitle = total == 0
         ? (_clearedAll ? 'Everything cleared - apply to update the dashboard' : 'No filters - showing everything')
@@ -192,7 +200,7 @@ class _FilterSheetState extends State<FilterSheet> {
           ],
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(kSheetGutter, 4, kSheetGutter, 10),
+          padding: const EdgeInsets.fromLTRB(kSheetGutter, 2, kSheetGutter, 8),
           child: SegmentedTabs<String>(
             items: [for (final d in _pickDims) TabItem(d, _dimLabel[d]!, count: _sel[d]!.length)],
             selected: _tab,
@@ -213,13 +221,15 @@ class _FilterSheetState extends State<FilterSheet> {
                     child: SheetBanner('Applying will also reset the period to its default.', icon: Icons.info_outline_rounded, isError: false),
                   ),
                 ),
-              if (picks.isNotEmpty)
+              // The chip row steps aside while the keyboard is up: the search
+              // box and the list need the room more.
+              if (picks.isNotEmpty && !keyboardUp)
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: 54,
+                    height: 44,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: kSheetGutter, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: kSheetGutter, vertical: 4),
                       itemCount: picks.length,
                       separatorBuilder: (_, _) => const SizedBox(width: 8),
                       itemBuilder: (context, i) {
@@ -260,23 +270,37 @@ class _FilterSheetState extends State<FilterSheet> {
     final picked = _sel[_tab]!.length;
     final searching = _query(_tab).isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(kSheetGutter, 12, kSheetGutter, 6),
+      padding: const EdgeInsets.fromLTRB(kSheetGutter, 8, kSheetGutter, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _search,
+            // Names and part numbers: plain text, never auto-corrected or
+            // capitalised into something else, and Search on the return key.
+            keyboardType: TextInputType.text,
             textInputAction: TextInputAction.search,
+            textCapitalization: TextCapitalization.none,
+            autocorrect: false,
+            enableSuggestions: false,
+            // Keep the field clear of the sheet's sticky Apply bar when it is focused.
+            scrollPadding: const EdgeInsets.only(bottom: 96),
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             onChanged: (v) => setState(() => _queries[_tab] = v),
+            style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Search ${_dimLabel[_tab]!.toLowerCase()}',
               isDense: true,
-              prefixIcon: const Icon(Icons.search_rounded),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               suffixIcon: _search.text.isEmpty
                   ? null
                   : IconButton(
                       tooltip: 'Clear search',
-                      icon: const Icon(Icons.close_rounded, size: 20),
+                      icon: const Icon(Icons.close_rounded, size: 18),
                       onPressed: () => setState(() {
                         _search.clear();
                         _queries[_tab] = '';
@@ -284,7 +308,7 @@ class _FilterSheetState extends State<FilterSheet> {
                     ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           // A Wrap, not a Row: at large text the count and the two buttons
           // stack instead of squeezing the count to a sliver.
           Wrap(
@@ -293,12 +317,20 @@ class _FilterSheetState extends State<FilterSheet> {
             children: [
               Text(
                 searching ? '$picked of ${all.length} selected · ${shown.length} shown' : '$picked of ${all.length} selected',
-                style: TextStyle(fontSize: 12.5, color: t.muted),
+                style: TextStyle(fontSize: 12, color: t.muted),
               ),
               Wrap(
                 children: [
-                  TextButton(onPressed: shown.isEmpty ? null : () => _selectShown(_tab), child: const Text('Select all')),
-                  TextButton(onPressed: picked == 0 ? null : () => _clearShown(_tab), child: const Text('Clear')),
+                  TextButton(
+                    style: _quietButton,
+                    onPressed: shown.isEmpty ? null : () => _selectShown(_tab),
+                    child: const Text('Select all'),
+                  ),
+                  TextButton(
+                    style: _quietButton,
+                    onPressed: picked == 0 ? null : () => _clearShown(_tab),
+                    child: const Text('Clear'),
+                  ),
                 ],
               ),
             ],
@@ -338,13 +370,15 @@ class _FilterSheetState extends State<FilterSheet> {
             value: on,
             onChanged: (_) => _toggle(_tab, value),
             controlAffinity: ListTileControlAffinity.leading,
+            dense: true,
+            visualDensity: VisualDensity.compact,
             contentPadding: const EdgeInsets.symmetric(horizontal: kSheetGutter),
             tileColor: on ? t.wash : null,
             title: Text(
               o['label'] ?? value,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 15, fontWeight: on ? FontWeight.w600 : FontWeight.w500, color: t.ink),
+              style: TextStyle(fontSize: 14, fontWeight: on ? FontWeight.w600 : FontWeight.w500, color: t.ink),
             ),
           );
         },
@@ -364,15 +398,15 @@ class _Empty extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SheetTone.of(context);
     return Padding(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 40, color: t.muted.withValues(alpha: 0.7)),
+          Icon(icon, size: 32, color: t.muted.withValues(alpha: 0.7)),
           const SizedBox(height: 10),
-          Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: t.ink)),
+          Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.ink)),
           const SizedBox(height: 4),
-          Text(body, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: t.muted)),
+          Text(body, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: t.muted)),
         ],
       ),
     );
@@ -396,11 +430,11 @@ class _SelectionChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         onTap: onRemove,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44, maxWidth: 240),
+          constraints: const BoxConstraints(minHeight: 36, maxWidth: 240),
           child: Center(
             widthFactor: 1,
             child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+              padding: const EdgeInsets.fromLTRB(10, 5, 6, 5),
               decoration: BoxDecoration(
                 color: t.wash,
                 borderRadius: BorderRadius.circular(999),
@@ -410,10 +444,10 @@ class _SelectionChip extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
-                    child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.ink)),
+                    child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: t.ink)),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.close_rounded, size: 16, color: t.muted),
+                  Icon(Icons.close_rounded, size: 15, color: t.muted),
                 ],
               ),
             ),

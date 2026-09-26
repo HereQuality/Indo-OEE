@@ -106,12 +106,12 @@ class EntryDetail extends StatelessWidget {
         color: s.surfaceContainerLow,
         border: Border(top: BorderSide(color: s.outlineVariant)),
       ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _OeeStrip(day: day),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           _Group(
             title: 'Quantities',
             icon: Icons.inventory_2_outlined,
@@ -217,7 +217,7 @@ class _OeeStrip extends StatelessWidget {
     if (big) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [for (final t in tiles) Padding(padding: const EdgeInsets.only(bottom: 8), child: tile(t))],
+        children: [for (final t in tiles) Padding(padding: const EdgeInsets.only(bottom: 6), child: tile(t))],
       );
     }
     return IntrinsicHeight(
@@ -247,12 +247,12 @@ class _OeeTile extends StatelessWidget {
     final tone = SheetTones.text(context, SheetTones.oee);
     final labelText = Text(
       label,
-      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant),
     );
     final valueText = FittedBox(
       fit: BoxFit.scaleDown,
       alignment: wide ? Alignment.centerRight : Alignment.centerLeft,
-      child: Text(value, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: tone, fontFeatures: const [FontFeature.tabularFigures()])),
+      child: Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: tone, fontFeatures: const [FontFeature.tabularFigures()])),
     );
     return Semantics(
       button: true,
@@ -264,7 +264,7 @@ class _OeeTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           onTap: () => showFormulaSheet(context, title: title, formulaKey: formulaKey),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
             child: wide
                 ? Row(
                     children: [
@@ -276,7 +276,7 @@ class _OeeTile extends StatelessWidget {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [labelText, const SizedBox(height: 6), valueText],
+                    children: [labelText, const SizedBox(height: 4), valueText],
                   ),
           ),
         ),
@@ -295,19 +295,19 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 3),
             child: Row(
               children: [
-                Icon(icon, size: 15, color: s.onSurfaceVariant),
-                const SizedBox(width: 6),
+                Icon(icon, size: 14, color: s.onSurfaceVariant),
+                const SizedBox(width: 5),
                 Text(
                   title.toUpperCase(),
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: s.onSurfaceVariant),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: s.onSurfaceVariant),
                 ),
               ],
             ),
@@ -362,9 +362,9 @@ class _Metric extends StatelessWidget {
     final color = tone == null ? s.onSurface : SheetTones.text(context, tone!);
     final calculated = tone != null;
     final content = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 44),
+      constraints: const BoxConstraints(minHeight: 38),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -373,7 +373,7 @@ class _Metric extends StatelessWidget {
               child: Text.rich(
                 TextSpan(
                   text: label,
-                  style: TextStyle(fontSize: 13.5, color: s.onSurfaceVariant),
+                  style: TextStyle(fontSize: 13, color: s.onSurfaceVariant),
                   children: [
                     if (formulaKey != null)
                       WidgetSpan(
@@ -396,7 +396,7 @@ class _Metric extends StatelessWidget {
                 maxLines: maxLines,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 14.5,
+                  fontSize: 13.5,
                   fontWeight: calculated || strong ? FontWeight.w700 : FontWeight.w500,
                   color: color,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -445,9 +445,9 @@ class _SubRow extends StatelessWidget {
     return Container(
       color: s.surfaceContainerLow.withValues(alpha: 0.5),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 40),
+        constraints: const BoxConstraints(minHeight: 34),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 4, 12, 4),
+          padding: const EdgeInsets.fromLTRB(24, 3, 12, 3),
           child: Row(
             children: [
               Expanded(
@@ -455,7 +455,7 @@ class _SubRow extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     text: label,
-                    style: TextStyle(fontSize: 13, color: s.onSurfaceVariant, decoration: struck ? TextDecoration.lineThrough : null),
+                    style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant, decoration: struck ? TextDecoration.lineThrough : null),
                     children: [
                       if (note != null)
                         TextSpan(text: '  $note', style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: AppColors.readable(context, AppColors.warn))),
@@ -470,7 +470,7 @@ class _SubRow extends StatelessWidget {
                   unit == null ? value : '$value $unit',
                   textAlign: TextAlign.end,
                   style: TextStyle(
-                    fontSize: 13.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: s.onSurface,
                     decoration: struck ? TextDecoration.lineThrough : null,
@@ -498,10 +498,10 @@ class _EyeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       tooltip: label,
-      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
-      iconSize: 20,
+      iconSize: 19,
       color: SheetTones.text(context, tone),
       icon: const Icon(Icons.visibility_outlined),
       onPressed: () => showRemarkSheet(context, parts),
@@ -544,7 +544,7 @@ class _ActionBar extends StatelessWidget {
       final warn = SheetTones.text(context, SheetTones.lock);
       return Container(
         key: ValueKey('lock-$id'),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: SheetTones.wash(context, SheetTones.lock),
           borderRadius: BorderRadius.circular(12),
@@ -557,7 +557,7 @@ class _ActionBar extends StatelessWidget {
               children: [
                 Icon(Icons.lock_outline_rounded, size: 20, color: warn),
                 const SizedBox(width: 10),
-                Expanded(child: Text(lockMessage, style: TextStyle(fontSize: 13.5, height: 1.35, color: s.onSurface))),
+                Expanded(child: Text(lockMessage, style: TextStyle(fontSize: 13, height: 1.3, color: s.onSurface))),
               ],
             ),
             if (isAdmin) ...[
@@ -580,8 +580,8 @@ class _ActionBar extends StatelessWidget {
       if (unlockedUntil != null)
         Container(
           key: ValueKey('unlocked-$id'),
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: SheetTones.wash(context, AppColors.ok), borderRadius: BorderRadius.circular(12)),
           child: Row(
             children: [
@@ -590,7 +590,7 @@ class _ActionBar extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Unlocked until ${Fmt.dateTime(unlockedUntil)} — edit or delete before it locks again.',
-                  style: TextStyle(fontSize: 13.5, height: 1.35, color: s.onSurface),
+                  style: TextStyle(fontSize: 13, height: 1.3, color: s.onSurface),
                 ),
               ),
             ],

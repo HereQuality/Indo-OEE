@@ -4,6 +4,13 @@ import '../shared/production_sheet_calc.dart';
 
 typedef Json = Map<String, dynamic>;
 
+/// An entry's slot (1..3) as an int; junk (null, "abc", NaN, Infinity) reads as
+/// 0 instead of throwing the way `NaN.toInt()` does.
+int slotOf(Object? v) {
+  final n = jsNumber(v);
+  return (n == null || !n.isFinite || n.abs() > 1e9) ? 0 : n.truncate();
+}
+
 /// The three slicers of the sheet besides the period: machine ids, operator
 /// names and part (item) names — the `machine` / `operator` / `item` params of
 /// GET /production-sheet.
@@ -122,7 +129,6 @@ List<SheetDay> buildSheetDays({
   required int Function(String machineId) rankOf,
 }) {
   String nameOf(String id) => machineName[id] ?? '—';
-  int slotOf(Map<String, dynamic> r) => (jsNumber(r['slot']) ?? 0).toInt();
 
   final sorted = [...rows]..sort((a, b) {
       final byDate = '${b['date']}'.compareTo('${a['date']}');
@@ -131,7 +137,11 @@ List<SheetDay> buildSheetDays({
       if (byRank != 0) return byRank;
       final byName = naturalCompare(nameOf('${a['machine']}'), nameOf('${b['machine']}'));
       if (byName != 0) return byName;
-      return slotOf(a).compareTo(slotOf(b));
+      // Machines that are no longer listed all rank and read alike: the id keeps
+      // one machine's entries together (else its card would be split in two).
+      final byId = '${a['machine']}'.compareTo('${b['machine']}');
+      if (byId != 0) return byId;
+      return slotOf(a['slot']).compareTo(slotOf(b['slot']));
     });
 
   // The full count per machine/date, before filters narrow the view.

@@ -194,10 +194,10 @@ class _TabSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final tablet = isTabletWidth(width);
-    final gutter = tablet ? 20.0 : 16.0;
+    final gutter = tablet ? 20.0 : 12.0;
     return SingleChildScrollView(
       physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 16),
+      padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 12),
       child: Semantics(
         label: 'Loading dashboard',
         child: Column(
@@ -205,14 +205,14 @@ class _TabSkeleton extends StatelessWidget {
           children: [
             const Row(
               children: [
-                SkeletonBox(width: 84, height: 40, radius: 20),
-                SizedBox(width: 8),
-                SkeletonBox(width: 84, height: 40, radius: 20),
-                SizedBox(width: 8),
-                SkeletonBox(width: 112, height: 40, radius: 20),
+                SkeletonBox(width: 76, height: 34, radius: 17),
+                SizedBox(width: 6),
+                SkeletonBox(width: 76, height: 34, radius: 17),
+                SizedBox(width: 6),
+                SkeletonBox(width: 100, height: 34, radius: 17),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             DashboardSkeleton(tablet: tablet, density: densityFor(width - 2 * gutter)),
           ],
         ),

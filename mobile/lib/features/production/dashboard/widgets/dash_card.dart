@@ -8,10 +8,10 @@ class DashCard extends StatelessWidget {
   const DashCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(12),
     this.onTap,
     this.tint,
-    this.radius = 16,
+    this.radius = 12,
     this.clip = true,
   });
 
@@ -39,8 +39,8 @@ class DashCard extends StatelessWidget {
     );
     return Material(
       color: bg,
-      elevation: dark ? 0 : 1.5,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
+      elevation: dark ? 0 : 1,
+      shadowColor: Colors.black.withValues(alpha: 0.10),
       surfaceTintColor: Colors.transparent,
       shape: shape,
       clipBehavior: clip ? Clip.antiAlias : Clip.none,

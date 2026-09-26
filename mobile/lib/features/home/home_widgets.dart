@@ -32,46 +32,46 @@ class LauncherCard extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: Colors.transparent,
-        elevation: 3,
+        elevation: 2,
         shadowColor: colors.last.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
           ),
           child: InkWell(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             onTap: () {
               HapticFeedback.selectionClick();
               onTap();
             },
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 96),
+              constraints: const BoxConstraints(minHeight: 68),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
                     Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(color: fg.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(16)),
-                      child: Icon(icon, color: fg, size: 26),
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(color: fg.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
+                      child: Icon(icon, color: fg, size: 22),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(title, style: const TextStyle(color: fg, fontSize: 17, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 2),
-                          Text(subtitle, style: TextStyle(color: fg.withValues(alpha: 0.85), fontSize: 13)),
+                          Text(title, style: const TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 1),
+                          Text(subtitle, style: TextStyle(color: fg.withValues(alpha: 0.85), fontSize: 12.5)),
                         ],
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Icon(Icons.arrow_forward_rounded, color: fg, size: 22),
+                    const Icon(Icons.arrow_forward_rounded, color: fg, size: 20),
                   ],
                 ),
               ),
@@ -126,25 +126,25 @@ class PageTile extends StatelessWidget {
             onTap();
           },
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 96),
+            constraints: const BoxConstraints(minHeight: 76),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+              padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(color: tone.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(14)),
-                    child: DynamicIcon(icon, size: 22, color: AppColors.readable(context, tone)),
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(color: tone.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(11)),
+                    child: DynamicIcon(icon, size: 19, color: AppColors.readable(context, tone)),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     label,
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.2, color: s.onSurface),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.2, color: s.onSurface),
                   ),
                 ],
               ),
@@ -162,12 +162,12 @@ class SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 22, bottom: 10),
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
         child: Text(
           text.toUpperCase(),
           style: TextStyle(
-            fontSize: 12,
-            letterSpacing: 0.8,
+            fontSize: 11,
+            letterSpacing: 0.4,
             fontWeight: FontWeight.w700,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -185,14 +185,14 @@ class CompanyBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     final dark = s.brightness == Brightness.dark;
-    final fallback = Icon(Icons.business_rounded, size: 18, color: s.onSurfaceVariant);
+    final fallback = Icon(Icons.business_rounded, size: 16, color: s.onSurfaceVariant);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 28,
-          height: 28,
-          padding: const EdgeInsets.all(3),
+          width: 24,
+          height: 24,
+          padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             // A light plate keeps dark-on-transparent logos visible in dark mode.
             color: dark ? const Color(0xFFF1F5F9) : s.surface,
@@ -215,7 +215,7 @@ class CompanyBadge extends StatelessWidget {
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurfaceVariant),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: s.onSurfaceVariant),
             ),
           ),
         ],
@@ -257,17 +257,17 @@ class _HomeSkeletonState extends State<HomeSkeleton> with SingleTickerProviderSt
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 22),
-            block(96, r: 20),
-            const SizedBox(height: 12),
-            block(96, r: 20),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+            block(68, r: 16),
+            const SizedBox(height: 10),
+            block(68, r: 16),
+            const SizedBox(height: 24),
             block(12, w: 120, r: 6),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Row(children: [
               for (var i = 0; i < 3; i++) ...[
                 if (i > 0) const SizedBox(width: 10),
-                Expanded(child: block(96)),
+                Expanded(child: block(76, r: 12)),
               ],
             ]),
           ],

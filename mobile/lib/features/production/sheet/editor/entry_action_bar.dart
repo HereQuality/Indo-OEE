@@ -63,7 +63,7 @@ class EntryActionBar extends StatelessWidget {
         disabledBackgroundColor: cs.primary.withValues(alpha: 0.8),
         disabledForegroundColor: cs.onPrimary,
         elevation: 0,
-        minimumSize: const Size(64, 48),
+        minimumSize: const Size(64, 44),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -88,8 +88,8 @@ class EntryActionBar extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
+            blurRadius: 8,
+            offset: const Offset(0, -1),
           ),
         ],
       ),
@@ -98,9 +98,9 @@ class EntryActionBar extends StatelessWidget {
         child: Center(
           heightFactor: 1,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(maxWidth: 960),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -110,7 +110,11 @@ class EntryActionBar extends StatelessWidget {
                     _Notice(message: incompleteMessage!, icon: Icons.info_outline_rounded),
                   Row(
                     children: [
-                      TextButton(onPressed: saving ? null : onCancel, child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: saving ? null : onCancel,
+                        style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
+                        child: const Text('Cancel'),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: inactive
@@ -141,8 +145,8 @@ class _Notice extends StatelessWidget {
       liveRegion: true,
       container: true,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: cs.error.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(10),
@@ -153,7 +157,7 @@ class _Notice extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 1),
-              child: Icon(icon, size: 18, color: cs.error),
+              child: Icon(icon, size: 16, color: cs.error),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -161,7 +165,7 @@ class _Notice extends StatelessWidget {
                 message,
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, height: 1.3, color: cs.onSurface),
+                style: TextStyle(fontSize: 12.5, height: 1.25, color: cs.onSurface),
               ),
             ),
           ],

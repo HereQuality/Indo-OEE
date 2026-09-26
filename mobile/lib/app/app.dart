@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/alerts.dart';
+import '../core/widgets/keyboard_done_bar.dart';
 import '../core/api/api_client.dart';
 import '../features/auth/blocked_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -48,25 +50,41 @@ class _AppRoot extends StatefulWidget {
   State<_AppRoot> createState() => _AppRootState();
 }
 
-class _AppRootState extends State<_AppRoot> {
+class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     // A 403 that is not "blocked" means "you may not do that": tell the person.
     ApiClient.instance.onForbidden = Alerts.error;
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back from the background: the Super Admin may have changed the logo or
+    // company name on the web meanwhile.
+    if (state == AppLifecycleState.resumed) context.read<CompanyProvider>().load();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
+    final company = context.select<CompanyProvider, String>((c) => c.name);
     return MaterialApp(
-      title: 'Indo OEE',
+      title: company.isEmpty ? AppConfig.appName : company,
       debugShowCheckedModeBanner: false,
       navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootMessengerKey,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: theme.mode,
+      builder: (context, child) => KeyboardDoneBar(child: child ?? const SizedBox.shrink()),
       home: const _AuthGate(),
     );
   }

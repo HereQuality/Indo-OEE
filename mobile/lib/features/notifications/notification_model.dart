@@ -34,6 +34,8 @@ class AppNotification {
 
   factory AppNotification.fromJson(Map<String, dynamic> j) {
     String str(dynamic v) => v == null ? '' : v.toString().trim();
+    // A Mongo id can arrive as a string, a populated object or {"$oid": ...}.
+    String id(dynamic v) => v is Map ? str(v['_id'] ?? v['id'] ?? v[r'$oid']) : str(v);
     String? link;
     for (final k in const ['link', 'url', 'path', 'route']) {
       final v = j[k];
@@ -44,12 +46,12 @@ class AppNotification {
     }
     final read = j['isRead'];
     return AppNotification(
-      id: str(j['_id'] ?? j['id']),
+      id: id(j['_id'] ?? j['id']),
       title: str(j['title']).isEmpty ? 'Notification' : str(j['title']),
       message: str(j['message']),
       type: str(j['type']).isEmpty ? 'general' : str(j['type']),
       createdAt: Fmt.parse(j['createdAt']),
-      isRead: read == true || read == 'true',
+      isRead: read == true || read == 1 || read.toString().toLowerCase() == 'true',
       referenceId: j['referenceId'],
       link: link,
     );
