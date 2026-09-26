@@ -46,7 +46,11 @@ class EntryStyle {
     return s.brightness == Brightness.dark ? s.surfaceContainerLowest : s.surfaceContainer;
   }
 
-  static Color hint(BuildContext context) => Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7);
+  /// Placeholder colour: the theme's own, so the form matches every other field.
+  static Color hint(BuildContext context) {
+    final t = Theme.of(context);
+    return t.inputDecorationTheme.hintStyle?.color ?? t.colorScheme.onSurfaceVariant;
+  }
 
   static OutlineInputBorder border(Color color, [double width = 1]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(radius),

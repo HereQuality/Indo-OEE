@@ -23,6 +23,7 @@ class UnreadProvider extends ChangeNotifier {
     }
     _unsubs.clear();
     if (id == null) {
+      SocketService.instance.connected.removeListener(_bind);
       notifications = 0;
       tickets = 0;
       Future.microtask(notifyListeners);
@@ -51,17 +52,49 @@ class UnreadProvider extends ChangeNotifier {
     refresh();
   }
 
+  bool _refreshing = false;
+  bool _refreshAgain = false;
+
+  /// Reads both counters. A socket burst (or a reconnect on top of a screen's own
+  /// refresh) must not become a burst of requests: while one is running, any
+  /// number of further calls collapse into ONE more run afterwards. The two
+  /// counters load in parallel, and listeners hear about it only when a number
+  /// really changed (the bell and the account button rebuild on it).
   Future<void> refresh() async {
     if (_userId == null) return;
+    if (_refreshing) {
+      _refreshAgain = true;
+      return;
+    }
+    _refreshing = true;
     try {
-      final n = await Api.get('/api/v1/notifications/unread-count');
-      notifications = (n['unreadCount'] as num?)?.toInt() ?? 0;
-    } catch (_) {}
+      do {
+        _refreshAgain = false;
+        final counts = await Future.wait([
+          _count('/api/v1/notifications/unread-count'),
+          _count('/api/v1/tickets/unread-count'),
+        ]);
+        if (_userId == null) return; // signed out while waiting
+        final n = counts[0] ?? notifications; // a failed read keeps the last figure
+        final t = counts[1] ?? tickets;
+        if (n != notifications || t != tickets) {
+          notifications = n;
+          tickets = t;
+          notifyListeners();
+        }
+      } while (_refreshAgain);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  Future<int?> _count(String path) async {
     try {
-      final t = await Api.get('/api/v1/tickets/unread-count');
-      tickets = (t['unreadCount'] as num?)?.toInt() ?? 0;
-    } catch (_) {}
-    notifyListeners();
+      final r = await Api.get(path);
+      return (r['unreadCount'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return null;
+    }
   }
 
   void setNotifications(int n) {

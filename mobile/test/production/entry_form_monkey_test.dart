@@ -472,6 +472,65 @@ void main() {
     });
   });
 
+  // A required box whose ceiling is 0 can only ever take "0" (the web lets you
+  // type it). If the box were shut, the entry could never be saved.
+  group('required boxes with a ceiling of 0 stay typeable', () {
+    testWidgets('Actual = 0 leaves OK open: "0" goes in, more is refused, and neither field errors', (tester) async {
+      final toasts = captureToasts();
+      final form = await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '9', 'lunchMin': '30'})]);
+      await openBlock(tester, 0);
+      await typeKeys(tester, 'actualQty', '0');
+      expect(textOf(tester, 0, 'actualQty'), '0');
+
+      expect(boxOf(tester, 'okQty').readOnly, isFalse, reason: 'OK is required and can only be 0 — it must not be shut');
+      await typeKeys(tester, 'okQty', '0');
+      expect(textOf(tester, 0, 'okQty'), '0');
+      await typeKeys(tester, 'okQty', '5');
+      expect(textOf(tester, 0, 'okQty'), '0', reason: 'above the ceiling is still refused');
+      expect(toasts, isNotEmpty);
+
+      final errors = form.currentState!.errors.single;
+      expect(errors['actualQty'], isNull);
+      expect(errors['okQty'], isNull);
+      expect(find.textContaining('OK can only be 0'), findsOneWidget, reason: 'the reason is still shown');
+    });
+
+    testWidgets('Ideal = 0 (ON equals OFF) leaves Actual open for "0"', (tester) async {
+      final form = await pumpForm(tester, [_withPart(extra: {'machineOffTime': '08:00'})]);
+      await openBlock(tester, 0);
+      await tester.ensureVisible(textIn(0, 'actualQty'));
+      expect(boxOf(tester, 'actualQty').readOnly, isFalse);
+      await typeKeys(tester, 'actualQty', '0');
+      expect(textOf(tester, 0, 'actualQty'), '0');
+      expect(form.currentState!.errors.single['actualQty'], isNull);
+      expect(find.textContaining('Actual can only be 0'), findsOneWidget);
+    });
+
+    testWidgets('Lunch / Rest, when required but with no room left, accepts "0" as the message says', (tester) async {
+      final form = await pumpForm(tester, [_withPart()]);
+      await openBlock(tester, 0);
+      await typeKeys(tester, 'plannedOperatorShiftHours', '9'); // 60 min of stoppage allowed
+      await typeKeys(tester, 'setupMin', '60'); // ...all of it used by Setup
+      expect(boxOf(tester, 'lunchMin').readOnly, isFalse, reason: 'Lunch is required here, so it must stay typeable');
+      expect(find.textContaining('Lunch / Rest can only be 0'), findsOneWidget);
+
+      await typeKeys(tester, 'lunchMin', '5');
+      expect(textOf(tester, 0, 'lunchMin'), '', reason: 'there is no room for 5');
+      await typeKeys(tester, 'lunchMin', '0');
+      expect(textOf(tester, 0, 'lunchMin'), '0');
+      expect(form.currentState!.errors.single['lunchMin'], isNull);
+    });
+
+    testWidgets('optional boxes with no room are still shut (Reject / downtime)', (tester) async {
+      await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
+      await openBlock(tester, 0);
+      await tester.ensureVisible(textIn(0, 'setupMin'));
+      expect(boxOf(tester, 'setupMin').readOnly, isTrue);
+      expect(boxOf(tester, 'lunchMin').readOnly, isTrue, reason: 'not required when the machine ran the whole planned shift');
+      expect(boxOf(tester, 'reject/Tool Mark').readOnly, isTrue);
+    });
+  });
+
   group('combined smoke', () {
     testWidgets('dark, 360x640, text scale 1.6: full form with locked and open boxes lays out without overflow', (tester) async {
       await pumpForm(

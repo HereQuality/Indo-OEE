@@ -104,6 +104,7 @@ class EntryTextField extends StatefulWidget {
     this.maxLength = 7,
     this.max,
     this.onExceedMax,
+    this.lockable = true,
     this.invalid = false,
     this.focusNode,
     this.hint,
@@ -120,6 +121,12 @@ class EntryTextField extends StatefulWidget {
   final int maxLength;
   final double? max;
   final void Function(double max)? onExceedMax;
+
+  /// Whether a ceiling of 0 shuts the box (read-only, lock icon). Must be false
+  /// for a box the form REQUIRES: the only value it can take is "0", and a shut
+  /// box could never be given it, so the entry could not be saved. The web has
+  /// no such lock — it just refuses anything above the ceiling.
+  final bool lockable;
   final bool invalid;
   final FocusNode? focusNode;
   final String? hint;
@@ -148,7 +155,7 @@ class _EntryTextFieldState extends State<EntryTextField> {
   FocusNode? _ownNode;
   late FocusNode _node;
 
-  bool get _locked => widget.numeric && EntryTextField.capLocks(_controller.text, widget.max);
+  bool get _locked => widget.numeric && widget.lockable && EntryTextField.capLocks(_controller.text, widget.max);
 
   @override
   void initState() {

@@ -5,6 +5,7 @@ import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/alerts.dart';
 import '../core/widgets/keyboard_done_bar.dart';
+import '../core/widgets/tap_to_dismiss.dart';
 import '../core/api/api_client.dart';
 import '../features/auth/blocked_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -84,7 +85,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: theme.mode,
-      builder: (context, child) => KeyboardDoneBar(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => KeyboardDoneBar(child: TapToDismiss(child: child ?? const SizedBox.shrink())),
       home: const _AuthGate(),
     );
   }

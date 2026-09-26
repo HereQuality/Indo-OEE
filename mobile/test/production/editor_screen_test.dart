@@ -799,14 +799,18 @@ void main() {
       expect(form(tester).entries.single['machine'], 'm2');
     });
 
-    editorTest('a restored draft that is left alone closes silently and keeps the draft', (tester) async {
-      final stored = draftJson([validBlockFor('Ravi')]);
+    editorTest('a restored draft that is left alone closes silently and keeps the draft, with a fresh minute', (tester) async {
+      final stored = draftJson([validBlockFor('Ravi')], ageMs: 30000);
       final h = await open(tester, prefs: {EntryDraftStore.key: stored});
       await tester.tap(find.byTooltip('Close'));
       await settle(tester);
       expect(find.byType(AlertDialog), findsNothing);
       expect(h.popped, [false]);
-      expect(await storedDraft(), stored);
+      final before = jsonDecode(stored) as Map;
+      final after = jsonDecode((await storedDraft())!) as Map;
+      expect(after['entries'], before['entries'], reason: 'the same blocks are kept');
+      // Web closeModal re-saves on close, which restarts the 60 s clock.
+      expect(after['savedAt'] as int, greaterThan(before['savedAt'] as int));
     });
 
     editorTest('a successful save clears the draft', (tester) async {

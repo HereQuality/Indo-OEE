@@ -203,6 +203,7 @@ class CompanyBadge extends StatelessWidget {
               ? fallback
               : CachedNetworkImage(
                   imageUrl: logo!,
+                  memCacheHeight: (24 * MediaQuery.devicePixelRatioOf(context)).ceil(),
                   fit: BoxFit.contain,
                   placeholder: (_, _) => fallback,
                   errorWidget: (_, _, _) => fallback,

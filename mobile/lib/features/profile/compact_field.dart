@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+// TapToDismiss moved to core/widgets; re-exported so existing imports keep working.
+export '../../core/widgets/tap_to_dismiss.dart';
+
 /// Labelled, compact (~40 px) text input used by the profile / support forms.
 /// Unlike the shared AppTextField it exposes autocorrect / suggestions /
 /// scrollPadding, so codes, usernames and passwords get the right keyboard and
@@ -147,22 +150,6 @@ class CompactCard extends StatelessWidget {
   }
 }
 
-/// Tapping empty space closes the keyboard. Taps on buttons / fields inside are
-/// unaffected (the innermost recogniser wins the gesture arena).
-class TapToDismiss extends StatelessWidget {
-  const TapToDismiss({super.key, required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          final f = FocusManager.instance.primaryFocus;
-          if (f != null && f.hasFocus) f.unfocus();
-        },
-        child: child,
-      );
-}
 
 /// Compact pill (status / priority / platform / role): 11.5 px text, 8x3 padding.
 class MiniPill extends StatelessWidget {

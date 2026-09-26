@@ -30,9 +30,11 @@ class AppTextField extends StatelessWidget {
     this.helper,
     this.textCapitalization = TextCapitalization.none,
     this.autofillHints,
+    this.focusNode,
   });
 
   final String label;
+  final FocusNode? focusNode;
   final TextEditingController? controller;
   final String? initialValue;
   final String? hint;
@@ -65,6 +67,7 @@ class AppTextField extends StatelessWidget {
         const SizedBox(height: 6),
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           initialValue: controller == null ? initialValue : null,
           validator: validator ?? (required ? (v) => (v == null || v.trim().isEmpty) ? '$label is required' : null : null),
           keyboardType: keyboardType,
@@ -174,7 +177,28 @@ class _PickerSheet<T> extends StatefulWidget {
 }
 
 class _PickerSheetState<T> extends State<_PickerSheet<T>> {
+  final _search = TextEditingController();
+  late final ScrollController _scroll;
   String _q = '';
+
+  bool get _showSearch => widget.searchable && widget.options.length > 6;
+
+  @override
+  void initState() {
+    super.initState();
+    // A long list opens at the current choice (a couple of rows of context
+    // above it) instead of making the person scroll down to find it again.
+    final at = widget.options.indexWhere((o) => o.value == widget.selected);
+    final row = widget.options.any((o) => o.subtitle != null) ? 68.0 : 52.0;
+    _scroll = ScrollController(initialScrollOffset: at > 3 ? (at - 2) * row : 0);
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +210,7 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
             .where((o) => o.label.toLowerCase().contains(q) || (o.subtitle ?? '').toLowerCase().contains(q))
             .toList();
     final maxH = MediaQuery.sizeOf(context).height * 0.85;
+    final selectedTint = s.primary.withValues(alpha: s.brightness == Brightness.dark ? 0.22 : 0.10);
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: ConstrainedBox(
@@ -194,46 +219,86 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              padding: const EdgeInsets.fromLTRB(20, 0, 8, 8),
               child: Row(
                 children: [
                   Expanded(child: Text(widget.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
                   if (widget.allowClear && widget.selected != null)
                     TextButton(onPressed: () => Navigator.pop(context, PickResult<T>(null)), child: const Text('Clear')),
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ],
               ),
             ),
-            if (widget.searchable && widget.options.length > 6)
+            if (_showSearch)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: TextField(
+                  controller: _search,
                   autofocus: false,
+                  textInputAction: TextInputAction.search,
                   onChanged: (v) => setState(() => _q = v),
-                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search'),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: 'Search ${widget.title.toLowerCase()}',
+                    suffixIcon: _q.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(Icons.cancel_rounded, size: 20),
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _q = '');
+                            },
+                          ),
+                  ),
                 ),
               ),
+            Divider(height: 1, color: s.outlineVariant),
             Flexible(
-              child: list.isEmpty
+              child: widget.options.isEmpty || list.isEmpty
                   ? Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Text('No matches', style: TextStyle(color: s.onSurfaceVariant)),
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search_off_rounded, size: 32, color: s.onSurfaceVariant),
+                          const SizedBox(height: 8),
+                          Text(
+                            widget.options.isEmpty ? 'Nothing to choose from yet' : 'No matches for “${_q.trim()}”',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: s.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
                     )
-                  : ListView.builder(
+                  : ListView.separated(
+                      controller: _scroll,
                       shrinkWrap: true,
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       itemCount: list.length,
+                      separatorBuilder: (_, _) => Divider(height: 1, indent: 20, endIndent: 20, color: s.outlineVariant),
                       itemBuilder: (_, i) {
                         final o = list[i];
                         final sel = o.value == widget.selected;
-                        return ListTile(
-                          title: Text(o.label, style: TextStyle(fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
-                          subtitle: o.subtitle == null ? null : Text(o.subtitle!),
-                          trailing: sel ? Icon(Icons.check_circle, color: s.primary) : null,
-                          onTap: () => Navigator.pop(context, PickResult<T>(o.value)),
+                        return Semantics(
+                          selected: sel,
+                          child: ListTile(
+                            minTileHeight: 52,
+                            tileColor: sel ? selectedTint : null,
+                            title: Text(o.label, style: TextStyle(fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
+                            subtitle: o.subtitle == null ? null : Text(o.subtitle!),
+                            trailing: sel ? Icon(Icons.check_circle, color: s.primary) : null,
+                            onTap: () => Navigator.pop(context, PickResult<T>(o.value)),
+                          ),
                         );
                       },
                     ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: widget.options.isEmpty ? 8 : 4),
           ],
         ),
       ),
@@ -450,21 +515,74 @@ class PrimaryButton extends StatelessWidget {
   }
 }
 
-/// Search box for list screens.
-class SearchField extends StatelessWidget {
+/// Search box for list screens. A × appears once there is text, so a search is
+/// one tap to undo instead of holding backspace.
+class SearchField extends StatefulWidget {
   const SearchField({super.key, required this.onChanged, this.hint = 'Search', this.controller});
   final ValueChanged<String> onChanged;
   final String hint;
   final TextEditingController? controller;
 
   @override
+  State<SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<SearchField> {
+  TextEditingController? _own;
+  late TextEditingController _c;
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _attach();
+  }
+
+  void _attach() {
+    _c = widget.controller ?? (_own ??= TextEditingController());
+    _hasText = _c.text.isNotEmpty;
+    _c.addListener(_onText);
+  }
+
+  void _onText() {
+    final has = _c.text.isNotEmpty;
+    if (has != _hasText && mounted) setState(() => _hasText = has);
+  }
+
+  @override
+  void didUpdateWidget(SearchField old) {
+    super.didUpdateWidget(old);
+    if (widget.controller != old.controller) {
+      _c.removeListener(_onText);
+      _attach();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.removeListener(_onText);
+    _own?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => TextField(
-        controller: controller,
-        onChanged: onChanged,
+        controller: _c,
+        onChanged: widget.onChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: widget.hint,
           prefixIcon: const Icon(Icons.search),
+          suffixIcon: _hasText
+              ? IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.cancel_rounded, size: 20),
+                  onPressed: () {
+                    _c.clear();
+                    widget.onChanged('');
+                  },
+                )
+              : null,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),

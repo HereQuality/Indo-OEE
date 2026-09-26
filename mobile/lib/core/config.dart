@@ -45,16 +45,59 @@ class AppConfig {
 
   /// Rewrites every `http://<our host>` string inside a decoded JSON value
   /// onto the backend's scheme (mirrors the web app's response transformer).
+  ///
+  /// Runs on the UI thread for every response, including a month of dashboard
+  /// entries (tens of thousands of values), so it edits the decoded JSON IN
+  /// PLACE and only allocates when a string really changes. (Rebuilding every
+  /// list and map, as this once did, froze the UI for a few frames per load and
+  /// doubled the memory held by the payload.) Returns [v] itself unless a
+  /// container turns out to be unmodifiable, in which case that one is copied.
   static dynamic upgradeUrls(dynamic v) {
     final plain = 'http://$apiHost';
     if (apiOrigin == plain) return v;
+    return _upgrade(v, plain);
+  }
+
+  static dynamic _upgrade(dynamic v, String plain) {
     if (v is String) {
       return v.startsWith(plain) && (v.length == plain.length || !RegExp(r'[\w.-]').hasMatch(v[plain.length]))
           ? apiOrigin + v.substring(plain.length)
           : v;
     }
-    if (v is List) return v.map(upgradeUrls).toList();
-    if (v is Map) return v.map((k, val) => MapEntry(k, upgradeUrls(val)));
+    if (v is List) {
+      var list = v;
+      for (var i = 0; i < list.length; i++) {
+        final item = list[i];
+        if (item is! String && item is! List && item is! Map) continue; // numbers, bools, null
+        final next = _upgrade(item, plain);
+        if (identical(next, item)) continue;
+        try {
+          list[i] = next;
+        } on UnsupportedError {
+          list = List<dynamic>.of(list);
+          list[i] = next;
+        }
+      }
+      return list;
+    }
+    if (v is Map) {
+      List<MapEntry<dynamic, dynamic>>? changed;
+      v.forEach((k, val) {
+        if (val is! String && val is! List && val is! Map) return;
+        final next = _upgrade(val, plain);
+        if (!identical(next, val)) (changed ??= []).add(MapEntry(k, next));
+      });
+      final edits = changed;
+      if (edits == null) return v;
+      try {
+        for (final e in edits) {
+          v[e.key] = e.value;
+        }
+        return v;
+      } on UnsupportedError {
+        return {...v, for (final e in edits) e.key: e.value};
+      }
+    }
     return v;
   }
 }

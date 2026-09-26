@@ -206,9 +206,11 @@ class EntryDateField extends StatelessWidget {
       onTap: () async {
         final now = DateTime.now();
         final initial = day ?? DateTime(now.year, now.month, now.day);
-        final first = DateTime(2020).isBefore(initial) ? DateTime(2020) : initial;
-        final endOfNext = DateTime(now.year + 1, 12, 31);
-        final last = endOfNext.isAfter(initial) ? endOfNext : initial;
+        // The web's date box has no limits; a picker needs some, so keep them wide.
+        final earliest = DateTime(2000);
+        final first = earliest.isBefore(initial) ? earliest : initial;
+        final latest = DateTime(now.year + 5, 12, 31);
+        final last = latest.isAfter(initial) ? latest : initial;
         final picked = await showDatePicker(
           context: context,
           initialDate: initial,

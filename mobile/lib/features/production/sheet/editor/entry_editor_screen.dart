@@ -312,9 +312,11 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     }
     if (!_isEdit) {
       // Typing survives an accidental close for a minute (see EntryDraftStore).
+      // A restored draft is re-saved even if untouched (as on the web), so it
+      // gets a fresh minute instead of expiring on its old clock.
       if (!hasAnyEntryData(_entries)) {
         await EntryDraftStore.clear();
-      } else if (_needsConfirm) {
+      } else if (_needsConfirm || _draftRestored) {
         await EntryDraftStore.save(_entries);
       }
     }

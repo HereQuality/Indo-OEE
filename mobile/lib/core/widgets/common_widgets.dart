@@ -88,8 +88,13 @@ class UserAvatar extends StatelessWidget {
       ),
     );
     if (imageUrl == null || imageUrl!.isEmpty) return fallback;
+    // A profile photo can be 1600 px square; decode it at the size it is shown
+    // (a 32 px avatar would otherwise hold ~10 MB of pixels per person in memory).
+    final px = (radius * 2 * MediaQuery.devicePixelRatioOf(context)).ceil();
     return CachedNetworkImage(
       imageUrl: imageUrl!,
+      memCacheWidth: px,
+      memCacheHeight: px,
       imageBuilder: (_, provider) => CircleAvatar(radius: radius, backgroundImage: provider),
       placeholder: (_, __) => fallback,
       errorWidget: (_, __, ___) => fallback,

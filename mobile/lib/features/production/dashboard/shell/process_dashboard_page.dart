@@ -21,6 +21,7 @@ import '../widgets/control_bar.dart';
 import '../widgets/dash_card.dart';
 import '../widgets/kpi_tile.dart';
 import '../widgets/skeleton.dart';
+import '../widgets/summary_card.dart';
 import '../widgets/widget_card.dart';
 import 'dashboard_controller.dart';
 import 'dashboard_customize.dart';
@@ -313,6 +314,8 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
     final blocks = <Widget>[
       _EntriesCaption(entries: (summary['entries'] as num?)?.round() ?? _ctl.filtered.length, total: _ctl.rows.length),
       if (_ctl.filtered.isEmpty) _NoMatches(onClear: _ctl.clearAll),
+      // Phone only: the tablet has the web's full header and tile grid instead.
+      if (!tablet && _ctl.filtered.isNotEmpty) _summaryCard(context, summary, process),
       if (stats.isNotEmpty) tablet ? KpiFlowGrid(children: [for (final s in stats) kpi(s)]) : KpiGrid(children: [for (final s in stats) kpi(s)]),
       if (tablet)
         for (final row in packRows(
@@ -343,6 +346,32 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
         ),
       ),
     ];
+  }
+
+  /// The small "at a glance" card: OEE big, a few key figures beside it.
+  Widget _summaryCard(BuildContext context, Map<String, dynamic> summary, ProcessInfo? process) {
+    String f(String key, String format) => eng.formats[format]!(summary[key] as num?);
+    final ran = {
+      for (final r in _ctl.filtered)
+        if ('${r['machine'] ?? ''}'.isNotEmpty) '${r['machine']}',
+    }.length;
+    final total = process?.machines.length ?? 0;
+    return DashboardSummaryCard(
+      key: const ValueKey('dashboardSummary'),
+      headlineLabel: 'OEE',
+      headlineValue: f('oeeLosses', 'pct'),
+      headlineHint: 'Considering losses',
+      lines: [
+        SummaryLine('Produced', f('totalQty', 'qty')),
+        SummaryLine('OK rate', f('okPct', 'pct')),
+        SummaryLine('Downtime', f('downtimeMin', 'minutes')),
+        SummaryLine('Machines ran', total > 0 ? '$ran of $total' : '$ran'),
+      ],
+      onTap: () {
+        HapticFeedback.lightImpact();
+        _drill(context, eng.statMeasure(eng.statsByKey['oeeLosses']!));
+      },
+    );
   }
 
   Widget _chartCard(BuildContext context, Map<String, dynamic> w, {bool fixedHeader = false}) {

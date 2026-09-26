@@ -510,6 +510,7 @@ class EntryBlockState extends State<EntryBlock> {
     bool decimals = false,
     double? max,
     void Function(double max)? onExceed,
+    bool lockable = true,
     bool? invalid,
     FocusNode? node,
     String? label,
@@ -521,6 +522,7 @@ class EntryBlockState extends State<EntryBlock> {
         decimals: decimals,
         max: max,
         onExceedMax: onExceed,
+        lockable: lockable,
         invalid: invalid ?? _err(field) != null,
         focusNode: node ?? _fn(field),
         semanticsLabel: label,
@@ -746,13 +748,14 @@ class EntryBlockState extends State<EntryBlock> {
                 required: true,
                 error: _err('actualQty'),
                 hint: _locked('actualQty', m.idealQty)
-                    ? 'Ideal Quantity is 0 — check the Machine ON/OFF times and the Part.'
+                    ? 'Ideal Quantity is 0, so Actual can only be 0 — check the Machine ON/OFF times and the Part.'
                     : null,
                 child: _k(
                   'actualQty',
                   _num(
                     'actualQty',
                     max: m.idealQty,
+                    lockable: false, // required: 0 must stay typeable
                     label: 'Actual Quantity',
                     onExceed: (max) => EntryFormToast.warn("Actual Quantity can't be more than Ideal Quantity (${fmtNum(max)})"),
                   ),
@@ -768,6 +771,7 @@ class EntryBlockState extends State<EntryBlock> {
                   _num(
                     'okQty',
                     max: m.okMax,
+                    lockable: false, // required: 0 must stay typeable
                     label: 'OK Quantity',
                     onExceed: (max) => EntryFormToast.warn("OK Quantity can't be more than Actual Quantity (${fmtNum(max)})"),
                   ),
@@ -912,11 +916,18 @@ class EntryBlockState extends State<EntryBlock> {
               hint: limit == 0
                   ? 'Not needed — the machine ran the whole planned shift.'
                   : _locked('lunchMin', lunch.max)
-                      ? 'No stoppage time left.'
+                      ? (m.lunchNeeded ? 'No stoppage time left, so Lunch / Rest can only be 0.' : 'No stoppage time left.')
                       : null,
               child: _k(
                 'lunchMin',
-                _num('lunchMin', max: lunch.max, label: 'Lunch / Rest (min)', onExceed: (_) => EntryFormToast.warn(lunch.message)),
+                _num(
+                  'lunchMin',
+                  max: lunch.max,
+                  // Required while the shift leaves time over the run: then 0 must stay typeable.
+                  lockable: !m.lunchNeeded,
+                  label: 'Lunch / Rest (min)',
+                  onExceed: (_) => EntryFormToast.warn(lunch.message),
+                ),
               ),
             ),
             EntryCell(
