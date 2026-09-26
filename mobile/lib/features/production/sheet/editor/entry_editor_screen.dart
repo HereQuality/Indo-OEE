@@ -8,6 +8,7 @@ import '../../../../core/api/api_client.dart';
 import '../../../../core/api/endpoints.dart';
 import '../../../../core/utils/alerts.dart';
 import '../../../../core/widgets/states.dart';
+import '../../entry_form/entry_form_toast.dart';
 import '../../entry_form/production_entry_form.dart';
 import '../../shared/production_entry_validation.dart';
 import 'entry_action_bar.dart';
@@ -59,6 +60,15 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   late List<Map<String, dynamic>> _baseline;
   late List<Map<String, dynamic>> _machinesForForm;
   List<Map<String, String>> _errors = const [];
+
+  // What each machine in the form already has saved on its date (`machine|date`
+  // → slots), asked of the server once per pair while the form is open, so an
+  // overlapping ON/OFF time is flagged as it is picked. The server refuses one on
+  // Save regardless. A failed lookup is retried at most every 15 s.
+  final OccupiedTimes _occupied = {};
+  final Map<String, DateTime?> _occupiedAsked = {};
+  static const _occupiedRetry = Duration(seconds: 15);
+  static final _isoDay = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
   bool _ready = true; // false while the add-mode draft is being looked up
   bool _draftRestored = false;
@@ -137,7 +147,84 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   // them once Save has been pressed, and Save itself only looks inactive until
   // there are none.
   void _recompute() {
-    _errors = [for (final e in _entries) validateEntry(e)];
+    // An edited row keeps its slot and the times it was loaded with: the row is
+    // not "another entry", and an old row that already breaks the time rules
+    // stays editable until its times are changed.
+    final saved = _savedTimes;
+    final overlap = overlapErrors(_entries, _occupied, editSlot: _editSlot, saved: saved);
+    _errors = [
+      // A block's own problems (blank / invalid / OFF before ON) come first.
+      for (var i = 0; i < _entries.length; i++) {...overlap[i], ...validateEntry(_entries[i], saved: saved)},
+    ];
+    _askOccupied();
+  }
+
+  /// Block [i]'s time-rule problem (OFF not after ON, or an overlap), or null.
+  String? _timeProblem(int i) {
+    if (i >= _errors.length) return null;
+    for (final k in const ['machineOnTime', 'machineOffTime']) {
+      final m = _errors[i][k];
+      if (isTimeRuleMessage(m)) return m;
+    }
+    return null;
+  }
+
+  List<String?> _timeProblems() => [for (var i = 0; i < _errors.length; i++) _timeProblem(i)];
+
+  /// Warns the moment a pick creates (or changes) a time-rule problem — not
+  /// only when Save is pressed. Nothing repeats while the problem stays as it
+  /// was, and typing elsewhere in the block stays quiet.
+  void _warnNewTimeProblems(List<String?> before) {
+    for (var i = 0; i < _errors.length; i++) {
+      final now = _timeProblem(i);
+      if (now != null && now != (i < before.length ? before[i] : null)) EntryFormToast.warn(now);
+    }
+  }
+
+  int? get _editSlot => _isEdit ? (widget.row!['slot'] as num?)?.toInt() : null;
+  Map<String, dynamic>? get _savedTimes => _isEdit
+      ? {'machineOnTime': widget.row!['machineOnTime'], 'machineOffTime': widget.row!['machineOffTime']}
+      : null;
+
+  void _askOccupied() {
+    final now = DateTime.now();
+    for (final v in _entries) {
+      final machine = '${v['machine'] ?? ''}';
+      final date = '${v['date'] ?? ''}';
+      if (machine.isEmpty || !_isoDay.hasMatch(date)) continue;
+      final key = '$machine|$date';
+      if (_occupied.containsKey(key)) continue;
+      if (_occupiedAsked.containsKey(key)) {
+        final failedAt = _occupiedAsked[key];
+        if (failedAt == null || now.difference(failedAt) < _occupiedRetry) continue; // in flight, or failed recently
+      }
+      _occupiedAsked[key] = null;
+      unawaited(_loadOccupied(key, machine, date));
+    }
+  }
+
+  Future<void> _loadOccupied(String key, String machine, String date) async {
+    try {
+      final res = await Api.get(Endpoints.productionSheetOccupied, query: {'date': date, 'machine': machine});
+      if (!mounted) return;
+      final before = _timeProblems();
+      setState(() {
+        _occupied[key] = asList(res);
+        _recompute();
+      });
+      // What is booked arrived after the times were picked: say so now.
+      _warnNewTimeProblems(before);
+    } catch (_) {
+      // The server still checks on Save; look again in a while.
+      _occupiedAsked[key] = DateTime.now();
+    }
+  }
+
+  /// Something may have changed under us (a failed save, a partial save): read
+  /// what is booked again.
+  void _forgetOccupied() {
+    _occupied.clear();
+    _occupiedAsked.clear();
   }
 
   int get _incompleteCount => _errors.where((e) => e.isNotEmpty).length;
@@ -154,9 +241,11 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   // ── Form callbacks ───────────────────────────────────────────────────────
   void _onChange(int index, String name, dynamic value) {
     if (_saving || index < 0 || index >= _entries.length) return;
+    final before = _timeProblems();
     _apply([
       for (var i = 0; i < _entries.length; i++) i == index ? {..._entries[i], name: value} : _entries[i],
     ]);
+    _warnNewTimeProblems(before);
   }
 
   void _onRejectChange(int index, String reason, dynamic value) {
@@ -251,6 +340,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       if (!mounted) return;
       final reason = e is ApiException ? e.message : 'Failed to save. Please try again.';
       _haptic(HapticFeedback.heavyImpact);
+      _forgetOccupied();
+      _askOccupied(); // re-read what is booked right away
       if (saved.isNotEmpty) {
         final message = '${saved.length} saved, then: $reason The rest are still in the form.';
         Alerts.error(message);
@@ -448,6 +539,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                     items: widget.items,
                     operators: widget.operators,
                     isEdit: _isEdit,
+                    booked: [for (final e in _entries) bookedRanges(e, _occupied, editSlot: _editSlot)],
                     onChange: _onChange,
                     onItemSelect: _onItemSelect,
                     onRejectChange: _onRejectChange,

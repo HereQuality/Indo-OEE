@@ -232,12 +232,16 @@ class EntryTimeField extends StatelessWidget {
     required this.value,
     required this.title,
     required this.onChanged,
+    this.dialStart,
     this.invalid = false,
     this.focusNode,
   });
 
   final String value;
   final String title;
+
+  /// "HH:mm" the dial starts on while the box is still empty (else it starts on now).
+  final String? dialStart;
   final ValueChanged<String> onChanged;
   final bool invalid;
   final FocusNode? focusNode;
@@ -253,7 +257,7 @@ class EntryTimeField extends StatelessWidget {
       focusNode: focusNode,
       semanticsLabel: title,
       onTap: () async {
-        final picked = await showEntryTimePicker(context, title: title, initial: t);
+        final picked = await showEntryTimePicker(context, title: title, initial: t, dialStart: dialStart);
         if (picked != null && context.mounted) onChanged(picked);
       },
     );
@@ -270,11 +274,14 @@ String snapToFiveMinutes(TimeOfDay t) {
 /// Opens the clock dial and resolves to "HH:mm" (five-minute steps, 12-hour
 /// AM/PM dial in every locale), or null when dismissed. A stored time that is not
 /// on a five-minute mark (an older record) is kept if the dial was not moved.
-Future<String?> showEntryTimePicker(BuildContext context, {required String title, String? initial}) async {
+Future<String?> showEntryTimePicker(BuildContext context, {required String title, String? initial, String? dialStart}) async {
   final stored = entryTime(initial);
+  final suggested = entryTime(dialStart);
   TimeOfDay start;
   if (stored != null) {
     start = TimeOfDay(hour: int.parse(stored.substring(0, 2)), minute: int.parse(stored.substring(3, 5)));
+  } else if (suggested != null) {
+    start = TimeOfDay(hour: int.parse(suggested.substring(0, 2)), minute: int.parse(suggested.substring(3, 5)));
   } else {
     final now = DateTime.now();
     start = TimeOfDay(hour: now.hour, minute: now.minute - now.minute % 5);

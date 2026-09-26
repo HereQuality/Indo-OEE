@@ -18,7 +18,7 @@ import { Input } from "reactstrap";
  *
  * An optional `max` blocks typing past a value entirely (not just an error
  * after the fact) — e.g. OK Quantity can't be typed bigger than Actual
- * Quantity, and the Reject Master boxes can't add up to more than Rejected.
+ * Quantity, and the Rejection Master boxes can't add up to more than Rejected.
  * Left out, or not yet a real number (still being calculated), there's no
  * ceiling. It only stops a value rising past it: shortening one that is
  * already over is always allowed. `onExceedMax` (if given) fires once per blocked

@@ -13,14 +13,15 @@ Future<void> _settle(WidgetTester tester) async {
 void main() {
   testWidgets('open block renders every section and the calc boxes', (tester) async {
     await pumpForm(tester, [validEntry()]);
-    expect(find.byKey(const ValueKey('entry0/collapsed')), findsOneWidget);
+    // A block whose machine is already chosen starts open — no "+" to press.
+    expect(find.byKey(const ValueKey('entry0/collapsed')), findsNothing);
     await openBlock(tester, 0);
 
     for (final title in [
       'Date, Machine No., Operator',
       'Part Name, Total Cycle Time',
       'Machine ON–OFF Time, Machine Shift',
-      'Reject Master',
+      'Rejection Master (Qty)',
       'Planned Operator Shift, Lunch / Rest',
       'Downtime / Stoppage (min)',
       'Remarks',
@@ -95,7 +96,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(key.currentState!.log, contains('add'));
     expect(key.currentState!.entries.length, 2);
-    expect(find.byKey(const ValueKey('entry1/header'), skipOffstage: false), findsOneWidget); // new block opened
+    // The new block stays closed and asks for its machine first: the picker opens
+    // by itself, and the block opens once a machine is chosen.
+    expect(find.byKey(const ValueKey('entry1/header'), skipOffstage: false), findsNothing);
+    expect(find.byKey(const ValueKey('entry1/collapsed'), skipOffstage: false), findsOneWidget);
+    expect(find.byType(BottomSheet), findsOneWidget);
+    await tester.tap(find.text('CNC-7B'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('entry1/header'), skipOffstage: false), findsOneWidget);
 
     // Edit mode: one block, already open, machine locked, no add / remove.
     await pumpForm(tester, [validEntry()], isEdit: true);

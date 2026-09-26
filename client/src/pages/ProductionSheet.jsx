@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import {
@@ -30,6 +30,7 @@ import {
   deleteProductionRow,
   getProductionExtent,
   getProductionFilterOptions,
+  getOccupiedTimes,
   getProductionSheet,
   saveProductionRow,
   unlockProductionRow,
@@ -42,7 +43,7 @@ import {
   isoDay,
   sortByMachineOn,
 } from "../utils/productionSheet";
-import { cleanSplit, firstError, validateEntry } from "../utils/entryValidation";
+import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, overlapErrors, validateEntry } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
@@ -307,6 +308,20 @@ const ProductionSheet = () => {
   const [focusTarget, setFocusTarget] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // What each machine in the form already has booked on its date, keyed
+  // "machine|date" — asked of the server once per pair while the form is open,
+  // so an overlapping ON/OFF time is flagged as it is picked (the server
+  // refuses one on Save regardless). `editing` is the row being edited (its slot
+  // is not "another" entry; its loaded times decide whether the time rules
+  // apply — an old row that already breaks them stays editable).
+  const [occupied, setOccupied] = useState({});
+  const occupiedAsked = useRef(new Set());
+  const [editing, setEditing] = useState(null);
+  const resetOccupied = useCallback(() => {
+    occupiedAsked.current.clear();
+    setOccupied({});
+  }, []);
+
   const [removeId, setRemoveId] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -469,7 +484,50 @@ const ProductionSheet = () => {
   // Every block's problems, worked out live from what's typed — the form shows
   // them once Save has been pressed, and Save itself stays inactive until there
   // are none (see canSave).
-  const errorsList = useMemo(() => entries.map(validateEntry), [entries]);
+  useEffect(() => {
+    if (!modalMode) return;
+    for (const v of entries) {
+      if (!v.machine || !/^\d{4}-\d{2}-\d{2}$/.test(v.date || "")) continue;
+      const key = `${v.machine}|${v.date}`;
+      if (occupiedAsked.current.has(key)) continue;
+      occupiedAsked.current.add(key);
+      getOccupiedTimes({ date: v.date, machine: v.machine })
+        .then((res) => setOccupied((o) => ({ ...o, [key]: res.data.data || [] })))
+        // Save is still checked by the server. Look again in a while — not on
+        // every keystroke while the lookup keeps failing.
+        .catch(() => setTimeout(() => occupiedAsked.current.delete(key), 15000));
+    }
+    // `occupied` is a dependency so that clearing it (after a failed save) asks again
+    // at once; pairs already asked are skipped, so this cannot loop.
+  }, [modalMode, entries, occupied]);
+
+  const errorsList = useMemo(() => {
+    const saved = editing?.saved || null;
+    const overlap = overlapErrors(entries, occupied, { editSlot: editing?.slot ?? null, saved });
+    // A block's own problems (blank / invalid / OFF before ON) come first.
+    return entries.map((v, i) => ({ ...overlap[i], ...validateEntry(v, { saved }) }));
+  }, [entries, occupied, editing]);
+  // Warn the moment a pick creates (or changes) a time-rule problem — not only
+  // when Save is pressed. Nothing repeats while the problem stays as it was.
+  const timeWarned = useRef({});
+  useEffect(() => {
+    if (!modalMode) {
+      timeWarned.current = {};
+      return;
+    }
+    errorsList.forEach((errs, i) => {
+      const message = [errs.machineOnTime, errs.machineOffTime].find(isTimeRuleMessage);
+      if (message && timeWarned.current[i] !== message) toast.warning(message);
+      if (message) timeWarned.current[i] = message;
+      else delete timeWarned.current[i];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorsList, modalMode]);
+
+  const bookedList = useMemo(
+    () => entries.map((v) => bookedRanges(v, occupied, editing?.slot ?? null)),
+    [entries, occupied, editing],
+  );
   const incompleteCount = errorsList.filter((e) => Object.keys(e).length).length;
   const canSave = incompleteCount === 0;
 
@@ -482,6 +540,8 @@ const ProductionSheet = () => {
     }
     setModalMode(null);
     setEntries([emptyEntry()]);
+    setEditing(null);
+    resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);
   };
@@ -492,6 +552,8 @@ const ProductionSheet = () => {
     // Only pre-fills the machine when the Filters panel narrows to exactly
     // one — with several ticked there's no single machine to default to.
     setEntries(draft || [{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
+    setEditing(null);
+    resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);
     setModalMode("add");
@@ -509,6 +571,8 @@ const ProductionSheet = () => {
 
   const openEdit = (row) => {
     setEntries([toFormValues(row)]);
+    setEditing({ slot: row.slot, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime } });
+    resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);
     setModalMode("edit");
@@ -597,6 +661,7 @@ const ProductionSheet = () => {
       fetchRows();
     } catch (err) {
       const reason = err?.response?.data?.message || "Failed to save. Please try again.";
+      resetOccupied(); // something may have changed under us — re-read what is booked
       if (savedIndexes.size) {
         setEntries((list) => list.filter((_, i) => !savedIndexes.has(i)));
         setFocusTarget(null);
@@ -788,6 +853,7 @@ const ProductionSheet = () => {
               items={items}
               operators={operators}
               isEdit={modalMode === "edit"}
+              booked={bookedList}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
               onRejectChange={handleRejectChange}

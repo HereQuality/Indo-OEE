@@ -166,21 +166,29 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Reject Master is shut with a visible reason until Actual and OK leave pieces rejected, then opens', (tester) async {
+    testWidgets('Rejection Master (Qty) boxes always take the number pad; a visible reason says why nothing fits yet, and too much is refused', (tester) async {
+      final toasts = captureToasts();
       await pumpForm(tester, [_withPart()]);
       await openBlock(tester, 0);
 
-      // Shut: drawn locked, read-only, still focusable, and it says why (not just a toast).
+      // Nothing to reject yet: the box is a normal number box (tapping it opens the
+      // number pad), and the reason is written under it — not just a toast.
       final tool = textIn(0, 'reject/Tool Mark');
       await tester.ensureVisible(tool);
-      expect(boxOf(tester, 'reject/Tool Mark').readOnly, isTrue);
+      expect(boxOf(tester, 'reject/Tool Mark').readOnly, isFalse);
+      expect(boxOf(tester, 'reject/Tool Mark').keyboardType, const TextInputType.numberWithOptions(decimal: false));
       expect(find.textContaining('Enter Actual and OK Quantity first'), findsOneWidget);
-      expect(find.byIcon(Icons.lock_outline_rounded), findsWidgets);
+      expect(find.byIcon(Icons.lock_outline_rounded), findsNothing, reason: 'no lock icons any more');
       final node = boxOf(tester, 'reject/Tool Mark').focusNode!;
       node.requestFocus();
       await tester.pump();
       expect(node.hasFocus, isTrue);
       node.unfocus();
+
+      // A digit is refused (with a message), because there is nothing to split.
+      await typeKeys(tester, 'reject/Tool Mark', '5');
+      expect(textOf(tester, 0, 'reject/Tool Mark'), '');
+      expect(toasts, isNotEmpty);
 
       await typeKeys(tester, 'actualQty', '100');
       await typeKeys(tester, 'okQty', '100');
@@ -188,37 +196,42 @@ void main() {
       await typeKeys(tester, 'okQty', '90');
       expect(textOf(tester, 0, 'okQty'), '90');
       expect(find.textContaining('Nothing to reject'), findsNothing);
-      expect(boxOf(tester, 'reject/Tool Mark').readOnly, isFalse);
       await typeKeys(tester, 'reject/Tool Mark', '15');
       expect(textOf(tester, 0, 'reject/Tool Mark'), '1', reason: '15 is more than the 10 left, so the 5 is refused');
       await typeKeys(tester, 'reject/Tool Mark', '10');
       expect(textOf(tester, 0, 'reject/Tool Mark'), '10');
-      // Everything is assigned now: the others shut again and say so.
-      expect(boxOf(tester, 'reject/Other').readOnly, isTrue);
+      // Everything is assigned now: the others say so and take no more.
       expect(find.textContaining('already assigned'), findsOneWidget);
+      await typeKeys(tester, 'reject/Other', '3');
+      expect(textOf(tester, 0, 'reject/Other'), '');
+      expect(boxOf(tester, 'reject/Other').readOnly, isFalse);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('downtime boxes: shut with a reason while the planned shift equals the machine shift, open once it is longer', (tester) async {
+    testWidgets('downtime boxes take the number pad; with no room they say why and refuse digits, and open up once the planned shift is longer', (tester) async {
+      captureToasts();
       await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
-      expect(boxOf(tester, 'setupMin').readOnly, isTrue);
-      expect(boxOf(tester, 'lunchMin').readOnly, isTrue);
+      expect(boxOf(tester, 'setupMin').readOnly, isFalse);
+      expect(boxOf(tester, 'lunchMin').readOnly, isFalse);
       expect(find.textContaining('No stoppage time left'), findsWidgets);
+      await typeKeys(tester, 'setupMin', '5');
+      expect(textOf(tester, 0, 'setupMin'), '', reason: 'no room: the digit is refused');
 
       await typeKeys(tester, 'plannedOperatorShiftHours', '9');
       expect(textOf(tester, 0, 'plannedOperatorShiftHours'), '9');
-      expect(boxOf(tester, 'setupMin').readOnly, isFalse);
       await typeKeys(tester, 'setupMin', '61');
       expect(textOf(tester, 0, 'setupMin'), '6', reason: '60 min are allowed: 6 fits, the 1 after it would make 61');
       await typeKeys(tester, 'setupMin', '60');
       expect(textOf(tester, 0, 'setupMin'), '60');
-      expect(boxOf(tester, 'noPowerMin').readOnly, isTrue);
+      await typeKeys(tester, 'noPowerMin', '5');
+      expect(textOf(tester, 0, 'noPowerMin'), '', reason: 'all 60 min are used');
       expect(find.textContaining('all 60 min allowed are used'), findsOneWidget);
       // Lowering the used box gives the room back.
       await typeKeys(tester, 'setupMin', '\b');
-      expect(boxOf(tester, 'noPowerMin').readOnly, isFalse);
+      await typeKeys(tester, 'noPowerMin', '5');
+      expect(textOf(tester, 0, 'noPowerMin'), '5');
       expect(tester.takeException(), isNull);
     });
 
@@ -325,8 +338,7 @@ void main() {
           final f = textIn(0, name);
           if (f.evaluate().isEmpty) continue;
           await tester.ensureVisible(f);
-          if (boxOf(tester, name).readOnly) continue;
-          await typeKeys(tester, name, '7');
+                    await typeKeys(tester, name, '7');
           expect(tester.takeException(), isNull, reason: name);
         }
         await typeKeys(tester, 'plannedOperatorShiftHours', '8.5');
@@ -357,7 +369,6 @@ void main() {
             case 2:
               if (f.evaluate().isEmpty) break;
               await tester.ensureVisible(f);
-              if (boxOf(tester, name).readOnly) break;
               await tester.showKeyboard(f);
               await tester.pump();
               for (var n = rnd.nextInt(5) + 1; n > 0; n--) {
@@ -521,13 +532,16 @@ void main() {
       expect(form.currentState!.errors.single['lunchMin'], isNull);
     });
 
-    testWidgets('optional boxes with no room are still shut (Reject / downtime)', (tester) async {
+    testWidgets('optional boxes with no room still open the number pad, and say why they take nothing', (tester) async {
+      captureToasts();
       await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
-      expect(boxOf(tester, 'setupMin').readOnly, isTrue);
-      expect(boxOf(tester, 'lunchMin').readOnly, isTrue, reason: 'not required when the machine ran the whole planned shift');
-      expect(boxOf(tester, 'reject/Tool Mark').readOnly, isTrue);
+      for (final name in ['setupMin', 'lunchMin', 'reject/Tool Mark']) {
+        expect(boxOf(tester, name).readOnly, isFalse, reason: name);
+        expect(boxOf(tester, name).keyboardType, const TextInputType.numberWithOptions(decimal: false), reason: name);
+      }
+      expect(find.textContaining('No stoppage time left'), findsWidgets);
     });
   });
 
@@ -562,7 +576,7 @@ void main() {
       await pumpForm(tester, [_withPart()], size: const Size(820, 1180));
       await openBlock(tester, 0);
       final a = tester.getTopLeft(find.text('Date, Machine No., Operator'));
-      final b = tester.getTopLeft(find.text('Reject Master'));
+      final b = tester.getTopLeft(find.text('Rejection Master (Qty)'));
       expect(b.dx, greaterThan(a.dx + 200), reason: 'left and right column');
       expect(tester.getSize(textIn(0, 'actualQty')).height, lessThanOrEqualTo(44));
       expect(tester.takeException(), isNull);

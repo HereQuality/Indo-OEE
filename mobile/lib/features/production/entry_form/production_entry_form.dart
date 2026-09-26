@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'entry_block.dart';
 
 /// The Production Data Entry form (port of ProductionEntryForm.jsx): one block
-/// per machine, each behind its own "+". A block starts as just a machine picker
-/// and that "+"; pressing it opens that machine's whole sheet — every line, in
-/// the web's order, each a card. Only one block is open at a time (opening one
-/// collapses the other, keeping what was typed). "Add another machine" appends
-/// and opens a further block. Editing shows a single block, already open, with
-/// the machine locked.
+/// per machine. A block starts as just a machine picker; choosing a machine opens
+/// that machine's whole sheet — every line, in the web's order, each a card (the
+/// "+" reopens one that was collapsed). Only one block is open at a time (opening
+/// one collapses the other, keeping what was typed). "Add another machine" appends
+/// a further block that is NOT opened: it asks for its machine first (the picker
+/// opens by itself) and opens once one is chosen. "Add Entry" with a machine
+/// already chosen opens that block at once. Editing shows a single block, already
+/// open, with the machine locked.
 ///
 /// The page owns the data: [entries] are the JS-shaped form values (typed
 /// fields are Strings; `rejectBreakdown` a Map; `excludedOps` a List), [errors]
@@ -33,6 +35,7 @@ class ProductionEntryForm extends StatefulWidget {
     required this.items,
     required this.operators,
     this.isEdit = false,
+    this.booked = const [],
     required this.onChange,
     required this.onItemSelect,
     required this.onRejectChange,
@@ -48,6 +51,10 @@ class ProductionEntryForm extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final List<Map<String, dynamic>> operators;
   final bool isEdit;
+
+  /// Per block: what its machine already has saved on its date ("8:00 AM –
+  /// 12:00 PM"), shown under the ON/OFF times.
+  final List<List<String>> booked;
   final void Function(int index, String name, dynamic value) onChange;
   final void Function(int index, String itemId) onItemSelect;
   final void Function(int index, String reason, dynamic value) onRejectChange;
@@ -72,7 +79,9 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
   @override
   void initState() {
     super.initState();
-    _expanded = widget.isEdit ? 0 : null;
+    // Add with a machine already chosen (the sheet's Machine filter, or a restored
+    // draft) opens that block at once instead of waiting for a "+".
+    _expanded = widget.isEdit ? 0 : _firstWithMachine();
     _syncFocusTarget();
   }
 
@@ -80,6 +89,12 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
   void didUpdateWidget(ProductionEntryForm old) {
     super.didUpdateWidget(old);
     _syncFocusTarget();
+    _askMachineOfNewBlock();
+  }
+
+  int? _firstWithMachine() {
+    final i = widget.entries.indexWhere((v) => '${v['machine'] ?? ''}'.isNotEmpty);
+    return i == -1 ? null : i;
   }
 
   @override
@@ -172,12 +187,31 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
     });
   }
 
+  // The block "Add another machine" just appended, waiting to ask for its machine.
+  int? _askMachineFor;
+
   void _add() {
     HapticFeedback.lightImpact();
-    final next = widget.entries.length;
-    setState(() => _expanded = next);
+    _askMachineFor = widget.entries.length;
     widget.onAdd();
-    _scrollToBlock(next);
+  }
+
+  // Once the new block is on screen: bring it into view and open its machine
+  // picker. It stays closed until a machine is chosen (EntryBlock then opens it);
+  // dismissing the picker leaves it as "Select machine", ready to be removed.
+  void _askMachineOfNewBlock() {
+    final index = _askMachineFor;
+    if (index == null || index != widget.entries.length - 1) return;
+    _askMachineFor = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || index >= _blockKeys.length) return;
+      final ctx = _blockKeys[index].currentContext;
+      if (ctx != null && ctx.mounted) {
+        await Scrollable.ensureVisible(ctx, alignment: 0.1, duration: const Duration(milliseconds: 250), curve: Curves.easeOutCubic);
+      }
+      if (!mounted) return;
+      unawaited(_blockKeys[index].currentState?.askMachine());
+    });
   }
 
   void _remove(int index) {
@@ -224,6 +258,7 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                   items: widget.items,
                   operators: widget.operators,
                   isEdit: widget.isEdit,
+                  booked: i < widget.booked.length ? widget.booked[i] : const <String>[],
                   canRemove: !widget.isEdit && entries.length > 1,
                   expanded: widget.isEdit || _expanded == i,
                   onExpand: _setExpanded,

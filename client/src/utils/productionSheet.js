@@ -20,7 +20,7 @@
  *   10 Setup Efficiency (%)     = Effective h ÷ Shift h
  *      Actual Quantity          = typed on the form, never more than Ideal Quantity
  *      Rejected Quantity        = Actual Quantity − OK   (derived, never typed, so OK + Rejected
- *                                 = Actual always holds; the Reject Master split must add up to it)
+ *                                 = Actual always holds; the Rejection Master split must add up to it)
  *   6  Unutilized Machine Time  = (12 − (Shift − Lunch/60)) ÷ 11, this row's own Shift/
  *                                 Lunch only — never blended with another entry of the
  *                                 same machine/date.

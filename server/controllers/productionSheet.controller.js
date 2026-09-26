@@ -7,6 +7,7 @@ const { normalizeCycleOps } = require("./item.controller");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const { isEntryLocked } = require("../utils/workingDays");
+const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 
 // An existing entry can only be edited/deleted within 2 *working* days of
 // its own date (see utils/workingDays.js) — past that it's treated as
@@ -186,11 +187,12 @@ const isRowEmpty = (doc) =>
 
 const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 
-// "HH:mm" -> minutes past midnight, or null.
-const clockMinutes = (t) => {
-  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(t ?? ""));
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-};
+// A saved row whose machine times are exactly what the request carries. Rows
+// saved before "OFF must be after ON" / "no overlap" existed may break those
+// rules; editing something else on such a row must still work, so the two time
+// rules only apply when the times themselves are being set or changed.
+const sameTimes = (existing, body) =>
+  !!existing && existing.machineOnTime === body.machineOnTime && existing.machineOffTime === body.machineOffTime;
 
 // What the entry form always makes mandatory. Lunch / Rest joins them only when
 // the planned shift leaves time over the machine's run (see entryRuleError).
@@ -208,7 +210,7 @@ const REQUIRED_FIELDS = [
 // can't save an incomplete entry. Returns a message, or null when it's fine.
 // A body with every field blank is left alone — that is how a row is cleared.
 // Keep in step with client/src/utils/entryValidation.js.
-const entryRuleError = (body) => {
+const entryRuleError = (body, existing = null) => {
   const everyBlank = [...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k]));
   if (everyBlank && !Object.keys(body.rejectBreakdown || {}).length) return null;
 
@@ -229,6 +231,9 @@ const entryRuleError = (body) => {
   const on = clockMinutes(body.machineOnTime);
   const off = clockMinutes(body.machineOffTime);
   if (on === null || off === null) return "Machine ON/OFF Time must be HH:mm";
+  // The machine runs within one day: OFF comes after ON (a shift through
+  // midnight is two entries, one per date).
+  if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
   const limit = Math.max(0, Math.round(Number(body.plannedOperatorShiftHours) * 60 - shiftMin));
   // Lunch / Rest may be 0 but not empty — unless the machine ran the whole
@@ -367,7 +372,16 @@ exports.saveRow = async (req, res) => {
     if (!mongoose.isValidObjectId(machine) || !(await Machine.exists({ _id: machine, isActive: true }))) {
       return res.status(400).json({ isOk: false, message: "Machine not found or inactive" });
     }
-    const ruleError = entryRuleError(req.body);
+    // An edit names its slot; the row already saved there decides whether the
+    // time rules still apply (see sameTimes) and whether it is locked.
+    const editSlot = slot === "auto" ? null : Number(slot);
+    const existing =
+      editSlot && SLOT_NUMBERS.includes(editSlot)
+        ? await ProductionEntry.findOne({ date: day, machine, slot: editSlot })
+            .select("unlockedUntil machineOnTime machineOffTime")
+            .lean()
+        : null;
+    const ruleError = entryRuleError(req.body, existing);
     if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
     // The entry form no longer asks for a slot — it sends "auto" and this
@@ -393,9 +407,26 @@ exports.saveRow = async (req, res) => {
       // Only an edit of an already-saved row can be locked — a brand new
       // entry (slot "auto", handled above) is never blocked just because
       // its own date is old; catching up on late-entered data is fine.
-      const existing = await ProductionEntry.findOne({ date: day, machine, slot: slotNo }).select("unlockedUntil").lean();
       const lockMessage = await checkNotLocked(date, req.user, existing?.unlockedUntil);
       if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+    }
+
+    // One machine runs one thing at a time: its entries on a date can't
+    // overlap in time. Checked here, against everything saved (the form only
+    // knows what it has loaded), and only when the times are new or changed —
+    // an older row that already breaks this stays editable.
+    if (!sameTimes(existing, req.body)) {
+      const others = await ProductionEntry.find({ date: day, machine, slot: { $ne: slotNo } })
+        .select("slot machineOnTime machineOffTime")
+        .lean();
+      const clash = findOverlap(req.body.machineOnTime, req.body.machineOffTime, others);
+      if (clash) {
+        const [y, m, d] = String(date).split("-");
+        return res.status(400).json({
+          isOk: false,
+          message: `This machine already has an entry from ${clash.text} on ${d}/${m}/${y}. Machine ON/OFF times can't overlap.`,
+        });
+      }
     }
 
     const { set, unset } = buildFields(req.body);
@@ -420,6 +451,31 @@ exports.saveRow = async (req, res) => {
     console.error("Error saving production row:", error);
     const status = error.status || (error.name === "ValidationError" || error.name === "CastError" ? 400 : 500);
     res.status(status).json({ isOk: false, message: error.message });
+  }
+};
+
+// GET /production-sheet/occupied?date=YYYY-MM-DD&machine=<id> — the time slots
+// a machine already has on a date ({ slot, machineOnTime, machineOffTime } per
+// saved entry), so the entry form can show what is taken and refuse an overlap
+// before Save. saveRow still enforces the rule on its own.
+exports.getOccupied = async (req, res) => {
+  try {
+    const day = parseDay(req.query.date);
+    const { machine } = req.query;
+    if (!day || !mongoose.isValidObjectId(machine)) {
+      return res.status(400).json({ isOk: false, message: "Valid date (YYYY-MM-DD) and machine are required" });
+    }
+    const rows = await ProductionEntry.find({ date: day, machine })
+      .select("slot machineOnTime machineOffTime")
+      .sort({ slot: 1 })
+      .lean();
+    res.status(200).json({
+      isOk: true,
+      data: rows.map((r) => ({ slot: r.slot, machineOnTime: r.machineOnTime || "", machineOffTime: r.machineOffTime || "" })),
+    });
+  } catch (error) {
+    console.error("Error reading occupied machine times:", error);
+    res.status(500).json({ isOk: false, message: error.message });
   }
 };
 

@@ -40,10 +40,15 @@ import {
 import {
   DOWNTIME_KEYS,
   FIELD_ORDER,
+  bookedRanges,
   cleanSplit,
   firstError,
+  fmt12,
+  isTimeRuleMessage,
   lunchRequired,
+  overlapErrors,
   stoppageLimitMin,
+  timeInterval,
   validateEntry,
 } from "../../../../../client/src/utils/entryValidation.js";
 
@@ -519,6 +524,77 @@ const remarkRows = [
 const remarkCases = remarkRows.map((r) => ({ r: r === undefined ? null : encIn(r), out: enc(remarkParts(r)) }));
 write("remarks.json", remarkCases);
 
+// ── machine ON/OFF times: OFF-after-ON and the overlap rules ─────────────────
+// Hand-built (no PRNG draws, so every other fixture above stays byte-identical).
+// Every input runs through the REAL overlapErrors / bookedRanges / validateEntry.
+const OV_TIMES = ["", "00:00", "06:00", "07:59", "08:00", "9:00", "11:59", "12:00", "13:00", "14:00", "17:59", "18:00", "21:00", "22:00", "23:30", "23:59", "abc"];
+const OV_OCC = {
+  "m1|2026-09-25": [
+    { slot: 1, machineOnTime: "08:00", machineOffTime: "12:00" },
+    { slot: 2, machineOnTime: "14:00", machineOffTime: "18:00" },
+    { slot: 3, machineOnTime: "22:00", machineOffTime: "06:00" }, // an older row that ran through midnight
+  ],
+  "m2|2026-09-25": [{ slot: 1, machineOnTime: "", machineOffTime: "" }],
+};
+const ovEntry = (o = {}) => ({ date: "2026-09-25", machine: "m1", machineOnTime: "", machineOffTime: "", ...o });
+const overlapCases = [];
+const addOv = (entries, extra = {}) => {
+  const occupied = extra.occupied ?? OV_OCC;
+  const editSlot = extra.editSlot ?? null;
+  const saved = extra.saved ?? null;
+  overlapCases.push({
+    entries,
+    occupied,
+    editSlot,
+    saved,
+    out: overlapErrors(entries, occupied, { editSlot, saved }),
+    booked: entries.map((v) => bookedRanges(v, occupied, editSlot)),
+    validate: entries.map((v) => validateEntry(v, { saved })),
+  });
+};
+for (const on of OV_TIMES) for (const off of OV_TIMES) addOv([ovEntry({ machineOnTime: on, machineOffTime: off })]);
+for (const editSlot of [1, 2, 3]) {
+  for (const [on, off] of [["09:00", "11:00"], ["07:00", "13:00"], ["08:00", "15:00"], ["13:00", "19:00"], ["23:00", "23:30"]]) {
+    addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot });
+  }
+}
+// an older row: untouched times are exempt, changed times are not
+for (const [on, off] of [["22:00", "06:00"], ["22:00", "05:00"], ["10:00", "13:00"], ["10:00", "13:05"]]) {
+  addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot: 3, saved: { machineOnTime: on === "10:00" ? "10:00" : "22:00", machineOffTime: off === "13:00" ? "13:00" : "06:00" } });
+}
+// other machine / other date / blank neighbours / missing keys
+addOv([ovEntry({ machine: "m2", machineOnTime: "09:00", machineOffTime: "10:00" })]);
+addOv([ovEntry({ date: "2026-09-26", machineOnTime: "09:00", machineOffTime: "10:00" })]);
+addOv([ovEntry({ machine: "", machineOnTime: "09:00", machineOffTime: "10:00" })]);
+addOv([ovEntry({ date: "", machineOnTime: "09:00", machineOffTime: "10:00" })]);
+addOv([ovEntry({ machineOnTime: "09:00", machineOffTime: "10:00" })], { occupied: {} });
+// several blocks of one form
+const blk = (on, off, o = {}) => ovEntry({ machineOnTime: on, machineOffTime: off, ...o });
+const NONE = {};
+addOv([blk("08:00", "10:00"), blk("09:00", "11:00")], { occupied: NONE });
+addOv([blk("08:00", "10:00"), blk("10:00", "12:00")], { occupied: NONE });
+addOv([blk("08:00", "10:00"), blk("09:00", "11:00", { machine: "m2" })], { occupied: NONE });
+addOv([blk("08:00", "10:00"), blk("09:00", "11:00", { date: "2026-09-26" })], { occupied: NONE });
+addOv([blk("08:00", "12:00"), blk("09:00", "10:00"), blk("11:00", "13:00")], { occupied: NONE });
+addOv([blk("12:00", "14:00"), blk("13:00", "15:00")]);
+addOv([blk("", ""), blk("09:00", "10:00")], { occupied: NONE });
+
+const fmtMinutes = [0, 1, 5, 59, 60, 61, 300, 479, 480, 719, 720, 721, 780, 959, 960, 1319, 1320, 1439, 1440, 1441, 1500, 1800, 2879];
+write("overlap.json", {
+  cases: overlapCases,
+  fmt12: fmtMinutes.map((m) => ({ m, out: fmt12(m) })),
+  intervals: OV_TIMES.flatMap((on) => OV_TIMES.map((off) => ({ on, off, out: timeInterval(on, off) }))),
+  ruleMessages: [
+    "Machine OFF Time must be after Machine ON Time",
+    "Machine ON Time overlaps another entry for this machine on this date (8:00 AM – 12:00 PM)",
+    "Machine OFF Time overlaps another entry for this machine on this date (2:00 PM – 6:00 PM)",
+    "Machine ON Time is required",
+    "Enter a valid time",
+    "Total stoppage is 5 min",
+    "",
+  ].map((m) => ({ m, out: isTimeRuleMessage(m) })),
+});
+
 console.log(
   JSON.stringify({
     rowCalc: rowCalcOut.length,
@@ -531,5 +607,6 @@ console.log(
     numStr: numStrCases.length,
     parse: parseCases.length,
     remarks: remarkCases.length,
+    overlap: overlapCases.length,
   }),
 );

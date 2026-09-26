@@ -5,8 +5,8 @@ import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
 import { useAlert } from "../../context/AlertContext";
-import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, rowCalc } from "../../utils/productionSheet";
-import { DOWNTIME_KEYS, cleanSplit, lunchRequired, stoppageLimitMin } from "../../utils/entryValidation";
+import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, rowCalc } from "../../utils/productionSheet";
+import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, lunchRequired, stoppageLimitMin } from "../../utils/entryValidation";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -23,7 +23,7 @@ import { DOWNTIME_KEYS, cleanSplit, lunchRequired, stoppageLimitMin } from "../.
  * Typed fields are white; every grey box is calculated live by
  * utils/productionSheet.js. Actual Quantity is typed (never more than Ideal
  * Quantity — Shift Time ÷ Cycle Time, rounded down) and OK Quantity is typed
- * against it, so Rejected is always Actual − OK and the Reject Master split
+ * against it, so Rejected is always Actual − OK and the Rejection Master split
  * has to account for every one of those pieces; the dashboard's Total/
  * Rejected/% OK read the same Actual figure.
  *
@@ -80,7 +80,7 @@ const LINES = [
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Ideal Qty, Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
-  { id: 13, title: "Reject Master", fields: ["rejectBreakdown", "rejectOtherRemark"] },
+  { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
   // Lunch / Rest is a property of the shift, not of a stoppage, so it sits with
   // Planned Operator Shift — though it still counts toward total stoppage.
   { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
@@ -133,6 +133,7 @@ const EntryBlock = ({
   index,
   canRemove,
   expanded,
+  booked = [],
   onExpand,
   onChange,
   onItemSelect,
@@ -160,7 +161,7 @@ const EntryBlock = ({
   const lunchNeeded = lunchRequired(values);
   const otherDowntimeUsed = Number(values.otherMin) > 0;
 
-  // What each capped box may still take. A Reject Master box can hold whatever
+  // What each capped box may still take. A Rejection Master box can hold whatever
   // of Rejected the other boxes haven't used; a downtime box (Lunch / Rest
   // included) whatever of the allowed stoppage the others haven't — the same
   // "can't type past it" rule as Actual and OK Quantity, instead of leaving it
@@ -184,9 +185,26 @@ const EntryBlock = ({
     };
   };
 
-  const err = (key) => (isSubmit ? errors[key] : undefined);
+  // The time rules (OFF after ON, no overlap) show as soon as the times are
+  // picked; everything else waits until Save has been pressed.
+  const err = (key) => (isSubmit || isTimeRuleMessage(errors[key]) ? errors[key] : undefined);
+
+  // The OFF picker offers nothing at or before the ON time.
+  const offEarliest = useMemo(() => {
+    const on = normalizeTime(values.machineOnTime);
+    if (!on) return null;
+    const next = Number(on.slice(0, 2)) * 60 + Number(on.slice(3)) + 1;
+    return next >= 1440 ? null : `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
+  }, [values.machineOnTime]);
   const errorCount = Object.keys(errors).length;
   const handle = (e) => onChange(index, e.target.name, e.target.value);
+
+  // Picking a machine in a closed block opens its entry fields straight away —
+  // no separate "+" press needed (the "+" stays for reopening a collapsed one).
+  const handleMachine = (e) => {
+    handle(e);
+    if (!isEdit && !expanded && e.target.value) onExpand(index);
+  };
 
   const machineSelect = (
     <Input
@@ -194,7 +212,7 @@ const EntryBlock = ({
       bsSize="sm"
       name="machine"
       value={values.machine}
-      onChange={handle}
+      onChange={handleMachine}
       disabled={isEdit}
       invalid={!!err("machine")}
     >
@@ -265,7 +283,7 @@ const EntryBlock = ({
             <div className="text-muted small mt-n2 mb-2">
               {incompleteBadge ||
                 (!values.machine
-                  ? "Select a machine, then press +"
+                  ? "Select a machine — its entry fields open automatically"
                   : hasData(values)
                     ? "Entry filled in — press + to reopen it"
                     : "Press + to fill this machine's entry")}
@@ -436,6 +454,7 @@ const EntryBlock = ({
                 value={values.machineOffTime}
                 onChange={handle}
                 hasError={!!err("machineOffTime")}
+                minTime={offEarliest}
               />
             </Field>
             <Calc
@@ -445,6 +464,11 @@ const EntryBlock = ({
               title="MOD(Machine OFF Time − Machine ON Time, 1) × 24"
             />
           </Row>
+          {booked.length > 0 && (
+            <p className="text-muted small mb-1">
+              Already booked for this machine on this date: <b>{booked.join(", ")}</b> — pick a time outside it.
+            </p>
+          )}
         </Line>
 
         <Line id={5} errors={errors} isSubmit={isSubmit}>
@@ -667,6 +691,7 @@ const ProductionEntryForm = ({
   items = [],
   operators = [],
   isEdit = false,
+  booked = [],
   onChange,
   onItemSelect,
   onRejectChange,
@@ -677,7 +702,13 @@ const ProductionEntryForm = ({
   // else was open, so several "Add another machine" blocks behave like an
   // accordion instead of piling up expanded together. Editing shows a single
   // block, always open.
-  const [expandedIndex, setExpandedIndex] = useState(isEdit ? 0 : null);
+  // "Add Entry" with a machine already chosen (the sheet's Machine filter, or a
+  // restored draft) opens that block at once instead of waiting for a "+".
+  const [expandedIndex, setExpandedIndex] = useState(() => {
+    if (isEdit) return 0;
+    const first = entries.findIndex((v) => v.machine);
+    return first === -1 ? null : first;
+  });
 
   // One scroll owned by the parent, not one independent effect per block —
   // expanding block B while collapsing block A changes both of their
@@ -734,6 +765,21 @@ const ProductionEntryForm = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTarget?.nonce]);
 
+  // "Add another machine": once the new block is on screen, scroll to it and
+  // put the cursor in its machine box.
+  const askMachineFor = useRef(null);
+  useEffect(() => {
+    const index = askMachineFor.current;
+    if (index === null || index !== entries.length - 1) return;
+    askMachineFor.current = null;
+    const frame = requestAnimationFrame(() => {
+      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"] [data-field="machine"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.querySelector("select")?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [entries.length]);
+
   return (
     <div ref={rootRef}>
       {entries.map((values, i) => (
@@ -749,6 +795,7 @@ const ProductionEntryForm = ({
           isEdit={isEdit}
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}
+          booked={booked[i] || []}
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
@@ -765,7 +812,9 @@ const ProductionEntryForm = ({
           type="button"
           className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
           onClick={() => {
-            setExpandedIndex(entries.length);
+            // The new block stays closed and asks for its machine first (focus
+            // goes to the machine box); it opens once one is picked.
+            askMachineFor.current = entries.length;
             onAdd();
           }}
         >

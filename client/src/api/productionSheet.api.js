@@ -28,6 +28,12 @@ export const getProductionExtent = async () => api.get(ENDPOINTS.PRODUCTION_SHEE
 export const getProductionFilterOptions = async ({ from, to }) =>
     api.get(ENDPOINTS.PRODUCTION_SHEET.FILTER_OPTIONS, { params: { from, to } });
 
+// The time slots a machine already has on one "YYYY-MM-DD" date — [{ slot,
+// machineOnTime, machineOffTime }] — so the form can show what is taken and
+// refuse an overlap before Save (the server enforces it regardless).
+export const getOccupiedTimes = async ({ date, machine }) =>
+    api.get(ENDPOINTS.PRODUCTION_SHEET.OCCUPIED, { params: { date, machine } });
+
 // Upserts one (date, machine, slot) row; the server deletes it if every field is blank.
 export const saveProductionRow = async (row) => api.put(ENDPOINTS.PRODUCTION_SHEET.ROW, row);
 

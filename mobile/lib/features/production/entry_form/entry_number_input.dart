@@ -104,7 +104,6 @@ class EntryTextField extends StatefulWidget {
     this.maxLength = 7,
     this.max,
     this.onExceedMax,
-    this.lockable = true,
     this.invalid = false,
     this.focusNode,
     this.hint,
@@ -122,11 +121,6 @@ class EntryTextField extends StatefulWidget {
   final double? max;
   final void Function(double max)? onExceedMax;
 
-  /// Whether a ceiling of 0 shuts the box (read-only, lock icon). Must be false
-  /// for a box the form REQUIRES: the only value it can take is "0", and a shut
-  /// box could never be given it, so the entry could not be saved. The web has
-  /// no such lock — it just refuses anything above the ceiling.
-  final bool lockable;
   final bool invalid;
   final FocusNode? focusNode;
   final String? hint;
@@ -138,8 +132,10 @@ class EntryTextField extends StatefulWidget {
   /// and a new line for the remark boxes.
   final TextInputAction? textInputAction;
 
-  /// True when a numeric box with ceiling [max] and text [value] cannot take
-  /// anything: the ceiling is 0 and the box holds nothing above 0.
+  /// True when a numeric box with ceiling [max] and text [value] can take nothing
+  /// above 0: the ceiling is 0 and the box holds nothing above 0. The box is NOT
+  /// shut — tapping it always opens the number pad (the formatter refuses digits
+  /// above the ceiling and says why); this only drives the explanatory hints.
   static bool capLocks(String value, double? max) {
     if (max == null || !max.isFinite || max > 0) return false;
     final n = jsNumber(value);
@@ -154,8 +150,6 @@ class _EntryTextFieldState extends State<EntryTextField> {
   late final TextEditingController _controller = TextEditingController(text: widget.value);
   FocusNode? _ownNode;
   late FocusNode _node;
-
-  bool get _locked => widget.numeric && widget.lockable && EntryTextField.capLocks(_controller.text, widget.max);
 
   @override
   void initState() {
@@ -194,11 +188,11 @@ class _EntryTextFieldState extends State<EntryTextField> {
   }
 
   void _onFocus() {
-    if (!widget.numeric || !_node.hasFocus || _locked) return;
+    if (!widget.numeric || !_node.hasFocus) return;
     // After the tap has placed its caret: select the whole figure so typing
     // replaces it, like tabbing into a spreadsheet cell.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_node.hasFocus || _locked) return;
+      if (!mounted || !_node.hasFocus) return;
       final len = _controller.text.length;
       _controller.selection = TextSelection(baseOffset: 0, extentOffset: len);
     });
@@ -209,15 +203,11 @@ class _EntryTextFieldState extends State<EntryTextField> {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     final bad = widget.invalid;
-    final locked = _locked;
     return Semantics(
       label: widget.semanticsLabel,
       child: TextField(
         controller: _controller,
         focusNode: _node,
-        readOnly: locked,
-        showCursor: locked ? false : null,
-        enableInteractiveSelection: !locked,
         keyboardType: widget.numeric
             ? TextInputType.numberWithOptions(decimal: widget.decimals)
             : TextInputType.multiline,
@@ -227,7 +217,7 @@ class _EntryTextFieldState extends State<EntryTextField> {
         enableSuggestions: !widget.numeric,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
-        style: EntryStyle.text(context, color: locked ? s.onSurfaceVariant : null),
+        style: EntryStyle.text(context),
         // Room above the keyboard when the field scrolls into view.
         scrollPadding: const EdgeInsets.fromLTRB(16, 96, 16, 120),
         inputFormatters: [
@@ -240,12 +230,9 @@ class _EntryTextFieldState extends State<EntryTextField> {
           hintText: widget.hint,
           isDense: true,
           contentPadding: EntryStyle.fieldPadding,
-          filled: locked ? true : null,
-          fillColor: locked ? EntryStyle.calcFill(context) : (bad ? EntryStyle.invalidFill(context) : null),
-          enabledBorder: bad ? EntryStyle.border(s.error, 1.2) : (locked ? EntryStyle.border(s.outlineVariant) : null),
-          focusedBorder: bad ? EntryStyle.border(s.error, 1.8) : (locked ? EntryStyle.border(s.outline, 1.4) : null),
-          suffixIcon: locked ? Icon(Icons.lock_outline_rounded, size: 16, color: s.onSurfaceVariant.withValues(alpha: 0.7)) : null,
-          suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 16),
+          fillColor: bad ? EntryStyle.invalidFill(context) : null,
+          enabledBorder: bad ? EntryStyle.border(s.error, 1.2) : null,
+          focusedBorder: bad ? EntryStyle.border(s.error, 1.8) : null,
         ),
       ),
     );

@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/alerts.dart';
 import '../../../core/widgets/form_widgets.dart';
+import '../shared/production_entry_validation.dart' show isTimeRuleMessage;
 import '../shared/production_sheet_calc.dart';
 import 'entry_fields.dart';
 import 'entry_form_logic.dart';
@@ -92,6 +94,7 @@ class EntryBlock extends StatefulWidget {
     required this.items,
     required this.operators,
     required this.isEdit,
+    this.booked = const [],
     required this.canRemove,
     required this.expanded,
     required this.onExpand,
@@ -109,6 +112,10 @@ class EntryBlock extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final List<Map<String, dynamic>> operators;
   final bool isEdit;
+
+  /// What this block's machine already has saved on its date, as readable
+  /// ranges — shown under the ON/OFF times so a free slot is easy to pick.
+  final List<String> booked;
   final bool canRemove;
   final bool expanded;
 
@@ -174,6 +181,7 @@ class EntryBlockState extends State<EntryBlock> {
         o.isSubmit != w.isSubmit ||
         o.isEdit != w.isEdit ||
         o.canRemove != w.canRemove ||
+        !listEquals(o.booked, w.booked) ||
         o.expanded != w.expanded) {
       return true;
     }
@@ -214,9 +222,11 @@ class EntryBlockState extends State<EntryBlock> {
   Map<String, dynamic> get _v => widget.values;
 
   String? _err(String key) {
-    if (!widget.isSubmit) return null;
     final e = widget.errors[key];
-    return (e == null || e.isEmpty) ? null : e;
+    if (e == null || e.isEmpty) return null;
+    // The time rules (OFF after ON, no overlap) show as soon as the times are
+    // picked; everything else waits until Save has been pressed.
+    return (widget.isSubmit || isTimeRuleMessage(e)) ? e : null;
   }
 
   bool _lineHasError(List<String> fields) => widget.isSubmit && fields.any((f) => (widget.errors[f] ?? '').isNotEmpty);
@@ -246,6 +256,22 @@ class EntryBlockState extends State<EntryBlock> {
     if (!mounted || r == null || r.value == null) return;
     HapticFeedback.selectionClick();
     _set('machine', r.value);
+    // Choosing a machine opens its entry fields straight away — no separate "+"
+    // press (the "+" stays for reopening a collapsed block).
+    if (!widget.isEdit && !widget.expanded) widget.onExpand(_i);
+  }
+
+  /// Opens the machine picker — "Add another machine" asks for the machine first.
+  Future<void> askMachine() => widget.isEdit ? Future<void>.value() : _pickMachine();
+
+  /// Where the OFF dial starts when OFF is still empty: an hour after ON (never
+  /// past 23:55), so the first pick is already a sensible one.
+  String? get _offDialStart {
+    final on = normalizeTime(_v['machineOnTime']);
+    if (on == null) return null;
+    final onMin = int.parse(on.substring(0, 2)) * 60 + int.parse(on.substring(3, 5));
+    final at = (onMin + 60).clamp(0, 23 * 60 + 55);
+    return '${(at ~/ 60).toString().padLeft(2, '0')}:${(at % 60).toString().padLeft(2, '0')}';
   }
 
   Future<void> _pickOperator() async {
@@ -327,7 +353,7 @@ class EntryBlockState extends State<EntryBlock> {
           )
         : Text(
             !hasMachine
-                ? 'Select a machine, then press +'
+                ? 'Select a machine — its entry fields open automatically'
                 : hasData
                     ? 'Entry filled in — press + to reopen it'
                     : "Press + to fill this machine's entry",
@@ -510,7 +536,6 @@ class EntryBlockState extends State<EntryBlock> {
     bool decimals = false,
     double? max,
     void Function(double max)? onExceed,
-    bool lockable = true,
     bool? invalid,
     FocusNode? node,
     String? label,
@@ -522,7 +547,6 @@ class EntryBlockState extends State<EntryBlock> {
         decimals: decimals,
         max: max,
         onExceedMax: onExceed,
-        lockable: lockable,
         invalid: invalid ?? _err(field) != null,
         focusNode: node ?? _fn(field),
         semanticsLabel: label,
@@ -720,6 +744,7 @@ class EntryBlockState extends State<EntryBlock> {
                     key: ValueKey('entry$_i/machineOffTime'),
                     value: entryText(_v['machineOffTime']),
                     title: 'Machine OFF Time',
+                    dialStart: _offDialStart,
                     invalid: _err('machineOffTime') != null,
                     focusNode: _fn('machineOffTime'),
                     onChanged: (t) => _set('machineOffTime', t),
@@ -732,6 +757,8 @@ class EntryBlockState extends State<EntryBlock> {
               ),
             ],
           ),
+          if (widget.booked.isNotEmpty)
+            EntryHintText('Already booked for this machine on this date: ${widget.booked.join(', ')} — pick a time outside it.'),
         ],
       );
 
@@ -755,7 +782,6 @@ class EntryBlockState extends State<EntryBlock> {
                   _num(
                     'actualQty',
                     max: m.idealQty,
-                    lockable: false, // required: 0 must stay typeable
                     label: 'Actual Quantity',
                     onExceed: (max) => EntryFormToast.warn("Actual Quantity can't be more than Ideal Quantity (${fmtNum(max)})"),
                   ),
@@ -771,7 +797,6 @@ class EntryBlockState extends State<EntryBlock> {
                   _num(
                     'okQty',
                     max: m.okMax,
-                    lockable: false, // required: 0 must stay typeable
                     label: 'OK Quantity',
                     onExceed: (max) => EntryFormToast.warn("OK Quantity can't be more than Actual Quantity (${fmtNum(max)})"),
                   ),
@@ -792,7 +817,7 @@ class EntryBlockState extends State<EntryBlock> {
     final mismatchStyle = TextStyle(color: s.error, fontWeight: FontWeight.w700);
     final muted = TextStyle(color: s.onSurfaceVariant);
     return EntryLineCard(
-      title: 'Reject Master',
+      title: 'Rejection Master (Qty)',
       icon: Icons.block_rounded,
       hasError: _lineHasError(_line13),
       children: [
@@ -923,8 +948,6 @@ class EntryBlockState extends State<EntryBlock> {
                 _num(
                   'lunchMin',
                   max: lunch.max,
-                  // Required while the shift leaves time over the run: then 0 must stay typeable.
-                  lockable: !m.lunchNeeded,
                   label: 'Lunch / Rest (min)',
                   onExceed: (_) => EntryFormToast.warn(lunch.message),
                 ),
@@ -986,7 +1009,7 @@ class EntryBlockState extends State<EntryBlock> {
         ],
       );
 
-  /// Why some Reject Master boxes are shut (or null while none is).
+  /// Why some Rejection Master boxes can take no figure yet (or null while none is).
   String? _rejectLockNote(EntryMetrics m) {
     final split = _v['rejectBreakdown'];
     final anyLocked = rejectReasons.any(

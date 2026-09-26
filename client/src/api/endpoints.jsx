@@ -92,6 +92,7 @@ export const ENDPOINTS = {
         ROW: `${V1}/production-sheet/row`,
         EXTENT: `${V1}/production-sheet/extent`,
         FILTER_OPTIONS: `${V1}/production-sheet/filter-options`,
+        OCCUPIED: `${V1}/production-sheet/occupied`,
         OPERATORS: `${V1}/production-sheet/operators`,
         REJECT_REASONS: `${V1}/production-sheet/reject-reasons`,
     },

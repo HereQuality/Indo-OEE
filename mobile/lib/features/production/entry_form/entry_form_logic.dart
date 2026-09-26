@@ -47,7 +47,7 @@ class EntryMetrics {
   final Map<String, dynamic> values;
   final Map<String, dynamic> calc;
 
-  /// Sum of the Reject Master boxes (blanks and zeros dropped).
+  /// Sum of the Rejection Master boxes (blanks and zeros dropped).
   final double splitTotal;
 
   /// Minutes of the planned shift the machine did not run (null until known).
@@ -69,7 +69,7 @@ class EntryMetrics {
   bool get rejectOtherUsed => _splitBox('Other') > 0;
   bool get otherDowntimeUsed => jsToNumber(values['otherMin']) > 0;
 
-  /// What a Reject Master box may still take: whatever of Rejected the other
+  /// What a Rejection Master box may still take: whatever of Rejected the other
   /// boxes have not used.
   double rejectRoom(String reason) => math.max(0, rejected - (splitTotal - _splitBox(reason)));
 
@@ -95,15 +95,15 @@ class EntryMetrics {
       entryNum(values['okQty']) != null &&
       !isBlankValue(values['okQty']);
 
-  /// Why the Reject Master boxes that are shut cannot take digits — shown under
-  /// them, so the boxes never just look broken.
+  /// Why the Rejection Master boxes cannot take a figure yet — shown under them,
+  /// so the boxes never just look broken.
   String get rejectLockReason {
-    if (!rejectedKnown) return 'Enter Actual and OK Quantity first — the reject boxes open once some pieces are rejected.';
+    if (!rejectedKnown) return 'Enter Actual and OK Quantity first — a reject quantity can only be entered once some pieces are rejected (Actual more than OK).';
     if (rejected <= 0) return 'Nothing to reject — Actual and OK are equal.';
     return 'All ${jsNumStr(rejected)} rejected piece(s) are already assigned.';
   }
 
-  /// Why the downtime boxes that are shut cannot take digits.
+  /// Why the downtime boxes cannot take a figure.
   String get downtimeLockReason {
     final limit = stoppageLimit;
     if (limit == null || limit <= 0) return 'No stoppage time left — the machine ran the whole planned shift.';

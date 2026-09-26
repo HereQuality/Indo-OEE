@@ -13,7 +13,8 @@
     "seed:superadmin": "node seed/seedSuperAdmin.js",
     "seed:processes": "node seed/seedProcesses.js",
     "migrate:remove-company": "node scripts/migrate-remove-company.js",
-    "seed:demo": "node seed/seedProductionDemo.js"
+    "seed:demo": "node seed/seedProductionDemo.js",
+    "test": "node --test \"utils/*.test.js\" \"controllers/*.test.js\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

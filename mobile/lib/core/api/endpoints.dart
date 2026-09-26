@@ -68,6 +68,7 @@ class Endpoints {
   static const productionSheetRow = '$v1/production-sheet/row';
   static const productionSheetExtent = '$v1/production-sheet/extent';
   static const productionSheetFilterOptions = '$v1/production-sheet/filter-options';
+  static const productionSheetOccupied = '$v1/production-sheet/occupied';
   static const productionSheetOperators = '$v1/production-sheet/operators';
   static const productionSheetRejectReasons = '$v1/production-sheet/reject-reasons';
 

@@ -31,6 +31,10 @@ void editorTest(String description, Future<void> Function(WidgetTester tester) b
     };
     try {
       await body(tester);
+      // The editor asks the server what each machine has booked; let any lookup
+      // still in flight land before the test ends.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
     } finally {
       FlutterError.onError = prev;
     }
@@ -38,6 +42,7 @@ void editorTest(String description, Future<void> Function(WidgetTester tester) b
 }
 
 const rowPath = '/api/v1/production-sheet/row';
+const occupiedPath = '/api/v1/production-sheet/occupied';
 
 final machines = <Map<String, dynamic>>[
   {'_id': 'm1', 'machineName': 'CNC 1'},
@@ -119,6 +124,7 @@ Future<EditorHarness> open(
   Map<String, dynamic>? row,
   String? machineId,
   FakeHandler? onPut,
+  FakeHandler? onOccupied,
   Map<String, Object> prefs = const {},
   Size size = const Size(390, 844),
   bool dark = false,
@@ -127,6 +133,8 @@ Future<EditorHarness> open(
   SharedPreferences.setMockInitialValues(prefs);
   final api = FakeApi.install();
   api.on('PUT', rowPath, onPut ?? (r) => {'isOk': true, 'data': r.body, 'message': 'Row saved'});
+  // What each machine already has saved on a date: nothing, unless a test says so.
+  api.on('GET', occupiedPath, onOccupied ?? (_) => {'isOk': true, 'data': <Map<String, dynamic>>[]});
   final popped = <bool?>[];
   await pumpScreen(
     tester,

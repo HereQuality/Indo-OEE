@@ -17,6 +17,7 @@ const TimePicker = ({
   name,
   placeholder = "--:--",
   hasError = false,
+  minTime = null, // "HH:mm" — the earliest time that can be picked (inclusive)
 }) => {
   const { isDarkMode } = useContext(ThemeContext);
 
@@ -42,6 +43,7 @@ const TimePicker = ({
   };
 
   const parsedValue = value ? dayjs(`2024-01-01T${value}`) : null;
+  const parsedMin = minTime ? dayjs(`2024-01-01T${minTime}`) : undefined;
 
   return (
     <div className="w-full bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-xl">
@@ -51,6 +53,7 @@ const TimePicker = ({
         value={parsedValue}
         onChange={handleTimeChange}
         minutesStep={5}
+        minTime={parsedMin}
         viewRenderers={{
           hours: renderTimeViewClock,
           minutes: renderTimeViewClock,

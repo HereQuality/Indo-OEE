@@ -225,6 +225,12 @@ String textOf(WidgetTester tester, int block, String name) => tester.widget<Text
 
 /// Opens block [i] (its "+") and lets the animation finish.
 Future<void> openBlock(WidgetTester tester, int i) async {
+  // A block whose machine is already chosen starts open (ProductionEntryForm),
+  // so there is no "+" to press; only a closed block has one.
+  if (find.byKey(ValueKey('entry$i/expand')).evaluate().isEmpty) {
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.tap(find.byKey(ValueKey('entry$i/expand')));
   await tester.pumpAndSettle();
 }

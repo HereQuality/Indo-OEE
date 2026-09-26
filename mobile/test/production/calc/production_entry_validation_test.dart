@@ -183,8 +183,11 @@ void main() {
       );
       // Planned Down Time is part of the total too
       expect(validateEntry(_valid({'plannedDownMin': '50'}))['stoppageTotal'], isNotNull);
-      // overnight shift: 22:00 -> 06:00 is 8 h
-      expect(validateEntry(_valid({'machineOnTime': '22:00', 'machineOffTime': '06:00', 'plannedOperatorShiftHours': '9', 'lunchMin': '60'})), isEmpty);
+      // A new entry can't run through midnight any more (one entry per date)…
+      final overnight = _valid({'machineOnTime': '22:00', 'machineOffTime': '06:00', 'plannedOperatorShiftHours': '9', 'lunchMin': '60'});
+      expect(validateEntry(overnight)['machineOffTime'], 'Machine OFF Time must be after Machine ON Time');
+      // …but an older overnight row (22:00 -> 06:00 is 8 h) still saves while its times are untouched.
+      expect(validateEntry(overnight, saved: {'machineOnTime': '22:00', 'machineOffTime': '06:00'}), isEmpty);
     });
 
     test('Other downtime needs a remark', () {

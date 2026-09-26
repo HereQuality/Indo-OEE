@@ -5,6 +5,7 @@ const {
   getSheet,
   getExtent,
   getFilterOptions,
+  getOccupied,
   saveRow,
   deleteRow,
   unlockRow,
@@ -22,6 +23,7 @@ router.use(authorize("SuperAdmin", "Operator"));
 router.get("/", requireMenuPermission(MENU_URL, "read"), getSheet);
 router.get("/extent", requireMenuPermission(MENU_URL, "read"), getExtent);
 router.get("/filter-options", requireMenuPermission(MENU_URL, "read"), getFilterOptions);
+router.get("/occupied", requireMenuPermission(MENU_URL, "read"), getOccupied);
 router.get("/operators", requireMenuPermission(MENU_URL, "read"), listOperatorNames);
 router.get("/reject-reasons", requireMenuPermission(MENU_URL, "read"), listRejectReasons);
 router.put("/row", requireMenuPermission(MENU_URL, "write"), saveRow);

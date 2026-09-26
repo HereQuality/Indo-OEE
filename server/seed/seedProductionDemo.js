@@ -6,7 +6,7 @@
  * of items and three days of entries across five machines, shaped so every
  * part of the dashboard has something to show — OEE that differs per machine,
  * an OK/Rejected split per day, downtime spread over several causes, and
- * rejections spread over several Reject Master reasons.
+ * rejections spread over several Rejection Master reasons.
  *
  * This is throwaway demo data, so it is safe to re-run and easy to undo:
  *   node seed/seedProductionDemo.js          seed (clears its own dates first)

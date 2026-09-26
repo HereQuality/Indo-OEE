@@ -51,7 +51,7 @@ const FORMULAS = {
  *
  * Four columns fold, each into the same group the entry form shows it in:
  * Total Cycle Time (sec) → Drilling…Clamp/Declamp; Rejected Quantity → the
- * Reject Master reasons; Planned Operator Shift Time (hr) → Lunch / Rest and
+ * Rejection Master reasons; Planned Operator Shift Time (hr) → Lunch / Rest and
  * Stoppage Allowed; Total Stoppage (min) → the downtime boxes. The total is
  * always shown; the chevron beside it opens its breakdown right after it,
  * without hiding the total or disturbing any other column. The Other reject
