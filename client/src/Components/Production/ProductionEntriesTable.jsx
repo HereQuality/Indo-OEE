@@ -28,7 +28,7 @@ const FORMULAS = {
   unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
   totalStoppage:
     "Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.",
-  effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600",
+  effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).",
   unreported:
     "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   setupEff: "Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time",
@@ -457,8 +457,8 @@ const COLUMNS = [
   },
   {
     key: "effective",
-    label: "Effective Machine Run Time (hr)",
-    get: (r, c) => n(c.effectiveHours),
+    label: "Effective Machine Run Time (hr:min)",
+    get: (r, c) => hm(c.effectiveHours),
     align: "text-center",
     tone: "calc",
   },

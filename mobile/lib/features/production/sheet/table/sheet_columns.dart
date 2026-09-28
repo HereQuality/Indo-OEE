@@ -381,11 +381,11 @@ SheetColumns buildSheetColumns(Set<String> open) {
   mid.addAll([
     SheetCol(
       key: 'effective',
-      label: 'Effective Machine Run Time (hr)',
+      label: 'Effective Machine Run Time (hr:min)',
       width: 116,
       tone: ColTone.calc,
       formulaKey: 'effective',
-      text: (d) => nStr(d.calc['effectiveHours']),
+      text: (d) => hmStr(d.calc['effectiveHours']),
     ),
     SheetCol(
       key: 'unreported',

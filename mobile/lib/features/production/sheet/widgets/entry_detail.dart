@@ -148,7 +148,7 @@ class EntryDetail extends StatelessWidget {
             title: 'Efficiency',
             icon: Icons.speed_rounded,
             children: [
-              _Metric(label: 'Effective Machine Run Time (hr)', value: nStr(calc['effectiveHours']), tone: SheetTones.calc, formulaKey: 'effective'),
+              _Metric(label: 'Effective Machine Run Time (hr:min)', value: hmStr(calc['effectiveHours']), tone: SheetTones.calc, formulaKey: 'effective'),
               _Metric(label: 'Setup Efficiency (%)', value: pctStr(calc['setupEfficiency']), tone: SheetTones.calc, formulaKey: 'setupEff'),
               _Metric(label: 'Unreported Time (min)', value: nStr(day['unreportedMin']), tone: SheetTones.day, formulaKey: 'unreported'),
             ],

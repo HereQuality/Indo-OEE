@@ -93,7 +93,7 @@ const Map<String, String> sheetFormulas = {
       'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'stoppageAllowed':
       'Stoppage Allowed = Machine Shift (min) − Effective Machine Run Time (min): the most Lunch / Rest plus every downtime can add up to, so Unreported Time never goes below 0. 0 when the pieces made use the whole Machine Shift.',
-  'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600',
+  'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).',
   'unreported':
       "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   'setupEff': 'Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time',
