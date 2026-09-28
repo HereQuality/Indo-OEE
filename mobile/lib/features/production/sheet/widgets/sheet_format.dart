@@ -1,10 +1,17 @@
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/shift_hours.dart';
 
 /// Display helpers of ProductionEntriesTable.jsx: a blank reads as a dash.
 String dash(String? v) => (v == null || v.isEmpty) ? '—' : v;
 
 /// A calculated number (blank / NaN -> dash).
 String nStr(Object? v) => dash(fmtNum(v));
+
+/// Decimal hours as a clock reads them (blank -> dash): 3.5 -> "3:30".
+String hmStr(Object? v) {
+  final t = hoursToHm(v is String && v.isEmpty ? null : v);
+  return t.isEmpty ? '—' : t;
+}
 
 /// A 0–1 ratio as a percentage (blank / NaN -> dash).
 String pctStr(Object? v) => dash(fmtPct(v));

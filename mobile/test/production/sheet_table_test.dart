@@ -27,6 +27,12 @@ Future<void> tapK(WidgetTester tester, String key) async {
 
 /// Taps a control of the frozen Actions column (no sideways scrolling needed).
 Future<void> tapA(WidgetTester tester, String key) async {
+  // On a phone Actions ride at the end of the row: scroll until the control shows.
+  final vw = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+  for (var i = 0; i < 30 && tester.getCenter(byKey(key)).dx > vw - 12; i++) {
+    await tester.dragFrom(Offset(vw / 2, 400), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+  }
   await tester.tap(byKey(key));
   await tester.pumpAndSettle();
 }
@@ -53,7 +59,7 @@ void main() {
     // 8h shift at 60 s/part: ideal 480 (rowCalc), actual 400.
     expect(find.text('480'), findsWidgets);
     expect(find.text('400'), findsWidgets);
-    expect(find.text('8'), findsWidgets);
+    expect(find.text('8:00'), findsWidgets); // Machine Shift, as a clock reads it
     expect(byKey('trow-r1'), findsOneWidget);
     expect(byKey('trow-r2'), findsOneWidget);
     expect(byKey('sheet-view-toggle'), findsOneWidget);
@@ -117,7 +123,7 @@ void main() {
 
   testWidgets('Date + Machine and Actions stay frozen while the columns scroll; a header info icon shows its formula', (tester) async {
     install();
-    await open(tester);
+    await open(tester, size: const Size(1024, 768)); // iPad: Actions are pinned too (a phone lets them scroll)
     final dateX = tester.getTopLeft(byKey('head-date')).dx;
     final machineX = tester.getTopLeft(byKey('head-machine')).dx;
     final opX = tester.getTopLeft(byKey('head-operator')).dx;

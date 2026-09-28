@@ -284,7 +284,7 @@ class EntryRow extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (on.isNotEmpty || off.isNotEmpty) _Pill(icon: Icons.schedule_rounded, text: '${textStr(on)} – ${textStr(off)}'),
-                      if (isNum(calc['shiftHours'])) _Pill(text: '${nStr(calc['shiftHours'])} hr'),
+                      if (isNum(calc['shiftHours'])) _Pill(text: '${hmStr(calc['shiftHours'])} hr'),
                       if (locked) _Pill(icon: Icons.lock_outline_rounded, text: 'Locked', tone: SheetTones.lock, key: ValueKey('locked-$id')),
                       if (!locked && unlockedUntil != null)
                         _Pill(icon: Icons.lock_open_rounded, text: 'Unlocked', tone: AppColors.ok, key: ValueKey('unlockedpill-$id')),

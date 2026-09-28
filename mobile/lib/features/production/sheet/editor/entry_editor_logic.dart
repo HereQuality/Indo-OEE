@@ -1,5 +1,6 @@
 import '../../shared/production_entry_validation.dart';
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/shift_hours.dart';
 
 /// State helpers of the Production Data Entry form — a port of the pure parts
 /// of client/src/pages/ProductionSheet.jsx (emptyEntry, toFormValues,
@@ -70,6 +71,10 @@ Map<String, dynamic> toFormValues(Map<String, dynamic> row, {DateTime? now}) {
     final v = out[k];
     out[k] = v is String ? v : numText(v);
   }
+  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
+  out['plannedOperatorShiftHours'] = _isBlankValue(row['plannedOperatorShiftHours'])
+      ? ''
+      : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
   out['excludedOps'] = row['excludedOps'] is List ? List<dynamic>.from(row['excludedOps'] as List) : <dynamic>[];
@@ -128,6 +133,10 @@ Map<String, dynamic> toPayload(Map<String, dynamic> v, {required bool isEdit}) {
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? text('otherMinRemark') : '',
     for (final k in timeFields) k: _timeOut(v[k]),
     for (final k in numberFields) k: _numberOut(v[k]),
+    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    'plannedOperatorShiftHours': _plannedOut(v['plannedOperatorShiftHours']),
+    // Lunch / Rest is optional on the phone; the server wants a 0 rather than nothing.
+    'lunchMin': _isBlankValue(v['lunchMin']) ? 0 : _numberOut(v['lunchMin']),
   };
 }
 
@@ -136,6 +145,11 @@ Map<String, dynamic> toPayload(Map<String, dynamic> v, {required bool isEdit}) {
 String _timeOut(Object? raw) {
   final s = jsString(raw ?? '');
   return normalizeTime(s) ?? s;
+}
+
+Object _plannedOut(Object? v) {
+  final hours = parseHm(v).hours;
+  return hours == null ? '' : _wire(hmToWireHours(hours));
 }
 
 Object _numberOut(Object? v) {

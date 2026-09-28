@@ -1,4 +1,5 @@
 import { CYCLE_OP_FIELDS, normalizeTime, rowCalc, spanMinutes } from "./productionSheet";
+import { hoursToHm, parseHm } from "./shiftHours";
 
 /**
  * utils/entryValidation.js
@@ -8,17 +9,17 @@ import { CYCLE_OP_FIELDS, normalizeTime, rowCalc, spanMinutes } from "./producti
  * still missing" behaviour all read from the same answer.
  *
  *   Required    Date, Machine No., Operator, Part Name, Machine ON/OFF Time,
- *               Actual Qty, OK Qty, Planned Operator Shift — and Lunch / Rest,
- *               but only when Planned Operator Shift − Machine Shift leaves time
- *               over. If the machine ran the whole planned shift there is no room
- *               for a lunch, so it is optional (and can only be 0).
+ *               Actual Qty, OK Qty, Planned Operator Shift. Planned Operator
+ *               Shift is typed as H.MM (3.30 = 3 h 30 min, 60 minutes to the
+ *               hour) and can't be less than the Machine Shift.
  *   Quantities  Actual ≤ Ideal, OK ≤ Actual, and the Rejection Master split has
  *               to account for every rejected piece (Rejected = Actual − OK).
  *   Times       Machine OFF Time must be after Machine ON Time, and one machine's
  *               entries on a date can't overlap in time (see overlapErrors).
- *   Downtime    Optional, but whatever is typed must be 0–1440, and the total
- *               (Lunch / Rest included) can't exceed Planned Operator Shift −
- *               Machine Shift, in minutes.
+ *   Downtime    Optional (Lunch / Rest included — blank counts as 0), but
+ *               whatever is typed must be 0–1440, and the total can't exceed
+ *               Machine Shift − Effective Run Time, in minutes (stoppage sits
+ *               inside the ON–OFF window). Less is fine.
  *   "Other"     Rejecting pieces as "Other", or logging Other downtime, needs
  *               its own remark.
  *
@@ -115,8 +116,8 @@ export const overlapErrors = (entries, occupied = {}, { editSlot = null, saved =
     };
   });
 
-// The downtime boxes on the form. Lunch / Rest sits with Planned Operator
-// Shift instead, but still counts toward the total (see rowCalc).
+// The downtime boxes on the form. Lunch / Rest is a stoppage too (it has its
+// own box at the head of the group) and counts toward the total (see rowCalc).
 export const DOWNTIME_KEYS = [
   "setupMin",
   "noManPowerMin",
@@ -149,22 +150,16 @@ export const FIELD_ORDER = [
   ...CYCLE_OP_KEYS,
 ];
 
-// Minutes of the operator's planned shift the machine wasn't running — the
-// most stoppage the entry can account for. null until both numbers exist.
+// Minutes of the Machine Shift not yet accounted for by good parts — the most
+// stoppage the entry can hold, since Unreported Time = Shift − Effective Run
+// Time − Stoppage may never go below 0. Stoppage sits INSIDE the ON–OFF window.
+// null until both machine times exist (a missing OK Quantity or Part counts as
+// no effective run yet). Keep in step with the phone app and the server.
 export const stoppageLimitMin = (v) => {
-  const planned = num(v.plannedOperatorShiftHours);
   const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
-  if (!isNum(planned) || shiftMin === null) return null;
-  return Math.max(0, Math.round(planned * 60 - shiftMin));
-};
-
-// Lunch / Rest has to be entered only when the planned shift leaves minutes
-// over the machine's run (stoppageLimitMin > 0). With no room left — or while
-// the shift and machine times are still missing, which are required anyway —
-// it isn't asked for.
-export const lunchRequired = (v) => {
-  const limit = stoppageLimitMin(v);
-  return limit !== null && limit > 0;
+  if (shiftMin === null) return null;
+  const effectiveMin = (rowCalc(v).effectiveHours || 0) * 60;
+  return Math.max(0, Math.floor(shiftMin - effectiveMin + 1e-9));
 };
 
 // The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
@@ -233,14 +228,23 @@ export const validateEntry = (v, { saved = null } = {}) => {
     errors.rejectOtherRemark = 'Remark is required when "Other" is a reject reason';
   }
 
-  const planned = num(v.plannedOperatorShiftHours);
+  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
+  const plannedParse = parseHm(v.plannedOperatorShiftHours);
+  const planned = plannedParse.hours;
   if (blank(v.plannedOperatorShiftHours)) errors.plannedOperatorShiftHours = "Planned Operator Shift is required";
-  else if (!Number.isFinite(planned) || planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0 and at most 24 hours";
-
+  else if (plannedParse.minutesTooBig) errors.plannedOperatorShiftHours = "Minutes must be 00–59 (3.30 means 3 h 30 min)";
+  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
+  else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
+  else {
+    // The operator's planned shift has to cover the time the machine ran.
+    const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
+    if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
+      errors.plannedOperatorShiftHours = `Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})`;
+    }
+  }
+  // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
   const lunch = num(v.lunchMin);
-  if (blank(v.lunchMin)) {
-    if (lunchRequired(v)) errors.lunchMin = "Lunch / Rest is required (enter 0 if none)";
-  } else if (!Number.isFinite(lunch) || lunch < 0 || lunch > 1440) errors.lunchMin = "0–1440";
+  if (!blank(v.lunchMin) && (!Number.isFinite(lunch) || lunch < 0 || lunch > 1440)) errors.lunchMin = "0–1440";
 
   for (const key of DOWNTIME_KEYS) {
     const n = num(v[key]);
@@ -253,7 +257,7 @@ export const validateEntry = (v, { saved = null } = {}) => {
 
   const limit = stoppageLimitMin(v);
   if (limit !== null && calc.totalStoppageMin > limit) {
-    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Planned Operator Shift − Machine Shift)`;
+    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Machine Shift − Effective Run Time)`;
   }
   if (num(v.otherMin) > 0 && blank(v.otherMinRemark)) {
     errors.otherMinRemark = "Remark is required when Other downtime is entered";

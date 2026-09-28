@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../shared/production_entry_validation.dart';
 import '../../shared/production_sheet_calc.dart';
 import '../sheet_model.dart';
 import 'sheet_format.dart';
@@ -81,7 +80,7 @@ class EntryDetail extends StatelessWidget {
             note: excluded.contains(f['key']) ? 'skipped' : null,
           ),
     ];
-    const downtimeOrder = ['setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'otherMin', 'plannedDownMin'];
+    const downtimeOrder = ['lunchMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'otherMin', 'plannedDownMin'];
     final stopRows = <Widget>[
       for (final key in downtimeOrder)
         if (positive(row[key]))
@@ -97,7 +96,6 @@ class EntryDetail extends StatelessWidget {
 
     final general = _remarks('general');
     final generalText = general.isEmpty ? '' : '${general.first['text']}';
-    final allowed = stoppageLimitMin(row);
 
     return Container(
       key: ValueKey('detail-${row['_id']}'),
@@ -132,10 +130,8 @@ class EntryDetail extends StatelessWidget {
             children: [
               _Metric(label: 'Machine ON Time', value: textStr(_v('machineOnTime'))),
               _Metric(label: 'Machine OFF Time', value: textStr(_v('machineOffTime'))),
-              _Metric(label: 'Machine Shift Time (hr)', value: nStr(calc['shiftHours']), tone: SheetTones.calc, formulaKey: 'shift'),
-              _Metric(label: 'Planned Operator Shift Time (hr)', value: minStr(_v('plannedOperatorShiftHours'))),
-              _Metric(label: 'Lunch / Rest (min)', value: zeroIfBlank(_v('lunchMin'))),
-              _Metric(label: 'Stoppage Allowed (min)', value: nStr(allowed), tone: SheetTones.calc, formulaKey: 'stoppageAllowed'),
+              _Metric(label: 'Machine Shift Time (hr:min)', value: hmStr(calc['shiftHours']), tone: SheetTones.calc, formulaKey: 'shift'),
+              _Metric(label: 'Planned Operator Shift Time (hr:min)', value: hmStr(_v('plannedOperatorShiftHours'))),
               _Metric(label: 'Unutilized Machine Time (%)', value: pctStr(day['unutilized']), tone: SheetTones.day, formulaKey: 'unutilized'),
               _Metric(label: 'Gap to next shift (min)', value: nStr(day['gapMin']), tone: SheetTones.day, formulaKey: 'gap'),
             ],

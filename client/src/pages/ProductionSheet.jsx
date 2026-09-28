@@ -47,6 +47,7 @@ import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, overlapErrors,
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
+import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
 
 /**
  * Production Data Entry — the month's records, and one form per record.
@@ -158,6 +159,8 @@ const toFormValues = (row) => {
     ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
     item: row.item || "",
     slot: row.slot,
+    // A stored shift is decimal hours; the box shows it as H.MM (7.5 → "7.30").
+    plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
     // A record saved before the split existed has only a single rejectReason;
     // its rejected pieces are put against that reason so editing it doesn't
     // look like the reason was lost.
@@ -200,6 +203,13 @@ const toPayload = (v, isEdit) => {
     otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
     ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
     ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+    // Typed as H.MM, saved as decimal hours (3.30 → 3.5).
+    plannedOperatorShiftHours: (() => {
+      const { hours } = parseHm(v.plannedOperatorShiftHours);
+      return hours === null ? "" : hmToWireHours(hours);
+    })(),
+    // Lunch / Rest is optional on the form; the server wants a 0 rather than nothing.
+    lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
   };
 };
 

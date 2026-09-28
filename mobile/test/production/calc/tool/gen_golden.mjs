@@ -45,7 +45,6 @@ import {
   firstError,
   fmt12,
   isTimeRuleMessage,
-  lunchRequired,
   overlapErrors,
   stoppageLimitMin,
   timeInterval,
@@ -360,7 +359,6 @@ const valCases = valInputs.map((v) => ({
   errors: enc(validateEntry(v)),
   keys: Object.keys(validateEntry(v)),
   limit: enc(stoppageLimitMin(v)),
-  lunchRequired: lunchRequired(v),
   split: enc(cleanSplit(v.rejectBreakdown)),
   calc: enc(rowCalc(v)),
 }));

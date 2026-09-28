@@ -1,4 +1,3 @@
-import '../../shared/production_entry_validation.dart';
 import '../../shared/production_sheet_calc.dart';
 import '../sheet_model.dart';
 import '../widgets/sheet_format.dart';
@@ -15,7 +14,12 @@ enum ColMerge { none, date, machineDay }
 
 /// What one body cell needs to know about its row.
 class CellData {
-  const CellData({required this.row, required this.calc, required this.day, required this.machineName});
+  const CellData({
+    required this.row,
+    required this.calc,
+    required this.day,
+    required this.machineName,
+  });
   final Json row;
   final Json calc;
   final Json day;
@@ -25,7 +29,12 @@ class CellData {
 /// The chevron that rides beside an expandable column (its summary or, while
 /// open, the last breakdown column).
 class ColExpand {
-  const ColExpand({required this.id, required this.isOpen, required this.label, this.end = false});
+  const ColExpand({
+    required this.id,
+    required this.isOpen,
+    required this.label,
+    this.end = false,
+  });
   final String id;
   final bool isOpen;
   final String label;
@@ -73,20 +82,24 @@ class SheetCol {
   /// A breakdown column shown after an opened total.
   final bool sub;
 
-  SheetCol withExpand(ColExpand e) => SheetCol(
-        key: key,
-        label: label,
-        width: width,
-        text: text,
-        tone: tone,
-        merge: merge,
-        start: start,
-        formulaKey: formulaKey,
-        expand: e,
-        remarkKind: remarkKind,
-        bold: bold,
-        sub: sub,
-      );
+  SheetCol withExpand(ColExpand e) => _copy(expand: e);
+
+  SheetCol withWidth(double w) => _copy(width: w);
+
+  SheetCol _copy({double? width, ColExpand? expand}) => SheetCol(
+    key: key,
+    label: label,
+    width: width ?? this.width,
+    text: text,
+    tone: tone,
+    merge: merge,
+    start: start,
+    formulaKey: formulaKey,
+    expand: expand ?? this.expand,
+    remarkKind: remarkKind,
+    bold: bold,
+    sub: sub,
+  );
 }
 
 /// The Date / Machine pair frozen at the left, the middle that scrolls, and
@@ -112,14 +125,30 @@ class SheetColumns {
 }
 
 /// The open breakdowns: each id is one expandable column.
-const List<String> expandIds = ['cycle', 'rejectedQty', 'planned', 'downtime'];
+const List<String> expandIds = ['cycle', 'rejectedQty', 'downtime'];
 
 const double actionsWidth = 104;
 
 String _text(Object? v) => textStr(v);
 
-SheetCol _sub(String key, String label, CellText text, {double width = 92, String? formulaKey, ColTone tone = ColTone.none, String? remarkKind}) =>
-    SheetCol(key: key, label: label, width: width, text: text, formulaKey: formulaKey, tone: tone, remarkKind: remarkKind, sub: true);
+SheetCol _sub(
+  String key,
+  String label,
+  CellText text, {
+  double width = 92,
+  String? formulaKey,
+  ColTone tone = ColTone.none,
+  String? remarkKind,
+}) => SheetCol(
+  key: key,
+  label: label,
+  width: width,
+  text: text,
+  formulaKey: formulaKey,
+  tone: tone,
+  remarkKind: remarkKind,
+  sub: true,
+);
 
 /// The columns of the web table in sheet order, with the four breakdowns
 /// opened as [open] says.
@@ -145,20 +174,52 @@ SheetColumns buildSheetColumns(Set<String> open) {
     ),
   ];
 
-  void expandable(SheetCol summary, String id, String label, List<SheetCol> subs, List<SheetCol> out) {
+  void expandable(
+    SheetCol summary,
+    String id,
+    String label,
+    List<SheetCol> subs,
+    List<SheetCol> out,
+  ) {
     final isOpen = open.contains(id);
-    out.add(summary.withExpand(ColExpand(id: id, isOpen: isOpen, label: label)));
+    out.add(
+      summary.withExpand(ColExpand(id: id, isOpen: isOpen, label: label)),
+    );
     if (isOpen) {
       for (var i = 0; i < subs.length; i++) {
-        out.add(i == subs.length - 1 ? subs[i].withExpand(ColExpand(id: id, isOpen: true, label: label, end: true)) : subs[i]);
+        out.add(
+          i == subs.length - 1
+              ? subs[i].withExpand(
+                  ColExpand(id: id, isOpen: true, label: label, end: true),
+                )
+              : subs[i],
+        );
       }
     }
   }
 
   final mid = <SheetCol>[
-    SheetCol(key: 'operator', label: 'Operator', width: 124, start: true, text: (d) => _text(d.row['operator'])),
-    SheetCol(key: 'itemName', label: 'Part Name', width: 164, start: true, text: (d) => _text(d.row['itemName'])),
-    SheetCol(key: 'drawingNo', label: 'Drawing No.', width: 124, start: true, text: (d) => _text(d.row['drawingNo'])),
+    SheetCol(
+      key: 'operator',
+      label: 'Operator',
+      width: 124,
+      start: true,
+      text: (d) => _text(d.row['operator']),
+    ),
+    SheetCol(
+      key: 'itemName',
+      label: 'Part Name',
+      width: 164,
+      start: true,
+      text: (d) => _text(d.row['itemName']),
+    ),
+    SheetCol(
+      key: 'drawingNo',
+      label: 'Drawing No.',
+      width: 124,
+      start: true,
+      text: (d) => _text(d.row['drawingNo']),
+    ),
   ];
 
   expandable(
@@ -173,18 +234,58 @@ SheetColumns buildSheetColumns(Set<String> open) {
     'cycle',
     'Total Cycle Time',
     [
-      for (final f in cycleOpFields) _sub('${f['key']}', cycleOpLabel(f), (d) => _text(d.row[f['key']]), width: 96),
+      for (final f in cycleOpFields)
+        _sub(
+          '${f['key']}',
+          cycleOpLabel(f),
+          (d) => _text(d.row[f['key']]),
+          width: 96,
+        ),
     ],
     mid,
   );
 
   mid.addAll([
-    SheetCol(key: 'on', label: 'Machine ON Time', width: 92, text: (d) => _text(d.row['machineOnTime'])),
-    SheetCol(key: 'off', label: 'Machine OFF Time', width: 92, text: (d) => _text(d.row['machineOffTime'])),
-    SheetCol(key: 'shift', label: 'Machine Shift Time (hr)', width: 104, tone: ColTone.calc, formulaKey: 'shift', text: (d) => nStr(d.calc['shiftHours'])),
-    SheetCol(key: 'idealQty', label: 'Ideal Quantity', width: 88, tone: ColTone.calc, formulaKey: 'idealQty', text: (d) => nStr(d.calc['idealQty'])),
-    SheetCol(key: 'actualQty', label: 'Actual Quantity', width: 92, text: (d) => nStr(d.calc['actualQty'])),
-    SheetCol(key: 'okQty', label: 'Actual OK Quantity', width: 100, text: (d) => minStr(d.row['okQty'])),
+    SheetCol(
+      key: 'on',
+      label: 'Machine ON Time',
+      width: 92,
+      text: (d) => _text(d.row['machineOnTime']),
+    ),
+    SheetCol(
+      key: 'off',
+      label: 'Machine OFF Time',
+      width: 92,
+      text: (d) => _text(d.row['machineOffTime']),
+    ),
+    SheetCol(
+      key: 'shift',
+      label: 'Machine Shift Time (hr:min)',
+      width: 104,
+      tone: ColTone.calc,
+      formulaKey: 'shift',
+      text: (d) => hmStr(d.calc['shiftHours']),
+    ),
+    SheetCol(
+      key: 'idealQty',
+      label: 'Ideal Quantity',
+      width: 88,
+      tone: ColTone.calc,
+      formulaKey: 'idealQty',
+      text: (d) => nStr(d.calc['idealQty']),
+    ),
+    SheetCol(
+      key: 'actualQty',
+      label: 'Actual Quantity',
+      width: 92,
+      text: (d) => nStr(d.calc['actualQty']),
+    ),
+    SheetCol(
+      key: 'okQty',
+      label: 'Actual OK Quantity',
+      width: 100,
+      text: (d) => minStr(d.row['okQty']),
+    ),
   ]);
 
   expandable(
@@ -214,32 +315,36 @@ SheetColumns buildSheetColumns(Set<String> open) {
     mid,
   );
 
-  mid.add(SheetCol(key: 'pctOk', label: '% OK Quantity', width: 88, tone: ColTone.calc, formulaKey: 'pctOk', text: (d) => pctStr(d.calc['pctOk'])));
-
-  expandable(
+  mid.add(
     SheetCol(
-      key: 'plannedShift',
-      label: 'Planned Operator Shift Time (hr)',
-      width: 160,
-      text: (d) => minStr(d.row['plannedOperatorShiftHours']),
+      key: 'pctOk',
+      label: '% OK Quantity',
+      width: 88,
+      tone: ColTone.calc,
+      formulaKey: 'pctOk',
+      text: (d) => pctStr(d.calc['pctOk']),
     ),
-    'planned',
-    'Planned Operator Shift Time',
-    [
-      _sub('lunchMin', 'Lunch / Rest (min)', (d) => zeroIfBlank(d.row['lunchMin']), width: 100),
-      _sub('stoppageAllowed', 'Stoppage Allowed (min)', (d) => nStr(stoppageLimitMin(d.row)), width: 108, tone: ColTone.calc, formulaKey: 'stoppageAllowed'),
-    ],
-    mid,
   );
 
-  mid.add(SheetCol(
-    key: 'unutilized',
-    label: 'Unutilized Machine Time (%)',
-    width: 112,
-    tone: ColTone.day,
-    formulaKey: 'unutilized',
-    text: (d) => pctStr(d.day['unutilized']),
-  ));
+  mid.add(
+    SheetCol(
+      key: 'plannedShift',
+      label: 'Planned Operator Shift Time (hr:min)',
+      width: 160,
+      text: (d) => hmStr(d.row['plannedOperatorShiftHours']),
+    ),
+  );
+
+  mid.add(
+    SheetCol(
+      key: 'unutilized',
+      label: 'Unutilized Machine Time (%)',
+      width: 112,
+      tone: ColTone.day,
+      formulaKey: 'unutilized',
+      text: (d) => pctStr(d.day['unutilized']),
+    ),
+  );
 
   expandable(
     SheetCol(
@@ -253,6 +358,13 @@ SheetColumns buildSheetColumns(Set<String> open) {
     'downtime',
     'Total Stoppage',
     [
+      // Lunch / Rest is stoppage time, so it sits with the other stoppage boxes.
+      _sub(
+        'lunchMin',
+        'Lunch / Rest (min)',
+        (d) => zeroIfBlank(d.row['lunchMin']),
+        width: 100,
+      ),
       for (final f in stoppageFields)
         if (f['key'] != 'plannedDownMin' && f['key'] != 'lunchMin')
           _sub(
@@ -267,7 +379,14 @@ SheetColumns buildSheetColumns(Set<String> open) {
   );
 
   mid.addAll([
-    SheetCol(key: 'effective', label: 'Effective Machine Run Time (hr)', width: 116, tone: ColTone.calc, formulaKey: 'effective', text: (d) => nStr(d.calc['effectiveHours'])),
+    SheetCol(
+      key: 'effective',
+      label: 'Effective Machine Run Time (hr)',
+      width: 116,
+      tone: ColTone.calc,
+      formulaKey: 'effective',
+      text: (d) => nStr(d.calc['effectiveHours']),
+    ),
     SheetCol(
       key: 'unreported',
       label: 'Unreported Time (min)',
@@ -277,8 +396,22 @@ SheetColumns buildSheetColumns(Set<String> open) {
       merge: ColMerge.machineDay,
       text: (d) => nStr(d.day['unreportedMin']),
     ),
-    SheetCol(key: 'gap', label: 'Gap to next shift (min)', width: 104, tone: ColTone.day, formulaKey: 'gap', text: (d) => nStr(d.day['gapMin'])),
-    SheetCol(key: 'setupEff', label: 'Setup Efficiency (%)', width: 104, tone: ColTone.calc, formulaKey: 'setupEff', text: (d) => pctStr(d.calc['setupEfficiency'])),
+    SheetCol(
+      key: 'gap',
+      label: 'Gap to next shift (min)',
+      width: 104,
+      tone: ColTone.day,
+      formulaKey: 'gap',
+      text: (d) => nStr(d.day['gapMin']),
+    ),
+    SheetCol(
+      key: 'setupEff',
+      label: 'Setup Efficiency (%)',
+      width: 104,
+      tone: ColTone.calc,
+      formulaKey: 'setupEff',
+      text: (d) => pctStr(d.calc['setupEfficiency']),
+    ),
     SheetCol(
       key: 'oeeLosses',
       label: 'OEE considering losses (%)',
@@ -315,5 +448,49 @@ SheetColumns buildSheetColumns(Set<String> open) {
     ),
   ]);
 
-  return SheetColumns(left: left, middle: mid);
+  return SheetColumns(
+    left: [for (final c in left) _fitted(c)],
+    middle: [for (final c in mid) _fitted(c)],
+  );
+}
+
+// ── Header fit ──────────────────────────────────────────────────────────────
+// A header shows two lines and nothing more, so a label that needs a third
+// ("Stoppage Allowed (min)" beside its ⓘ) used to end in "…". Every column is
+// at least wide enough for its whole label on two lines. Estimated (bold 12 px
+// text, ~6.6 px a character) rather than measured, so it is the same on every
+// device and in tests.
+
+const double _charPx = 6.6;
+const double _headPad = 12; // 6 px each side
+const double _formulaIcon = 17; // ⓘ + gap
+const double _chevronSlot = 32;
+
+/// Lines [label] takes when each may hold [chars] characters (greedy word wrap).
+int _linesFor(String label, int chars) {
+  var lines = 1, used = 0;
+  for (final word in label.split(' ')) {
+    if (word.length > chars) return 99; // a single word wider than the line
+    final need = used == 0 ? word.length : used + 1 + word.length;
+    if (need <= chars) {
+      used = need;
+    } else {
+      lines++;
+      used = word.length;
+    }
+  }
+  return lines;
+}
+
+SheetCol _fitted(SheetCol c) {
+  final extras =
+      _headPad +
+      (c.formulaKey != null ? _formulaIcon : 0) +
+      (c.expand != null ? _chevronSlot : 0);
+  var chars = 4;
+  while (_linesFor(c.label, chars) > 2 && chars < 80) {
+    chars++;
+  }
+  final need = (chars * _charPx + extras).ceilToDouble();
+  return need > c.width ? c.withWidth(need) : c;
 }

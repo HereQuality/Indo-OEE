@@ -89,7 +89,7 @@ void main() {
       final v = toFormValues(row);
       expect(v['actualQty'], '400');
       expect(v['okQty'], '390.5');
-      expect(v['plannedOperatorShiftHours'], '9');
+      expect(v['plannedOperatorShiftHours'], '9.00'); // shown as H.MM
       expect(v['lunchMin'], '0'); // a stored zero is a value, not blank
       expect(v['setupMin'], '');
       expect(v['drawingNo'], '');
@@ -157,8 +157,8 @@ void main() {
     });
 
     test('fractional numbers stay fractional', () {
-      final p = toPayload(validBlock(extra: {'plannedOperatorShiftHours': '8.5', 'okQty': '390.25'}), isEdit: false);
-      expect(p['plannedOperatorShiftHours'], 8.5);
+      final p = toPayload(validBlock(extra: {'plannedOperatorShiftHours': '8.30', 'okQty': '390.25'}), isEdit: false);
+      expect(p['plannedOperatorShiftHours'], 8.5); // 8 h 30 min, sent as decimal hours
       expect(p['okQty'], 390.25);
     });
 

@@ -98,3 +98,41 @@ test("bookedRanges lists what the machine already has, minus the row being edite
   assert.deepEqual(bookedRanges(entry(), occupied, 1), ["2:00 PM – 6:00 PM"]);
   assert.deepEqual(bookedRanges(entry({ machine: "m9" }), occupied), []);
 });
+
+// ── Planned Operator Shift (H.MM), Lunch / Rest, stoppage ───────────────────
+import { hoursToHm, hoursToHmInput, parseHm } from "./shiftHours";
+import { validateEntry as validate } from "./entryValidation";
+
+const block = (o = {}) => ({
+  date: "2026-04-06", machine: "m1", operator: "op", itemName: "Part A",
+  machineOnTime: "08:00", machineOffTime: "16:00", totalCycleSec: "45",
+  actualQty: "600", okQty: "590", rejectBreakdown: { "Dimension Out": "10" },
+  plannedOperatorShiftHours: "9.00", lunchMin: "", ...o,
+});
+
+test("H.MM: 60 minutes to the hour, one minute digit is tens of minutes", () => {
+  assert.equal(parseHm("3.30").hours, 3.5);
+  assert.equal(parseHm("3.5").hours, 3 + 50 / 60);
+  assert.equal(parseHm("3").hours, 3);
+  assert.equal(parseHm("3.75").minutesTooBig, true);
+  assert.equal(parseHm("").hours, null);
+  assert.equal(hoursToHm(3.5), "3:30");
+  assert.equal(hoursToHmInput(7.5), "7.30");
+});
+
+test("Planned Operator Shift can't be less than the Machine Shift, and its minutes stop at 59", () => {
+  assert.equal(validate(block({ plannedOperatorShiftHours: "7.30" })).plannedOperatorShiftHours, "Planned Operator Shift (7:30) can't be less than Machine Shift (8:00)");
+  assert.equal(validate(block({ plannedOperatorShiftHours: "8.75" })).plannedOperatorShiftHours, "Minutes must be 00–59 (3.30 means 3 h 30 min)");
+  assert.equal(validate(block({ plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours, undefined);
+});
+
+test("Stoppage sits inside the ON–OFF window: allowed = Machine Shift − Effective Run Time (480 − 442.5 → 37 min)", () => {
+  assert.deepEqual(validate(block()), {});
+  assert.deepEqual(validate(block({ lunchMin: "20", setupMin: "17" })), {}); // exactly the 37, and less is fine
+  assert.equal(
+    validate(block({ lunchMin: "20", setupMin: "18" })).stoppageTotal,
+    "Total stoppage is 38 min but only 37 min is allowed (Machine Shift − Effective Run Time)",
+  );
+  // Planned Operator Shift no longer widens it, so Unreported Time can't go negative
+  assert.ok(validate(block({ plannedOperatorShiftHours: "13.00", lunchMin: "60" })).stoppageTotal);
+});

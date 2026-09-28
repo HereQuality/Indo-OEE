@@ -131,7 +131,7 @@ test("editing an entry does not clash with itself, but does with its neighbour",
   await withDb(rows, async () => {
     const shrink = await call(saveRow, { body: body({ slot: 1, machineOnTime: "09:00", machineOffTime: "11:00" }) });
     assert.equal(shrink.statusCode, 200, JSON.stringify(shrink.payload));
-    const grow = await call(saveRow, { body: body({ slot: 1, machineOffTime: "13:30" }) });
+    const grow = await call(saveRow, { body: body({ slot: 1, machineOffTime: "13:30", plannedOperatorShiftHours: 8 }) });
     assert.equal(grow.statusCode, 400);
     assert.match(grow.payload.message, /1:00 PM – 5:00 PM/);
   });
@@ -186,4 +186,34 @@ test("GET /occupied lists a machine's slots on a date, and validates its input",
       assert.equal((await call(getOccupied, { query: { date: TODAY, machine: "x" } })).statusCode, 400);
     },
   );
+});
+
+test("Planned Operator Shift can't be less than the Machine Shift", async () => {
+  await withDb([], async (db) => {
+    const res = await call(saveRow, { body: body({ machineOnTime: "08:00", machineOffTime: "12:00", plannedOperatorShiftHours: 3.5 }) });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.payload.message, /Planned Operator Shift \(3:30\) can't be less than Machine Shift \(4:00\)/);
+    assert.equal(db.saved.length, 0);
+  });
+});
+
+test("Lunch / Rest is optional, and less stoppage than allowed saves", async () => {
+  await withDb([], async (db) => {
+    // 5 h planned, 4 h run -> 60 min allowed; 20 + 30 is under it and Lunch is left out
+    const res = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, lunchMin: "", setupMin: 30, noPowerMin: 20 }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved.length, 1);
+  });
+});
+
+test("stoppage sits inside the Machine Shift: more than Shift − Effective Run Time is refused", async () => {
+  await withDb([], async (db) => {
+    // 4 h run, 200 good parts x 60 s = 200 min -> 40 min left for stoppage
+    const over = await call(saveRow, { body: body({ plannedOperatorShiftHours: 9, totalCycleSec: 60, actualQty: 200, okQty: 200, setupMin: 41 }) });
+    assert.equal(over.statusCode, 400);
+    assert.match(over.payload.message, /can't be more than Machine Shift − Effective Run Time \(40 min\)/);
+    const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 9, totalCycleSec: 60, actualQty: 200, okQty: 200, setupMin: 40 }) });
+    assert.equal(fits.statusCode, 200, JSON.stringify(fits.payload));
+    assert.equal(db.saved.length, 1);
+  });
 });

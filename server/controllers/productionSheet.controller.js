@@ -194,8 +194,7 @@ const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 const sameTimes = (existing, body) =>
   !!existing && existing.machineOnTime === body.machineOnTime && existing.machineOffTime === body.machineOffTime;
 
-// What the entry form always makes mandatory. Lunch / Rest joins them only when
-// the planned shift leaves time over the machine's run (see entryRuleError).
+// What the entry form always makes mandatory.
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
   ["itemName", "Part Name"],
@@ -205,6 +204,12 @@ const REQUIRED_FIELDS = [
   ["okQty", "OK Quantity"],
   ["plannedOperatorShiftHours", "Planned Operator Shift"],
 ];
+
+// Decimal hours as a clock reads them: 3.5 -> "3:30".
+const hm = (hours) => {
+  const total = Math.round(hours * 60);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
 
 // The entry form's own rules, re-checked here so a request that skips the form
 // can't save an incomplete entry. Returns a message, or null when it's fine.
@@ -235,13 +240,20 @@ const entryRuleError = (body, existing = null) => {
   // midnight is two entries, one per date).
   if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
-  const limit = Math.max(0, Math.round(Number(body.plannedOperatorShiftHours) * 60 - shiftMin));
-  // Lunch / Rest may be 0 but not empty — unless the machine ran the whole
-  // planned shift, when there is no room for one and it isn't asked for.
-  if (limit > 0 && isBlank(body.lunchMin)) return "Lunch / Rest is required (enter 0 if none)";
+  // Stoppage sits inside the ON–OFF window: what is left of the Machine Shift
+  // after the good parts (OK × cycle) is the most it can hold, so Unreported
+  // Time (Shift − Effective − Stoppage) never goes below 0.
+  const cycleSec = Number(body.totalCycleSec);
+  const effectiveMin = Number.isFinite(cycleSec) && cycleSec > 0 ? ((Number(body.okQty) || 0) * cycleSec) / 60 : 0;
+  const limit = Math.max(0, Math.floor(shiftMin - effectiveMin + 1e-9));
+  // The operator's planned shift has to cover the time the machine ran.
+  if (Math.round(Number(body.plannedOperatorShiftHours) * 60) < shiftMin) {
+    return `Planned Operator Shift (${hm(Number(body.plannedOperatorShiftHours))}) can't be less than Machine Shift (${hm(shiftMin / 60)})`;
+  }
+  // Lunch / Rest is optional like every other stoppage: blank counts as 0.
   const total = STOPPAGE_KEYS.reduce((sum, k) => sum + minutesOf(k), 0);
   if (total > limit) {
-    return `Total stoppage (${total} min) can't be more than Planned Operator Shift − Machine Shift (${limit} min)`;
+    return `Total stoppage (${total} min) can't be more than Machine Shift − Effective Run Time (${limit} min)`;
   }
   return null;
 };

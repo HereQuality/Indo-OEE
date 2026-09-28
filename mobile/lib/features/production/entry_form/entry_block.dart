@@ -7,6 +7,7 @@ import '../../../core/utils/alerts.dart';
 import '../../../core/widgets/form_widgets.dart';
 import '../shared/production_entry_validation.dart' show isTimeRuleMessage;
 import '../shared/production_sheet_calc.dart';
+import '../shared/shift_hours.dart';
 import 'entry_fields.dart';
 import 'entry_form_logic.dart';
 import 'entry_form_toast.dart';
@@ -539,12 +540,14 @@ class EntryBlockState extends State<EntryBlock> {
     bool? invalid,
     FocusNode? node,
     String? label,
+    int maxLength = 7,
   }) =>
       EntryTextField(
         key: ValueKey('entry$_i/$field'),
         value: entryText(_v[field]),
         numeric: true,
         decimals: decimals,
+        maxLength: maxLength,
         max: max,
         onExceedMax: onExceed,
         invalid: invalid ?? _err(field) != null,
@@ -753,7 +756,7 @@ class EntryBlockState extends State<EntryBlock> {
               ),
               EntryCell(
                 label: 'Machine Shift (hr)',
-                child: _calc('shiftHours', entryFmt(m.calc['shiftHours']), 'Machine Shift (hr)'),
+                child: _calc('shiftHours', hoursToHm(m.calc['shiftHours']), 'Machine Shift (hr)'),
               ),
             ],
           ),
@@ -910,7 +913,9 @@ class EntryBlockState extends State<EntryBlock> {
 
   Widget _shiftLine(EntryMetrics m) {
     final limit = m.stoppageLimit;
+    final planned = m.plannedHours;
     final lunch = m.minutesLimit('lunchMin');
+    final machineHm = hoursToHm(m.machineShiftMin == null ? null : m.machineShiftMin! / 60);
     return EntryLineCard(
       title: 'Planned Operator Shift, Lunch / Rest',
       icon: Icons.timelapse_rounded,
@@ -919,38 +924,36 @@ class EntryBlockState extends State<EntryBlock> {
         EntryGrid(
           cells: [
             EntryCell(
-              label: 'Planned Operator Shift (hr)',
+              label: 'Planned Operator Shift (hr.min)',
               required: true,
               error: _err('plannedOperatorShiftHours'),
+              // Typed as hours.minutes, 60 to the hour: 3.30 is 3 h 30 min.
+              hint: _err('plannedOperatorShiftHours') != null
+                  ? null
+                  : m.plannedBelowMachine
+                      ? "Can't be less than Machine Shift ($machineHm)."
+                      : planned != null
+                          ? '= ${hoursToHm(planned)} hr'
+                          : 'Type hours.minutes — 3.30 is 3 h 30 min.',
               child: _k(
                 'plannedOperatorShiftHours',
                 _num(
                   'plannedOperatorShiftHours',
                   decimals: true,
+                  maxLength: 5,
                   max: 24,
-                  label: 'Planned Operator Shift (hr)',
+                  label: 'Planned Operator Shift (hr.min)',
                   onExceed: (_) => EntryFormToast.warn("Planned Operator Shift can't be more than 24 hours."),
                 ),
               ),
             ),
             EntryCell(
               label: 'Lunch / Rest (min)',
-              // Only asked for while the planned shift leaves time over the run.
-              required: m.lunchNeeded,
               error: _err('lunchMin'),
-              hint: limit == 0
-                  ? 'Not needed — the machine ran the whole planned shift.'
-                  : _locked('lunchMin', lunch.max)
-                      ? (m.lunchNeeded ? 'No stoppage time left, so Lunch / Rest can only be 0.' : 'No stoppage time left.')
-                      : null,
+              hint: _locked('lunchMin', lunch.max) ? 'No stoppage time left, so Lunch / Rest can only be 0.' : null,
               child: _k(
                 'lunchMin',
-                _num(
-                  'lunchMin',
-                  max: lunch.max,
-                  label: 'Lunch / Rest (min)',
-                  onExceed: (_) => EntryFormToast.warn(lunch.message),
-                ),
+                _num('lunchMin', max: lunch.max, label: 'Lunch / Rest (min)', onExceed: (_) => EntryFormToast.warn(lunch.message)),
               ),
             ),
             EntryCell(
@@ -1057,7 +1060,7 @@ class EntryBlockState extends State<EntryBlock> {
               ),
               TextSpan(
                 text: limit == null
-                    ? ' — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance'
+                    ? ' — enter Machine ON/OFF Time to see the allowance'
                     : ' of ${jsNumStr(limit)} min allowed',
                 style: TextStyle(color: s.onSurfaceVariant),
               ),

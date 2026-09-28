@@ -52,6 +52,8 @@ class EntryEditorScreen extends StatefulWidget {
 class _EntryEditorScreenState extends State<EntryEditorScreen> {
   static const _equality = DeepCollectionEquality();
 
+  static const _saveTimeout = Duration(seconds: 25);
+
   bool get _isEdit => widget.row != null;
 
   // One map per machine block (immutable updates: a change replaces the block's map).
@@ -319,7 +321,12 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       for (var i = 0; i < blocks.length; i++) {
         if (!mounted) return;
         setState(() => _savingIndex = i);
-        await Api.put(Endpoints.productionSheetRow, body: toPayload(blocks[i], isEdit: _isEdit));
+        // The form ignores touches while a save is out, so a stalled connection
+        // must give up soon rather than leave it dead for the network's own minute.
+        await Api.put(Endpoints.productionSheetRow, body: toPayload(blocks[i], isEdit: _isEdit)).timeout(
+          _saveTimeout,
+          onTimeout: () => throw ApiException('The server took too long to answer. Check your connection and try again.'),
+        );
         saved.add(i);
       }
       if (!mounted) return;

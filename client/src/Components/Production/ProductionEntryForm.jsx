@@ -6,7 +6,8 @@ import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
 import { useAlert } from "../../context/AlertContext";
 import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, rowCalc } from "../../utils/productionSheet";
-import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, lunchRequired, stoppageLimitMin } from "../../utils/entryValidation";
+import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, stoppageLimitMin } from "../../utils/entryValidation";
+import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -28,8 +29,8 @@ import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, lunchRequired, stoppageLi
  * Rejected/% OK read the same Actual figure.
  *
  * Everything on the form is required except the downtime boxes and the general
- * remarks — and downtime is only checked if something is typed. Lunch / Rest is
- * required only while Planned Operator Shift − Machine Shift leaves time over. The rules live
+ * remarks — and downtime (Lunch / Rest included) is only checked if something is
+ * typed; less than the allowed stoppage is fine. The rules live
  * in utils/entryValidation.js, which the page runs live over every block: Save
  * looks inactive until they all pass, and pressing it anyway sends `focusTarget`
  * here, which opens the first incomplete block and scrolls to its first missing
@@ -81,8 +82,8 @@ const LINES = [
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Ideal Qty, Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
   { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
-  // Lunch / Rest is a property of the shift, not of a stoppage, so it sits with
-  // Planned Operator Shift — though it still counts toward total stoppage.
+  // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
+  // stoppage time everywhere else (the sheet lists it under Total Stoppage).
   { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
   // Every other downtime/stoppage reason in one box, so the whole stoppage
   // picture is visible at a glance and none is easy to miss.
@@ -156,9 +157,11 @@ const EntryBlock = ({
   const rejectOtherUsed = Number(values.rejectBreakdown?.Other) > 0;
 
   // The most stoppage this entry can account for, against what's typed.
+  const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
   const stoppageLimit = useMemo(() => stoppageLimitMin(values), [values]);
+  const machineShiftMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
+  const plannedBelowMachine = planned !== null && machineShiftMin !== null && Math.round(planned * 60) < machineShiftMin;
   const overStoppage = stoppageLimit !== null && calc.totalStoppageMin > stoppageLimit;
-  const lunchNeeded = lunchRequired(values);
   const otherDowntimeUsed = Number(values.otherMin) > 0;
 
   // What each capped box may still take. A Rejection Master box can hold whatever
@@ -180,7 +183,7 @@ const EntryBlock = ({
         warning(
           stoppageLimit === null
             ? "Downtime can't be more than 1440 minutes (a day)."
-            : `Total stoppage can't be more than ${stoppageLimit} min (Planned Operator Shift − Machine Shift) — only ${room} min left for this box.`,
+            : `Total stoppage can't be more than ${stoppageLimit} min (Machine Shift − Effective Run Time) — only ${room} min left for this box.`,
         ),
     };
   };
@@ -459,9 +462,9 @@ const EntryBlock = ({
             </Field>
             <Calc
               label="Machine Shift (hr)"
-              value={fmtNum(calc.shiftHours)}
+              value={hoursToHm(calc.shiftHours)}
               md={4}
-              title="MOD(Machine OFF Time − Machine ON Time, 1) × 24"
+              title="Machine OFF Time − Machine ON Time, as hours:minutes"
             />
           </Row>
           {booked.length > 0 && (
@@ -565,34 +568,34 @@ const EntryBlock = ({
 
         <Line id={7} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Planned Operator Shift (hr)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
+            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
                 value={values.plannedOperatorShiftHours}
                 onChange={handle}
                 invalid={!!err("plannedOperatorShiftHours")}
+                maxLength={5}
                 max={24}
                 onExceedMax={() => warning("Planned Operator Shift can't be more than 24 hours.")}
               />
-            </Field>
-            <Field label="Lunch / Rest (min)" required={lunchNeeded} error={err("lunchMin")} md={4} fieldKey="lunchMin">
-              <NumberInput
-                name="lunchMin"
-                value={values.lunchMin}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("lunchMin")}
-                {...minutesBox("lunchMin")}
-              />
-              {stoppageLimit === 0 && (
-                <p className="text-muted mb-0 small mt-1">Not needed — the machine ran the whole planned shift.</p>
+              {!err("plannedOperatorShiftHours") && (
+                <p className={`mb-0 small mt-1 ${plannedBelowMachine ? "text-danger" : "text-muted"}`}>
+                  {plannedBelowMachine
+                    ? `Can't be less than Machine Shift (${hoursToHm(machineShiftMin / 60)}).`
+                    : planned !== null
+                      ? `= ${hoursToHm(planned)} hr`
+                      : "Type hours.minutes — 3.30 is 3 h 30 min."}
+                </p>
               )}
+            </Field>
+            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={4} fieldKey="lunchMin">
+              <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} invalid={!!err("lunchMin")} {...minutesBox("lunchMin")} />
             </Field>
             <Calc
               label="Stoppage Allowed (min)"
               value={stoppageLimit === null ? "" : String(stoppageLimit)}
               md={4}
-              title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime below can add up to"
+              title="Machine Shift (min) − Effective Machine Run Time (min): the most Lunch / Rest plus every downtime can add up to, so Unreported Time never goes below 0"
             />
           </Row>
         </Line>
@@ -631,7 +634,7 @@ const EntryBlock = ({
               <NumberInput name="otherMin" value={values.otherMin} onChange={handle} decimals={false} invalid={!!err("otherMin")} {...minutesBox("otherMin")} />
             </Field>
           </Row>
-          {/* Lunch / Rest and every box above have to fit inside what Planned
+          {/* Every stoppage box, Lunch / Rest included, has to fit inside what Planned
               Operator Shift leaves after the machine's own run, so the running
               total sits next to that allowance. */}
           <div className="mb-2 small" data-field="stoppageTotal">
@@ -639,7 +642,7 @@ const EntryBlock = ({
             <span className={overStoppage ? "text-danger fw-semibold" : "fw-semibold"}>{fmtNum(calc.totalStoppageMin) || 0} min</span>
             <span className="text-muted">
               {stoppageLimit === null
-                ? " — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance"
+                ? " — enter Machine ON/OFF Time to see the allowance"
                 : ` of ${stoppageLimit} min allowed`}
             </span>
             {err("stoppageTotal") && <p className="text-danger mb-0 mt-1">{err("stoppageTotal")}</p>}

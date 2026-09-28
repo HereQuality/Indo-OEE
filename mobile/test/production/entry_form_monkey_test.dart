@@ -208,9 +208,10 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('downtime boxes take the number pad; with no room they say why and refuse digits, and open up once the planned shift is longer', (tester) async {
+    testWidgets('downtime boxes take the number pad; with no room they say why and refuse digits, and open up once fewer parts are made', (tester) async {
       captureToasts();
-      await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
+      // 8 h run, 480 good parts x 60 s = the whole shift: no stoppage fits.
+      await pumpForm(tester, [_withPart(extra: {'actualQty': '480', 'okQty': '480'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
       expect(boxOf(tester, 'setupMin').readOnly, isFalse);
@@ -219,8 +220,8 @@ void main() {
       await typeKeys(tester, 'setupMin', '5');
       expect(textOf(tester, 0, 'setupMin'), '', reason: 'no room: the digit is refused');
 
-      await typeKeys(tester, 'plannedOperatorShiftHours', '9');
-      expect(textOf(tester, 0, 'plannedOperatorShiftHours'), '9');
+      await typeKeys(tester, 'okQty', '420'); // 60 min of the shift are no longer used by parts
+      expect(textOf(tester, 0, 'okQty'), '420');
       await typeKeys(tester, 'setupMin', '61');
       expect(textOf(tester, 0, 'setupMin'), '6', reason: '60 min are allowed: 6 fits, the 1 after it would make 61');
       await typeKeys(tester, 'setupMin', '60');
@@ -517,12 +518,12 @@ void main() {
       expect(find.textContaining('Actual can only be 0'), findsOneWidget);
     });
 
-    testWidgets('Lunch / Rest, when required but with no room left, accepts "0" as the message says', (tester) async {
-      final form = await pumpForm(tester, [_withPart()]);
+    testWidgets('Lunch / Rest, with no room left, still opens the pad and accepts "0"', (tester) async {
+      final form = await pumpForm(tester, [_withPart(extra: {'actualQty': '480', 'okQty': '480'})]);
       await openBlock(tester, 0);
-      await typeKeys(tester, 'plannedOperatorShiftHours', '9'); // 60 min of stoppage allowed
+      await typeKeys(tester, 'okQty', '420'); // 60 min of stoppage allowed
       await typeKeys(tester, 'setupMin', '60'); // ...all of it used by Setup
-      expect(boxOf(tester, 'lunchMin').readOnly, isFalse, reason: 'Lunch is required here, so it must stay typeable');
+      expect(boxOf(tester, 'lunchMin').readOnly, isFalse, reason: 'a shut box must still open the pad');
       expect(find.textContaining('Lunch / Rest can only be 0'), findsOneWidget);
 
       await typeKeys(tester, 'lunchMin', '5');
@@ -534,7 +535,7 @@ void main() {
 
     testWidgets('optional boxes with no room still open the number pad, and say why they take nothing', (tester) async {
       captureToasts();
-      await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
+      await pumpForm(tester, [_withPart(extra: {'actualQty': '480', 'okQty': '480'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
       for (final name in ['setupMin', 'lunchMin', 'reject/Tool Mark']) {

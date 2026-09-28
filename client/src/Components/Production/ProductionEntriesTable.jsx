@@ -12,7 +12,7 @@ import {
   remarkParts,
   rowCalc,
 } from "../../utils/productionSheet";
-import { stoppageLimitMin } from "../../utils/entryValidation";
+import { hoursToHm } from "../../utils/shiftHours";
 
 // The plain-English formula behind every calculated column — shown in a
 // popover from the eye icon next to its header, so nobody has to remember or
@@ -27,9 +27,7 @@ const FORMULAS = {
   pctOk: "% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)",
   unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
   totalStoppage:
-    "Total Stoppage = Lunch / Rest (open Planned Operator Shift Time) + the downtime columns opened here: Setup Time … Other.",
-  stoppageAllowed:
-    "Stoppage Allowed = Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to. 0 when the machine ran the whole planned shift.",
+    "Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.",
   effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600",
   unreported:
     "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
@@ -49,10 +47,10 @@ const FORMULAS = {
  * the sheet's own order. No section banner above it any more: every column
  * stands on its own name.
  *
- * Four columns fold, each into the same group the entry form shows it in:
+ * Three columns fold, each into the same group the entry form shows it in:
  * Total Cycle Time (sec) → Drilling…Clamp/Declamp; Rejected Quantity → the
- * Rejection Master reasons; Planned Operator Shift Time (hr) → Lunch / Rest and
- * Stoppage Allowed; Total Stoppage (min) → the downtime boxes. The total is
+ * Rejection Master reasons; Total Stoppage (min) → Lunch / Rest and the
+ * downtime boxes. (Planned Operator Shift and Stoppage Allowed are plain columns.) The total is
  * always shown; the chevron beside it opens its breakdown right after it,
  * without hiding the total or disturbing any other column. The Other reject
  * and Other downtime figures carry an eye with their required remark; the
@@ -172,6 +170,8 @@ const DAY_TINT = ["bg-white dark:bg-slate-900", "bg-slate-50 dark:bg-slate-900/6
 
 const dash = (v) => (v === "" || v === null || v === undefined ? "—" : v);
 const n = (v) => dash(fmtNum(v));
+// Decimal hours as a clock reads them: 3.5 → "3:30".
+const hm = (v) => dash(hoursToHm(v));
 const pct = (v) => dash(fmtPct(v));
 // A blank input reads better as a dash than as a 0 nobody typed.
 const min = (v) => (v === null || v === undefined || v === "" ? "—" : fmtNum(Number(v)));
@@ -331,6 +331,7 @@ const WithRemark = ({ value, row, kind }) => {
 // The downtime columns are headed with the same wording as the form, rather
 // than the longer labels the old Excel grid used.
 const DOWNTIME_LABEL = {
+  lunchMin: "Lunch / Rest",
   setupMin: "Setup Time",
   noManPowerMin: "No Man Power",
   materialShiftingMin: "Material Shifting",
@@ -342,7 +343,7 @@ const DOWNTIME_LABEL = {
 };
 
 // ── Columns, flat and in sheet order ─────────────────────────────────────
-// `get(row, calc, day, ctx)` renders one cell. The two `expandable` columns
+// `get(row, calc, day, ctx)` renders one cell. The `expandable` columns
 // always show their own `summary` (the total); opening them additionally
 // appends their `columns` breakdown right after it — the total is never
 // hidden, only the breakdown behind it folds away.
@@ -384,8 +385,8 @@ const COLUMNS = [
   { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-center" },
   {
     key: "shift",
-    label: "Machine Shift Time (hr)",
-    get: (r, c) => n(c.shiftHours),
+    label: "Machine Shift Time (hr:min)",
+    get: (r, c) => hm(c.shiftHours),
     align: "text-center",
     tone: "calc",
   },
@@ -420,24 +421,7 @@ const COLUMNS = [
     })),
   },
   { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-center", tone: "calc" },
-  // Planned Operator Shift folds into what sits beside it on the form: Lunch /
-  // Rest, and the Stoppage Allowed that Planned − Machine Shift leaves for it
-  // and every downtime.
-  {
-    key: "planned",
-    label: "Planned Operator Shift Time (hr)",
-    expandable: true,
-    summary: {
-      key: "plannedShift",
-      label: "Planned Operator Shift Time (hr)",
-      get: (r) => min(r.plannedOperatorShiftHours),
-      align: "text-center",
-    },
-    columns: [
-      { key: "lunchMin", label: "Lunch / Rest (min)", get: (r) => zeroIfBlank(r.lunchMin), align: "text-center" },
-      { key: "stoppageAllowed", label: "Stoppage Allowed (min)", get: (r) => n(stoppageLimitMin(r)), align: "text-center", tone: "calc" },
-    ],
-  },
+  { key: "plannedShift", label: "Planned Operator Shift Time (hr:min)", get: (r) => hm(r.plannedOperatorShiftHours), align: "text-center" },
   {
     key: "unutilized",
     label: "Unutilized Machine Time (%)",
@@ -457,10 +441,11 @@ const COLUMNS = [
       align: "text-center",
       tone: "calc",
     },
-    // The boxes of the form's Downtime / Stoppage group. Lunch / Rest moved to the
-    // Planned Operator Shift group, and plannedDownMin has no box on the form (and
-    // no entry uses it); both still count toward the total.
-    columns: STOPPAGE_FIELDS.filter((f) => !["plannedDownMin", "lunchMin"].includes(f.key)).map((f) => ({
+    // The stoppage columns: Lunch / Rest plus the form's Downtime / Stoppage boxes.
+    // plannedDownMin has no box on the form (and no entry uses it); it still
+    // counts toward the total.
+    // Lunch / Rest is stoppage time, so it is listed first among the stoppage columns.
+    columns: [...STOPPAGE_FIELDS].filter((f) => f.key !== "plannedDownMin").sort((a, b) => (b.key === "lunchMin") - (a.key === "lunchMin")).map((f) => ({
       key: f.key,
       label: DOWNTIME_LABEL[f.key] || f.label,
       get: (r) => {

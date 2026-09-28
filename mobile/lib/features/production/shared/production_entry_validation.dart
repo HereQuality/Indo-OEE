@@ -6,19 +6,20 @@
 // in step.
 //
 //   Required   Date, Machine No., Operator, Part Name, Machine ON/OFF Time,
-//              Actual Qty, OK Qty, Planned Operator Shift — and Lunch / Rest, but
-//              only when Planned Operator Shift − Machine Shift leaves time over.
+//              Actual Qty, OK Qty, Planned Operator Shift (typed H.MM, never less
+//              than the Machine Shift). Lunch / Rest is optional.
 //   Quantities Actual ≤ Ideal, OK ≤ Actual, and the Rejection Master split has to
 //              account for every rejected piece (Rejected = Actual − OK).
 //   Times      Machine OFF Time must be after Machine ON Time, and one machine's
 //              entries on a date can't overlap in time (see [overlapErrors]).
 //   Downtime   Optional, but whatever is typed must be 0–1440, and the total
-//              (Lunch / Rest included) can't exceed Planned Operator Shift −
-//              Machine Shift, in minutes.
+//              (Lunch / Rest included) can't exceed Machine Shift − Effective
+//              Run Time, in minutes (stoppage is inside the ON–OFF window).
 //   "Other"    Rejecting pieces as "Other", or logging Other downtime, needs its
 //              own remark.
 
 import 'production_sheet_calc.dart';
+import 'shift_hours.dart';
 
 /// The downtime boxes on the form. Lunch / Rest sits with Planned Operator
 /// Shift instead, but still counts toward the total (see rowCalc).
@@ -68,21 +69,18 @@ const List<String> fieldOrder = [
 /// JS `blank`: null, "" or whitespace-only text (numbers are never blank).
 bool isBlank(Object? v) => v == null || jsTrim(jsString(v)).isEmpty;
 
-/// Minutes of the operator's planned shift the machine wasn't running — the
-/// most stoppage the entry can account for. null until both numbers exist.
+/// Minutes of the Machine Shift not yet accounted for by good parts — the most
+/// stoppage the entry can hold, since Unreported Time = Shift − Effective Run
+/// Time − Stoppage may never go below 0. Stoppage sits INSIDE the ON–OFF window.
+/// null until both machine times exist (a missing OK Quantity or Part counts
+/// as no effective run yet).
 double? stoppageLimitMin(Map<String, dynamic> v) {
-  final planned = jsNumber(v['plannedOperatorShiftHours']);
   final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
-  if (!isNum(planned) || shiftMin == null) return null;
-  final rounded = jsRound(planned! * 60 - shiftMin);
-  return rounded > 0 ? rounded : 0.0;
-}
-
-/// Lunch / Rest has to be entered only when the planned shift leaves minutes
-/// over the machine's run (stoppageLimitMin > 0).
-bool lunchRequired(Map<String, dynamic> v) {
-  final limit = stoppageLimitMin(v);
-  return limit != null && limit > 0;
+  if (shiftMin == null) return null;
+  final effective = rowCalc(v)['effectiveHours'];
+  final effectiveMin = effective is num && effective.isFinite ? effective * 60 : 0.0;
+  final room = (shiftMin - effectiveMin + 1e-9).floorToDouble();
+  return room > 0 ? room : 0.0;
 }
 
 /// The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
@@ -289,17 +287,28 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
     errors['rejectOtherRemark'] = 'Remark is required when "Other" is a reject reason';
   }
 
-  final planned = jsNumber(v['plannedOperatorShiftHours']);
+  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
+  final plannedParse = parseHm(v['plannedOperatorShiftHours']);
+  final planned = plannedParse.hours;
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
-  } else if (planned == null || !planned.isFinite || planned <= 0 || planned > 24) {
-    errors['plannedOperatorShiftHours'] = 'Must be more than 0 and at most 24 hours';
+  } else if (plannedParse.minutesTooBig) {
+    errors['plannedOperatorShiftHours'] = 'Minutes must be 00–59 (3.30 means 3 h 30 min)';
+  } else if (planned == null) {
+    errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
+  } else if (planned <= 0 || planned > 24) {
+    errors['plannedOperatorShiftHours'] = 'Must be more than 0:00 and at most 24:00';
+  } else {
+    // The operator's planned shift has to cover the time the machine ran.
+    final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
+    if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
+      errors['plannedOperatorShiftHours'] =
+          "Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})";
+    }
   }
-
+  // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
   final lunch = jsNumber(v['lunchMin']);
-  if (isBlank(v['lunchMin'])) {
-    if (lunchRequired(v)) errors['lunchMin'] = 'Lunch / Rest is required (enter 0 if none)';
-  } else if (lunch == null || !lunch.isFinite || lunch < 0 || lunch > 1440) {
+  if (!isBlank(v['lunchMin']) && (lunch == null || !lunch.isFinite || lunch < 0 || lunch > 1440)) {
     errors['lunchMin'] = '0–1440';
   }
 
@@ -316,7 +325,7 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   final totalStoppage = calc['totalStoppageMin'] as double;
   if (limit != null && totalStoppage > limit) {
     errors['stoppageTotal'] =
-        'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Planned Operator Shift − Machine Shift)';
+        'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Machine Shift − Effective Run Time)';
   }
   if ((jsNumber(v['otherMin']) ?? 0) > 0 && isBlank(v['otherMinRemark'])) {
     errors['otherMinRemark'] = 'Remark is required when Other downtime is entered';

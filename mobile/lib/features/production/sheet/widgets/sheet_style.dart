@@ -90,9 +90,9 @@ const Map<String, String> sheetFormulas = {
   'pctOk': '% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)',
   'unutilized': 'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.',
   'totalStoppage':
-      'Total Stoppage = Lunch / Rest (open Planned Operator Shift Time) + the downtime columns opened here: Setup Time … Other.',
+      'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'stoppageAllowed':
-      'Stoppage Allowed = Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to. 0 when the machine ran the whole planned shift.',
+      'Stoppage Allowed = Machine Shift (min) − Effective Machine Run Time (min): the most Lunch / Rest plus every downtime can add up to, so Unreported Time never goes below 0. 0 when the pieces made use the whole Machine Shift.',
   'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600',
   'unreported':
       "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
@@ -110,6 +110,7 @@ const Map<String, String> sheetFormulas = {
 /// The downtime columns are headed with the wording of the form, not the
 /// longer labels of the old Excel grid.
 const Map<String, String> downtimeLabels = {
+  'lunchMin': 'Lunch / Rest',
   'setupMin': 'Setup Time',
   'noManPowerMin': 'No Man Power',
   'materialShiftingMin': 'Material Shifting',

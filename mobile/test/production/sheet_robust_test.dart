@@ -159,7 +159,7 @@ void main() {
       install(pages: {1: messyRows()});
       await open(tester, size: cfg.$1, dark: cfg.$2, textScale: cfg.$3);
       expect(tester.takeException(), isNull, reason: 'first paint at ${cfg.$1}');
-      for (final id in ['cycle', 'rejectedQty', 'planned', 'downtime']) {
+      for (final id in ['cycle', 'rejectedQty', 'downtime']) {
         final chevron = byKey('expand-$id-closed');
         if (chevron.evaluate().isEmpty) continue;
         // Scroll the header sideways until the chevron is on screen.
@@ -190,8 +190,8 @@ void main() {
   });
 
   testWidgets('every table column key is unique whichever breakdowns are open', (tester) async {
-    for (var mask = 0; mask < 16; mask++) {
-      final open = <String>{for (var i = 0; i < 4; i++) if (mask & (1 << i) != 0) expandIds[i]};
+    for (var mask = 0; mask < 8; mask++) {
+      final open = <String>{for (var i = 0; i < 3; i++) if (mask & (1 << i) != 0) expandIds[i]};
       final cols = buildSheetColumns(open);
       final keys = [...cols.left, ...cols.middle].map((c) => c.key).toList();
       expect(keys.toSet().length, keys.length, reason: 'duplicate column key with $open');
