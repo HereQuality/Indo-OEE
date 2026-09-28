@@ -38,16 +38,17 @@ void main() {
         // The web types Planned Operator Shift as decimal hours; the phone types
         // H.MM. Feed the phone the same time, and leave out the two fields whose
         // rules are the phone's own (Lunch / Rest is optional, Planned Operator
-        // Shift is checked against the Machine Shift, and the stoppage cap) — every other message,
+        // Shift is checked against the Machine Shift) — every other message,
         // and the order of them, is still the web's.
         final v = _m(c['v']);
         final planned = jsNumber(v['plannedOperatorShiftHours']);
         if (planned != null && planned > 0 && planned <= 24 && !isBlank(v['plannedOperatorShiftHours'])) {
           v['plannedOperatorShiftHours'] = hoursToHmInput(planned);
         }
-        // The stoppage cap is the phone's (and the web's) own too: stoppage sits
-        // inside the ON–OFF window, so it is Machine Shift − Effective Run Time.
-        const own = {'lunchMin', 'plannedOperatorShiftHours', 'stoppageTotal'};
+        // A planned shift that isn't a usable time is reported on its own field,
+        // so the phone has no stoppage allowance to compare against.
+        final usable = planned != null && planned > 0 && planned <= 24;
+        final own = {'lunchMin', 'plannedOperatorShiftHours', if (!usable) 'stoppageTotal'};
         final got = {for (final e in validateEntry(v).entries) if (!own.contains(e.key)) e.key: e.value};
         final want = {for (final e in (c['errors'] as Map).entries) if (!own.contains(e.key)) e.key: e.value};
         expect(diff(got, want), isNull, reason: 'case $i ${showCase(c['v'])}');
@@ -191,23 +192,27 @@ void main() {
       expect(validateEntry(_valid({'lunchMin': 'x'}))['lunchMin'], '0–1440');
     });
 
-    // _valid: 8 h run, 45 s cycle, 590 OK -> 442.5 min effective -> 37 min of the
-    // Machine Shift left for stoppage (Lunch / Rest included).
-    test('less stoppage than allowed saves; only Machine Shift − Effective Run Time is allowed', () {
-      final v = _valid({'lunchMin': '20', 'setupMin': '10'});
-      expect(validateEntry(v), isEmpty);
-      expect(validateEntry({...v, 'setupMin': '17'}), isEmpty); // 37 = exactly the allowance
+    // _valid: 8 h run, planned 8.30 -> 30 min of stoppage (Lunch / Rest included).
+    test('less stoppage than allowed saves; only Planned Operator Shift − Machine Shift is allowed', () {
+      expect(validateEntry(_valid({'lunchMin': '20', 'setupMin': '5'})), isEmpty); // 25 of 30
+      expect(validateEntry(_valid({'lunchMin': '20', 'setupMin': '10'})), isEmpty); // exactly 30
       expect(
-        validateEntry({...v, 'setupMin': '18'})['stoppageTotal'],
-        'Total stoppage is 38 min but only 37 min is allowed (Machine Shift − Effective Run Time)',
+        validateEntry(_valid({'lunchMin': '20', 'setupMin': '11'}))['stoppageTotal'],
+        'Total stoppage is 31 min but only 30 min is allowed (Planned Operator Shift − Machine Shift)',
       );
+      // 13 h planned on a 12 h run -> 60 min allowed
+      final long = _valid({'machineOnTime': '08:00', 'machineOffTime': '20:00', 'plannedOperatorShiftHours': '13', 'totalCycleSec': '57', 'actualQty': '600', 'okQty': '590', 'lunchMin': '30', 'setupMin': '30'});
+      expect(validateEntry(long).containsKey('stoppageTotal'), isFalse);
     });
 
-    test('stoppage: each downtime box 0-1440, and Unreported Time can never go negative', () {
+    test('stoppage: each downtime box 0-1440 and the total capped by planned - shift', () {
       expect(validateEntry(_valid({'setupMin': '1441', 'lunchMin': '0'}))['setupMin'], '0–1440');
       expect(validateEntry(_valid({'noPowerMin': '-1'}))['noPowerMin'], '0–1440');
-      // Planned Operator Shift no longer sets the allowance: 13 h planned still allows only 37
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '13', 'lunchMin': '60'}))['stoppageTotal'], isNotNull);
+      // no allowance at all -> any stoppage is over the cap
+      expect(
+        validateEntry(_valid({'plannedOperatorShiftHours': '8.00', 'lunchMin': '0', 'setupMin': '1'}))['stoppageTotal'],
+        'Total stoppage is 1 min but only 0 min is allowed (Planned Operator Shift − Machine Shift)',
+      );
       // Planned Down Time is part of the total too
       expect(validateEntry(_valid({'plannedDownMin': '50'}))['stoppageTotal'], isNotNull);
       // A new entry can't run through midnight any more (one entry per date)…
@@ -232,13 +237,16 @@ void main() {
   });
 
   group('helpers', () {
-    test('stoppageLimitMin = Machine Shift − Effective Run Time in whole minutes, never below 0', () {
-      expect(stoppageLimitMin(_valid()), 37); // 480 − 590×45/60 = 37.5 -> 37
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '13'})), 37, reason: 'Planned does not matter');
-      expect(stoppageLimitMin(_valid({'okQty': '640'})), 0); // 640 × 45 s = 480 min: the whole shift
-      expect(stoppageLimitMin(_valid({'okQty': ''})), 480); // nothing made yet
-      expect(stoppageLimitMin(_valid({'itemName': '', 'totalCycleSec': ''})), 480); // no part -> no run time
+    test('stoppageLimitMin = round(planned*60 - shift), never below 0, null until both exist', () {
+      // (the sheet's stored rows hold decimal hours; the form's H.MM goes through withDecimalPlanned)
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.5'})), 30);
+      expect(stoppageLimitMin(withDecimalPlanned(_valid())), 30);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '7'})), 0);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.004'})), 0); // 0.24 rounds to 0
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.0084'})), 1);
       expect(stoppageLimitMin(_valid({'machineOffTime': ''})), isNull);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': ''})), isNull);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': 'abc'})), isNull);
     });
 
     test('cleanSplit keeps only positive numbers', () {

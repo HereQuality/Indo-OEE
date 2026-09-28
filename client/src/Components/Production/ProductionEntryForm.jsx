@@ -6,7 +6,7 @@ import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
 import { useAlert } from "../../context/AlertContext";
 import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, rowCalc } from "../../utils/productionSheet";
-import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, stoppageLimitMin } from "../../utils/entryValidation";
+import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
 /**
@@ -158,8 +158,12 @@ const EntryBlock = ({
 
   // The most stoppage this entry can account for, against what's typed.
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
-  const stoppageLimit = useMemo(() => stoppageLimitMin(values), [values]);
+  const stoppageLimit = useMemo(() => stoppageLimitMin(withDecimalPlanned(values)), [values]);
   const machineShiftMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
+  // Unreported Time for this entry = Stoppage Allowed − Total Stoppage, i.e.
+  // Planned − Machine Shift − Stoppage in whole minutes. The sheet adds it up
+  // over the machine's whole date; here it is this entry alone.
+  const unreportedMin = stoppageLimit === null ? null : stoppageLimit - (calc.totalStoppageMin || 0);
   const plannedBelowMachine = planned !== null && machineShiftMin !== null && Math.round(planned * 60) < machineShiftMin;
   const overStoppage = stoppageLimit !== null && calc.totalStoppageMin > stoppageLimit;
   const otherDowntimeUsed = Number(values.otherMin) > 0;
@@ -183,7 +187,7 @@ const EntryBlock = ({
         warning(
           stoppageLimit === null
             ? "Downtime can't be more than 1440 minutes (a day)."
-            : `Total stoppage can't be more than ${stoppageLimit} min (Machine Shift − Effective Run Time) — only ${room} min left for this box.`,
+            : `Total stoppage can't be more than ${stoppageLimit} min (Planned Operator Shift − Machine Shift) — only ${room} min left for this box.`,
         ),
     };
   };
@@ -568,7 +572,7 @@ const EntryBlock = ({
 
         <Line id={7} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
+            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={3} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
                 value={values.plannedOperatorShiftHours}
@@ -588,14 +592,20 @@ const EntryBlock = ({
                 </p>
               )}
             </Field>
-            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={4} fieldKey="lunchMin">
+            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={3} fieldKey="lunchMin">
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} invalid={!!err("lunchMin")} {...minutesBox("lunchMin")} />
             </Field>
             <Calc
               label="Stoppage Allowed (min)"
               value={stoppageLimit === null ? "" : String(stoppageLimit)}
-              md={4}
-              title="Machine Shift (min) − Effective Machine Run Time (min): the most Lunch / Rest plus every downtime can add up to, so Unreported Time never goes below 0"
+              md={3}
+              title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to"
+            />
+            <Calc
+              label="Unreported Time (min)"
+              value={unreportedMin === null ? "" : fmtNum(unreportedMin)}
+              md={3}
+              title="Planned Operator Shift − Machine Shift − Total Stoppage, for this entry. The sheet adds it up over the machine's whole date."
             />
           </Row>
         </Line>
@@ -642,7 +652,7 @@ const EntryBlock = ({
             <span className={overStoppage ? "text-danger fw-semibold" : "fw-semibold"}>{fmtNum(calc.totalStoppageMin) || 0} min</span>
             <span className="text-muted">
               {stoppageLimit === null
-                ? " — enter Machine ON/OFF Time to see the allowance"
+                ? " — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance"
                 : ` of ${stoppageLimit} min allowed`}
             </span>
             {err("stoppageTotal") && <p className="text-danger mb-0 mt-1">{err("stoppageTotal")}</p>}

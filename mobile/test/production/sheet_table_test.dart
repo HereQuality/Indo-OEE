@@ -44,7 +44,7 @@ void main() {
     final api = install();
     await open(tester);
     expect(byKey('sheet-table-list'), findsOneWidget);
-    for (final key in ['date', 'machine', 'operator', 'itemName', 'drawingNo', 'cycle', 'on', 'off', 'shift', 'idealQty', 'actualQty', 'okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'unutilized', 'totalStoppage', 'effective', 'unreported', 'gap', 'setupEff', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'remarks', 'actions']) {
+    for (final key in ['date', 'machine', 'operator', 'itemName', 'drawingNo', 'cycle', 'on', 'off', 'shift', 'idealQty', 'actualQty', 'okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'unutilized', 'totalStoppage', 'effective', 'unreported', 'setupEff', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'remarks', 'actions']) {
       expect(byKey('head-$key'), findsOneWidget, reason: 'column $key');
     }
     expect(find.text('Part Name'), findsOneWidget);

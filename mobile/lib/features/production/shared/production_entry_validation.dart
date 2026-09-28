@@ -13,8 +13,8 @@
 //   Times      Machine OFF Time must be after Machine ON Time, and one machine's
 //              entries on a date can't overlap in time (see [overlapErrors]).
 //   Downtime   Optional, but whatever is typed must be 0–1440, and the total
-//              (Lunch / Rest included) can't exceed Machine Shift − Effective
-//              Run Time, in minutes (stoppage is inside the ON–OFF window).
+//              (Lunch / Rest included) can't exceed Planned Operator Shift −
+//              Machine Shift, in minutes.
 //   "Other"    Rejecting pieces as "Other", or logging Other downtime, needs its
 //              own remark.
 
@@ -69,18 +69,24 @@ const List<String> fieldOrder = [
 /// JS `blank`: null, "" or whitespace-only text (numbers are never blank).
 bool isBlank(Object? v) => v == null || jsTrim(jsString(v)).isEmpty;
 
-/// Minutes of the Machine Shift not yet accounted for by good parts — the most
-/// stoppage the entry can hold, since Unreported Time = Shift − Effective Run
-/// Time − Stoppage may never go below 0. Stoppage sits INSIDE the ON–OFF window.
-/// null until both machine times exist (a missing OK Quantity or Part counts
-/// as no effective run yet).
+/// Minutes of the operator's planned shift the machine wasn't running — the
+/// most stoppage the entry can account for (Planned Operator Shift − Machine
+/// Shift). null until both numbers exist. Works on DECIMAL planned hours (a saved
+/// row); the form's typed H.MM goes through [withDecimalPlanned] first.
 double? stoppageLimitMin(Map<String, dynamic> v) {
+  final planned = jsNumber(v['plannedOperatorShiftHours']);
   final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
-  if (shiftMin == null) return null;
-  final effective = rowCalc(v)['effectiveHours'];
-  final effectiveMin = effective is num && effective.isFinite ? effective * 60 : 0.0;
-  final room = (shiftMin - effectiveMin + 1e-9).floorToDouble();
-  return room > 0 ? room : 0.0;
+  if (!isNum(planned) || shiftMin == null) return null;
+  final rounded = jsRound(planned! * 60 - shiftMin);
+  return rounded > 0 ? rounded : 0.0;
+}
+
+/// The form keeps Planned Operator Shift as typed H.MM text ("3.30" = 3 h
+/// 30 min); the rules work in decimal hours. [v] with that one value converted
+/// ('' when it is not a usable time).
+Map<String, dynamic> withDecimalPlanned(Map<String, dynamic> v) {
+  final planned = parseHm(v['plannedOperatorShiftHours']).hours;
+  return {...v, 'plannedOperatorShiftHours': planned ?? ''};
 }
 
 /// The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
@@ -306,6 +312,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
           "Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})";
     }
   }
+  v = withDecimalPlanned(v);
+
   // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
   final lunch = jsNumber(v['lunchMin']);
   if (!isBlank(v['lunchMin']) && (lunch == null || !lunch.isFinite || lunch < 0 || lunch > 1440)) {
@@ -325,7 +333,7 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   final totalStoppage = calc['totalStoppageMin'] as double;
   if (limit != null && totalStoppage > limit) {
     errors['stoppageTotal'] =
-        'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Machine Shift − Effective Run Time)';
+        'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Planned Operator Shift − Machine Shift)';
   }
   if ((jsNumber(v['otherMin']) ?? 0) > 0 && isBlank(v['otherMinRemark'])) {
     errors['otherMinRemark'] = 'Remark is required when Other downtime is entered';

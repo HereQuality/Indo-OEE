@@ -30,10 +30,10 @@
  * are that whole date's totals, so every one of that machine's entries for the day
  * shows the same number). Pure math off the day's totals — none of them use Planned
  * Operator Shift Time or Working Status/Operator, so none wait on those:
- *   9  Unreported Time (min)    = Day Shift×60 − Day Effective×60 − Day Stoppage
- *   11 OEE considering losses   = Day Effective ÷ (Day Shift − Day Stoppage/60)
- *   12 OEE … but lunch          = Day Effective ÷ (Day Shift − Day Lunch/60)
- *   13 OEE … but lunch and Setup Time = Day Effective ÷ (Day Shift − Day Lunch/60 − Day Setup/60)
+ *   9  Unreported Time (min)    = Day (Planned − Shift)×60 − Day Stoppage, in whole minutes
+ *   11 OEE considering losses   = Day Effective ÷ (Day Available − Day Stoppage/60)
+ *   12 OEE … but lunch          = Day Effective ÷ (Day Available − Day Lunch/60)
+ *   13 OEE … but lunch and Setup Time = Day Effective ÷ (Day Available − Day Lunch/60 − Day Setup/60)
  */
 
 export const SLOTS_PER_DAY = 3;
@@ -260,7 +260,18 @@ export function dayCalc(rows) {
   // shifts (slots) are really one day's efficiency, so every entry of that
   // machine/date shows the same combined figure rather than three different
   // numbers for what is one day's work.
-  const dayShiftH = sumOrZero(calcs.map((c) => c.shiftHours));
+  // Time available for the machine: the operator's Planned Operator Shift, which
+  // is where stoppage happens (the form allows Planned − Machine Shift of it).
+  // A row with no usable Planned (or one shorter than its Machine Shift, an old
+  // row) counts its Machine Shift, so nothing is ever less than the run itself.
+  const dayAvailH = sumOrZero(
+    list.map((r, i) => {
+      const shift = calcs[i].shiftHours;
+      if (!isNum(shift)) return null;
+      const planned = num(r.plannedOperatorShiftHours);
+      return isNum(planned) && planned > shift ? planned : shift;
+    }),
+  );
   const dayStoppageMin = sumOrZero(calcs.map((c) => c.totalStoppageMin));
   const dayEffectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
   const dayLunchMin = sumOrZero(list.map((r) => num(r.lunchMin)));
@@ -269,11 +280,27 @@ export function dayCalc(rows) {
   // all — otherwise the combined figures use whatever entries do have one.
   const dayHasShift = calcs.some((c) => isNum(c.shiftHours));
 
-  const dayUnreportedMin = dayHasShift ? dayShiftH * 60 - dayEffectiveH * 60 - dayStoppageMin : null;
-  const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayStoppageMin / 60) : null;
-  const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60) : null;
+  // Unreported Time = Planned Operator Shift − Machine Shift − Stoppage, all in
+  // whole minutes: the part of the planned window that is neither machine run
+  // nor a logged stoppage. (A row saved without a Planned shift — only the oldest
+  // ones — falls back to Shift − Effective Run Time − Stoppage.)
+  const dayUnreportedMin = dayHasShift
+    ? sumOrZero(
+        list.map((r, i) => {
+          const c = calcs[i];
+          const stop = c.totalStoppageMin || 0;
+          if (!isNum(c.shiftHours)) return -stop;
+          const planned = num(r.plannedOperatorShiftHours);
+          if (!isNum(planned)) return c.shiftHours * 60 - (c.effectiveHours || 0) * 60 - stop;
+          const shiftMin = Math.round(c.shiftHours * 60);
+          return Math.max(Math.round(planned * 60), shiftMin) - shiftMin - stop;
+        }),
+      )
+    : null;
+  const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
+  const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
   // (Named …Cot — the key saved dashboards use — though the column now reads "Setup Time".)
-  const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60 - daySetupMin / 60) : null;
+  const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null;
 
   return list.map((row, i) => {
     // The clock gap between this row's own Machine OFF and the next row's

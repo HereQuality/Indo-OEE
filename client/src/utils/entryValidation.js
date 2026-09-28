@@ -18,8 +18,7 @@ import { hoursToHm, parseHm } from "./shiftHours";
  *               entries on a date can't overlap in time (see overlapErrors).
  *   Downtime    Optional (Lunch / Rest included — blank counts as 0), but
  *               whatever is typed must be 0–1440, and the total can't exceed
- *               Machine Shift − Effective Run Time, in minutes (stoppage sits
- *               inside the ON–OFF window). Less is fine.
+ *               Planned Operator Shift − Machine Shift, in minutes. Less is fine.
  *   "Other"     Rejecting pieces as "Other", or logging Other downtime, needs
  *               its own remark.
  *
@@ -150,17 +149,20 @@ export const FIELD_ORDER = [
   ...CYCLE_OP_KEYS,
 ];
 
-// Minutes of the Machine Shift not yet accounted for by good parts — the most
-// stoppage the entry can hold, since Unreported Time = Shift − Effective Run
-// Time − Stoppage may never go below 0. Stoppage sits INSIDE the ON–OFF window.
-// null until both machine times exist (a missing OK Quantity or Part counts as
-// no effective run yet). Keep in step with the phone app and the server.
+// Minutes of the operator's planned shift the machine wasn't running — the
+// most stoppage the entry can account for (Planned Operator Shift − Machine
+// Shift). null until both numbers exist. Works on DECIMAL planned hours (a saved
+// row); the form's typed H.MM goes through withDecimalPlanned first.
 export const stoppageLimitMin = (v) => {
+  const planned = num(v.plannedOperatorShiftHours);
   const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
-  if (shiftMin === null) return null;
-  const effectiveMin = (rowCalc(v).effectiveHours || 0) * 60;
-  return Math.max(0, Math.floor(shiftMin - effectiveMin + 1e-9));
+  if (!isNum(planned) || shiftMin === null) return null;
+  return Math.max(0, Math.round(planned * 60 - shiftMin));
 };
+
+// A form block with Planned Operator Shift converted from typed H.MM to decimal
+// hours ("" when it isn't a usable time).
+export const withDecimalPlanned = (v) => ({ ...v, plannedOperatorShiftHours: parseHm(v.plannedOperatorShiftHours).hours ?? "" });
 
 // The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
 export const cleanSplit = (split) =>
@@ -242,6 +244,8 @@ export const validateEntry = (v, { saved = null } = {}) => {
       errors.plannedOperatorShiftHours = `Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})`;
     }
   }
+  v = withDecimalPlanned(v);
+
   // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
   const lunch = num(v.lunchMin);
   if (!blank(v.lunchMin) && (!Number.isFinite(lunch) || lunch < 0 || lunch > 1440)) errors.lunchMin = "0–1440";
@@ -257,7 +261,7 @@ export const validateEntry = (v, { saved = null } = {}) => {
 
   const limit = stoppageLimitMin(v);
   if (limit !== null && calc.totalStoppageMin > limit) {
-    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Machine Shift − Effective Run Time)`;
+    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Planned Operator Shift − Machine Shift)`;
   }
   if (num(v.otherMin) > 0 && blank(v.otherMinRemark)) {
     errors.otherMinRemark = "Remark is required when Other downtime is entered";

@@ -83,6 +83,31 @@ api.interceptors.response.use(
     }
 );
 
+// One request for the same GET at the same time. Two components (or an effect
+// that runs twice) asking for the identical URL + params while the first is still
+// in flight get that first request's answer instead of a second trip to the
+// server. Only GETs, only while in flight — nothing is cached afterwards, so the
+// next call (a refresh, a changed filter) always reads fresh data. Calls that can
+// be cancelled (signal / cancelToken) are left alone.
+const inFlight = new Map();
+const plainGet = api.get.bind(api);
+api.get = (url, config = {}) => {
+    if (config.signal || config.cancelToken) return plainGet(url, config);
+    let key;
+    try {
+        key = JSON.stringify([url, config.params ?? null, config.headers ?? null, config.responseType ?? null]);
+    } catch {
+        return plainGet(url, config);
+    }
+    const running = inFlight.get(key);
+    if (running) return running;
+    const request = plainGet(url, config).finally(() => {
+        if (inFlight.get(key) === request) inFlight.delete(key);
+    });
+    inFlight.set(key, request);
+    return request;
+};
+
 export const getLoggedInUser = () => {
     const user = localStorage.getItem("user");
     if (user) return JSON.parse(user);

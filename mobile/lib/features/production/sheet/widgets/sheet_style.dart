@@ -92,19 +92,17 @@ const Map<String, String> sheetFormulas = {
   'totalStoppage':
       'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'stoppageAllowed':
-      'Stoppage Allowed = Machine Shift (min) − Effective Machine Run Time (min): the most Lunch / Rest plus every downtime can add up to, so Unreported Time never goes below 0. 0 when the pieces made use the whole Machine Shift.',
+      'Stoppage Allowed = Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to. 0 when the machine ran the whole planned shift.',
   'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).',
   'unreported':
-      "Unreported Time = (Shift Hours × 60) − (Effective Runtime × 60) − Total Downtime, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
+      "Unreported Time (min) = Planned Operator Shift − Machine Shift − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   'setupEff': 'Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time',
   'oeeLosses':
-      "OEE considering losses = Effective Run Time ÷ (Shift Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",
+      "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",
   'oeeLunch':
-      "OEE not considering losses but lunch = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
+      "OEE not considering losses but lunch = Effective Run Time ÷ (Available Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
   'oeeLunchCot':
-      "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Shift Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
-  'gap':
-      "Gap to next shift = the next entry's Machine ON Time − this entry's Machine OFF Time, on the same machine and date — a blind spot with no entry, not a downtime. Blank for the day's last entry.",
+      "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Available Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
 };
 
 /// The downtime columns are headed with the wording of the form, not the

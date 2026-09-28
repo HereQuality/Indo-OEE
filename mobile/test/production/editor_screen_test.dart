@@ -451,10 +451,9 @@ void main() {
     editorTest('total stoppage above the allowance blocks the save', (tester) async {
       await open(tester);
       await fillValid(tester);
-      // 8 h run, 390 good parts x 60 s = 390 min -> 90 min left; 40 already typed
-      form(tester).onChange(0, 'noPowerMin', '60');
+      form(tester).onChange(0, 'noPowerMin', '30');
       await tester.pump();
-      expect(form(tester).errors[0]['stoppageTotal'], contains('only 90 min is allowed'));
+      expect(form(tester).errors[0]['stoppageTotal'], contains('only 60 min is allowed'));
       expect(bar(tester).canSave, isFalse);
     });
   });

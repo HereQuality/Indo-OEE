@@ -960,6 +960,10 @@ class EntryBlockState extends State<EntryBlock> {
               label: 'Stoppage Allowed (min)',
               child: _calc('stoppageAllowed', limit == null ? '' : jsNumStr(limit), 'Stoppage Allowed (min)'),
             ),
+            EntryCell(
+              label: 'Unreported Time (min)',
+              child: _calc('unreported', m.unreportedMin == null ? '' : entryFmt(m.unreportedMin), 'Unreported Time (min)'),
+            ),
           ],
         ),
       ],
@@ -1060,7 +1064,7 @@ class EntryBlockState extends State<EntryBlock> {
               ),
               TextSpan(
                 text: limit == null
-                    ? ' — enter Machine ON/OFF Time to see the allowance'
+                    ? ' — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance'
                     : ' of ${jsNumStr(limit)} min allowed',
                 style: TextStyle(color: s.onSurfaceVariant),
               ),

@@ -126,13 +126,28 @@ test("Planned Operator Shift can't be less than the Machine Shift, and its minut
   assert.equal(validate(block({ plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours, undefined);
 });
 
-test("Stoppage sits inside the ON–OFF window: allowed = Machine Shift − Effective Run Time (480 − 442.5 → 37 min)", () => {
+test("Stoppage is capped by Planned Operator Shift − Machine Shift (9:00 − 8:00 → 60 min), and less is fine", () => {
   assert.deepEqual(validate(block()), {});
-  assert.deepEqual(validate(block({ lunchMin: "20", setupMin: "17" })), {}); // exactly the 37, and less is fine
+  assert.deepEqual(validate(block({ lunchMin: "20", setupMin: "30" })), {}); // 50 of 60
+  assert.deepEqual(validate(block({ lunchMin: "30", setupMin: "30" })), {}); // exactly 60
   assert.equal(
-    validate(block({ lunchMin: "20", setupMin: "18" })).stoppageTotal,
-    "Total stoppage is 38 min but only 37 min is allowed (Machine Shift − Effective Run Time)",
+    validate(block({ lunchMin: "30", setupMin: "31" })).stoppageTotal,
+    "Total stoppage is 61 min but only 60 min is allowed (Planned Operator Shift − Machine Shift)",
   );
-  // Planned Operator Shift no longer widens it, so Unreported Time can't go negative
-  assert.ok(validate(block({ plannedOperatorShiftHours: "13.00", lunchMin: "60" })).stoppageTotal);
+});
+
+import { dayCalc } from "./productionSheet";
+
+test("Unreported Time = Planned − Machine Shift − Stoppage in whole minutes (good-part run time plays no part)", () => {
+  const row = (o = {}) => ({
+    machine: "m1", date: "2026-09-28", itemName: "Part 1", totalCycleSec: 57,
+    machineOnTime: "08:00", machineOffTime: "20:00", actualQty: 757, okQty: 753,
+    plannedOperatorShiftHours: 14, lunchMin: 30, setupMin: 30, ...o,
+  });
+  assert.equal(dayCalc([row()])[0].unreportedMin, 60); // 840 − 720 − 60, not 64.65
+  assert.equal(dayCalc([row({ plannedOperatorShiftHours: 13 })])[0].unreportedMin, 0); // was −55.35
+  assert.equal(dayCalc([row({ okQty: 100 })])[0].unreportedMin, 60);
+  // two entries on one date add up
+  const both = dayCalc([row(), row({ machineOnTime: "20:00", machineOffTime: "22:00", plannedOperatorShiftHours: 2.5, lunchMin: 0, setupMin: 10 })]);
+  assert.equal(both[0].unreportedMin, 60 + (30 - 10));
 });

@@ -37,7 +37,7 @@ class EntryMetrics {
   EntryMetrics(this.values)
       : calc = rowCalc(values),
         splitTotal = cleanSplit(values['rejectBreakdown']).values.fold<double>(0, (s, n) => s + n),
-        stoppageLimit = stoppageLimitMin(values),
+        stoppageLimit = stoppageLimitMin(withDecimalPlanned(values)),
         plannedHours = parseHm(values['plannedOperatorShiftHours']).hours {
     rejected = _or0(_dbl(calc['rejectedQty']));
     totalStoppage = _dbl(calc['totalStoppageMin']) ?? 0;
@@ -51,7 +51,7 @@ class EntryMetrics {
   /// Sum of the Rejection Master boxes (blanks and zeros dropped).
   final double splitTotal;
 
-  /// Minutes of the Machine Shift not used by good parts (null until known).
+  /// Minutes of the planned shift the machine did not run (null until known).
   final double? stoppageLimit;
 
   /// Planned Operator Shift as decimal hours (null while it isn't a usable H.MM).
@@ -59,6 +59,14 @@ class EntryMetrics {
 
   /// Machine Shift in minutes (null until ON and OFF are both picked).
   double? get machineShiftMin => spanMinutes(values['machineOnTime'], values['machineOffTime']);
+
+  /// Unreported Time of this entry (min) = Stoppage Allowed − Total Stoppage,
+  /// i.e. Planned − Machine Shift − Stoppage in whole minutes. null until both
+  /// are known. The sheet sums it over the machine's day.
+  double? get unreportedMin {
+    final limit = stoppageLimit;
+    return limit == null ? null : limit - totalStoppage;
+  }
 
   /// The planned shift is shorter than the time the machine ran.
   bool get plannedBelowMachine {
@@ -98,7 +106,7 @@ class EntryMetrics {
       max: room,
       message: limit == null
           ? "Downtime can't be more than 1440 minutes (a day)."
-          : "Total stoppage can't be more than ${jsNumStr(limit)} min (Machine Shift − Effective Run Time) — only ${jsNumStr(room)} min left for this box.",
+          : "Total stoppage can't be more than ${jsNumStr(limit)} min (Planned Operator Shift − Machine Shift) — only ${jsNumStr(room)} min left for this box.",
     );
   }
 
@@ -119,7 +127,7 @@ class EntryMetrics {
   /// Why the downtime boxes cannot take a figure.
   String get downtimeLockReason {
     final limit = stoppageLimit;
-    if (limit == null || limit <= 0) return 'No stoppage time left — the pieces made already use the whole Machine Shift.';
+    if (limit == null || limit <= 0) return 'No stoppage time left — the machine ran the whole planned shift.';
     return 'No stoppage time left — all ${jsNumStr(limit)} min allowed are used.';
   }
 

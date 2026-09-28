@@ -133,7 +133,6 @@ class EntryDetail extends StatelessWidget {
               _Metric(label: 'Machine Shift Time (hr:min)', value: hmStr(calc['shiftHours']), tone: SheetTones.calc, formulaKey: 'shift'),
               _Metric(label: 'Planned Operator Shift Time (hr:min)', value: hmStr(_v('plannedOperatorShiftHours'))),
               _Metric(label: 'Unutilized Machine Time (%)', value: pctStr(day['unutilized']), tone: SheetTones.day, formulaKey: 'unutilized'),
-              _Metric(label: 'Gap to next shift (min)', value: nStr(day['gapMin']), tone: SheetTones.day, formulaKey: 'gap'),
             ],
           ),
           _Group(

@@ -469,7 +469,7 @@ const SUMMARY_COLUMNS = [
   { label: "% Rejected", hint: "Rejected ÷ Actual" },
   { label: "Effective Run", hint: "OK × cycle time" },
   { label: "Downtime", hint: "All stoppage causes" },
-  { label: "Unreported", hint: "Shift − effective run − downtime, per machine-day" },
+  { label: "Unreported", hint: "Planned shift − machine shift − downtime, per machine-day" },
   { label: "OEE · Losses", hint: "OEE considering losses — averaged over the machine's days" },
   { label: "OEE · Lunch", hint: "OEE not considering losses, but lunch — averaged over the machine's days" },
   { label: "OEE · Lunch + Setup Time", hint: "OEE not considering losses, but lunch and setup time — averaged over the machine's days" },

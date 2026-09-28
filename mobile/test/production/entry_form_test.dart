@@ -68,9 +68,8 @@ void main() {
     await typeIn(tester, 0, 'otherMin', '5');
     expect(find.byKey(const ValueKey('entry0/otherMinRemark'), skipOffstage: false), findsOneWidget);
 
-    // Good parts fill the whole 8 h run -> no allowance -> the stoppage boxes say so.
-    await typeIn(tester, 0, 'actualQty', '480');
-    await typeIn(tester, 0, 'okQty', '480');
+    // Planned shift equal to the run -> no allowance -> the stoppage boxes say so.
+    await typeIn(tester, 0, 'plannedOperatorShiftHours', '8');
     expect(find.textContaining('No stoppage time left'), findsWidgets);
   });
 

@@ -191,7 +191,7 @@ const List<(String, String?)> summaryColumns = [
   ('% Rejected', 'Rejected ÷ Actual'),
   ('Effective Run', 'OK × cycle time'),
   ('Downtime', 'All stoppage causes'),
-  ('Unreported', 'Shift − effective run − downtime, per machine-day'),
+  ('Unreported', 'Planned shift − machine shift − downtime, per machine-day'),
   ('OEE · Losses', "OEE considering losses — averaged over the machine's days"),
   ('OEE · Lunch', "OEE not considering losses, but lunch — averaged over the machine's days"),
   ('OEE · Lunch + Setup Time', "OEE not considering losses, but lunch and setup time — averaged over the machine's days"),

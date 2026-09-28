@@ -433,7 +433,19 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   final list = sortByMachineOn(rows);
   final calcs = list.map(rowCalc).toList();
 
-  final dayShiftH = _sumOrZero(calcs.map((c) => c['shiftHours'] as double?));
+  // Time available for the machine: the operator's Planned Operator Shift, which
+  // is where stoppage happens (the form allows Planned − Machine Shift of it).
+  // A row with no usable Planned (or one shorter than its Machine Shift, an old
+  // row) counts its Machine Shift, so nothing is ever less than the run itself.
+  final dayAvailH = _sumOrZero([
+    for (var i = 0; i < list.length; i++)
+      () {
+        final shift = calcs[i]['shiftHours'] as double?;
+        if (!isNum(shift)) return null;
+        final planned = jsNumber(list[i]['plannedOperatorShiftHours']);
+        return isNum(planned) && planned! > shift! ? planned : shift;
+      }(),
+  ]);
   final dayStoppageMin = _sumOrZero(calcs.map((c) => c['totalStoppageMin'] as double?));
   final dayEffectiveH = _sumOrZero(calcs.map((c) => c['effectiveHours'] as double?));
   final dayLunchMin = _sumOrZero(list.map((r) => jsNumber(r['lunchMin'])));
@@ -441,12 +453,32 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   // Blank only when nothing on this machine/date has a Machine Shift Time.
   final dayHasShift = calcs.any((c) => isNum(c['shiftHours']));
 
-  final double? dayUnreportedMin = dayHasShift ? dayShiftH * 60 - dayEffectiveH * 60 - dayStoppageMin : null;
-  final double? dayOeeLosses = dayHasShift ? _ratio(dayEffectiveH, dayShiftH - dayStoppageMin / 60) : null;
-  final double? dayOeeLunch = dayHasShift ? _ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60) : null;
+  // Unreported Time = Planned Operator Shift − Machine Shift − Stoppage, all in
+  // whole minutes: the part of the planned window that is neither machine run
+  // nor a logged stoppage. (A row saved without a Planned shift — only the oldest
+  // ones — falls back to Shift − Effective Run Time − Stoppage.)
+  final double? dayUnreportedMin = dayHasShift
+      ? _sumOrZero([
+          for (var i = 0; i < list.length; i++)
+            () {
+              final stop = calcs[i]['totalStoppageMin'] as double? ?? 0.0;
+              final shiftH = calcs[i]['shiftHours'] as double?;
+              if (!isNum(shiftH)) return -stop;
+              final planned = jsNumber(list[i]['plannedOperatorShiftHours']);
+              if (!isNum(planned)) {
+                return shiftH! * 60 - ((calcs[i]['effectiveHours'] as double?) ?? 0.0) * 60 - stop;
+              }
+              final shiftMin = (shiftH! * 60).roundToDouble();
+              final plannedMin = (planned! * 60).roundToDouble();
+              return (plannedMin > shiftMin ? plannedMin : shiftMin) - shiftMin - stop;
+            }(),
+        ])
+      : null;
+  final double? dayOeeLosses = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
+  final double? dayOeeLunch = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
   // Named …Cot — the key saved dashboards use — though the column reads "Setup Time".
   final double? dayOeeLunchCot =
-      dayHasShift ? _ratio(dayEffectiveH, dayShiftH - dayLunchMin / 60 - daySetupMin / 60) : null;
+      dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null;
 
   final out = <Map<String, dynamic>>[];
   for (var i = 0; i < list.length; i++) {

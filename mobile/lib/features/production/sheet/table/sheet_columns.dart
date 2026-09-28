@@ -397,14 +397,6 @@ SheetColumns buildSheetColumns(Set<String> open) {
       text: (d) => nStr(d.day['unreportedMin']),
     ),
     SheetCol(
-      key: 'gap',
-      label: 'Gap to next shift (min)',
-      width: 104,
-      tone: ColTone.day,
-      formulaKey: 'gap',
-      text: (d) => nStr(d.day['gapMin']),
-    ),
-    SheetCol(
       key: 'setupEff',
       label: 'Setup Efficiency (%)',
       width: 104,

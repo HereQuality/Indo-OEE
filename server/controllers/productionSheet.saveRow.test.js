@@ -206,13 +206,13 @@ test("Lunch / Rest is optional, and less stoppage than allowed saves", async () 
   });
 });
 
-test("stoppage sits inside the Machine Shift: more than Shift − Effective Run Time is refused", async () => {
+test("stoppage is capped by Planned Operator Shift − Machine Shift", async () => {
   await withDb([], async (db) => {
-    // 4 h run, 200 good parts x 60 s = 200 min -> 40 min left for stoppage
-    const over = await call(saveRow, { body: body({ plannedOperatorShiftHours: 9, totalCycleSec: 60, actualQty: 200, okQty: 200, setupMin: 41 }) });
+    // 4 h run, 5 h planned -> 60 min allowed
+    const over = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 61 }) });
     assert.equal(over.statusCode, 400);
-    assert.match(over.payload.message, /can't be more than Machine Shift − Effective Run Time \(40 min\)/);
-    const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 9, totalCycleSec: 60, actualQty: 200, okQty: 200, setupMin: 40 }) });
+    assert.match(over.payload.message, /can't be more than Planned Operator Shift − Machine Shift \(60 min\)/);
+    const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 60 }) });
     assert.equal(fits.statusCode, 200, JSON.stringify(fits.payload));
     assert.equal(db.saved.length, 1);
   });
