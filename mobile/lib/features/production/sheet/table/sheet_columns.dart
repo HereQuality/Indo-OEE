@@ -127,7 +127,10 @@ class SheetColumns {
 /// The open breakdowns: each id is one expandable column.
 const List<String> expandIds = ['cycle', 'rejectedQty', 'downtime'];
 
+/// Edit + Delete beside each other: roomy on an iPad, compact on a phone so Actions
+/// can stay pinned and visible without eating the columns.
 const double actionsWidth = 104;
+const double actionsWidthPhone = 76;
 
 String _text(Object? v) => textStr(v);
 
@@ -157,7 +160,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'date',
       label: 'Date',
-      width: 92,
+      width: 84,
       merge: ColMerge.date,
       bold: true,
       start: true,
@@ -166,7 +169,7 @@ SheetColumns buildSheetColumns(Set<String> open) {
     SheetCol(
       key: 'machine',
       label: 'Machine',
-      width: 78,
+      width: 70,
       merge: ColMerge.machineDay,
       bold: true,
       start: true,

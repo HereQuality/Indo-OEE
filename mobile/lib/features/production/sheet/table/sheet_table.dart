@@ -25,6 +25,10 @@ class SheetTableItem {
     required this.dateEnd,
     required this.machineStart,
     required this.machineEnd,
+    this.dateIndex = 0,
+    this.dateRun = 1,
+    this.machineIndex = 0,
+    this.machineRun = 1,
   });
 
   final Json row;
@@ -35,6 +39,13 @@ class SheetTableItem {
   final bool dateEnd;
   final bool machineStart;
   final bool machineEnd;
+
+  /// Where this row sits in its date's run / its machine's run, and how long each
+  /// run is — a merged cell is drawn once, in the middle of its run.
+  final int dateIndex;
+  final int dateRun;
+  final int machineIndex;
+  final int machineRun;
 
   /// The first row of a date other than the sheet's very first: drawn with
   /// the heavier top rule.
@@ -62,6 +73,10 @@ List<SheetTableItem> buildTableItems(List<SheetDay> days) {
             dateEnd: n == total - 1,
             machineStart: j == 0,
             machineEnd: j == m.entries.length - 1,
+            dateIndex: n,
+            dateRun: total,
+            machineIndex: j,
+            machineRun: m.entries.length,
           ),
         );
         n++;
@@ -216,7 +231,7 @@ class _SheetTableState extends State<SheetTable> {
     final kf = math.min(k, 1.15);
     final leftW = cols.leftWidth(kf);
     final midW0 = cols.middleWidth(k);
-    final actW = actionsWidth;
+    final actW = tablet ? actionsWidth : actionsWidthPhone;
 
     Widget table = LayoutBuilder(
       builder: (context, box) {
@@ -237,11 +252,9 @@ class _SheetTableState extends State<SheetTable> {
         _k = k;
         _visible = math.max(0.0, vw - leftW - actW);
         final freezeLeft = vw - leftW >= 140;
-        // Actions stay pinned only when they leave a real working area (an iPad).
-        // On a phone, Date + Machine + Actions pinned would leave ~115 px for the
-        // rest, so the columns could hardly be read — there Actions ride at the
-        // end of the row instead and the table gets the whole width.
-        final freezeRight = vw - leftW - actW >= 220;
+        // Actions stay pinned (visible on every row) whenever the columns still get a
+        // usable width; on a phone they are compact for exactly that reason.
+        final freezeRight = vw - leftW - actW >= 120;
         final palette = _Palette(context);
         final h = widget.hController;
         final items = widget.items;
@@ -326,6 +339,14 @@ class _SheetTableState extends State<SheetTable> {
           );
         }
 
+        // Width of the middle columns to the left of each one.
+        final before = <String, double>{};
+        var run = 0.0;
+        for (final c in cols.middle) {
+          before[c.key] = run;
+          run += widths[c.key]!;
+        }
+
         Widget bodyRow(int i) {
           final it = items[i];
           final d = CellData(
@@ -334,7 +355,18 @@ class _SheetTableState extends State<SheetTable> {
             day: widget.controller.dayOf(it.row),
             machineName: widget.controller.machineName[it.machineId] ?? '—',
           );
-          Widget cell(SheetCol c) => _BodyCell(
+          Widget cell(SheetCol c, {double? before}) => _BodyCell(
+            // Pinned columns (before == null) may lift freely over the row above;
+            // scrolling ones stop at the pinned edges.
+            liftClip: _LiftClipper(
+              h: h,
+              before: before ?? 0,
+              freezeLeft: before != null && freezeLeft,
+              freezeRight: before != null && freezeRight,
+              viewport: vw,
+              actionsWidth: actW,
+              rowHeight: rowH,
+            ),
             key: ValueKey('${it.id}:${c.key}'),
             col: c,
             width: widths[c.key]!,
@@ -361,7 +393,12 @@ class _SheetTableState extends State<SheetTable> {
                   top: 0,
                   bottom: 0,
                   width: midW,
-                  child: Row(children: [for (final c in cols.middle) cell(c)]),
+                  child: Row(
+                    children: [
+                      for (final c in cols.middle)
+                        cell(c, before: before[c.key]!),
+                    ],
+                  ),
                 ),
                 Positioned(
                   left: 0,
@@ -741,6 +778,56 @@ class _Chevron extends StatelessWidget {
   }
 }
 
+/// A merged value over an even run of rows sits on the line between two rows, so
+/// it is drawn lifted into the row above. That row's pinned Date / Machine /
+/// Actions cells were painted before it, so the lifted value must stop at the edge
+/// of the scrolling area or it would print over them while the table scrolls.
+class _LiftClipper extends CustomClipper<Rect> {
+  _LiftClipper({
+    required this.h,
+    required this.before,
+    required this.freezeLeft,
+    required this.freezeRight,
+    required this.viewport,
+    required this.actionsWidth,
+    required this.rowHeight,
+  }) : super(reclip: h);
+
+  final ScrollController h;
+
+  /// Width of the middle columns before this cell.
+  final double before;
+  final bool freezeLeft;
+  final bool freezeRight;
+  final double viewport;
+  final double actionsWidth;
+  final double rowHeight;
+
+  @override
+  Rect getClip(Size size) {
+    final scroll = _hOffset(h);
+    final left = freezeLeft ? math.max(0.0, scroll - before) : 0.0;
+    final right = freezeRight
+        ? math.min(size.width, scroll + viewport - actionsWidth - before)
+        : size.width;
+    return Rect.fromLTRB(
+      left,
+      -rowHeight,
+      math.max(left, right),
+      size.height + rowHeight,
+    );
+  }
+
+  @override
+  bool shouldReclip(_LiftClipper old) =>
+      old.before != before ||
+      old.freezeLeft != freezeLeft ||
+      old.freezeRight != freezeRight ||
+      old.viewport != viewport ||
+      old.actionsWidth != actionsWidth ||
+      old.rowHeight != rowHeight;
+}
+
 class _BodyCell extends StatelessWidget {
   const _BodyCell({
     super.key,
@@ -751,10 +838,14 @@ class _BodyCell extends StatelessWidget {
     required this.metrics,
     required this.palette,
     this.machineTone,
+    this.liftClip,
   });
 
   final SheetCol col;
   final double width;
+
+  /// How far a value lifted over the row above may show (see [_LiftClipper]).
+  final CustomClipper<Rect>? liftClip;
   final SheetTableItem item;
   final CellData data;
   final TableMetrics metrics;
@@ -763,11 +854,17 @@ class _BodyCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final show = switch (col.merge) {
-      ColMerge.none => true,
-      ColMerge.date => item.dateStart,
-      ColMerge.machineDay => item.machineStart,
+    // A merged cell (Date, Machine, Unreported, OEE…) is one value over its whole
+    // run of rows, like the web's rowSpan: drawn once, in the middle of the run. An
+    // odd run has a middle row; an even run's middle is the line between two rows,
+    // so the value sits in the lower one, lifted half a row.
+    final (int runIndex, int runLength) = switch (col.merge) {
+      ColMerge.none => (0, 1),
+      ColMerge.date => (item.dateIndex, item.dateRun),
+      ColMerge.machineDay => (item.machineIndex, item.machineRun),
     };
+    final show = runIndex == runLength ~/ 2;
+    final lift = (runLength.isEven && runLength > 1) ? -metrics.row / 2 : 0.0;
     final joinBelow = switch (col.merge) {
       ColMerge.none => false,
       ColMerge.date => !item.dateEnd,
@@ -852,7 +949,15 @@ class _BodyCell extends StatelessWidget {
       } else if (textWidget != null) {
         child = Align(
           alignment: col.start ? Alignment.centerLeft : Alignment.center,
-          child: textWidget,
+          child: lift == 0
+              ? textWidget
+              : ClipRect(
+                  clipper: liftClip,
+                  child: Transform.translate(
+                    offset: Offset(0, lift),
+                    child: textWidget,
+                  ),
+                ),
         );
       }
     }
@@ -943,6 +1048,7 @@ class _ActionsCell extends StatelessWidget {
     final side = math.min(44.0, metrics.row);
     final s = palette.s;
 
+    final iconW = math.min(44.0, (width - 4) / 2);
     Widget iconBtn({
       required Key key,
       required IconData icon,
@@ -950,7 +1056,7 @@ class _ActionsCell extends StatelessWidget {
       required Color color,
       VoidCallback? onTap,
     }) => SizedBox(
-      width: 44,
+      width: iconW,
       height: side,
       child: IconButton(
         key: key,

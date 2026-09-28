@@ -13,10 +13,19 @@ class Alerts {
 
   static void success(String message) => _show(message, AppColors.ok, Icons.check_circle_outline);
   static void error(String message) => _show(message, AppColors.critical, Icons.error_outline, seconds: 5);
-  static void warning(String message) => _show(message, AppColors.warn, Icons.warning_amber_rounded);
+  // Warnings are a light amber card with dark brown text (about 9:1), not white on
+  // orange (about 3:1), so the reason a keystroke was refused can actually be read.
+  static void warning(String message) => _show(
+        message,
+        const Color(0xFFFEF3C7),
+        Icons.warning_amber_rounded,
+        seconds: 5,
+        foreground: const Color(0xFF78350F),
+        iconColor: const Color(0xFFB45309),
+      );
   static void info(String message) => _show(message, AppColors.brand600, Icons.info_outline);
 
-  static void _show(String message, Color color, IconData icon, {int seconds = 3}) {
+  static void _show(String message, Color color, IconData icon, {int seconds = 3, Color foreground = Colors.white, Color? iconColor}) {
     final messenger = rootMessengerKey.currentState;
     if (messenger == null || message.trim().isEmpty) return;
     messenger
@@ -27,9 +36,9 @@ class Alerts {
           duration: Duration(seconds: seconds),
           content: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 20),
+              Icon(icon, color: iconColor ?? foreground, size: 22),
               const SizedBox(width: 10),
-              Expanded(child: Text(message, style: const TextStyle(color: Colors.white))),
+              Expanded(child: Text(message, style: TextStyle(color: foreground, fontSize: 14, height: 1.3, fontWeight: foreground == Colors.white ? FontWeight.w400 : FontWeight.w600))),
             ],
           ),
         ),

@@ -50,7 +50,8 @@ export const AlertProvider = ({ children }) => {
     const success = useCallback((message, duration) => pushToast(message, "success", duration), [pushToast]);
     const error = useCallback((message, duration) => pushToast(message, "error", duration), [pushToast]);
     const info = useCallback((message, duration) => pushToast(message, "info", duration), [pushToast]);
-    const warning = useCallback((message, duration) => pushToast(message, "warning", duration), [pushToast]);
+    // Warnings (the "can't type more than…" reasons) stay a little longer to be read.
+    const warning = useCallback((message, duration = 6000) => pushToast(message, "warning", duration), [pushToast]);
 
     // Returns a Promise<boolean> — resolves true if the user confirms, false if cancelled.
     const confirm = useCallback((message, options = {}) => {
