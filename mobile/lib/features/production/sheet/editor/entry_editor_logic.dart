@@ -12,10 +12,21 @@ import '../../shared/shift_hours.dart';
 /// is a `Map<String, dynamic>` of reason -> quantity text; `excludedOps` a list
 /// of operation keys.
 
-final List<String> stoppageKeys = [for (final f in stoppageFields) f['key'] as String];
-final List<String> cycleOpKeys = [for (final f in cycleOpFields) f['key'] as String];
+final List<String> stoppageKeys = [
+  for (final f in stoppageFields) f['key'] as String,
+];
+final List<String> cycleOpKeys = [
+  for (final f in cycleOpFields) f['key'] as String,
+];
 
-const List<String> textFields = ['operator', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark'];
+const List<String> textFields = [
+  'operator',
+  'itemName',
+  'drawingNo',
+  'remarks',
+  'rejectOtherRemark',
+  'otherMinRemark',
+];
 const List<String> timeFields = ['machineOnTime', 'machineOffTime'];
 
 /// Every field sent as a number (blank stays '' so the server unsets it).
@@ -30,19 +41,19 @@ final List<String> numberFields = [
 
 /// A blank machine block dated today.
 Map<String, dynamic> emptyEntry({DateTime? now}) => <String, dynamic>{
-      'date': isoDay(now ?? DateTime.now()),
-      'machine': '',
-      // Assigned on save from the machine's free slots for that date; kept in
-      // the values only because an edited record has to save back to its own slot.
-      'slot': 1,
-      'item': '',
-      'rejectBreakdown': <String, dynamic>{},
-      // Operations this entry has unticked out of what its Part carries.
-      'excludedOps': <dynamic>[],
-      for (final k in textFields) k: '',
-      for (final k in timeFields) k: '',
-      for (final k in numberFields) k: '',
-    };
+  'date': isoDay(now ?? DateTime.now()),
+  'machine': '',
+  // Assigned on save from the machine's free slots for that date; kept in
+  // the values only because an edited record has to save back to its own slot.
+  'slot': 1,
+  'item': '',
+  'rejectBreakdown': <String, dynamic>{},
+  // Operations this entry has unticked out of what its Part carries.
+  'excludedOps': <dynamic>[],
+  for (final k in textFields) k: '',
+  for (final k in timeFields) k: '',
+  for (final k in numberFields) k: '',
+};
 
 /// A stored number as the text a form box shows: 90 -> '90', 12.5 -> '12.5',
 /// null -> ''.
@@ -55,7 +66,8 @@ String numText(Object? v) {
 bool _isBlankValue(Object? v) => v == null || v == '';
 
 /// Whole numbers go out as ints (60, not 60.0), exactly like JSON.stringify.
-num _wire(double n) => n.isFinite && n == n.truncateToDouble() && n.abs() < 1e15 ? n.toInt() : n;
+num _wire(double n) =>
+    n.isFinite && n == n.truncateToDouble() && n.abs() < 1e15 ? n.toInt() : n;
 
 /// A saved record -> form values ('' for anything unset, so inputs stay
 /// controlled). A record saved before the split existed has only a single
@@ -72,12 +84,15 @@ Map<String, dynamic> toFormValues(Map<String, dynamic> row, {DateTime? now}) {
     out[k] = v is String ? v : numText(v);
   }
   // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
-  out['plannedOperatorShiftHours'] = _isBlankValue(row['plannedOperatorShiftHours'])
+  out['plannedOperatorShiftHours'] =
+      _isBlankValue(row['plannedOperatorShiftHours'])
       ? ''
       : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
-  out['excludedOps'] = row['excludedOps'] is List ? List<dynamic>.from(row['excludedOps'] as List) : <dynamic>[];
+  out['excludedOps'] = row['excludedOps'] is List
+      ? List<dynamic>.from(row['excludedOps'] as List)
+      : <dynamic>[];
 
   final stored = row['rejectBreakdown'];
   final split = <String, dynamic>{};
@@ -88,7 +103,10 @@ Map<String, dynamic> toFormValues(Map<String, dynamic> row, {DateTime? now}) {
   } else {
     final rejected = jsToNumber(row['rejectedQty']);
     final reason = row['rejectReason'];
-    if (reason is String && rejectReasons.contains(reason) && rejected.isFinite && rejected > 0) {
+    if (reason is String &&
+        rejectReasons.contains(reason) &&
+        rejected.isFinite &&
+        rejected > 0) {
       split[reason] = numText(rejected);
     }
   }
@@ -123,14 +141,20 @@ Map<String, dynamic> toPayload(Map<String, dynamic> v, {required bool isEdit}) {
     // every entry.
     'slot': isEdit ? _wire(jsToNumber(v['slot'])) : 'auto',
     'item': jsTruthy(v['item']) ? v['item'] : null,
-    'excludedOps': v['excludedOps'] is List ? List<dynamic>.from(v['excludedOps'] as List) : <dynamic>[],
+    'excludedOps': v['excludedOps'] is List
+        ? List<dynamic>.from(v['excludedOps'] as List)
+        : <dynamic>[],
     'rejectBreakdown': {for (final e in split.entries) e.key: _wire(e.value)},
     'rejectReason': topReason,
     for (final k in textFields) k: text(k),
     // A remark only belongs to an "Other" that is still in use — once that
     // figure goes back to zero the remark is cleared with it.
-    'rejectOtherRemark': (split['Other'] ?? 0) > 0 ? text('rejectOtherRemark') : '',
-    'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? text('otherMinRemark') : '',
+    'rejectOtherRemark': (split['Other'] ?? 0) > 0
+        ? text('rejectOtherRemark')
+        : '',
+    'otherMinRemark': jsToNumber(v['otherMin']) > 0
+        ? text('otherMinRemark')
+        : '',
     for (final k in timeFields) k: _timeOut(v[k]),
     for (final k in numberFields) k: _numberOut(v[k]),
     // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
@@ -170,10 +194,15 @@ bool hasAnyEntryData(List<Map<String, dynamic>> list) {
         jsTruthy(v['remarks'])) {
       return true;
     }
-    if (jsTruthy(v['machineOnTime']) || jsTruthy(v['machineOffTime']) || _filled(v['plannedOperatorShiftHours'])) return true;
+    if (jsTruthy(v['machineOnTime']) ||
+        jsTruthy(v['machineOffTime']) ||
+        _filled(v['plannedOperatorShiftHours']))
+      return true;
     if (_filled(v['actualQty']) || _filled(v['okQty'])) return true;
     final split = v['rejectBreakdown'];
-    if (split is Map && split.values.any((n) => _filled(n) && jsToNumber(n) != 0)) return true;
+    if (split is Map &&
+        split.values.any((n) => _filled(n) && jsToNumber(n) != 0))
+      return true;
     return [...stoppageKeys, ...cycleOpKeys].any((k) => _filled(v[k]));
   });
 }
@@ -181,8 +210,13 @@ bool hasAnyEntryData(List<Map<String, dynamic>> list) {
 /// Picking an item copies its master values onto the block — still editable,
 /// so a later change to the master never rewrites saved records. A freshly
 /// picked part starts with every operation ticked (excludedOps cleared).
-Map<String, dynamic> applyItemSelection(Map<String, dynamic> v, String itemId, List<Map<String, dynamic>> items) {
-  if (itemId.isEmpty) return {...v, 'item': '', 'itemName': '', 'excludedOps': <dynamic>[]};
+Map<String, dynamic> applyItemSelection(
+  Map<String, dynamic> v,
+  String itemId,
+  List<Map<String, dynamic>> items,
+) {
+  if (itemId.isEmpty)
+    return {...v, 'item': '', 'itemName': '', 'excludedOps': <dynamic>[]};
   Map<String, dynamic>? it;
   for (final candidate in items) {
     if ('${candidate['_id']}' == itemId) {
@@ -206,7 +240,10 @@ Map<String, dynamic> applyItemSelection(Map<String, dynamic> v, String itemId, L
 
 /// A new machine block copies the date of the block above it (the whole form
 /// is normally one day's shift) — nothing else.
-Map<String, dynamic> newBlockAfter(List<Map<String, dynamic>> list, {DateTime? now}) {
+Map<String, dynamic> newBlockAfter(
+  List<Map<String, dynamic>> list, {
+  DateTime? now,
+}) {
   final base = emptyEntry(now: now);
   final prev = list.isEmpty ? null : list.last['date'];
   if (jsTruthy(prev)) base['date'] = prev;
@@ -215,10 +252,15 @@ Map<String, dynamic> newBlockAfter(List<Map<String, dynamic>> list, {DateTime? n
 
 /// A draft saved before a field existed lacks it — fill those in as blank
 /// (draft values win), and make sure the two structured fields keep their shape.
-Map<String, dynamic> mergeDraftEntry(Map<String, dynamic> draft, {DateTime? now}) {
+Map<String, dynamic> mergeDraftEntry(
+  Map<String, dynamic> draft, {
+  DateTime? now,
+}) {
   final out = <String, dynamic>{...emptyEntry(now: now), ...draft};
   final split = draft['rejectBreakdown'];
-  out['rejectBreakdown'] = split is Map ? Map<String, dynamic>.from(split) : <String, dynamic>{};
+  out['rejectBreakdown'] = split is Map
+      ? Map<String, dynamic>.from(split)
+      : <String, dynamic>{};
   final ops = draft['excludedOps'];
   out['excludedOps'] = ops is List ? List<dynamic>.from(ops) : <dynamic>[];
   return out;

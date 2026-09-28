@@ -385,7 +385,7 @@ exports.saveRow = async (req, res) => {
     const existing =
       editSlot && SLOT_NUMBERS.includes(editSlot)
         ? await ProductionEntry.findOne({ date: day, machine, slot: editSlot })
-            .select("unlockedUntil machineOnTime machineOffTime")
+            .select("unlockedUntil machineOnTime machineOffTime operator")
             .lean()
         : null;
     const ruleError = entryRuleError(req.body, existing);
@@ -436,6 +436,32 @@ exports.saveRow = async (req, res) => {
       }
     }
 
+    // One operator runs one machine at a time: on a date, their entries on
+    // DIFFERENT machines can't overlap in time either. Checked when the times or
+    // the operator are new or changed (an older row that already breaks this
+    // stays editable).
+    const operator = String(req.body.operator ?? "").trim();
+    const operatorChanged = !existing || String(existing.operator ?? "").trim() !== operator;
+    if (operator && (operatorChanged || !sameTimes(existing, req.body))) {
+      const others = await ProductionEntry.find({ date: day, operator, $nor: [{ machine, slot: slotNo }] })
+        .select("machine slot machineOnTime machineOffTime")
+        .populate("machine", "machineName")
+        .lean();
+      const clash = findOverlap(
+        req.body.machineOnTime,
+        req.body.machineOffTime,
+        others.filter((o) => String(o.machine?._id ?? o.machine) !== String(machine)),
+      );
+      if (clash) {
+        const other = others.find((o) => o.slot === clash.slot && String(o.machine?._id ?? o.machine) !== String(machine));
+        const [y, m, d] = String(date).split("-");
+        return res.status(400).json({
+          isOk: false,
+          message: `Operator ${operator} is already on machine ${other?.machine?.machineName || "another machine"} from ${clash.text} on ${d}/${m}/${y}. An operator can't run two machines at the same time.`,
+        });
+      }
+    }
+
     const { set, unset } = buildFields(req.body);
     const key = { date: day, machine, slot: slotNo };
 
@@ -469,6 +495,26 @@ exports.getOccupied = async (req, res) => {
   try {
     const day = parseDay(req.query.date);
     const { machine } = req.query;
+    // ?operator=<name> (no machine): everything that operator has on the date, on
+    // any machine, so the form can refuse a second machine at the same time.
+    const operator = String(req.query.operator ?? "").trim();
+    if (day && !machine && operator) {
+      const rows = await ProductionEntry.find({ date: day, operator })
+        .select("machine slot machineOnTime machineOffTime")
+        .populate("machine", "machineName")
+        .sort({ machineOnTime: 1 })
+        .lean();
+      return res.status(200).json({
+        isOk: true,
+        data: rows.map((r) => ({
+          machine: String(r.machine?._id ?? r.machine),
+          machineName: r.machine?.machineName || "",
+          slot: r.slot,
+          machineOnTime: r.machineOnTime || "",
+          machineOffTime: r.machineOffTime || "",
+        })),
+      });
+    }
     if (!day || !mongoose.isValidObjectId(machine)) {
       return res.status(400).json({ isOk: false, message: "Valid date (YYYY-MM-DD) and machine are required" });
     }

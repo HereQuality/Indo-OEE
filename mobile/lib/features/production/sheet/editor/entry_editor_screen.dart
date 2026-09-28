@@ -69,6 +69,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   // Save regardless. A failed lookup is retried at most every 15 s.
   final OccupiedTimes _occupied = {};
   final Map<String, DateTime?> _occupiedAsked = {};
+  // Likewise what each OPERATOR has saved on a date, on any machine
+  // (`operator|date`), so one operator can't be put on two machines at once.
+  final OperatorOccupied _operatorOccupied = {};
+  final Map<String, DateTime?> _operatorAsked = {};
   static const _occupiedRetry = Duration(seconds: 15);
   static final _isoDay = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
@@ -108,7 +112,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   @override
   void didUpdateWidget(EntryEditorScreen old) {
     super.didUpdateWidget(old);
-    if (!identical(old.machines, widget.machines)) _machinesForForm = _machinesWithSaved();
+    if (!identical(old.machines, widget.machines))
+      _machinesForForm = _machinesWithSaved();
   }
 
   // An edited record's machine may have been deactivated since — keep it in the
@@ -116,7 +121,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   List<Map<String, dynamic>> _machinesWithSaved() {
     if (!_isEdit) return widget.machines;
     final id = '${widget.row!['machine'] ?? ''}';
-    if (id.isEmpty || widget.machines.any((m) => '${m['_id']}' == id)) return widget.machines;
+    if (id.isEmpty || widget.machines.any((m) => '${m['_id']}' == id))
+      return widget.machines;
     return [
       ...widget.machines,
       {'_id': id, 'machineName': 'Machine (no longer active)'},
@@ -126,7 +132,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   Map<String, dynamic> _freshEntry() {
     final e = emptyEntry();
     final id = widget.initialMachineId;
-    if (id != null && id.isNotEmpty && widget.machines.any((m) => '${m['_id']}' == id)) e['machine'] = id;
+    if (id != null &&
+        id.isNotEmpty &&
+        widget.machines.any((m) => '${m['_id']}' == id))
+      e['machine'] = id;
     return e;
   }
 
@@ -153,10 +162,35 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     // not "another entry", and an old row that already breaks the time rules
     // stays editable until its times are changed.
     final saved = _savedTimes;
-    final overlap = overlapErrors(_entries, _occupied, editSlot: _editSlot, saved: saved);
+    final overlap = overlapErrors(
+      _entries,
+      _occupied,
+      editSlot: _editSlot,
+      saved: saved,
+    );
+    final operatorClash = operatorOverlapErrors(
+      _entries,
+      _operatorOccupied,
+      editing: _isEdit
+          ? (machine: '${widget.row!['machine']}', slot: _editSlot ?? 0)
+          : null,
+      saved: saved,
+      machineName: (id) {
+        for (final m in _machinesForForm) {
+          if ('${m['_id']}' == id) return '${m['machineName'] ?? ''}';
+        }
+        return '';
+      },
+    );
     _errors = [
-      // A block's own problems (blank / invalid / OFF before ON) come first.
-      for (var i = 0; i < _entries.length; i++) {...overlap[i], ...validateEntry(_entries[i], saved: saved)},
+      // A block's own problems (blank / invalid / OFF before ON) come first, then a
+      // clash with the machine's own entries, then with the operator's other machines.
+      for (var i = 0; i < _entries.length; i++)
+        {
+          ...operatorClash[i],
+          ...overlap[i],
+          ...validateEntry(_entries[i], saved: saved),
+        },
     ];
     _askOccupied();
   }
@@ -164,14 +198,20 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   /// Block [i]'s time-rule problem (OFF not after ON, or an overlap), or null.
   String? _timeProblem(int i) {
     if (i >= _errors.length) return null;
-    for (final k in const ['machineOnTime', 'machineOffTime']) {
+    for (final k in const [
+      'machineOnTime',
+      'machineOffTime',
+      'plannedOperatorShiftHours',
+    ]) {
       final m = _errors[i][k];
       if (isTimeRuleMessage(m)) return m;
     }
     return null;
   }
 
-  List<String?> _timeProblems() => [for (var i = 0; i < _errors.length; i++) _timeProblem(i)];
+  List<String?> _timeProblems() => [
+    for (var i = 0; i < _errors.length; i++) _timeProblem(i),
+  ];
 
   /// Warns the moment a pick creates (or changes) a time-rule problem — not
   /// only when Save is pressed. Nothing repeats while the problem stays as it
@@ -179,13 +219,18 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   void _warnNewTimeProblems(List<String?> before) {
     for (var i = 0; i < _errors.length; i++) {
       final now = _timeProblem(i);
-      if (now != null && now != (i < before.length ? before[i] : null)) EntryFormToast.warn(now);
+      if (now != null && now != (i < before.length ? before[i] : null))
+        EntryFormToast.warn(now);
     }
   }
 
   int? get _editSlot => _isEdit ? (widget.row!['slot'] as num?)?.toInt() : null;
   Map<String, dynamic>? get _savedTimes => _isEdit
-      ? {'machineOnTime': widget.row!['machineOnTime'], 'machineOffTime': widget.row!['machineOffTime']}
+      ? {
+          'machineOnTime': widget.row!['machineOnTime'],
+          'machineOffTime': widget.row!['machineOffTime'],
+          'operator': widget.row!['operator'],
+        }
       : null;
 
   void _askOccupied() {
@@ -198,16 +243,57 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       if (_occupied.containsKey(key)) continue;
       if (_occupiedAsked.containsKey(key)) {
         final failedAt = _occupiedAsked[key];
-        if (failedAt == null || now.difference(failedAt) < _occupiedRetry) continue; // in flight, or failed recently
+        if (failedAt == null || now.difference(failedAt) < _occupiedRetry)
+          continue; // in flight, or failed recently
       }
       _occupiedAsked[key] = null;
       unawaited(_loadOccupied(key, machine, date));
+    }
+    for (final v in _entries) {
+      final op = '${v['operator'] ?? ''}'.trim();
+      final date = '${v['date'] ?? ''}';
+      if (op.isEmpty || !_isoDay.hasMatch(date)) continue;
+      final key = '$op|$date';
+      if (_operatorOccupied.containsKey(key)) continue;
+      if (_operatorAsked.containsKey(key)) {
+        final failedAt = _operatorAsked[key];
+        if (failedAt == null || now.difference(failedAt) < _occupiedRetry)
+          continue;
+      }
+      _operatorAsked[key] = null;
+      unawaited(_loadOperatorOccupied(key, op, date));
+    }
+  }
+
+  Future<void> _loadOperatorOccupied(
+    String key,
+    String operator,
+    String date,
+  ) async {
+    try {
+      final res = await Api.get(
+        Endpoints.productionSheetOccupied,
+        query: {'date': date, 'operator': operator},
+      );
+      if (!mounted) return;
+      final before = _timeProblems();
+      setState(() {
+        _operatorOccupied[key] = asList(res);
+        _recompute();
+      });
+      _warnNewTimeProblems(before);
+    } catch (_) {
+      // The server still checks on Save; look again in a while.
+      _operatorAsked[key] = DateTime.now();
     }
   }
 
   Future<void> _loadOccupied(String key, String machine, String date) async {
     try {
-      final res = await Api.get(Endpoints.productionSheetOccupied, query: {'date': date, 'machine': machine});
+      final res = await Api.get(
+        Endpoints.productionSheetOccupied,
+        query: {'date': date, 'machine': machine},
+      );
       if (!mounted) return;
       final before = _timeProblems();
       setState(() {
@@ -227,6 +313,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   void _forgetOccupied() {
     _occupied.clear();
     _occupiedAsked.clear();
+    _operatorOccupied.clear();
+    _operatorAsked.clear();
   }
 
   int get _incompleteCount => _errors.where((e) => e.isNotEmpty).length;
@@ -245,7 +333,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     if (_saving || index < 0 || index >= _entries.length) return;
     final before = _timeProblems();
     _apply([
-      for (var i = 0; i < _entries.length; i++) i == index ? {..._entries[i], name: value} : _entries[i],
+      for (var i = 0; i < _entries.length; i++)
+        i == index ? {..._entries[i], name: value} : _entries[i],
     ]);
     _warnNewTimeProblems(before);
   }
@@ -271,7 +360,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     if (_saving || index < 0 || index >= _entries.length) return;
     _apply([
       for (var i = 0; i < _entries.length; i++)
-        i == index ? applyItemSelection(_entries[i], itemId, widget.items) : _entries[i],
+        i == index
+            ? applyItemSelection(_entries[i], itemId, widget.items)
+            : _entries[i],
     ]);
   }
 
@@ -281,7 +372,11 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   }
 
   void _onRemove(int index) {
-    if (_saving || _entries.length <= 1 || index < 0 || index >= _entries.length) return;
+    if (_saving ||
+        _entries.length <= 1 ||
+        index < 0 ||
+        index >= _entries.length)
+      return;
     _apply([
       for (var i = 0; i < _entries.length; i++)
         if (i != index) _entries[i],
@@ -299,7 +394,13 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     final first = firstError(_errors);
     if (first != null) {
       _haptic(HapticFeedback.selectionClick);
-      setState(() => _focusTarget = {'index': first['index'], 'field': first['field'], 'nonce': ++_nonce});
+      setState(
+        () => _focusTarget = {
+          'index': first['index'],
+          'field': first['field'],
+          'nonce': ++_nonce,
+        },
+      );
       return;
     }
 
@@ -323,9 +424,14 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         setState(() => _savingIndex = i);
         // The form ignores touches while a save is out, so a stalled connection
         // must give up soon rather than leave it dead for the network's own minute.
-        await Api.put(Endpoints.productionSheetRow, body: toPayload(blocks[i], isEdit: _isEdit)).timeout(
+        await Api.put(
+          Endpoints.productionSheetRow,
+          body: toPayload(blocks[i], isEdit: _isEdit),
+        ).timeout(
           _saveTimeout,
-          onTimeout: () => throw ApiException('The server took too long to answer. Check your connection and try again.'),
+          onTimeout: () => throw ApiException(
+            'The server took too long to answer. Check your connection and try again.',
+          ),
         );
         saved.add(i);
       }
@@ -345,12 +451,15 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      final reason = e is ApiException ? e.message : 'Failed to save. Please try again.';
+      final reason = e is ApiException
+          ? e.message
+          : 'Failed to save. Please try again.';
       _haptic(HapticFeedback.heavyImpact);
       _forgetOccupied();
       _askOccupied(); // re-read what is booked right away
       if (saved.isNotEmpty) {
-        final message = '${saved.length} saved, then: $reason The rest are still in the form.';
+        final message =
+            '${saved.length} saved, then: $reason The rest are still in the form.';
         Alerts.error(message);
         setState(() {
           _anySaved = true;
@@ -480,7 +589,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
             icon: const Icon(Icons.close_rounded),
             onPressed: _saving ? null : () => unawaited(_attemptClose()),
           ),
-          title: Text(_isEdit ? 'Update Production Entry' : 'Add Production Entry'),
+          title: Text(
+            _isEdit ? 'Update Production Entry' : 'Add Production Entry',
+          ),
           actions: [
             if (showClear)
               IconButton(
@@ -491,7 +602,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
             const SizedBox(width: 4),
           ],
         ),
-        body: SafeArea(top: false, child: _ready ? _buildForm(context) : const LoadingView()),
+        body: SafeArea(
+          top: false,
+          child: _ready ? _buildForm(context) : const LoadingView(),
+        ),
         bottomNavigationBar: _ready && barFactor > 0
             ? ClipRect(
                 child: Align(
@@ -531,7 +645,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_draftRestored) _DraftBanner(onStartOver: () => unawaited(_clearForm())),
+                if (_draftRestored)
+                  _DraftBanner(onStartOver: () => unawaited(_clearForm())),
                 // The blocks can't be edited while a save is in flight (their
                 // indexes are what is being saved).
                 AbsorbPointer(
@@ -546,7 +661,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                     items: widget.items,
                     operators: widget.operators,
                     isEdit: _isEdit,
-                    booked: [for (final e in _entries) bookedRanges(e, _occupied, editSlot: _editSlot)],
+                    booked: [
+                      for (final e in _entries)
+                        bookedRanges(e, _occupied, editSlot: _editSlot),
+                    ],
                     onChange: _onChange,
                     onItemSelect: _onItemSelect,
                     onRejectChange: _onRejectChange,
@@ -585,7 +703,10 @@ class _DraftBanner extends StatelessWidget {
           Icon(Icons.history_rounded, size: 18, color: cs.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Text('Restored what you were typing.', style: TextStyle(fontSize: 13, color: cs.onSurface)),
+            child: Text(
+              'Restored what you were typing.',
+              style: TextStyle(fontSize: 13, color: cs.onSurface),
+            ),
           ),
           TextButton(onPressed: onStartOver, child: const Text('Start over')),
         ],

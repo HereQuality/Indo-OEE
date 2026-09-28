@@ -26,6 +26,7 @@ Map<String, dynamic> _valid([Map<String, dynamic> extra = const {}]) => {
     };
 
 void main() {
+  operatorTests();
   final fixture = loadFixture('validation.json') as Map;
 
   group('golden: validateEntry (Dart == the real JS)', () {
@@ -176,7 +177,7 @@ void main() {
       // machine ran 8:00, planned 7 h 30 min
       expect(
         validateEntry(_valid({'plannedOperatorShiftHours': '7.30'}))['plannedOperatorShiftHours'],
-        "Planned Operator Shift (7:30) can't be less than Machine Shift (8:00)",
+        "Planned Operator Shift can't be less than the Machine Shift (8:00)",
       );
       // equal is fine, and so is more
       expect(validateEntry(_valid({'plannedOperatorShiftHours': '8.00', 'lunchMin': '0'})), isEmpty);
@@ -282,6 +283,55 @@ void main() {
       expect(fieldOrder.indexOf('otherMinRemark'), lessThan(fieldOrder.indexOf('drillingSec')));
       expect(fieldOrder.last, 'clampDeclampSec');
       expect(fieldOrder.toSet().length, fieldOrder.length);
+    });
+  });
+}
+
+void operatorTests() {
+  group('one operator can not be on two machines at the same time', () {
+    final mine = {'date': '2026-09-28', 'machine': 'm2', 'operator': 'Asha', 'machineOnTime': '10:00', 'machineOffTime': '14:00'};
+    final saved = <String, List<Map<String, dynamic>>>{
+      'Asha|2026-09-28': [
+        {'machine': 'm1', 'machineName': '7A', 'slot': 1, 'machineOnTime': '08:00', 'machineOffTime': '12:00'},
+      ],
+    };
+
+    test('a clash is flagged live, on the box that runs into it, naming the machine and time', () {
+      final e = operatorOverlapErrors([mine], saved).single;
+      expect(e['machineOnTime'], "Operator Asha is already on machine 7A from 8:00 AM – 12:00 PM on this date — an operator can't run two machines at the same time");
+      expect(isTimeRuleMessage(e['machineOnTime']), isTrue);
+      expect(operatorOverlapErrors([{...mine, 'machineOnTime': '06:00', 'machineOffTime': '09:00'}], saved).single.keys, ['machineOffTime']);
+    });
+
+    test('touching, another operator, another date and the same machine never clash', () {
+      expect(operatorOverlapErrors([{...mine, 'machineOnTime': '12:00', 'machineOffTime': '16:00'}], saved).single, isEmpty);
+      expect(operatorOverlapErrors([{...mine, 'operator': 'Ravi'}], saved).single, isEmpty);
+      expect(operatorOverlapErrors([{...mine, 'date': '2026-09-29'}], saved).single, isEmpty);
+      expect(operatorOverlapErrors([{...mine, 'machine': 'm1'}], saved).single, isEmpty);
+    });
+
+    test('the row being edited is not another entry; an older clash stays editable while untouched', () {
+      expect(
+        operatorOverlapErrors([{...mine, 'machine': 'm1', 'machineOnTime': '09:00', 'machineOffTime': '11:00'}], saved, editing: (machine: 'm1', slot: 1)).single,
+        isEmpty,
+      );
+      expect(
+        operatorOverlapErrors([mine], saved, saved: {'machineOnTime': '10:00', 'machineOffTime': '14:00', 'operator': 'Asha'}).single,
+        isEmpty,
+      );
+      // ...but changing the operator or a time brings the rule back
+      expect(
+        operatorOverlapErrors([mine], saved, saved: {'machineOnTime': '10:00', 'machineOffTime': '14:00', 'operator': 'Ravi'}).single,
+        isNotEmpty,
+      );
+    });
+
+    test('two blocks of one form with the same operator on different machines are both flagged', () {
+      final a = {...mine, 'machine': 'm1', 'machineOnTime': '08:00', 'machineOffTime': '12:00'};
+      final both = operatorOverlapErrors([a, mine], {}, machineName: (id) => {'m1': '7A', 'm2': '7B'}[id] ?? '');
+      expect(both[0], isNotEmpty);
+      expect(both[1], isNotEmpty);
+      expect(both[1].values.single, contains('machine 7A'));
     });
   });
 }

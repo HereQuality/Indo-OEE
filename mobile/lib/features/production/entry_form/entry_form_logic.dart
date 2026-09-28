@@ -60,14 +60,6 @@ class EntryMetrics {
   /// Machine Shift in minutes (null until ON and OFF are both picked).
   double? get machineShiftMin => spanMinutes(values['machineOnTime'], values['machineOffTime']);
 
-  /// Unreported Time of this entry (min) = Stoppage Allowed − Total Stoppage,
-  /// i.e. Planned − Machine Shift − Stoppage in whole minutes. null until both
-  /// are known. The sheet sums it over the machine's day.
-  double? get unreportedMin {
-    final limit = stoppageLimit;
-    return limit == null ? null : limit - totalStoppage;
-  }
-
   /// The planned shift is shorter than the time the machine ran.
   bool get plannedBelowMachine {
     final p = plannedHours, s = machineShiftMin;

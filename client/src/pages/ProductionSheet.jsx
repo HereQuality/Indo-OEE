@@ -31,6 +31,7 @@ import {
   getProductionExtent,
   getProductionFilterOptions,
   getOccupiedTimes,
+  getOperatorOccupied,
   getProductionSheet,
   saveProductionRow,
   unlockProductionRow,
@@ -43,7 +44,7 @@ import {
   isoDay,
   sortByMachineOn,
 } from "../utils/productionSheet";
-import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, overlapErrors, validateEntry } from "../utils/entryValidation";
+import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, validateEntry } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
@@ -327,9 +328,15 @@ const ProductionSheet = () => {
   const [occupied, setOccupied] = useState({});
   const occupiedAsked = useRef(new Set());
   const [editing, setEditing] = useState(null);
+  // Likewise what each OPERATOR already has on a date, on any machine
+  // ("operator|date"), so the same operator can't be put on two machines at once.
+  const [operatorOccupied, setOperatorOccupied] = useState({});
+  const operatorAsked = useRef(new Set());
   const resetOccupied = useCallback(() => {
     occupiedAsked.current.clear();
+    operatorAsked.current.clear();
     setOccupied({});
+    setOperatorOccupied({});
   }, []);
 
   const [removeId, setRemoveId] = useState("");
@@ -511,12 +518,33 @@ const ProductionSheet = () => {
     // at once; pairs already asked are skipped, so this cannot loop.
   }, [modalMode, entries, occupied]);
 
+  useEffect(() => {
+    if (!modalMode) return;
+    for (const v of entries) {
+      const op = String(v.operator ?? "").trim();
+      if (!op || !/^\d{4}-\d{2}-\d{2}$/.test(v.date || "")) continue;
+      const key = `${op}|${v.date}`;
+      if (operatorAsked.current.has(key)) continue;
+      operatorAsked.current.add(key);
+      getOperatorOccupied({ date: v.date, operator: op })
+        .then((res) => setOperatorOccupied((o) => ({ ...o, [key]: res.data.data || [] })))
+        // The server still checks on Save; look again in a while.
+        .catch(() => setTimeout(() => operatorAsked.current.delete(key), 15000));
+    }
+  }, [modalMode, entries, operatorOccupied]);
+
   const errorsList = useMemo(() => {
     const saved = editing?.saved || null;
     const overlap = overlapErrors(entries, occupied, { editSlot: editing?.slot ?? null, saved });
-    // A block's own problems (blank / invalid / OFF before ON) come first.
-    return entries.map((v, i) => ({ ...overlap[i], ...validateEntry(v, { saved }) }));
-  }, [entries, occupied, editing]);
+    const operatorClash = operatorOverlapErrors(entries, operatorOccupied, {
+      editing: editing ? { machine: editing.machine, slot: editing.slot } : null,
+      saved,
+      machineName: (id) => machineName[id] || "",
+    });
+    // A block's own problems (blank / invalid / OFF before ON) come first, then a
+    // clash with the machine's own entries, then with the operator's other machines.
+    return entries.map((v, i) => ({ ...operatorClash[i], ...overlap[i], ...validateEntry(v, { saved }) }));
+  }, [entries, occupied, operatorOccupied, editing, machineName]);
   // Warn the moment a pick creates (or changes) a time-rule problem — not only
   // when Save is pressed. Nothing repeats while the problem stays as it was.
   const timeWarned = useRef({});
@@ -526,7 +554,7 @@ const ProductionSheet = () => {
       return;
     }
     errorsList.forEach((errs, i) => {
-      const message = [errs.machineOnTime, errs.machineOffTime].find(isTimeRuleMessage);
+      const message = [errs.machineOnTime, errs.machineOffTime, errs.plannedOperatorShiftHours].find(isTimeRuleMessage);
       if (message && timeWarned.current[i] !== message) toast.warning(message);
       if (message) timeWarned.current[i] = message;
       else delete timeWarned.current[i];
@@ -581,7 +609,7 @@ const ProductionSheet = () => {
 
   const openEdit = (row) => {
     setEntries([toFormValues(row)]);
-    setEditing({ slot: row.slot, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime } });
+    setEditing({ slot: row.slot, machine: row.machine, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
     resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);

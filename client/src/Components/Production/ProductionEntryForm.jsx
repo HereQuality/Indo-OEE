@@ -80,7 +80,7 @@ const LINES = [
     fields: ["itemName", ...CYCLE_OP_FIELDS.map((f) => f.key)],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Ideal Qty, Actual Qty, OK Qty, Rejected, % OK Qty", fields: ["actualQty", "okQty"] },
+  { id: 5, title: "Production Master", fields: ["actualQty", "okQty"] },
   { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
   // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
   // stoppage time everywhere else (the sheet lists it under Total Stoppage).
@@ -160,10 +160,6 @@ const EntryBlock = ({
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
   const stoppageLimit = useMemo(() => stoppageLimitMin(withDecimalPlanned(values)), [values]);
   const machineShiftMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
-  // Unreported Time for this entry = Stoppage Allowed − Total Stoppage, i.e.
-  // Planned − Machine Shift − Stoppage in whole minutes. The sheet adds it up
-  // over the machine's whole date; here it is this entry alone.
-  const unreportedMin = stoppageLimit === null ? null : stoppageLimit - (calc.totalStoppageMin || 0);
   const plannedBelowMachine = planned !== null && machineShiftMin !== null && Math.round(planned * 60) < machineShiftMin;
   const overStoppage = stoppageLimit !== null && calc.totalStoppageMin > stoppageLimit;
   const otherDowntimeUsed = Number(values.otherMin) > 0;
@@ -572,7 +568,7 @@ const EntryBlock = ({
 
         <Line id={7} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={3} fieldKey="plannedOperatorShiftHours">
+            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
                 value={values.plannedOperatorShiftHours}
@@ -592,20 +588,14 @@ const EntryBlock = ({
                 </p>
               )}
             </Field>
-            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={3} fieldKey="lunchMin">
+            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={4} fieldKey="lunchMin">
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} invalid={!!err("lunchMin")} {...minutesBox("lunchMin")} />
             </Field>
             <Calc
               label="Stoppage Allowed (min)"
               value={stoppageLimit === null ? "" : String(stoppageLimit)}
-              md={3}
+              md={4}
               title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to"
-            />
-            <Calc
-              label="Unreported Time (min)"
-              value={unreportedMin === null ? "" : fmtNum(unreportedMin)}
-              md={3}
-              title="Planned Operator Shift − Machine Shift − Total Stoppage, for this entry. The sheet adds it up over the machine's whole date."
             />
           </Row>
         </Line>

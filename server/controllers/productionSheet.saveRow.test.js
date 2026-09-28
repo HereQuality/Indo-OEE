@@ -21,9 +21,11 @@ const fakeDb = (rows = []) => {
       (r) =>
         (!q.date || r.date.getTime() === q.date.getTime()) &&
         (!q.machine || r.machine === q.machine) &&
+        (!q.operator || r.operator === q.operator) &&
+        (!q.$nor || !q.$nor.some((n) => r.machine === n.machine && r.slot === n.slot)) &&
         (q.slot === undefined || (q.slot && q.slot.$ne !== undefined ? r.slot !== q.slot.$ne : r.slot === q.slot)),
     );
-  const chain = (rows) => ({ select: () => chain(rows), sort: () => chain(rows), lean: async () => rows });
+  const chain = (rows) => ({ select: () => chain(rows), sort: () => chain(rows), populate: () => chain(rows), lean: async () => rows });
   const saved = [];
   return {
     saved,
@@ -215,5 +217,32 @@ test("stoppage is capped by Planned Operator Shift − Machine Shift", async () 
     const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 60 }) });
     assert.equal(fits.statusCode, 200, JSON.stringify(fits.payload));
     assert.equal(db.saved.length, 1);
+  });
+});
+
+const OTHER_MACHINE = "64b0c0ffee0000000000bbbb";
+
+test("one operator can't be on two machines at overlapping times on a date", async () => {
+  await withDb([{ machine: OTHER_MACHINE, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00" }], async (db) => {
+    const clash = await call(saveRow, { body: body({ operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 8 }) });
+    assert.equal(clash.statusCode, 400);
+    assert.match(clash.payload.message, /Operator Asha is already on machine .* from 8:00 AM – 12:00 PM/);
+    assert.match(clash.payload.message, /can't run two machines at the same time/);
+    assert.equal(db.saved.length, 0);
+    // back to back is fine, and so is another operator
+    const touching = await call(saveRow, { body: body({ operator: "Asha", machineOnTime: "12:00", machineOffTime: "16:00", plannedOperatorShiftHours: 8 }) });
+    assert.equal(touching.statusCode, 200, JSON.stringify(touching.payload));
+    const other = await call(saveRow, { body: body({ operator: "Ravi", machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 8 }) });
+    assert.equal(other.statusCode, 200, JSON.stringify(other.payload));
+  });
+});
+
+test("the occupied lookup can list an operator's entries on a date across machines", async () => {
+  await withDb([{ machine: OTHER_MACHINE, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00" }], async () => {
+    const res = await call(getOccupied, { query: { date: TODAY, operator: "Asha" } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.data.length, 1);
+    assert.equal(res.payload.data[0].machine, OTHER_MACHINE);
+    assert.equal(res.payload.data[0].machineOnTime, "08:00");
   });
 });

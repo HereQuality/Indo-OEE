@@ -57,7 +57,9 @@ class EntryActionBar extends StatelessWidget {
     final saveButton = FilledButton(
       onPressed: saving ? null : onSave,
       style: FilledButton.styleFrom(
-        backgroundColor: inactive ? Color.alphaBlend(cs.onSurface.withValues(alpha: 0.10), cs.surface) : null,
+        backgroundColor: inactive
+            ? Color.alphaBlend(cs.onSurface.withValues(alpha: 0.10), cs.surface)
+            : null,
         foregroundColor: inactive ? cs.onSurface.withValues(alpha: 0.62) : null,
         // While saving the button keeps its brand colour (with a spinner) instead of greying out.
         disabledBackgroundColor: cs.primary.withValues(alpha: 0.8),
@@ -72,11 +74,16 @@ class EntryActionBar extends StatelessWidget {
             SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: cs.onPrimary),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: cs.onPrimary,
+              ),
             ),
             const SizedBox(width: 10),
           ],
-          Flexible(child: Text(_label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Flexible(
+            child: Text(_label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
         ],
       ),
     );
@@ -105,20 +112,33 @@ class EntryActionBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (errorMessage != null) _Notice(message: errorMessage!, icon: Icons.error_outline_rounded),
+                  if (errorMessage != null)
+                    _Notice(
+                      message: errorMessage!,
+                      icon: Icons.error_outline_rounded,
+                    ),
                   if (incompleteMessage != null && errorMessage == null)
-                    _Notice(message: incompleteMessage!, icon: Icons.info_outline_rounded),
+                    _Notice(
+                      message: incompleteMessage!,
+                      icon: Icons.info_outline_rounded,
+                    ),
                   Row(
                     children: [
                       TextButton(
                         onPressed: saving ? null : onCancel,
-                        style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(64, 44),
+                        ),
                         child: const Text('Cancel'),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: inactive
-                            ? Tooltip(message: inactiveHint, triggerMode: TooltipTriggerMode.longPress, child: saveButton)
+                            ? Tooltip(
+                                message: inactiveHint,
+                                triggerMode: TooltipTriggerMode.longPress,
+                                child: saveButton,
+                              )
                             : saveButton,
                       ),
                     ],
@@ -165,7 +185,11 @@ class _Notice extends StatelessWidget {
                 message,
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12.5, height: 1.25, color: cs.onSurface),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.25,
+                  color: cs.onSurface,
+                ),
               ),
             ),
           ],

@@ -4,7 +4,7 @@ import 'package:indo/features/production/sheet/editor/entry_editor_screen.dart';
 
 import '../support/fake_api.dart';
 import 'entry_form_harness.dart' show captureToasts;
-import 'editor_screen_test.dart' show bar, editorTest, fillValid, form, occupiedPath, open, savedRow, settle, tapSave;
+import 'editor_screen_test.dart' show bar, editorTest, fillValid, form, machineLookups, open, savedRow, settle, tapSave;
 
 // The editor and the machine ON/OFF time rules: OFF after ON, and no overlap with
 // what the machine already has saved on that date (asked of the server as soon as
@@ -112,7 +112,7 @@ void main() {
     final h = await open(tester, onOccupied: (_) => _saved(const []));
     await fillValid(tester);
     await settle(tester);
-    final gets = h.api.called('GET', occupiedPath).toList();
+    final gets = machineLookups(h.api).toList();
     expect(gets, hasLength(1), reason: 'many edits, one lookup');
     expect(gets.single.query['machine'], 'm1');
     expect(gets.single.query['date'], matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
@@ -121,7 +121,7 @@ void main() {
     // Another machine on the same date is a new question.
     form(tester).onChange(0, 'machine', 'm2');
     await settle(tester);
-    expect(h.api.called('GET', occupiedPath), hasLength(2));
+    expect(machineLookups(h.api), hasLength(2));
   });
 
   editorTest('OFF before (or at) ON is flagged at once and blocks Save', (tester) async {
@@ -178,7 +178,7 @@ void main() {
     );
     await fillValid(tester);
     await settle(tester);
-    expect(h.api.called('GET', occupiedPath), hasLength(1));
+    expect(machineLookups(h.api), hasLength(1));
 
     await tapSave(tester);
     await settle(tester);
@@ -186,7 +186,7 @@ void main() {
     expect(h.popped, isEmpty, reason: 'the editor stays open with everything typed');
     expect(find.byType(EntryEditorScreen), findsOneWidget);
     expect(find.textContaining("can't overlap"), findsWidgets);
-    expect(h.api.called('GET', occupiedPath), hasLength(2), reason: 'what is booked is read again after a refusal');
+    expect(machineLookups(h.api), hasLength(2), reason: 'what is booked is read again after a refusal');
   });
 
   editorTest('editing: the row itself is not "another entry", and old times stay saveable until they change', (tester) async {

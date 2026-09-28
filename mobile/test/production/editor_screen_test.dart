@@ -44,6 +44,9 @@ void editorTest(String description, Future<void> Function(WidgetTester tester) b
 const rowPath = '/api/v1/production-sheet/row';
 const occupiedPath = '/api/v1/production-sheet/occupied';
 
+/// The machine lookups only (not the operator ones) sent to [occupiedPath].
+Iterable<FakeRequest> machineLookups(FakeApi api) => api.called('GET', occupiedPath).where((r) => r.query.containsKey('machine'));
+
 final machines = <Map<String, dynamic>>[
   {'_id': 'm1', 'machineName': 'CNC 1'},
   {'_id': 'm2', 'machineName': 'CNC 2'},
@@ -125,6 +128,7 @@ Future<EditorHarness> open(
   String? machineId,
   FakeHandler? onPut,
   FakeHandler? onOccupied,
+  FakeHandler? onOperatorOccupied,
   Map<String, Object> prefs = const {},
   Size size = const Size(390, 844),
   bool dark = false,
@@ -134,7 +138,10 @@ Future<EditorHarness> open(
   final api = FakeApi.install();
   api.on('PUT', rowPath, onPut ?? (r) => {'isOk': true, 'data': r.body, 'message': 'Row saved'});
   // What each machine already has saved on a date: nothing, unless a test says so.
-  api.on('GET', occupiedPath, onOccupied ?? (_) => {'isOk': true, 'data': <Map<String, dynamic>>[]});
+  final machineLookup = onOccupied ?? (_) => {'isOk': true, 'data': <Map<String, dynamic>>[]};
+  // The same endpoint also answers "what has this OPERATOR got on that date"
+  // (query `operator`, no machine): nothing, unless a test says otherwise.
+  api.on('GET', occupiedPath, (req) => req.query.containsKey('operator') ? (onOperatorOccupied?.call(req) ?? {'isOk': true, 'data': <Map<String, dynamic>>[]}) : machineLookup(req));
   final popped = <bool?>[];
   await pumpScreen(
     tester,
@@ -158,7 +165,8 @@ Finder cancelBtn() => find.descendant(of: find.byType(EntryActionBar), matching:
 Future<void> fillValid(WidgetTester t, {int index = 0, String machine = 'm1'}) async {
   final f = form(t);
   f.onChange(index, 'machine', machine);
-  f.onChange(index, 'operator', 'Ravi');
+  // One operator can't be on two machines at once, so each machine gets its own.
+  f.onChange(index, 'operator', machine == 'm1' ? 'Ravi' : 'Asha $machine');
   f.onItemSelect(index, 'i1');
   f.onChange(index, 'machineOnTime', '08:00');
   f.onChange(index, 'machineOffTime', '16:00');

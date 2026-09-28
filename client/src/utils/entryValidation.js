@@ -69,8 +69,14 @@ const intervalText = (i) => `${fmt12(i.start)} – ${fmt12(i.end)}`;
 
 // The two time rules speak up as soon as the times are picked, not only after
 // Save is pressed like the other messages ("is required" and the like).
+// (The Planned Operator Shift being shorter than the Machine Shift, and an operator
+// already being on another machine then, speak up the same way.)
 export const isTimeRuleMessage = (message) =>
-  typeof message === "string" && (message.startsWith("Machine OFF Time must be after") || message.includes("overlaps another entry"));
+  typeof message === "string" &&
+  (message.startsWith("Machine OFF Time must be after") ||
+    message.includes("overlaps another entry") ||
+    message.includes("is already on machine") ||
+    message.startsWith("Planned Operator Shift can't be less than"));
 
 // Only when a row's times are set or changed do the two rules apply — an
 // older row that already breaks them stays editable. `saved` is the row's
@@ -112,6 +118,39 @@ export const overlapErrors = (entries, occupied = {}, { editSlot = null, saved =
     return {
       [startInside ? "machineOnTime" : "machineOffTime"]:
         `${startInside ? "Machine ON Time" : "Machine OFF Time"} overlaps another entry for this machine on this date (${intervalText(hit)})`,
+    };
+  });
+
+// One operator runs one machine at a time: on a date, their entries on DIFFERENT
+// machines can't overlap in time. `operatorOccupied` maps "operator|date" → the
+// server's saved entries [{ machine, machineName, slot, machineOnTime,
+// machineOffTime }] for that operator (any machine); `machineName(id)` names the
+// machine of another block in the same form. `editing` = { machine, slot } is the
+// saved row being edited (not "another" entry). Checked only when the times or the
+// operator are new or changed, so an older row that already breaks it stays editable.
+// Same-machine clashes are overlapErrors' job. Keep in step with the server's saveRow.
+export const operatorOverlapErrors = (entries, operatorOccupied = {}, { editing = null, saved = null, machineName = () => "" } = {}) =>
+  entries.map((v, i) => {
+    const op = String(v.operator ?? "").trim();
+    const mine = timeInterval(v.machineOnTime, v.machineOffTime);
+    if (!op || !mine || blank(v.machine) || blank(v.date)) return {};
+    if (timesUnchanged(v, saved) && String(saved?.operator ?? "").trim() === op) return {};
+    const others = [
+      ...(operatorOccupied[`${op}|${v.date}`] || [])
+        .filter((o) => o.machine !== v.machine && !(editing && o.machine === editing.machine && o.slot === editing.slot))
+        .map((o) => ({ name: o.machineName, on: o.machineOnTime, off: o.machineOffTime })),
+      ...entries
+        .filter((o, j) => j !== i && String(o.operator ?? "").trim() === op && o.date === v.date && o.machine !== v.machine)
+        .map((o) => ({ name: machineName(o.machine), on: o.machineOnTime, off: o.machineOffTime })),
+    ]
+      .map((o) => ({ ...o, interval: timeInterval(o.on, o.off) }))
+      .filter((o) => o.interval);
+    const hit = others.find((o) => intervalsOverlap(mine, o.interval));
+    if (!hit) return {};
+    const startInside = mine.start >= hit.interval.start && mine.start < hit.interval.end;
+    return {
+      [startInside ? "machineOnTime" : "machineOffTime"]:
+        `Operator ${op} is already on machine ${hit.name || "another machine"} from ${intervalText(hit.interval)} on this date — an operator can't run two machines at the same time`,
     };
   });
 
@@ -241,7 +280,7 @@ export const validateEntry = (v, { saved = null } = {}) => {
     // The operator's planned shift has to cover the time the machine ran.
     const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
     if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
-      errors.plannedOperatorShiftHours = `Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})`;
+      errors.plannedOperatorShiftHours = `Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})`;
     }
   }
   v = withDecimalPlanned(v);

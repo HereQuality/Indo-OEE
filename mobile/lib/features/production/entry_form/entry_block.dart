@@ -766,7 +766,7 @@ class EntryBlockState extends State<EntryBlock> {
       );
 
   Widget _quantityLine(EntryMetrics m) => EntryLineCard(
-        title: 'Ideal Qty, Actual Qty, OK Qty, Rejected, % OK Qty',
+        title: 'Production Master',
         icon: Icons.inventory_2_outlined,
         hasError: _lineHasError(_line5),
         children: [
@@ -959,10 +959,6 @@ class EntryBlockState extends State<EntryBlock> {
             EntryCell(
               label: 'Stoppage Allowed (min)',
               child: _calc('stoppageAllowed', limit == null ? '' : jsNumStr(limit), 'Stoppage Allowed (min)'),
-            ),
-            EntryCell(
-              label: 'Unreported Time (min)',
-              child: _calc('unreported', m.unreportedMin == null ? '' : entryFmt(m.unreportedMin), 'Unreported Time (min)'),
             ),
           ],
         ),

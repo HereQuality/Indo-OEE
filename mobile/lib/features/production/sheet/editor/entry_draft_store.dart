@@ -26,7 +26,10 @@ class EntryDraftStore {
       final age = savedAt is num
           ? (now ?? DateTime.now()).millisecondsSinceEpoch - savedAt.toInt()
           : null;
-      if (entries is! List || entries.isEmpty || age == null || age > ttl.inMilliseconds) {
+      if (entries is! List ||
+          entries.isEmpty ||
+          age == null ||
+          age > ttl.inMilliseconds) {
         await prefs.remove(key);
         return null;
       }
@@ -39,12 +42,18 @@ class EntryDraftStore {
     }
   }
 
-  static Future<void> save(List<Map<String, dynamic>> entries, {DateTime? now}) async {
+  static Future<void> save(
+    List<Map<String, dynamic>> entries, {
+    DateTime? now,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         key,
-        jsonEncode({'entries': entries, 'savedAt': (now ?? DateTime.now()).millisecondsSinceEpoch}),
+        jsonEncode({
+          'entries': entries,
+          'savedAt': (now ?? DateTime.now()).millisecondsSinceEpoch,
+        }),
       );
     } catch (_) {
       // Storage unavailable — the draft is just skipped.

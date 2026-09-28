@@ -111,7 +111,9 @@ bool _finiteAtLeast0(double? n) => n != null && n.isFinite && n >= 0;
 
 int? _clock(Object? t) {
   final n = normalizeTime(t);
-  return n == null ? null : int.parse(n.substring(0, 2)) * 60 + int.parse(n.substring(3, 5));
+  return n == null
+      ? null
+      : int.parse(n.substring(0, 2)) * 60 + int.parse(n.substring(3, 5));
 }
 
 /// 0..1439 (or a next-day stretch beyond it) → "8:05 AM".
@@ -124,9 +126,14 @@ String fmt12Minutes(int minutes) {
 
 /// The two time rules speak up as soon as the times are picked, not only after
 /// Save is pressed like the other messages ("is required" and the like).
+/// (The Planned Operator Shift being shorter than the Machine Shift, and an
+/// operator already being on another machine then, speak up the same way.)
 bool isTimeRuleMessage(String? message) =>
     message != null &&
-    (message.startsWith('Machine OFF Time must be after') || message.contains('overlaps another entry'));
+    (message.startsWith('Machine OFF Time must be after') ||
+        message.contains('overlaps another entry') ||
+        message.contains('is already on machine') ||
+        message.startsWith("Planned Operator Shift can't be less than"));
 
 /// The stretch of the day an entry occupies, in minutes.
 class TimeSpan {
@@ -156,23 +163,36 @@ TimeSpan? timeInterval(Object? on, Object? off) {
 /// `{machineOnTime, machineOffTime}` as loaded (edit mode), else null.
 bool _timesUnchanged(Map<String, dynamic> v, Map<String, dynamic>? saved) =>
     saved != null &&
-    normalizeTime(v['machineOnTime']) == normalizeTime(saved['machineOnTime']) &&
-    normalizeTime(v['machineOffTime']) == normalizeTime(saved['machineOffTime']);
+    normalizeTime(v['machineOnTime']) ==
+        normalizeTime(saved['machineOnTime']) &&
+    normalizeTime(v['machineOffTime']) ==
+        normalizeTime(saved['machineOffTime']);
 
 /// What the machine has saved on a date: `'machine|date'` → the server's
 /// `{slot, machineOnTime, machineOffTime}` entries.
 typedef OccupiedTimes = Map<String, List<Map<String, dynamic>>>;
 
-List<Map<String, dynamic>> _savedFor(Map<String, dynamic> v, OccupiedTimes occupied, int? editSlot) => [
-      for (final o in occupied['${v['machine']}|${v['date']}'] ?? const <Map<String, dynamic>>[])
-        if ((o['slot'] as num?)?.toInt() != editSlot) o,
-    ];
+List<Map<String, dynamic>> _savedFor(
+  Map<String, dynamic> v,
+  OccupiedTimes occupied,
+  int? editSlot,
+) => [
+  for (final o
+      in occupied['${v['machine']}|${v['date']}'] ??
+          const <Map<String, dynamic>>[])
+    if ((o['slot'] as num?)?.toInt() != editSlot) o,
+];
 
 /// What the machine already has on this entry's date, as readable ranges, for
 /// the "already booked" hint. [editSlot] is the row being edited (not "another").
-List<String> bookedRanges(Map<String, dynamic> v, OccupiedTimes occupied, {int? editSlot}) => [
-      for (final o in _savedFor(v, occupied, editSlot)) ?timeInterval(o['machineOnTime'], o['machineOffTime'])?.text,
-    ];
+List<String> bookedRanges(
+  Map<String, dynamic> v,
+  OccupiedTimes occupied, {
+  int? editSlot,
+}) => [
+  for (final o in _savedFor(v, occupied, editSlot))
+    ?timeInterval(o['machineOnTime'], o['machineOffTime'])?.text,
+];
 
 /// Overlap problems for every block: `{machineOnTime | machineOffTime: message}`.
 /// Each block is checked against the machine's saved entries on its date AND
@@ -186,7 +206,11 @@ List<Map<String, String>> overlapErrors(
   Map<String, String> forBlock(int i) {
     final v = entries[i];
     final mine = timeInterval(v['machineOnTime'], v['machineOffTime']);
-    if (mine == null || isBlank(v['machine']) || isBlank(v['date']) || _timesUnchanged(v, saved)) return const {};
+    if (mine == null ||
+        isBlank(v['machine']) ||
+        isBlank(v['date']) ||
+        _timesUnchanged(v, saved))
+      return const {};
 
     final others = <TimeSpan>[];
     for (final o in _savedFor(v, occupied, editSlot)) {
@@ -195,7 +219,10 @@ List<Map<String, String>> overlapErrors(
     }
     for (var j = 0; j < entries.length; j++) {
       final e = entries[j];
-      if (j == i || '${e['machine']}' != '${v['machine']}' || '${e['date']}' != '${v['date']}') continue;
+      if (j == i ||
+          '${e['machine']}' != '${v['machine']}' ||
+          '${e['date']}' != '${v['date']}')
+        continue;
       final span = timeInterval(e['machineOnTime'], e['machineOffTime']);
       if (span != null) others.add(span);
     }
@@ -214,10 +241,83 @@ List<Map<String, String>> overlapErrors(
   return [for (var i = 0; i < entries.length; i++) forBlock(i)];
 }
 
+/// What each OPERATOR has saved on a date, on any machine: `'operator|date'` →
+/// the server's `{machine, machineName, slot, machineOnTime, machineOffTime}`.
+typedef OperatorOccupied = Map<String, List<Map<String, dynamic>>>;
+
+/// One operator runs one machine at a time: on a date, their entries on
+/// DIFFERENT machines can't overlap in time. Checked against the operator's saved
+/// entries and the other blocks of the same form. [editing] is the saved row being
+/// edited (`machine` + `slot`), not "another" entry; [saved] is that row's
+/// `{machineOnTime, machineOffTime, operator}` as loaded — with times and operator
+/// untouched an older row that already breaks this stays editable. Same-machine
+/// clashes are [overlapErrors]' job. Keep in step with the server's saveRow.
+List<Map<String, String>> operatorOverlapErrors(
+  List<Map<String, dynamic>> entries,
+  OperatorOccupied occupied, {
+  ({String machine, int slot})? editing,
+  Map<String, dynamic>? saved,
+  String Function(String machineId)? machineName,
+}) {
+  Map<String, String> forBlock(int i) {
+    final v = entries[i];
+    final op = '${v['operator'] ?? ''}'.trim();
+    final mine = timeInterval(v['machineOnTime'], v['machineOffTime']);
+    if (op.isEmpty ||
+        mine == null ||
+        isBlank(v['machine']) ||
+        isBlank(v['date']))
+      return const {};
+    if (_timesUnchanged(v, saved) && '${saved?['operator'] ?? ''}'.trim() == op)
+      return const {};
+
+    final others = <({String name, TimeSpan span})>[];
+    for (final o
+        in occupied['$op|${v['date']}'] ?? const <Map<String, dynamic>>[]) {
+      if ('${o['machine']}' == '${v['machine']}') continue;
+      if (editing != null &&
+          '${o['machine']}' == editing.machine &&
+          (o['slot'] as num?)?.toInt() == editing.slot)
+        continue;
+      final span = timeInterval(o['machineOnTime'], o['machineOffTime']);
+      if (span != null)
+        others.add((name: '${o['machineName'] ?? ''}', span: span));
+    }
+    for (var j = 0; j < entries.length; j++) {
+      final e = entries[j];
+      if (j == i ||
+          '${e['operator'] ?? ''}'.trim() != op ||
+          '${e['date']}' != '${v['date']}' ||
+          '${e['machine']}' == '${v['machine']}') {
+        continue;
+      }
+      final span = timeInterval(e['machineOnTime'], e['machineOffTime']);
+      if (span != null)
+        others.add((
+          name: machineName?.call('${e['machine']}') ?? '',
+          span: span,
+        ));
+    }
+
+    final hit = others.where((o) => mine.overlaps(o.span)).firstOrNull;
+    if (hit == null) return const {};
+    final startInside = hit.span.containsStart(mine);
+    return {
+      startInside ? 'machineOnTime' : 'machineOffTime':
+          "Operator $op is already on machine ${hit.name.isEmpty ? 'another machine' : hit.name} from ${hit.span.text} on this date — an operator can't run two machines at the same time",
+    };
+  }
+
+  return [for (var i = 0; i < entries.length; i++) forBlock(i)];
+}
+
 /// One block's values → {fieldKey: message}. Empty map = ready to save.
 /// Keys are inserted in the same order as the web version. [saved] (edit mode)
 /// is the row's times as loaded — see [_timesUnchanged].
-Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>? saved}) {
+Map<String, String> validateEntry(
+  Map<String, dynamic> v, {
+  Map<String, dynamic>? saved,
+}) {
   final errors = <String, String>{};
   final calc = rowCalc(v);
 
@@ -238,11 +338,14 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
     }
   }
   // The machine runs within one day: OFF must come after ON.
-  if (!errors.containsKey('machineOnTime') && !errors.containsKey('machineOffTime') && !_timesUnchanged(v, saved)) {
+  if (!errors.containsKey('machineOnTime') &&
+      !errors.containsKey('machineOffTime') &&
+      !_timesUnchanged(v, saved)) {
     final on = _clock(v['machineOnTime']);
     final off = _clock(v['machineOffTime']);
     if (on != null && off != null && off <= on) {
-      errors['machineOffTime'] = 'Machine OFF Time must be after Machine ON Time';
+      errors['machineOffTime'] =
+          'Machine OFF Time must be after Machine ON Time';
     }
   }
 
@@ -254,7 +357,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   } else if (!_finiteAtLeast0(actual)) {
     errors['actualQty'] = 'Must be 0 or more';
   } else if (isNum(idealQty) && actual! > idealQty!) {
-    errors['actualQty'] = "Actual can't be more than Ideal Quantity (${jsNumStr(idealQty)})";
+    errors['actualQty'] =
+        "Actual can't be more than Ideal Quantity (${jsNumStr(idealQty)})";
   }
 
   final ok = jsNumber(v['okQty']);
@@ -263,7 +367,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   } else if (!_finiteAtLeast0(ok)) {
     errors['okQty'] = 'Must be 0 or more';
   } else if (isNum(actual) && ok! > actual!) {
-    errors['okQty'] = "OK can't be more than Actual Quantity (${jsNumStr(actual)})";
+    errors['okQty'] =
+        "OK can't be more than Actual Quantity (${jsNumStr(actual)})";
   }
 
   // Rejected = Actual − OK, and every rejected piece needs a reason. Can only
@@ -273,7 +378,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   final split = cleanSplit(v['rejectBreakdown']);
   final splitTotal = split.values.fold<double>(0, (s, n) => s + n);
   final rawBreakdown = v['rejectBreakdown'];
-  final hasBadBox = rawBreakdown is Map &&
+  final hasBadBox =
+      rawBreakdown is Map &&
       rawBreakdown.values.any((n) {
         if (isBlank(n)) return false;
         final x = jsToNumber(n);
@@ -290,7 +396,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
         : 'Nothing was rejected (Actual − OK is 0), so these boxes should be empty';
   }
   if ((split['Other'] ?? 0) > 0 && isBlank(v['rejectOtherRemark'])) {
-    errors['rejectOtherRemark'] = 'Remark is required when "Other" is a reject reason';
+    errors['rejectOtherRemark'] =
+        'Remark is required when "Other" is a reject reason';
   }
 
   // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
@@ -299,24 +406,27 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
   } else if (plannedParse.minutesTooBig) {
-    errors['plannedOperatorShiftHours'] = 'Minutes must be 00–59 (3.30 means 3 h 30 min)';
+    errors['plannedOperatorShiftHours'] =
+        'Minutes must be 00–59 (3.30 means 3 h 30 min)';
   } else if (planned == null) {
     errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
   } else if (planned <= 0 || planned > 24) {
-    errors['plannedOperatorShiftHours'] = 'Must be more than 0:00 and at most 24:00';
+    errors['plannedOperatorShiftHours'] =
+        'Must be more than 0:00 and at most 24:00';
   } else {
     // The operator's planned shift has to cover the time the machine ran.
     final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
     if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
       errors['plannedOperatorShiftHours'] =
-          "Planned Operator Shift (${hoursToHm(planned)}) can't be less than Machine Shift (${hoursToHm(shiftMin / 60)})";
+          "Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})";
     }
   }
   v = withDecimalPlanned(v);
 
   // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
   final lunch = jsNumber(v['lunchMin']);
-  if (!isBlank(v['lunchMin']) && (lunch == null || !lunch.isFinite || lunch < 0 || lunch > 1440)) {
+  if (!isBlank(v['lunchMin']) &&
+      (lunch == null || !lunch.isFinite || lunch < 0 || lunch > 1440)) {
     errors['lunchMin'] = '0–1440';
   }
 
@@ -336,7 +446,8 @@ Map<String, String> validateEntry(Map<String, dynamic> v, {Map<String, dynamic>?
         'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Planned Operator Shift − Machine Shift)';
   }
   if ((jsNumber(v['otherMin']) ?? 0) > 0 && isBlank(v['otherMinRemark'])) {
-    errors['otherMinRemark'] = 'Remark is required when Other downtime is entered';
+    errors['otherMinRemark'] =
+        'Remark is required when Other downtime is entered';
   }
 
   return errors;

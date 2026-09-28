@@ -34,6 +34,12 @@ export const getProductionFilterOptions = async ({ from, to }) =>
 export const getOccupiedTimes = async ({ date, machine }) =>
     api.get(ENDPOINTS.PRODUCTION_SHEET.OCCUPIED, { params: { date, machine } });
 
+// Everything one operator already has on a "YYYY-MM-DD" date, on ANY machine —
+// [{ machine, machineName, slot, machineOnTime, machineOffTime }] — so the form can
+// refuse putting the same operator on two machines at the same time.
+export const getOperatorOccupied = async ({ date, operator }) =>
+    api.get(ENDPOINTS.PRODUCTION_SHEET.OCCUPIED, { params: { date, operator } });
+
 // Upserts one (date, machine, slot) row; the server deletes it if every field is blank.
 export const saveProductionRow = async (row) => api.put(ENDPOINTS.PRODUCTION_SHEET.ROW, row);
 

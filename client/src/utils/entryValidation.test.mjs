@@ -121,7 +121,7 @@ test("H.MM: 60 minutes to the hour, one minute digit is tens of minutes", () => 
 });
 
 test("Planned Operator Shift can't be less than the Machine Shift, and its minutes stop at 59", () => {
-  assert.equal(validate(block({ plannedOperatorShiftHours: "7.30" })).plannedOperatorShiftHours, "Planned Operator Shift (7:30) can't be less than Machine Shift (8:00)");
+  assert.equal(validate(block({ plannedOperatorShiftHours: "7.30" })).plannedOperatorShiftHours, "Planned Operator Shift can't be less than the Machine Shift (8:00)");
   assert.equal(validate(block({ plannedOperatorShiftHours: "8.75" })).plannedOperatorShiftHours, "Minutes must be 00–59 (3.30 means 3 h 30 min)");
   assert.equal(validate(block({ plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours, undefined);
 });
@@ -150,4 +150,37 @@ test("Unreported Time = Planned − Machine Shift − Stoppage in whole minutes 
   // two entries on one date add up
   const both = dayCalc([row(), row({ machineOnTime: "20:00", machineOffTime: "22:00", plannedOperatorShiftHours: 2.5, lunchMin: 0, setupMin: 10 })]);
   assert.equal(both[0].unreportedMin, 60 + (30 - 10));
+});
+
+import { isTimeRuleMessage, operatorOverlapErrors } from "./entryValidation";
+
+test("Planned shorter than the Machine Shift is a live (time-rule) warning with a stable message", () => {
+  const e = validate(block({ plannedOperatorShiftHours: "7.30" })).plannedOperatorShiftHours;
+  assert.equal(e, "Planned Operator Shift can't be less than the Machine Shift (8:00)");
+  assert.ok(isTimeRuleMessage(e));
+  // typing "7" then "7.3" then "7.30" keeps the very same message, so it toasts once
+  assert.equal(validate(block({ plannedOperatorShiftHours: "7" })).plannedOperatorShiftHours, e);
+});
+
+test("one operator can't be on two machines at overlapping times on a date", () => {
+  const mine = { date: "2026-09-28", machine: "m2", operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00" };
+  const saved = { "Asha|2026-09-28": [{ machine: "m1", machineName: "7A", slot: 1, machineOnTime: "08:00", machineOffTime: "12:00" }] };
+  const [err] = operatorOverlapErrors([mine], saved);
+  assert.equal(err.machineOnTime, "Operator Asha is already on machine 7A from 8:00 AM – 12:00 PM on this date — an operator can't run two machines at the same time");
+  assert.ok(isTimeRuleMessage(err.machineOnTime));
+  // runs into it from before -> the OFF box is flagged
+  assert.ok(operatorOverlapErrors([{ ...mine, machineOnTime: "06:00", machineOffTime: "09:00" }], saved)[0].machineOffTime);
+  // touching, another operator, another date, the same machine: all fine
+  assert.deepEqual(operatorOverlapErrors([{ ...mine, machineOnTime: "12:00", machineOffTime: "16:00" }], saved), [{}]);
+  assert.deepEqual(operatorOverlapErrors([{ ...mine, operator: "Ravi" }], saved), [{}]);
+  assert.deepEqual(operatorOverlapErrors([{ ...mine, date: "2026-09-29" }], saved), [{}]);
+  assert.deepEqual(operatorOverlapErrors([{ ...mine, machine: "m1" }], saved), [{}]);
+  // editing that very row is not "another" entry
+  assert.deepEqual(operatorOverlapErrors([{ ...mine, machine: "m1", machineOnTime: "09:00", machineOffTime: "11:00" }], saved, { editing: { machine: "m1", slot: 1 } }), [{}]);
+  // two blocks of the same form, same operator, different machines, overlapping
+  const a = { ...mine, machine: "m1", machineOnTime: "08:00", machineOffTime: "12:00" };
+  const both = operatorOverlapErrors([a, mine], {}, { machineName: (id) => ({ m1: "7A", m2: "7B" })[id] });
+  assert.ok(both[0].machineOffTime && both[1].machineOnTime); // each is flagged on the box that runs into the other
+  // an older row that already breaks it stays editable while its times and operator are untouched
+  assert.deepEqual(operatorOverlapErrors([mine], saved, { saved: { machineOnTime: "10:00", machineOffTime: "14:00", operator: "Asha" } }), [{}]);
 });
