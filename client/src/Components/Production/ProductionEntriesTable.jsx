@@ -13,6 +13,7 @@ import {
   rowCalc,
 } from "../../utils/productionSheet";
 import { hoursToHm } from "../../utils/shiftHours";
+import useDragScrollX from "../../hooks/useDragScrollX";
 
 // The plain-English formula behind every calculated column — shown in a
 // popover from the eye icon next to its header, so nobody has to remember or
@@ -590,6 +591,7 @@ const ProductionEntriesTable = ({
   // real scroll width and stays in sync with the bottom one either way.
   const topBarRef = useRef(null);
   const bodyRef = useRef(null);
+  useDragScrollX(bodyRef);
   const [scrollWidth, setScrollWidth] = useState(0);
   const [hasOverflowX, setHasOverflowX] = useState(false);
   const syncingScroll = useRef(false);
