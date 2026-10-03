@@ -13,7 +13,11 @@ const {
 
 const router = express.Router();
 
-const MENU_URL = "/production/items";
+// Matches the Part Master's Menu Master entry (renamed from "Items" to
+// "Parts" — see client/src/Routes/allRoutes.jsx, which still serves the old
+// /production/items URL too, but Manage Role's permissions are keyed off
+// whichever URL the live menu entry actually uses).
+const MENU_URL = "/production/parts";
 
 router.use(protect);
 router.use(authorize("SuperAdmin", "Operator"));
