@@ -23,11 +23,12 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * downtime box within what Planned Operator Shift leaves after the machine's own
  * run).
  *
- * What differs is the VMC sheet's own fields: a "Machine not run" reason; Setup
- * No.; Program Time and the number of pieces one program makes, which give the
- * Product Cycle Time (so no cycle-time breakdown by operation); an optional
- * Setting Time ON/OFF; Actual OK and Rejected Quantity both typed (so no reject
- * reason split); and all ten downtime boxes.
+ * What differs is the VMC sheet's own fields: a "Machine not run" reason; an
+ * optional Work Order No. (picking one fills in its part); Setup No.; Program Time
+ * and the number of pieces one program makes, which give the Product Cycle Time
+ * (so no cycle-time breakdown by operation); an optional Setting Time ON/OFF;
+ * Actual OK and Rejected Quantity both typed (so no reject reason split); and all
+ * ten downtime boxes.
  *
  * The rules live in utils/vmcValidation.js; the figures in utils/vmcSheet.js.
  */
@@ -61,7 +62,11 @@ const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
 // line containing a validation error can flag itself in its heading.
 const LINES = [
   { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator", "machineNotRun"] },
-  { id: 2, title: "Part, Setup No., Program, Product Cycle Time", fields: ["itemName", "setupNo", "programTimeMin", "pcsPerProgram"] },
+  {
+    id: 2,
+    title: "Work Order, Part, Setup No., Program, Product Cycle Time",
+    fields: ["workOrder", "itemName", "setupNo", "programTimeMin", "pcsPerProgram"],
+  },
   { id: 3, title: "Machine ON–OFF Time, Setting Time, Machine Shift", fields: ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
   { id: 7, title: "Planned Operator Shift", fields: ["plannedOperatorShiftHours"] },
@@ -115,6 +120,7 @@ const EntryBlock = ({
   isSubmit,
   machines,
   items,
+  workOrders,
   operators,
   isEdit,
   index,
@@ -124,6 +130,7 @@ const EntryBlock = ({
   onExpand,
   onChange,
   onItemSelect,
+  onWorkOrderSelect,
   onRemove,
   registerRef,
 }) => {
@@ -177,6 +184,17 @@ const EntryBlock = ({
   const settingOffEarliest = useMemo(() => after(values.settingOnTime), [values.settingOnTime]);
   const errorCount = Object.keys(errors).length;
   const handle = (e) => onChange(index, e.target.name, e.target.value);
+
+  // The Work Order No. box: once a part is picked it offers that part's work orders,
+  // before that every work order of this sheet's parts — each with its part's name.
+  // The one this entry already carries stays in the list even when it has since been
+  // deactivated or removed, so editing the entry doesn't look like it lost it.
+  const partName = useMemo(() => Object.fromEntries(items.map((it) => [it._id, it.itemName])), [items]);
+  const workOrderChoices = useMemo(
+    () => (values.item ? workOrders.filter((wo) => String(wo.item) === String(values.item)) : workOrders),
+    [workOrders, values.item],
+  );
+  const workOrderMissing = !!values.workOrder && !workOrders.some((wo) => wo._id === values.workOrder);
 
   // Picking a machine in a closed block opens its entry fields straight away —
   // no separate "+" press needed (the "+" stays for reopening a collapsed one).
@@ -338,7 +356,25 @@ const EntryBlock = ({
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Part Name" required error={err("itemName")} md={6} fieldKey="itemName">
+            <Field label="Work Order No." error={err("workOrder")} md={4} fieldKey="workOrder">
+              <Input
+                type="select"
+                bsSize="sm"
+                name="workOrder"
+                value={values.workOrder || ""}
+                onChange={(e) => onWorkOrderSelect(index, e.target.value)}
+              >
+                <option value="">{workOrderChoices.length || workOrderMissing ? "Select work order (optional)" : "No work orders yet"}</option>
+                {workOrderMissing && <option value={values.workOrder}>{values.workOrderNo}</option>}
+                {workOrderChoices.map((wo) => (
+                  <option key={wo._id} value={wo._id}>
+                    {values.item ? wo.workOrderNo : `${wo.workOrderNo} — ${partName[String(wo.item)] || "—"}`}
+                  </option>
+                ))}
+              </Input>
+              {!values.workOrder && <p className="text-muted mb-0 small mt-1">Picking one fills in the part and its program.</p>}
+            </Field>
+            <Field label="Part Name" required error={err("itemName")} md={5} fieldKey="itemName">
               <Input
                 type="select"
                 bsSize="sm"
@@ -360,15 +396,15 @@ const EntryBlock = ({
               </Input>
             </Field>
             <Calc label="Drawing No." value={values.drawingNo} md={3} title="From the part picked" />
+          </Row>
+          <Row className="g-1">
             <Field label="Setup No." error={err("setupNo")} md={3} fieldKey="setupNo">
               <Input type="text" bsSize="sm" name="setupNo" value={values.setupNo || ""} onChange={handle} maxLength={40} />
             </Field>
-          </Row>
-          <Row className="g-1">
-            <Field label="Program Time (min)" required error={err("programTimeMin")} md={4} fieldKey="programTimeMin">
+            <Field label="Program Time (min)" required error={err("programTimeMin")} md={3} fieldKey="programTimeMin">
               <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handle} invalid={!!err("programTimeMin")} />
             </Field>
-            <Field label="No. of Piece In One Program" required error={err("pcsPerProgram")} md={4} fieldKey="pcsPerProgram">
+            <Field label="No. of Piece In One Program" required error={err("pcsPerProgram")} md={3} fieldKey="pcsPerProgram">
               <NumberInput
                 name="pcsPerProgram"
                 value={values.pcsPerProgram}
@@ -380,7 +416,7 @@ const EntryBlock = ({
             <Calc
               label="Product Cycle Time (sec)"
               value={fmtNum(calc.totalCycleSec)}
-              md={4}
+              md={3}
               title="Program Time (min) × 60 ÷ No. of Piece In One Program"
             />
           </Row>
@@ -551,11 +587,13 @@ const VmcEntryForm = ({
   focusTarget = null,
   machines = [],
   items = [],
+  workOrders = [],
   operators = [],
   isEdit = false,
   booked = [],
   onChange,
   onItemSelect,
+  onWorkOrderSelect,
   onAdd,
   onRemove,
 }) => {
@@ -652,6 +690,7 @@ const VmcEntryForm = ({
           isSubmit={isSubmit}
           machines={machines}
           items={items}
+          workOrders={workOrders}
           operators={operators}
           isEdit={isEdit}
           canRemove={!isEdit && entries.length > 1}
@@ -660,6 +699,7 @@ const VmcEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
+          onWorkOrderSelect={onWorkOrderSelect}
           onRemove={onRemove}
           registerRef={(el) => {
             blockRefs.current[i] = el;

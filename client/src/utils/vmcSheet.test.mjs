@@ -104,6 +104,38 @@ test("a machine's day shares one Unreported Time and OEE across its entries", ()
   assert.ok(Number.isFinite(ra.oeeLosses));
 });
 
+test("the full VMC formula set on a worked two-entry day (one overnight)", () => {
+  const close = (got, want) => assert.ok(Math.abs(got - want) < 1e-9, `${got} ≠ ${want}`);
+  // a: 09:00–13:00 = 4 h, 6 min / 2 pcs → 180 s cycle, Ideal 80; stoppage 15 + 10 + 5 = 30
+  const a = entry({ _id: "a", machineOnTime: "09:00", machineOffTime: "13:00", plannedOperatorShiftHours: "4.75",
+    actualQty: "74", okQty: "70", rejectedQty: "", lunchMin: "15", setupMin: "10", noMaterialMin: "5" });
+  // b: 22:00–02:00 runs past midnight = 4 h, nothing stopped
+  const b = entry({ _id: "b", machineOnTime: "22:00", machineOffTime: "02:00", plannedOperatorShiftHours: "4",
+    actualQty: "60", okQty: "60", rejectedQty: "", lunchMin: "", setupMin: "" });
+
+  const ca = vmcRowCalc(a);
+  assert.equal(ca.totalCycleSec, 180);
+  assert.equal(ca.shiftHours, 4);
+  assert.equal(ca.idealQty, 80);
+  assert.equal(ca.idealQtyPerHour, 20);
+  assert.equal(ca.rejectedQty, 4);
+  close(ca.pctOk, 70 / 74);
+  assert.equal(ca.totalStoppageMin, 30);
+  close(ca.effectiveHours, 3.5);
+  close(ca.setupEfficiency, 0.875);
+  assert.equal(vmcRowCalc(b).shiftHours, 4);
+
+  const [da, db] = vmcDayCalc([b, a]); // order given doesn't matter
+  close(da.unutilized, (12 - (4 - 15 / 60)) / 11); // this entry's own figure …
+  close(db.unutilized, (12 - 4) / 11); // … not blended with the other
+  // Day: available 4.75 + 4, effective 3.5 + 3, stoppage 30, lunch 15, setup 10
+  assert.equal(da.unreportedMin, 15); // a: max(285, 240) − 240 − 30; b: 0
+  close(da.oeeLosses, 6.5 / (8.75 - 30 / 60));
+  close(da.oeeLunch, 6.5 / (8.75 - 15 / 60));
+  close(da.oeeLunchCot, 6.5 / (8.75 - 15 / 60 - 10 / 60));
+  for (const k of ["unreportedMin", "oeeLosses", "oeeLunch", "oeeLunchCot"]) assert.equal(da[k], db[k]);
+});
+
 test("a process is VMC when linked to the VMC page — or, while unlinked, when it is named VMC", () => {
   assert.equal(isVmcProcess({ processName: "Line 2", dataEntryMenu: "/hqepl/production/vmc-data-entry" }), true);
   assert.equal(isVmcProcess({ processName: "VMC", dataEntryMenu: null }), true);

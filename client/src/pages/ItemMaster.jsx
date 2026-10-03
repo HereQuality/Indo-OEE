@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useMemo } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { History, Pencil, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, Col, Container, Modal, ModalBody, ModalFooter, ModalHeader, Label, Input, Row } from "reactstrap";
 import DataTable from "react-data-table-component";
 import DeleteModal from "../Components/Common/DeleteModal";
@@ -14,6 +14,7 @@ import { createItem, deleteItem, getItemById, updateItem, searchItems } from "..
 import { CYCLE_OP_FIELDS, cycleOpLabel, fmtNum } from "../utils/productionSheet";
 import { isVmcProcess, programCycleSec } from "../utils/vmcSheet";
 import NumberInput from "../Components/Production/NumberInput";
+import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
 const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
 
@@ -74,6 +75,9 @@ const ItemMaster = () => {
   // null = closed, "add" or "edit"
   const [modalMode, setModalMode] = useState(null);
   const [modal_delete, setmodal_delete] = useState(false);
+  // The edit history: one part's, or (historyItem null) every part's.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItem, setHistoryItem] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [totalRows, setTotalRows] = useState(0);
@@ -124,6 +128,11 @@ const ItemMaster = () => {
   const tog_delete = (id) => {
     setmodal_delete(!modal_delete);
     setRemove_id(id);
+  };
+
+  const openHistory = (row = null) => {
+    setHistoryItem(row);
+    setHistoryOpen(true);
   };
 
   const handleChange = (e) => {
@@ -262,6 +271,9 @@ const ItemMaster = () => {
       name: "Action",
       cell: (row) => (
         <div className="d-flex gap-2">
+          <button className="btn btn-sm btn-soft-info btn-icon fs-14" title="History" onClick={() => openHistory(row)}>
+            <History size={16} className="text-info" />
+          </button>
           {currentPagePermissions.edit && (
             <button className="btn btn-sm btn-soft-success btn-icon fs-14" title="Edit" onClick={() => openEdit(row._id)}>
               <Pencil size={16} className="text-success" />
@@ -274,7 +286,7 @@ const ItemMaster = () => {
           )}
         </div>
       ),
-      minWidth: "140px",
+      minWidth: "180px",
     },
   ];
 
@@ -299,23 +311,34 @@ const ItemMaster = () => {
                     setQuery={setQuery}
                     showAddButton={currentPagePermissions.create}
                     extraControls={
-                      <select
-                        value={processFilter}
-                        onChange={(e) => {
-                          setPageNo(1);
-                          setProcessFilter(e.target.value);
-                        }}
-                        title="Show the parts of one process"
-                        className="w-full sm:w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 transition-all text-slate-700"
-                      >
-                        <option value="">All processes</option>
-                        {processes.map((p) => (
-                          <option key={p._id} value={p._id}>
-                            {p.processName}
-                          </option>
-                        ))}
-                        <option value="none">Not in any process</option>
-                      </select>
+                      <>
+                        <select
+                          value={processFilter}
+                          onChange={(e) => {
+                            setPageNo(1);
+                            setProcessFilter(e.target.value);
+                          }}
+                          title="Show the parts of one process"
+                          className="w-full sm:w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 transition-all text-slate-700"
+                        >
+                          <option value="">All processes</option>
+                          {processes.map((p) => (
+                            <option key={p._id} value={p._id}>
+                              {p.processName}
+                            </option>
+                          ))}
+                          <option value="none">Not in any process</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => openHistory()}
+                          title="Every change made to any part, including parts since deleted"
+                          className="inline-flex items-center justify-center gap-1.5 shrink-0 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors"
+                        >
+                          <History size={16} />
+                          History
+                        </button>
+                      </>
                     }
                   />
                 </CardHeader>
@@ -467,6 +490,8 @@ const ItemMaster = () => {
           </ModalFooter>
         </form>
       </Modal>
+
+      <ItemHistoryModal isOpen={historyOpen} toggle={() => setHistoryOpen(false)} item={historyItem} />
 
       <DeleteModal
         show={modal_delete}

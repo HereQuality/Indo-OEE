@@ -7,6 +7,7 @@ const VmcEntry = require("../models/VmcEntry");
 const Machine = require("../models/Machine");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const WorkOrder = require("../models/WorkOrder");
 const { saveRow, getOccupied } = require("./vmcSheet.controller");
 
 const MACHINE = "64b0c0ffee0000000000aaaa";
@@ -188,6 +189,62 @@ test("a row with every field blank clears instead of failing the rules", async (
       body: { date: TODAY, machine: MACHINE, slot: "auto", operator: "", itemName: "", machineOnTime: "", machineOffTime: "" },
     });
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+  });
+});
+
+// Work orders: a stand-in for WorkOrder.findById over a few rows.
+const ITEM = "64b0c0ffee0000000000e001";
+const OTHER_ITEM = "64b0c0ffee0000000000e002";
+const WO = "64b0c0ffee0000000000d001";
+const withWorkOrders = async (rows, fn) => {
+  const orig = WorkOrder.findById;
+  WorkOrder.findById = (id) => ({ select: () => ({ lean: async () => rows.find((r) => String(r._id) === String(id)) || null }) });
+  try {
+    await fn();
+  } finally {
+    WorkOrder.findById = orig;
+  }
+};
+const workOrder = (o = {}) => ({ _id: WO, workOrderNo: "WO-101", item: ITEM, isActive: true, ...o });
+
+test("a picked work order is stored with its own number, not the one the client sent", async () => {
+  await withWorkOrders([workOrder()], async () => {
+    await withDb([], async (db) => {
+      const res = await call(saveRow, { body: body({ item: ITEM, workOrder: WO, workOrderNo: "typed by hand" }) });
+      assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+      assert.equal(String(db.saved[0].workOrder), WO);
+      assert.equal(db.saved[0].workOrderNo, "WO-101");
+    });
+  });
+});
+
+test("a work order is optional, and sending none clears it", async () => {
+  await withDb([], async (db) => {
+    const res = await call(saveRow, { body: body({ workOrder: null }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].workOrder, null);
+    assert.equal(db.saved[0].workOrderNo, "");
+  });
+});
+
+test("a work order for another part, an inactive one, or an unknown one is refused", async () => {
+  await withWorkOrders([workOrder({ item: OTHER_ITEM }), workOrder({ _id: "64b0c0ffee0000000000d002", isActive: false })], async () => {
+    await refused({ item: ITEM, workOrder: WO }, /Work Order WO-101 is for a different part/);
+    await refused({ item: ITEM, workOrder: "64b0c0ffee0000000000d002" }, /not found or inactive/);
+    await refused({ item: ITEM, workOrder: "64b0c0ffee0000000000d003" }, /not found or inactive/);
+    await refused({ item: ITEM, workOrder: "nope" }, /Invalid work order/);
+  });
+});
+
+test("an entry keeps its work order when edited, even after the work order is gone", async () => {
+  await withWorkOrders([], async () => {
+    const saved = { slot: 1, machineOnTime: "09:00", machineOffTime: "17:30", operator: "Asha", workOrder: WO, workOrderNo: "WO-7" };
+    await withDb([saved], async (db) => {
+      const res = await call(saveRow, { body: body({ slot: 1, item: ITEM, workOrder: WO, remarks: "edited" }) });
+      assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+      assert.equal(db.saved[0].workOrderNo, "WO-7");
+      assert.equal(db.saved[0].remarks, "edited");
+    });
   });
 });
 

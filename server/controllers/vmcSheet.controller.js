@@ -3,6 +3,7 @@ const VmcEntry = require("../models/VmcEntry");
 const { MACHINE_NOT_RUN } = require("../models/VmcEntry");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
+const WorkOrder = require("../models/WorkOrder");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
@@ -34,6 +35,7 @@ const toRow = (e) => ({
   date: e.date.toISOString().slice(0, 10),
   machine: String(e.machine),
   item: e.item ? String(e.item) : null,
+  workOrder: e.workOrder ? String(e.workOrder) : null,
 });
 
 // Builds the stored document from the request body. Blank inputs are unset
@@ -67,6 +69,27 @@ const buildFields = (body) => {
     set.item = body.item || null;
   }
   return { set, unset };
+};
+
+// The work order a request names, as the fields to store: the link, and this
+// entry's own copy of its number — taken from the work order itself, never from
+// what the client typed. An entry that already carries this work order keeps it as
+// saved (even if the work order has since been deactivated or removed), so such an
+// entry can still be edited. Anything else has to be an active work order, and
+// for the same part the entry names. Not sent at all = leave as it is.
+const workOrderFields = async (body, existing) => {
+  if (body.workOrder === undefined) return {};
+  if (!body.workOrder) return { workOrder: null, workOrderNo: "" };
+  if (!mongoose.isValidObjectId(body.workOrder)) throw fail("Invalid work order");
+  if (existing?.workOrder && String(existing.workOrder) === String(body.workOrder)) {
+    return { workOrder: body.workOrder, workOrderNo: existing.workOrderNo || "" };
+  }
+  const workOrder = await WorkOrder.findById(body.workOrder).select("workOrderNo item isActive").lean();
+  if (!workOrder || !workOrder.isActive) throw fail("Work order not found or inactive");
+  if (body.item && String(workOrder.item) !== String(body.item)) {
+    throw fail(`Work Order ${workOrder.workOrderNo} is for a different part — pick its part, or another work order`);
+  }
+  return { workOrder: workOrder._id, workOrderNo: workOrder.workOrderNo };
 };
 
 const isRowEmpty = (doc) =>
@@ -269,7 +292,7 @@ exports.saveRow = async (req, res) => {
     const existing =
       editSlot && SLOT_NUMBERS.includes(editSlot)
         ? await VmcEntry.findOne({ date: day, machine, slot: editSlot })
-            .select("unlockedUntil machineOnTime machineOffTime operator")
+            .select("unlockedUntil machineOnTime machineOffTime operator workOrder workOrderNo")
             .lean()
         : null;
     const ruleError = entryRuleError(req.body, existing);
@@ -332,6 +355,7 @@ exports.saveRow = async (req, res) => {
     }
 
     const { set, unset } = buildFields(req.body);
+    Object.assign(set, await workOrderFields(req.body, existing));
     const doc = await VmcEntry.findOneAndUpdate(
       { date: day, machine, slot: slotNo },
       {

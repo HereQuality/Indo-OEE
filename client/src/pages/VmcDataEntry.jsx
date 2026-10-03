@@ -26,6 +26,7 @@ import { MenuContext } from "../context/MenuContext";
 import { useMachines } from "../hooks/useMachines";
 import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
+import { useWorkOrders } from "../hooks/useWorkOrders";
 import { useMachineOperators } from "../hooks/useMachineOperators";
 import {
   deleteVmcRow,
@@ -62,7 +63,8 @@ import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "machineNotRun", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+// `workOrderNo` is only shown here — the server takes the number from the work order itself.
+const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
 const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
@@ -117,6 +119,7 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  workOrder: "",
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -127,6 +130,7 @@ const toFormValues = (row) => ({
   ...emptyEntry(),
   ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
   item: row.item || "",
+  workOrder: row.workOrder || "",
   slot: row.slot,
   // A stored shift is decimal hours; the box shows it as H.MM (7.5 → "7.30").
   plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
@@ -141,6 +145,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  workOrder: v.workOrder || null,
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
@@ -154,6 +159,19 @@ const toPayload = (v, isEdit) => ({
   })(),
   // Lunch is optional on the form; the server wants a 0 rather than nothing.
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
+});
+
+// The part's details as an entry carries them: Drawing No., Setup No. and program
+// (Program Time, pieces per program — set in Production › Items). A part with no
+// program leaves those two boxes blank to be typed.
+const withPart = (v, it) => ({
+  ...v,
+  item: it._id,
+  itemName: it.itemName,
+  drawingNo: it.drawingNo || "",
+  setupNo: it.setupNo || v.setupNo,
+  programTimeMin: it.programTimeMin ?? "",
+  pcsPerProgram: it.pcsPerProgram ?? "",
 });
 
 const VmcDataEntry = () => {
@@ -229,6 +247,7 @@ const VmcDataEntry = () => {
   const { data: machines = [] } = useMachines();
   const { data: processes = [] } = useProcesses();
   const { data: items = [] } = useItems();
+  const { data: workOrders = [] } = useWorkOrders();
   const { data: operators = [] } = useMachineOperators();
 
   // Whichever process (Production › Processes) names *this* page as its own
@@ -259,6 +278,13 @@ const VmcDataEntry = () => {
     () => (lockedProcess ? items.filter((it) => !it.process || String(it.process) === String(lockedProcess._id)) : items),
     [items, lockedProcess],
   );
+
+  // Work orders follow the parts: the Work Order No. box offers those of the parts
+  // this page runs.
+  const scopedWorkOrders = useMemo(() => {
+    const partIds = new Set(scopedItems.map((it) => it._id));
+    return workOrders.filter((wo) => partIds.has(String(wo.item)));
+  }, [workOrders, scopedItems]);
 
   // null = closed, "add" | "edit"
   const [modalMode, setModalMode] = useState(null);
@@ -600,31 +626,42 @@ const VmcDataEntry = () => {
     setEntries((list) => (list.length > 1 ? list.filter((_, i) => i !== index) : list));
   }, []);
 
-  // Picking an item copies its Drawing No., Setup No. and program (Program Time,
-  // pieces per program — set in Production › Items) onto the form — still editable,
-  // so a later change to the master never rewrites saved records. A part with no
-  // program leaves those two boxes blank to be typed.
+  // Picking an item copies those onto the form — still editable, so a later change
+  // to the master never rewrites saved records. A work order belongs to one part,
+  // so choosing a different part lets go of the work order.
   const handleItemSelect = useCallback(
     (index, itemId) => {
       setEntries((list) =>
         list.map((v, i) => {
           if (i !== index) return v;
-          if (!itemId) return { ...v, item: "", itemName: "", drawingNo: "" };
+          const noWorkOrder = { workOrder: "", workOrderNo: "" };
+          if (!itemId) return { ...v, item: "", itemName: "", drawingNo: "", ...noWorkOrder };
           const it = items.find((item) => item._id === itemId);
-          if (!it) return { ...v, item: "" };
-          return {
-            ...v,
-            item: it._id,
-            itemName: it.itemName,
-            drawingNo: it.drawingNo || "",
-            setupNo: it.setupNo || v.setupNo,
-            programTimeMin: it.programTimeMin ?? "",
-            pcsPerProgram: it.pcsPerProgram ?? "",
-          };
+          if (!it) return { ...v, item: "", ...noWorkOrder };
+          const workOrderItem = workOrders.find((wo) => wo._id === v.workOrder)?.item;
+          const keepWorkOrder = !!v.workOrder && String(workOrderItem) === String(itemId);
+          return { ...withPart(v, it), ...(keepWorkOrder ? {} : noWorkOrder) };
         }),
       );
     },
-    [items],
+    [items, workOrders],
+  );
+
+  // Picking a work order fills in its part the same way; clearing it leaves the
+  // part as it is.
+  const handleWorkOrderSelect = useCallback(
+    (index, workOrderId) => {
+      setEntries((list) =>
+        list.map((v, i) => {
+          if (i !== index) return v;
+          const wo = workOrders.find((w) => w._id === workOrderId);
+          if (!wo) return { ...v, workOrder: "", workOrderNo: "" };
+          const it = items.find((item) => item._id === String(wo.item));
+          return { ...(it ? withPart(v, it) : v), workOrder: wo._id, workOrderNo: wo.workOrderNo };
+        }),
+      );
+    },
+    [items, workOrders],
   );
 
   const handleSave = async (e) => {
@@ -695,14 +732,14 @@ const VmcDataEntry = () => {
   };
   const periodLabel = useMemo(() => `${fmtShort(fromDate)} – ${fmtShort(toDate)}`, [fromDate, toDate]);
 
-  // Search matches Part Name, Operator, or Drawing No. — only within this
+  // Search matches Part Name, Operator, Drawing No., or Work Order No. — only within this
   // page's own loaded rows, not the whole selection (see the `extent` state
   // above and getProductionExtent for what covers the full range).
   const searchedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sortedRows;
     return sortedRows.filter((r) =>
-      [r.itemName, r.operator, r.drawingNo].some((v) => String(v || "").toLowerCase().includes(q)),
+      [r.itemName, r.operator, r.drawingNo, r.workOrderNo].some((v) => String(v || "").toLowerCase().includes(q)),
     );
   }, [sortedRows, search]);
 
@@ -728,7 +765,7 @@ const VmcDataEntry = () => {
                     <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: "#9ca3af", pointerEvents: "none" }} />
                     <Input
                       type="search"
-                      placeholder="Search part, operator, drawing no…"
+                      placeholder="Search part, operator, drawing / work order no…"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       style={{ width: "220px", paddingLeft: 32 }}
@@ -852,11 +889,13 @@ const VmcDataEntry = () => {
               focusTarget={focusTarget}
               machines={formMachines}
               items={scopedItems}
+              workOrders={scopedWorkOrders}
               operators={operators}
               isEdit={modalMode === "edit"}
               booked={bookedList}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onWorkOrderSelect={handleWorkOrderSelect}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

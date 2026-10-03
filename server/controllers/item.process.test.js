@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const Item = require("../models/Item");
+const ItemLog = require("../models/ItemLog");
 const Process = require("../models/Process");
 const { createItem, updateItem, listItemByParams } = require("./item.controller");
 
@@ -30,10 +31,14 @@ const withModels = async (fn) => {
     seen.created = doc;
     return { _id: "i1", ...doc };
   });
+  stub(Item, "findById", async (id) => ({ _id: id, itemName: "Flange" }));
   stub(Item, "findByIdAndUpdate", async (id, doc) => {
     seen.updated = doc;
     return { _id: id, ...doc };
   });
+  // Each save also adds a row to the part's history (item.log.test.js covers that).
+  stub(Process, "find", () => ({ select: () => ({ lean: async () => [] }) }));
+  stub(ItemLog, "create", async (row) => row);
   stub(Item, "countDocuments", async (q) => {
     seen.query = q;
     return 0;

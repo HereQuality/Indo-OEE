@@ -75,7 +75,7 @@ const PRODUCTION_GROUP = {
 };
 
 // Dashboard and Data Entry are NOT listed here — they are their own
-// top-level links (DASHBOARD_GROUP / DATA_ENTRY_GROUP below), same as
+// top-level link (DASHBOARD_GROUP below), same as
 // seed/seedMenus.js. Listing either again here would recreate the exact
 // duplicate sidebar entries that script's promoteMenuToLinkGroup retires.
 const PRODUCTION_MENUS = [
@@ -83,29 +83,15 @@ const PRODUCTION_MENUS = [
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
+  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardList" },
 ];
 
-// Data Entry's own top-level link, right under Production's row in the
-// group order — see seed/seedMenus.js for why this lives outside the
-// Production group instead of as one more item inside it.
-const DATA_ENTRY_GROUP = {
-  menuGroupName: "CNC Data Entry",
-  sequence: 6,
-  isLink: true,
-  menuUrl: "/hqepl/production/cnc-data-entry",
-  portal: "Both",
-  icon: "ClipboardList",
-};
-
-// The VMC sheet — a second Data Entry page, over its own data.
-const VMC_DATA_ENTRY_GROUP = {
-  menuGroupName: "VMC Data Entry",
-  sequence: 7,
-  isLink: true,
-  menuUrl: "/hqepl/production/vmc-data-entry",
-  portal: "Both",
-  icon: "ClipboardList",
-};
+// Data Entry is one group with a page per sheet (CNC, VMC) — see seed/seedMenus.js.
+const DATA_ENTRY_GROUP = { menuGroupName: "Data Entry", sequence: 6, isLink: false, portal: "Both", icon: "FileBarChart" };
+const DATA_ENTRY_MENUS = [
+  { menuName: "CNC", menuUrl: "/hqepl/production/cnc-data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "VMC", menuUrl: "/hqepl/production/vmc-data-entry", sequence: 2, icon: "ClipboardList" },
+];
 
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
@@ -205,8 +191,14 @@ async function run() {
     );
   }
 
-  await upsertGroup(DATA_ENTRY_GROUP);
-  await upsertGroup(VMC_DATA_ENTRY_GROUP);
+  const dataEntryGroup = await upsertGroup(DATA_ENTRY_GROUP);
+  for (const menu of DATA_ENTRY_MENUS) {
+    await MenuMaster.findOneAndUpdate(
+      { menuUrl: menu.menuUrl },
+      { ...menu, menuGroup: dataEntryGroup._id, isActive: true, isParent: false, parentMenu: null },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
 

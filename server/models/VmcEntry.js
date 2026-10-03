@@ -35,6 +35,13 @@ const VmcEntrySchema = new mongoose.Schema(
     operator: { type: String, trim: true, maxlength: 60, default: "" },
     machineNotRun: { type: String, trim: true, maxlength: 40, default: "" },
 
+    // The work order (Production › Work Orders) this entry ran against, when one was
+    // picked — its part fills the fields below. `workOrderNo` is this entry's own
+    // copy of the number, so renumbering or removing the work order later leaves
+    // saved entries as they were.
+    workOrder: { type: mongoose.Schema.Types.ObjectId, ref: "WorkOrder", default: null },
+    workOrderNo: { type: String, trim: true, maxlength: 40, default: "" },
+
     item: { type: mongoose.Schema.Types.ObjectId, ref: "Item", default: null },
     itemName: { type: String, trim: true, maxlength: 120, default: "" },
     drawingNo: { type: String, trim: true, maxlength: 40, default: "" },

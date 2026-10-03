@@ -52,6 +52,7 @@ export const VMC_COLUMNS = [
   },
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
   { key: "machineNotRun", label: "Machine not run", get: (r) => dash(r.machineNotRun), headStyle: { minWidth: 120 } },
+  { key: "workOrderNo", label: "Work Order No.", get: (r) => dash(r.workOrderNo), headStyle: { minWidth: 130 } },
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   { key: "setupNo", label: "Setup No.", get: (r) => dash(r.setupNo), headStyle: { minWidth: 90 } },

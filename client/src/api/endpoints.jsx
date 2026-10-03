@@ -78,6 +78,16 @@ export const ENDPOINTS = {
         BASE: `${V1}/items`,
         BY_ID: (id) => `${V1}/items/${id}`,
         SEARCH: `${V1}/items/search`,
+        // Edit history: every part's, or one part's
+        LOGS: `${V1}/items/logs`,
+        LOGS_BY_ID: (id) => `${V1}/items/${id}/logs`,
+    },
+
+    // Work Order master endpoints (Production > Work Orders)
+    WORK_ORDERS: {
+        BASE: `${V1}/work-orders`,
+        BY_ID: (id) => `${V1}/work-orders/${id}`,
+        SEARCH: `${V1}/work-orders/search`,
     },
 
     MACHINE_OPERATORS: {

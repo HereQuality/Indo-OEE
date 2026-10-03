@@ -52,6 +52,7 @@ const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionD
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
+const WorkOrderMaster = lazyWithRetry(() => import("../pages/WorkOrderMaster"));
 const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
@@ -111,6 +112,7 @@ const protectedRoutes = [
   // read-only dashboard over the same entries (its own page so neither it
   // nor Data Entry loads the other's requests).
   { path: "/production/items", component: <ItemMaster /> },
+  { path: "/production/work-orders", component: <WorkOrderMaster /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },

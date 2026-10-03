@@ -24,10 +24,9 @@ const Operator = require("../models/Operator");
 //   2. Dashboard                  (link — the process dashboards)
 //   3. Administration             (group: Menu Group, Menu Master, Company)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Part Master, Machines, Processes, Operators)
-//   6. CNC Data Entry             (link — its own top-level item)
-//   7. VMC Data Entry             (link — the VMC sheet, its own page and data)
-//   8. Support                    (link)
+//   5. Production                 (group: Part Master, Machines, Processes, Operators, Work Orders)
+//   6. Data Entry                 (group: CNC, VMC — one entry per sheet)
+//   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 // Dashboard sits right under Home as its own top-level link. It used to be
 // the last item inside Production — see promoteMenuToLinkGroup below for how
@@ -39,15 +38,10 @@ const DASHBOARD_GROUP = { menuGroupName: "Dashboard", sequence: 2, isLink: true,
 const ADMINISTRATION_GROUP = { menuGroupName: "Administration", sequence: 3, isLink: false, portal: "SuperAdmin", icon: "Settings" };
 const EMPLOYEE_MANAGEMENT_GROUP = { menuGroupName: "Operator Management", sequence: 4, isLink: false, portal: "Both", icon: "Users" };
 const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 5, isLink: false, portal: "Both", icon: "Factory" };
-// Data Entry used to be the last item inside Production — promoted to its
-// own top-level link for the same reason Dashboard was (it's opened far more
-// often than the master lists it used to sit beside). Same promotion
-// mechanism as Dashboard above; the URL is unchanged.
-const DATA_ENTRY_GROUP = { menuGroupName: "CNC Data Entry", sequence: 6, isLink: true, menuUrl: "/hqepl/production/cnc-data-entry", portal: "Both", icon: "ClipboardList" };
-// The VMC sheet: same kind of page as CNC Data Entry, over its own data. A new
-// page, so nothing to promote — a role only gets it once an admin ticks it in
-// Manage Role (Super Admin always sees it).
-const VMC_DATA_ENTRY_GROUP = { menuGroupName: "VMC Data Entry", sequence: 7, isLink: true, menuUrl: "/hqepl/production/vmc-data-entry", portal: "Both", icon: "ClipboardList" };
+// Data Entry is one group holding a page per sheet (CNC, VMC) — there are no
+// separate top-level "CNC Data Entry" / "VMC Data Entry" links, or each page
+// would show twice in the sidebar.
+const DATA_ENTRY_GROUP = { menuGroupName: "Data Entry", sequence: 6, isLink: false, portal: "Both", icon: "FileBarChart" };
 const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 8, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [
@@ -61,9 +55,15 @@ const PRODUCTION_MENUS = [
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
+  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardList" },
   // Dashboard and Data Entry are NOT listed here any more (they are
   // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
   // re-activate its retired row on every run.
+];
+
+const DATA_ENTRY_MENUS = [
+  { menuName: "CNC", menuUrl: "/hqepl/production/cnc-data-entry", sequence: 1, icon: "ClipboardList" },
+  { menuName: "VMC", menuUrl: "/hqepl/production/vmc-data-entry", sequence: 2, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
@@ -172,9 +172,7 @@ async function run() {
   await upsertMenus(PRODUCTION_MENUS, productionGroup);
 
   const dataEntryGroup = await upsertGroup(DATA_ENTRY_GROUP);
-  await promoteMenuToLinkGroup(/\/production\/data-entry\/?$/, dataEntryGroup);
-
-  await upsertGroup(VMC_DATA_ENTRY_GROUP);
+  await upsertMenus(DATA_ENTRY_MENUS, dataEntryGroup);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
   await upsertMenus(EMPLOYEE_MANAGEMENT_MENUS, empMgmtGroup);
