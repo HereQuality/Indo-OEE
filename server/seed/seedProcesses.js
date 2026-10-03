@@ -4,7 +4,7 @@
  * ────────────────────────────
  * The Indo process list, as laid out on the dashboard landing page:
  *
- *   SPM · PRESS · Rivet · VMC · CNC · TRAUB M/C · Second Operation (Drilling)
+ *   SPM · PRESS · RIVET · VMC · CNC · CONTACT · TROBE
  *
  * Safe to re-run: a process that already exists (by name) is left exactly as
  * it is — its machines and chosen visuals are never overwritten. The
@@ -26,11 +26,11 @@ const Item = require("../models/Item");
 const PROCESSES = [
   { processName: "SPM" },
   { processName: "PRESS" },
-  { processName: "Rivet" },
+  { processName: "RIVET" },
   { processName: "VMC" },
   { processName: "CNC" },
-  { processName: "TRAUB M/C" },
-  { processName: "Second Operation (Drilling)" },
+  { processName: "CONTACT" },
+  { processName: "TROBE" },
 ];
 
 async function run() {

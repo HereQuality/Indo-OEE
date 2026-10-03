@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import dayjs from "dayjs";
 import { Modal, ModalBody, ModalHeader, Spinner } from "reactstrap";
 import { getItemLogs } from "../../api/items.api";
@@ -14,7 +14,9 @@ import { fmtNum } from "../../utils/productionSheet";
  * deleted part's history can still be read.
  */
 
-const PAGE = 25;
+// One page of entries at a time, with Prev/Next below — rather than piling
+// every page onto one long scroll, which is what this used to do.
+const PAGE = 5;
 
 // How each kind of row is named and coloured.
 const ACTIONS = {
@@ -75,19 +77,19 @@ const LogEntry = ({ log, showPart }) => {
 
 const ItemHistoryModal = ({ isOpen, toggle, item = null }) => {
   const itemId = item?._id;
-  const [state, setState] = useState({ logs: [], total: 0, loading: false, error: "" });
+  const [state, setState] = useState({ logs: [], total: 0, page: 0, loading: false, error: "" });
   // Only the newest request may fill the list — close and reopen on another part quickly and
   // the first one's answer must not land in the second's.
   const latest = useRef(0);
 
-  const load = (skip) => {
+  const load = (page) => {
     const request = ++latest.current;
     setState((s) => ({ ...s, loading: true, error: "" }));
-    getItemLogs(itemId, { skip, limit: PAGE })
+    getItemLogs(itemId, { skip: page * PAGE, limit: PAGE })
       .then((res) => {
         if (request !== latest.current) return;
         const rows = res.data?.data || [];
-        setState((s) => ({ logs: skip ? [...s.logs, ...rows] : rows, total: res.data?.total ?? rows.length, loading: false, error: "" }));
+        setState((s) => ({ ...s, logs: rows, total: res.data?.total ?? rows.length, page, loading: false, error: "" }));
       })
       .catch((err) => {
         if (request !== latest.current) return;
@@ -97,11 +99,12 @@ const ItemHistoryModal = ({ isOpen, toggle, item = null }) => {
 
   useEffect(() => {
     if (!isOpen) return;
-    setState({ logs: [], total: 0, loading: false, error: "" });
+    setState({ logs: [], total: 0, page: 0, loading: false, error: "" });
     load(0);
   }, [isOpen, itemId]);
 
-  const { logs, total, loading, error } = state;
+  const { logs, total, page, loading, error } = state;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE));
 
   return (
     <Modal isOpen={isOpen} toggle={toggle} centered scrollable size="lg">
@@ -114,7 +117,7 @@ const ItemHistoryModal = ({ isOpen, toggle, item = null }) => {
         {error && (
           <div className="alert alert-danger d-flex align-items-center justify-content-between" role="alert">
             <span>{error}</span>
-            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => load(logs.length)}>
+            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => load(page)}>
               Try again
             </button>
           </div>
@@ -134,10 +137,26 @@ const ItemHistoryModal = ({ isOpen, toggle, item = null }) => {
           </div>
         )}
 
-        {!loading && !error && logs.length < total && (
-          <div className="text-center">
-            <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => load(logs.length)}>
-              Show older ({total - logs.length} more)
+        {!loading && !error && total > PAGE && (
+          <div className="d-flex align-items-center justify-content-between pt-2 border-top">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={page <= 0}
+              onClick={() => load(page - 1)}
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <span className="text-muted small">
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={page >= totalPages - 1}
+              onClick={() => load(page + 1)}
+            >
+              Next <ChevronRight size={14} />
             </button>
           </div>
         )}

@@ -112,6 +112,10 @@ const protectedRoutes = [
   // read-only dashboard over the same entries (its own page so neither it
   // nor Data Entry loads the other's requests).
   { path: "/production/items", component: <ItemMaster /> },
+  // Same page as /production/items — the Part Master's own menu entry now
+  // points here (user-facing "Item" was renamed to "Part"); the old URL is
+  // kept working above for anyone with it bookmarked or pinned.
+  { path: "/production/parts", component: <ItemMaster /> },
   { path: "/production/work-orders", component: <WorkOrderMaster /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
