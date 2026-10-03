@@ -13,7 +13,7 @@ import "../Components/ProcessDashboard/processDashboard.css";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines, useInvalidateMachines } from "../hooks/useMachines";
-import { useInvalidateProcesses } from "../hooks/useProcesses";
+import { useInvalidateProcesses, useProcesses } from "../hooks/useProcesses";
 import { createProcess, deleteProcess, getProcessById, updateProcess, searchProcesses } from "../api/processes.api";
 import { getAllMenus, getAllMenuGroups } from "../api/menus.api";
 import { CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, STATS_BY_KEY, resolveWidgets } from "../utils/processDashboard";
@@ -61,6 +61,10 @@ const ProcessMaster = () => {
   const { data: machines = [] } = useMachines();
   const invalidateMachines = useInvalidateMachines();
   const invalidateProcesses = useInvalidateProcesses();
+  // Every active process — not `processes` above, which is only this table's own
+  // rows (searched, filtered, paged), so it can't say whether a machine's process
+  // exists.
+  const { data: activeProcesses = [] } = useProcesses();
   const [query, setQuery] = useState("");
 
   // Every page a process could point its Data Entry Page at, for that
@@ -230,14 +234,18 @@ const ProcessMaster = () => {
     }
   };
 
-  // A machine lives in one process; picking one that's elsewhere moves it here.
+  // A machine lives in one process, so the picker lists only machines that are
+  // free (in no process) or already in THIS one — a machine that belongs to another
+  // process isn't offered here; take it out of that process first. One whose
+  // process has since been deactivated counts as free, since no dashboard shows it.
+  // (`_id` is only this process's while editing — Add leaves the last one behind.)
   const machineOptions = useMemo(() => {
-    const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
-    return machines.map((m) => {
-      const elsewhere = m.process && String(m.process) !== _id ? processName[m.process] : null;
-      return { value: m._id, label: elsewhere ? `${m.machineName}  (now in ${elsewhere})` : m.machineName };
-    });
-  }, [machines, processes, _id, modalMode]);
+    const here = modalMode === "edit" ? String(_id) : "";
+    const activeIds = new Set(activeProcesses.map((p) => String(p._id)));
+    return machines
+      .filter((m) => !m.process || String(m.process) === here || !activeIds.has(String(m.process)))
+      .map((m) => ({ value: m._id, label: m.machineName }));
+  }, [machines, activeProcesses, _id, modalMode]);
 
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
@@ -383,10 +391,14 @@ const ProcessMaster = () => {
                 value={machineOptions.filter((o) => values.machineIds.includes(o.value))}
                 onChange={(picked) => setValues({ ...values, machineIds: (picked || []).map((o) => o.value) })}
                 placeholder="Select machines…"
-                noOptionsMessage={() => "No machines — add them in Production › Machines"}
+                noOptionsMessage={() =>
+                  machines.length ? "No free machines — the rest are already in a process" : "No machines — add them in Production › Machines"
+                }
                 closeMenuOnSelect={false}
               />
-              <div className="text-muted small mt-1">Entries made on these machines are what this process's dashboard shows.</div>
+              <div className="text-muted small mt-1">
+                Entries made on these machines are what this process's dashboard shows. A machine already in another process isn't listed — take it out of that process first.
+              </div>
             </div>
 
             <div className="mb-3">

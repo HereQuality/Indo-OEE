@@ -12,6 +12,12 @@ const mongoose = require("mongoose");
  * controllers/machine.controller.js; 0 only means "never positioned" and
  * sorts last (utils/machineOrder.js). It lives on the machine, not on each
  * entry, so re-ordering re-orders every date — past and future — at once.
+ *
+ * Deleting a machine (the second delete, after it has been deactivated) only
+ * hides it: `isDeleted` takes it out of Machine Master, the numbering and every
+ * picker, but the record stays so the data entries made on it keep their machine
+ * name and their process — the sheets and the process dashboards read exactly as
+ * they did before the delete.
  */
 const MachineSchema = new mongoose.Schema(
   {
@@ -45,6 +51,11 @@ const MachineSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Deleted from Machine Master — see the file comment. Always inactive too.
+    isDeleted: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },

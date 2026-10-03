@@ -13,33 +13,8 @@ import {
   rowCalc,
 } from "../../utils/productionSheet";
 import { hoursToHm } from "../../utils/shiftHours";
+import { FORMULAS } from "../../utils/sheetFormulas";
 import useDragScrollX from "../../hooks/useDragScrollX";
-
-// The plain-English formula behind every calculated column — shown in a
-// popover from the eye icon next to its header, so nobody has to remember or
-// ask what a grey box actually computed.
-const FORMULAS = {
-  cycle: "The Part's own Total Cycle Time, minus any operation unticked for this entry.",
-  shift: "Machine Shift Time = MOD(Machine OFF Time − Machine ON Time, 1) × 24",
-  idealQty:
-    "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time) — the most the shift could make, so Actual Quantity can't be more than this.",
-  rejectedQty:
-    "Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.",
-  pctOk: "% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)",
-  unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
-  totalStoppage:
-    "Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.",
-  effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).",
-  unreported:
-    "Unreported Time (min) = Planned Operator Shift − Machine Shift − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
-  setupEff: "Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time",
-  oeeLosses:
-    "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",
-  oeeLunch:
-    "OEE not considering losses but lunch = Effective Run Time ÷ (Available Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
-  oeeLunchCot:
-    "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Available Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
-};
 
 /**
  * components/Production/ProductionEntriesTable.jsx
@@ -169,18 +144,18 @@ const OEE_TINT = [
 // Rows of one date share a faint shade; it flips as the date changes.
 const DAY_TINT = ["bg-white dark:bg-slate-900", "bg-slate-50 dark:bg-slate-900/60"];
 
-const dash = (v) => (v === "" || v === null || v === undefined ? "—" : v);
-const n = (v) => dash(fmtNum(v));
+export const dash = (v) => (v === "" || v === null || v === undefined ? "—" : v);
+export const n = (v) => dash(fmtNum(v));
 // Decimal hours as a clock reads them: 3.5 → "3:30".
-const hm = (v) => dash(hoursToHm(v));
-const pct = (v) => dash(fmtPct(v));
+export const hm = (v) => dash(hoursToHm(v));
+export const pct = (v) => dash(fmtPct(v));
 // A blank input reads better as a dash than as a 0 nobody typed.
-const min = (v) => (v === null || v === undefined || v === "" ? "—" : fmtNum(Number(v)));
+export const min = (v) => (v === null || v === undefined || v === "" ? "—" : fmtNum(Number(v)));
 // The downtime/stoppage breakdown reads easier as 0 than as a dash — these are
 // the figures added up into Total Stoppage, so a row of numbers is quicker to
 // scan and add up by eye than a row mixing dashes and numbers. Display only:
 // the formulas already treat a blank the same as 0.
-const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 : Number(v));
+export const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 : Number(v));
 
 // Remarks used to sit in the table as full wrapped text, which forced the
 // column wide and pushed most rows down whether or not that entry actually
@@ -216,7 +191,7 @@ const POP_WIDTH = 300;
 const POP_GAP = 6;
 const POP_MARGIN = 8;
 
-const RemarkCell = ({ parts, inline = false }) => {
+export const RemarkCell = ({ parts, inline = false }) => {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
@@ -318,7 +293,7 @@ const RemarkCell = ({ parts, inline = false }) => {
 // remark for. Used only in the expanded breakdown's Other column, so the remark
 // sits right next to the number it explains rather than out in the Remarks
 // column. `kind` is a remarkParts key.
-const WithRemark = ({ value, row, kind }) => {
+export const WithRemark = ({ value, row, kind }) => {
   const parts = remarkParts(row).filter((p) => p.key === kind);
   if (!parts.length) return value;
   return (
@@ -331,7 +306,7 @@ const WithRemark = ({ value, row, kind }) => {
 
 // The downtime columns are headed with the same wording as the form, rather
 // than the longer labels the old Excel grid used.
-const DOWNTIME_LABEL = {
+export const DOWNTIME_LABEL = {
   lunchMin: "Lunch / Rest",
   setupMin: "Setup Time",
   noManPowerMin: "No Man Power",
@@ -550,6 +525,12 @@ const ProductionEntriesTable = ({
   // loading state, pagination text), which is what let the page scroll
   // grow underneath the table's own scrollbar.
   fillHeight = false,
+  // The sheet this table shows. Defaults are the CNC sheet; another sheet (the
+  // VMC one) passes its own column list, the formula popovers for its calculated
+  // headers, and the function that works one row's figures out.
+  columns = COLUMNS,
+  formulas = FORMULAS,
+  calcRow = rowCalc,
 }) => {
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
@@ -580,41 +561,21 @@ const ProductionEntriesTable = ({
     const thAbsoluteLeft = th.getBoundingClientRect().left - containerLeft + bodyRef.current.scrollLeft;
     const desired = Math.max(0, thAbsoluteLeft - anchor.offsetFromContainerLeft);
     bodyRef.current.scrollLeft = desired;
-    if (topBarRef.current) topBarRef.current.scrollLeft = desired;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // A second, top-side horizontal scrollbar mirroring the table's own —
-  // with a tall/wide sheet like this one, the browser's native horizontal
-  // scrollbar sits below every row, which means scrolling all the way down
-  // (or all the way back up) just to reach it. This bar tracks the table's
-  // real scroll width and stays in sync with the bottom one either way.
-  const topBarRef = useRef(null);
+  // The table scrolls inside its own box. Left/right is by click-and-drag
+  // anywhere on it (hand cursor, see hooks/useDragScrollX), the wheel/trackpad, or
+  // the scrollbar along its bottom edge.
   const bodyRef = useRef(null);
   useDragScrollX(bodyRef);
-  const [scrollWidth, setScrollWidth] = useState(0);
-  const [hasOverflowX, setHasOverflowX] = useState(false);
-  const syncingScroll = useRef(false);
-
-  const onTopScroll = () => {
-    if (syncingScroll.current || !bodyRef.current || !topBarRef.current) return;
-    syncingScroll.current = true;
-    bodyRef.current.scrollLeft = topBarRef.current.scrollLeft;
-    syncingScroll.current = false;
-  };
-  const onBodyScroll = () => {
-    if (syncingScroll.current || !bodyRef.current || !topBarRef.current) return;
-    syncingScroll.current = true;
-    topBarRef.current.scrollLeft = bodyRef.current.scrollLeft;
-    syncingScroll.current = false;
-  };
 
   // The formula popover, anchored to whichever eye icon was clicked — fixed-
   // position so it isn't clipped by the table's own scroll container.
   const [formulaPopup, setFormulaPopup] = useState(null); // { key, label, text, x, y }
   const showFormula = (e, key, label) => {
     e.stopPropagation();
-    const text = FORMULAS[key];
+    const text = formulas[key];
     if (!text) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setFormulaPopup((prev) =>
@@ -662,7 +623,7 @@ const ProductionEntriesTable = ({
   // doesn't mean scrolling all the way back to the summary column first.
   const visible = useMemo(() => {
     const out = [];
-    for (const col of COLUMNS) {
+    for (const col of columns) {
       if (!col.expandable) {
         out.push(col);
         continue;
@@ -677,26 +638,8 @@ const ProductionEntriesTable = ({
       }
     }
     return out;
-  }, [open]);
+  }, [open, columns]);
   const totalCols = visible.length + 1; // + Actions
-
-  // Re-measured whenever the visible columns or row count change — expanding
-  // a breakdown or loading a new page both change how wide/tall the table
-  // actually is, which is what the top scrollbar has to track.
-  useEffect(() => {
-    const bodyEl = bodyRef.current;
-    const table = bodyEl?.querySelector("table");
-    if (!bodyEl || !table) return undefined;
-    const measure = () => {
-      setScrollWidth(table.scrollWidth);
-      setHasOverflowX(table.scrollWidth > bodyEl.clientWidth + 1);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(table);
-    ro.observe(bodyEl);
-    return () => ro.disconnect();
-  }, [visible, rows]);
 
   const Chevron = ({ expand }) => (
     <button
@@ -716,23 +659,8 @@ const ProductionEntriesTable = ({
 
   return (
     <>
-      {/* Mirrors the table's own horizontal scrollbar, but pinned above the
-          rows instead of below every one of them — so reaching for it never
-          means scrolling all the way down (or back up) first. Hidden when
-          the table isn't actually wider than its box. */}
-      {hasOverflowX && (
-        <div
-          ref={topBarRef}
-          onScroll={onTopScroll}
-          className="table-scroll-x overflow-x-auto overflow-y-hidden"
-          style={{ height: 14 }}
-        >
-          <div style={{ width: scrollWidth, height: 1 }} />
-        </div>
-      )}
       <div
         ref={bodyRef}
-        onScroll={onBodyScroll}
         className={`table-scroll-x border border-slate-200 dark:border-slate-700 rounded-xl overflow-auto ${
           fillHeight ? "h-full" : ""
         }`}
@@ -752,12 +680,12 @@ const ProductionEntriesTable = ({
                     c.frozen
                       ? undefined
                       : c.headStyle ||
-                        autoHeadStyle(c.label, { hasFormula: !!FORMULAS[c.key], hasExpand: !!c.expand })
+                        autoHeadStyle(c.label, { hasFormula: !!formulas[c.key], hasExpand: !!c.expand })
                   }
                 >
                   <span className={`flex items-center gap-1 ${c.align === "text-center" ? "justify-center" : c.align === "text-end" ? "justify-end" : ""}`}>
                     <span>{c.label}</span>
-                    {FORMULAS[c.key] && (
+                    {formulas[c.key] && (
                       <button
                         type="button"
                         onClick={(e) => showFormula(e, c.key, c.label)}
@@ -792,7 +720,7 @@ const ProductionEntriesTable = ({
             )}
             {!loading &&
               rows.map((r, i) => {
-                const calc = rowCalc(r);
+                const calc = calcRow(r);
                 const day = dayResultByKey[r._id] || {};
                 const span = layout[i];
                 const dayBg = DAY_TINT[span.dayIndex % 2];

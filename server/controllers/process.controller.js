@@ -1,8 +1,10 @@
 const mongoose = require("mongoose");
 const Process = require("../models/Process");
 const Machine = require("../models/Machine");
+const Item = require("../models/Item");
 const ProductionEntry = require("../models/ProductionEntry");
 const { sortMachines } = require("../utils/machineOrder");
+const { machineNamesFor } = require("../utils/machineNames");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
@@ -41,8 +43,14 @@ const validMachineIds = (machineIds) =>
 // Makes `machineIds` exactly the machines of this process: machines listed
 // are moved in (from whichever process held them), machines no longer listed
 // are released.
+// A machine deleted from Machine Master isn't in the form's list, so it is never
+// "released" here — it keeps its process, which is what keeps its past entries on
+// that process's dashboard.
 const syncMachines = async (processId, machineIds) => {
-  await Machine.updateMany({ process: processId, _id: { $nin: machineIds } }, { $set: { process: null } });
+  await Machine.updateMany(
+    { process: processId, _id: { $nin: machineIds }, isDeleted: { $ne: true } },
+    { $set: { process: null } },
+  );
   if (machineIds.length) await Machine.updateMany({ _id: { $in: machineIds } }, { $set: { process: processId } });
 };
 
@@ -50,7 +58,7 @@ const syncMachines = async (processId, machineIds) => {
 // the sequence number is Super Admin's alone (see machine.controller.js), so it
 // is dropped from the payload unless `withSequence`.
 const machinesByProcess = async (processIds, onlyActive, withSequence = false) => {
-  const query = { process: { $in: processIds } };
+  const query = { process: { $in: processIds }, isDeleted: { $ne: true } };
   if (onlyActive) query.isActive = true;
   const machines = sortMachines(
     await Machine.find(query).select("machineName color sequence isActive process").lean(),
@@ -124,6 +132,7 @@ exports.deleteProcess = async (req, res) => {
     }
 
     await Machine.updateMany({ process: process._id }, { $set: { process: null } });
+    await Item.updateMany({ process: process._id }, { $set: { process: null } });
     await Process.findByIdAndDelete(process._id);
     res.status(200).json({ isOk: true, message: "Process deleted successfully" });
   } catch (error) {
@@ -213,6 +222,8 @@ exports.getDashboardEntries = async (req, res) => {
       if (!mongoose.isValidObjectId(req.query.process)) {
         return res.status(400).json({ isOk: false, message: "Invalid process" });
       }
+      // Deliberately includes machines deleted from Machine Master: their past
+      // entries still belong to this process's dashboard.
       const machineIds = await Machine.find({ process: req.query.process }).distinct("_id");
       scope.machine = { $in: machineIds };
     }
@@ -228,14 +239,10 @@ exports.getDashboardEntries = async (req, res) => {
     ]);
 
     // The dashboard's machine list is active-only; an entry made on a machine
-    // that has since been deactivated still needs its name.
-    const referenced = await Machine.find({ _id: { $in: [...new Set(entries.map((e) => String(e.machine)))] } })
-      .select("machineName")
-      .lean();
-
+    // that has since been deactivated (or deleted) still needs its name.
     res.status(200).json({
       isOk: true,
-      machineNames: Object.fromEntries(referenced.map((m) => [String(m._id), m.machineName])),
+      machineNames: await machineNamesFor(entries.map((e) => e.machine)),
       extent: first && last ? { from: first.date.toISOString().slice(0, 10), to: last.date.toISOString().slice(0, 10) } : null,
       data: entries.map((e) => ({
         ...e,

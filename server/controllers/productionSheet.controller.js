@@ -8,6 +8,7 @@ const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const { isEntryLocked } = require("../utils/workingDays");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
+const { machineNamesFor } = require("../utils/machineNames");
 
 // An existing entry can only be edited/deleted within 2 *working* days of
 // its own date (see utils/workingDays.js) — past that it's treated as
@@ -310,10 +311,13 @@ exports.getSheet = async (req, res) => {
           .lean()
       : [];
 
+    // The pickers list active machines only, so the names of any other machine
+    // these entries were made on (deactivated, or deleted since) come with them.
     res.status(200).json({
       isOk: true,
       data: entries.map(toRow),
       meta: { page, totalPages, totalDays },
+      machineNames: await machineNamesFor(entries.map((e) => e.machine)),
     });
   } catch (error) {
     console.error("Error loading production sheet:", error);
@@ -362,6 +366,7 @@ exports.getFilterOptions = async (req, res) => {
     res.status(200).json({
       isOk: true,
       data: { machine: machine.map(String), operator, item: itemName },
+      machineNames: await machineNamesFor(machine),
     });
   } catch (error) {
     console.error("Error loading production sheet filter options:", error);
@@ -590,3 +595,9 @@ exports.unlockRow = async (req, res) => {
 exports.listRejectReasons = async (req, res) => {
   res.status(200).json({ isOk: true, data: REJECT_REASONS });
 };
+
+// Shared with the VMC sheet's controller (vmcSheet.controller.js), which has the
+// same 2-working-day lock and the same date/list parsing.
+exports.checkNotLocked = checkNotLocked;
+exports.parseDay = parseDay;
+exports.parseList = parseList;

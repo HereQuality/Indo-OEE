@@ -97,6 +97,16 @@ const DATA_ENTRY_GROUP = {
   icon: "ClipboardList",
 };
 
+// The VMC sheet — a second Data Entry page, over its own data.
+const VMC_DATA_ENTRY_GROUP = {
+  menuGroupName: "VMC Data Entry",
+  sequence: 7,
+  isLink: true,
+  menuUrl: "/hqepl/production/vmc-data-entry",
+  portal: "Both",
+  icon: "ClipboardList",
+};
+
 const EMPLOYEE_MANAGEMENT_GROUP = {
   menuGroupName: "Operator Management",
   sequence: 4,
@@ -123,7 +133,7 @@ const EMPLOYEE_MANAGEMENT_MENUS = [
 //   - Operator with only "read": can raise their own tickets, nothing else.
 const SUPPORT_GROUP = {
   menuGroupName: "Support",
-  sequence: 7,
+  sequence: 8,
   isLink: true,
   menuUrl: "/hqepl/support",
   portal: "Both",
@@ -196,6 +206,7 @@ async function run() {
   }
 
   await upsertGroup(DATA_ENTRY_GROUP);
+  await upsertGroup(VMC_DATA_ENTRY_GROUP);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
 
