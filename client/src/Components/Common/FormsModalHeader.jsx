@@ -3,7 +3,9 @@ import { useDebounce } from '../../hooks/useDebounce';
 
 const FormsHeader = ({
   formName, filter, handleFilter, tog_list, setQuery, showAddButton = true,
-  showForm = false, updateForm = false, handleSave, handleCancel, isSaveDisabled, isLoading, formId
+  showForm = false, updateForm = false, handleSave, handleCancel, isSaveDisabled, isLoading, formId,
+  // Extra filters shown beside the search box (e.g. Items' Process picker).
+  extraControls = null
 }) => {
   const [localSearch, setLocalSearch] = useState('');
   const debouncedSearch = useDebounce(localSearch, 300);
@@ -64,6 +66,7 @@ const FormsHeader = ({
       )}
 
       <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto">
+        {extraControls}
         <input
           type="text"
           placeholder="Search..."

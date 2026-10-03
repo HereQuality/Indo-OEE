@@ -1,5 +1,6 @@
 const Machine = require("../models/Machine");
 const ProductionEntry = require("../models/ProductionEntry");
+const VmcEntry = require("../models/VmcEntry");
 const { compareBySequence, sortMachines } = require("../utils/machineOrder");
 
 // `process` is only touched when the request actually sends it, so a form
@@ -13,6 +14,10 @@ const pickMachine = ({ machineName, description, color, isActive, process }) => 
   isActive,
   ...(process !== undefined ? { process: process || null } : {}),
 });
+
+// Machines deleted from Machine Master stay in the collection (see
+// models/Machine.js) but are invisible to everything here.
+const NOT_DELETED = { isDeleted: { $ne: true } };
 
 const isSuperAdmin = (req) => req.user?.roleType === "SuperAdmin";
 
@@ -38,12 +43,13 @@ const requestedPosition = (req) => {
 
 // Puts one machine at `position` (1-based, clamped; Infinity = last) in the
 // sheet order and renumbers EVERY machine 1..N — active or not, so
-// reactivating one drops it back in its place. Everything at or after the
+// reactivating one drops it back in its place (a deleted machine is out of the
+// numbering). Everything at or after the
 // position shifts down by one, so two machines never share a number and the
 // numbers never have gaps. With no machine id it just re-closes the numbering
 // (after a delete). Only machines whose number actually changes are written.
 const placeMachine = async (machineId, position = Infinity) => {
-  const all = await Machine.find({}).select("machineName sequence").lean();
+  const all = await Machine.find(NOT_DELETED).select("machineName sequence").lean();
   const current = new Map(all.map((m) => [String(m._id), m.sequence]));
   let order = all.sort(compareBySequence).map((m) => String(m._id));
   if (machineId) {
@@ -60,7 +66,7 @@ const placeMachine = async (machineId, position = Infinity) => {
 
 const isDuplicateName = async (machineName, excludeId) => {
   const escaped = String(machineName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const query = { machineName: { $regex: `^${escaped}$`, $options: "i" } };
+  const query = { ...NOT_DELETED, machineName: { $regex: `^${escaped}$`, $options: "i" } };
   if (excludeId) query._id = { $ne: excludeId };
   return !!(await Machine.exists(query));
 };
@@ -92,7 +98,7 @@ exports.updateMachine = async (req, res) => {
     if (data.machineName !== undefined && (await isDuplicateName(data.machineName, machineId))) {
       return res.status(409).json({ isOk: false, message: `Machine "${data.machineName}" already exists` });
     }
-    const updated = await Machine.findByIdAndUpdate(machineId, data, { new: true, runValidators: true });
+    const updated = await Machine.findOneAndUpdate({ _id: machineId, ...NOT_DELETED }, data, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ isOk: false, message: "Machine not found" });
     // A position from Super Admin moves it; a machine that was never given a
     // number (sequence 0) is settled at the end whoever saves it.
@@ -106,11 +112,14 @@ exports.updateMachine = async (req, res) => {
 };
 
 // First delete deactivates (hides it from the sheet); deleting an already
-// inactive machine removes it, unless production rows still point at it.
+// inactive machine removes it from Machine Master. The data entries made on it
+// are left exactly as they are — the machine is hidden, not erased (see
+// models/Machine.js), so they still show its name and still roll up into its
+// process's dashboard.
 exports.deleteMachine = async (req, res) => {
   try {
     const { machineId } = req.params;
-    const machine = await Machine.findById(machineId);
+    const machine = await Machine.findOne({ _id: machineId, ...NOT_DELETED });
     if (!machine) return res.status(404).json({ isOk: false, message: "Machine not found" });
 
     if (machine.isActive) {
@@ -119,17 +128,21 @@ exports.deleteMachine = async (req, res) => {
       return res.status(200).json({ isOk: true, message: "Machine deactivated successfully" });
     }
 
-    const entryCount = await ProductionEntry.countDocuments({ machine: machineId });
-    if (entryCount > 0) {
-      return res.status(409).json({
-        isOk: false,
-        message: `Machine "${machine.machineName}" has ${entryCount} production entr${entryCount === 1 ? "y" : "ies"} and can't be deleted. It stays inactive instead.`,
-      });
-    }
-    await Machine.findByIdAndDelete(machineId);
-    // Close the gap it leaves so the numbers stay 1..N.
+    // Sequence 0 takes it out of the numbering; placeMachine(null) then closes the
+    // gap it leaves so the numbers stay 1..N.
+    machine.isDeleted = true;
+    machine.sequence = 0;
+    await machine.save();
     await placeMachine(null);
-    res.status(200).json({ isOk: true, message: "Machine deleted successfully" });
+
+    const kept =
+      (await ProductionEntry.countDocuments({ machine: machineId })) + (await VmcEntry.countDocuments({ machine: machineId }));
+    res.status(200).json({
+      isOk: true,
+      message: kept
+        ? `Machine deleted successfully. ${kept === 1 ? "Its 1 data entry is kept as it was." : `Its ${kept} data entries are kept as they were.`}`
+        : "Machine deleted successfully",
+    });
   } catch (error) {
     console.error("Error deleting machine:", error);
     res.status(500).json({ isOk: false, message: error.message });
@@ -138,7 +151,7 @@ exports.deleteMachine = async (req, res) => {
 
 exports.getMachineById = async (req, res) => {
   try {
-    const machine = await Machine.findById(req.params.machineId).lean();
+    const machine = await Machine.findOne({ _id: req.params.machineId, ...NOT_DELETED }).lean();
     if (!machine) return res.status(404).json({ isOk: false, message: "Machine not found" });
     res.status(200).json({ isOk: true, data: present(req, machine) });
   } catch (error) {
@@ -165,7 +178,7 @@ exports.listMachineByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
 
-    const query = {};
+    const query = { ...NOT_DELETED };
     if (match) {
       query.$or = [
         { machineName: { $regex: match, $options: "i" } },

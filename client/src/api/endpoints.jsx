@@ -97,6 +97,15 @@ export const ENDPOINTS = {
         REJECT_REASONS: `${V1}/production-sheet/reject-reasons`,
     },
 
+    // VMC Data Entry sheet endpoints
+    VMC_SHEET: {
+        BASE: `${V1}/vmc-sheet`,
+        ROW: `${V1}/vmc-sheet/row`,
+        EXTENT: `${V1}/vmc-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/vmc-sheet/filter-options`,
+        OCCUPIED: `${V1}/vmc-sheet/occupied`,
+    },
+
     // Operator endpoints
     OPERATORS: {
         BASE: `${V1}/operators`,

@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const Item = require("../models/Item");
+const Process = require("../models/Process");
 const { MAX_CYCLE_OPS, CYCLE_OP_FIELDS } = require("../models/Item");
 
 // Keeps Op 1…Op 5 positional: blanks in the middle stay null so Op 3 never
@@ -20,17 +22,40 @@ const pickCycleOps = (body) =>
       .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
   );
 
-const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive }, body = {}) => ({
+// A VMC part's program: Program Time (min) and the pieces one program makes.
+// Blank stays unset, like the operation times above.
+const pickProgram = (body) =>
+  Object.fromEntries(
+    ["programTimeMin", "pcsPerProgram"]
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+// `process` is only touched when the request actually sends it, so a form that
+// doesn't know about processes can't clear the link by accident; "" (the "Not
+// in any process" choice) clears it.
+const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive, process }, body = {}) => ({
   itemName,
   drawingNo,
   setupNo,
   ...(cycleOpsSec !== undefined ? { cycleOpsSec: normalizeCycleOps(cycleOpsSec) } : {}),
   ...pickCycleOps(body),
+  ...pickProgram(body),
+  ...(process !== undefined ? { process: process || null } : {}),
   isActive,
 });
 
+// The process a request names has to exist; returns a message when it doesn't.
+const processError = async (process) => {
+  if (!process) return null;
+  if (!mongoose.isValidObjectId(process) || !(await Process.exists({ _id: process }))) return "Process not found";
+  return null;
+};
+
 exports.createItem = async (req, res) => {
   try {
+    const badProcess = await processError(req.body.process);
+    if (badProcess) return res.status(400).json({ isOk: false, message: badProcess });
     const item = await Item.create(pickItem(req.body, req.body));
     res.status(201).json({ isOk: true, data: item, message: "Item created successfully" });
   } catch (error) {
@@ -41,6 +66,8 @@ exports.createItem = async (req, res) => {
 
 exports.updateItem = async (req, res) => {
   try {
+    const badProcess = await processError(req.body.process);
+    if (badProcess) return res.status(400).json({ isOk: false, message: badProcess });
     const item = await Item.findByIdAndUpdate(req.params.itemId, pickItem(req.body, req.body), { new: true, runValidators: true });
     if (!item) return res.status(404).json({ isOk: false, message: "Item not found" });
     res.status(200).json({ isOk: true, data: item, message: "Item updated successfully" });
@@ -81,7 +108,8 @@ exports.getItemById = async (req, res) => {
   }
 };
 
-// Active items — used by the data entry sheet's Item Name autofill.
+// Active items — used by the data entry sheets' Part Name pickers. Each carries
+// its `process`, and a sheet narrows the list to its own process's parts.
 exports.listItems = async (req, res) => {
   try {
     const items = await Item.find({ isActive: true }).sort({ itemName: 1, drawingNo: 1, setupNo: 1 }).lean();
@@ -94,7 +122,7 @@ exports.listItems = async (req, res) => {
 
 exports.listItemByParams = async (req, res) => {
   try {
-    const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+    const { skip = 0, per_page = 10, sorton, sortdir, match, isActive, process } = req.body;
 
     const query = {};
     if (match) {
@@ -105,6 +133,13 @@ exports.listItemByParams = async (req, res) => {
       ];
     }
     if (isActive !== undefined) query.isActive = isActive;
+    // One process's parts, or "none" for the parts not in any process yet. Left
+    // out (or "") it lists every part.
+    if (process === "none") query.process = null;
+    else if (process) {
+      if (!mongoose.isValidObjectId(process)) return res.status(400).json({ isOk: false, message: "Invalid process" });
+      query.process = process;
+    }
 
     let sortQuery = { itemName: 1 };
     if (sorton && sortdir) sortQuery = { [sorton]: sortdir === "desc" ? -1 : 1 };

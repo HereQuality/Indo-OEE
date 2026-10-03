@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, Col, Container, Modal, ModalBody, ModalFooter, ModalHeader, Label, Input, Row } from "reactstrap";
 import DataTable from "react-data-table-component";
@@ -9,8 +9,10 @@ import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateItems } from "../hooks/useItems";
+import { useProcesses } from "../hooks/useProcesses";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
-import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
+import { CYCLE_OP_FIELDS, cycleOpLabel, fmtNum } from "../utils/productionSheet";
+import { isVmcProcess, programCycleSec } from "../utils/vmcSheet";
 import NumberInput from "../Components/Production/NumberInput";
 
 const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
@@ -23,11 +25,23 @@ const sumOps = (v) => {
   return nums.reduce((s, n) => s + Number(n), 0);
 };
 
+// A VMC part's Product Cycle Time = Program Time (min) × 60 ÷ pieces per program,
+// to two decimals. Blank until both are usable.
+const cycleFromProgram = (v) => {
+  const sec = programCycleSec(v);
+  return sec === null ? "" : Math.round(sec * 100) / 100;
+};
+
 const initialState = {
   itemName: "",
+  // Which process runs this part — decides which data entry page offers it, and
+  // whether it carries operation times (CNC) or a program (VMC).
+  process: "",
   drawingNo: "",
   setupNo: "",
   totalCycleSec: "",
+  programTimeMin: "",
+  pcsPerProgram: "",
   ...emptyOps(),
   isActive: true,
 };
@@ -46,6 +60,13 @@ const ItemMaster = () => {
   const [items, setItems] = useState([]);
   const invalidateItems = useInvalidateItems();
   const [query, setQuery] = useState("");
+  // Parts are told apart by process: the list can be narrowed to one ("" = all,
+  // "none" = parts not in any process yet), and the form picks it.
+  const { data: processes = [] } = useProcesses();
+  const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
+  const [processFilter, setProcessFilter] = useState("");
+  // A VMC part has a program; every other part has operation times.
+  const isVmc = useMemo(() => isVmcProcess(processes.find((p) => p._id === values.process)), [processes, values.process]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -86,9 +107,12 @@ const ItemMaster = () => {
         const it = res.data.data;
         setValues({
           itemName: it.itemName,
+          process: it.process || "",
           drawingNo: it.drawingNo || "",
           setupNo: it.setupNo || "",
           totalCycleSec: it.totalCycleSec ?? "",
+          programTimeMin: it.programTimeMin ?? "",
+          pcsPerProgram: it.pcsPerProgram ?? "",
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           isActive: it.isActive,
         });
@@ -116,7 +140,16 @@ const ItemMaster = () => {
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
-    if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
+    if (isVmc) {
+      // The program is optional here (it can be typed per entry), but a program
+      // time without its pieces — or the reverse — gives no cycle time.
+      const hasTime = v.programTimeMin !== "";
+      const hasPieces = v.pcsPerProgram !== "";
+      if (hasTime && !(Number(v.programTimeMin) > 0)) errors.program = "Program Time must be more than 0";
+      else if (hasPieces && !(Number.isInteger(Number(v.pcsPerProgram)) && Number(v.pcsPerProgram) >= 1)) {
+        errors.program = "No. of Piece In One Program must be a whole number, 1 or more";
+      } else if (hasTime !== hasPieces) errors.program = "Enter both Program Time and No. of Piece In One Program, or neither";
+    } else if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
       errors.cycleOps = "Cycle times must be 0 or more";
     }
     return errors;
@@ -129,13 +162,29 @@ const ItemMaster = () => {
     setIsSubmit(true);
     if (Object.keys(errors).length) return;
 
+    const num = (x) => (x === "" ? null : Number(x));
+    // Only the fields the form showed are kept: a part moved to the VMC process
+    // drops its operation times, one moved back drops its program, so a part never
+    // carries the other kind's leftovers.
+    const cycleFields = isVmc
+      ? {
+          programTimeMin: num(values.programTimeMin),
+          pcsPerProgram: num(values.pcsPerProgram),
+          totalCycleSec: num(cycleFromProgram(values)),
+          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null])),
+        }
+      : {
+          programTimeMin: null,
+          pcsPerProgram: null,
+          totalCycleSec: num(values.totalCycleSec),
+          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+        };
     const data = {
       ...values,
       itemName: values.itemName.trim(),
       drawingNo: values.drawingNo.trim(),
       setupNo: values.setupNo.trim(),
-      totalCycleSec: values.totalCycleSec === "" ? null : Number(values.totalCycleSec),
-      ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, values[f.key] === "" ? null : Number(values[f.key])])),
+      ...cycleFields,
     };
 
     setIsLoading(true);
@@ -171,7 +220,7 @@ const ItemMaster = () => {
   useEffect(() => {
     const timeout = setTimeout(() => fetchItems(), 500);
     return () => clearTimeout(timeout);
-  }, [pageNo, column, sortDirection, query, filter]);
+  }, [pageNo, column, sortDirection, query, filter, processFilter]);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -183,6 +232,7 @@ const ItemMaster = () => {
         sortdir: sortDirection,
         match: query,
         isActive: !!filter,
+        ...(processFilter ? { process: processFilter } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -198,8 +248,14 @@ const ItemMaster = () => {
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
     { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
+    { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "110px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
     { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
+    {
+      name: "Program (min / pcs)",
+      selector: (row) => (row.programTimeMin != null && row.pcsPerProgram != null ? `${fmtNum(row.programTimeMin)} / ${row.pcsPerProgram}` : ""),
+      minWidth: "140px",
+    },
     { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
@@ -242,6 +298,25 @@ const ItemMaster = () => {
                     tog_list={openAdd}
                     setQuery={setQuery}
                     showAddButton={currentPagePermissions.create}
+                    extraControls={
+                      <select
+                        value={processFilter}
+                        onChange={(e) => {
+                          setPageNo(1);
+                          setProcessFilter(e.target.value);
+                        }}
+                        title="Show the parts of one process"
+                        className="w-full sm:w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 transition-all text-slate-700"
+                      >
+                        <option value="">All processes</option>
+                        {processes.map((p) => (
+                          <option key={p._id} value={p._id}>
+                            {p.processName}
+                          </option>
+                        ))}
+                        <option value="none">Not in any process</option>
+                      </select>
+                    }
                   />
                 </CardHeader>
                 <CardBody>
@@ -283,6 +358,17 @@ const ItemMaster = () => {
               </Label>
               {isSubmit && <p className="text-danger">{formErrors.itemName}</p>}
             </div>
+            <div className="form-floating mb-3">
+              <Input type="select" name="process" value={values.process} onChange={handleChange}>
+                <option value="">Not in any process</option>
+                {processes.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.processName}
+                  </option>
+                ))}
+              </Input>
+              <Label>Process (the data entry page that offers this part)</Label>
+            </div>
             <Row>
               <Col md={6}>
                 <div className="form-floating mb-3">
@@ -297,38 +383,70 @@ const ItemMaster = () => {
                 </div>
               </Col>
             </Row>
-            <Label className="mb-2 d-block">Operation Times (sec)</Label>
-            <Row className="g-2 align-items-end">
-              {CYCLE_OP_FIELDS.map((f) => (
-                <Col key={f.key} xs={6} md={3}>
-                  <div className="form-floating">
-                    <NumberInput
-                      name={f.key}
-                      value={values[f.key]}
-                      onChange={handleChange}
-                      decimals={false}
-                      placeholder=" "
-                    />
-                    <Label>{cycleOpLabel(f).replace(" (sec)", "")}</Label>
-                  </div>
-                </Col>
-              ))}
-            </Row>
-            {isSubmit && formErrors.cycleOps && <p className="text-danger mt-1">{formErrors.cycleOps}</p>}
-            {/* Never typed on its own — it's this part's operation times'
-                own sum, kept in step by handleChange as soon as any of them
-                changes, so it can't drift out of sync with its own inputs. */}
-            <div className="form-floating mt-3">
-              <NumberInput
-                name="totalCycleSec"
-                value={values.totalCycleSec}
-                onChange={() => {}}
-                decimals={false}
-                placeholder=" "
-                disabled
-              />
-              <Label>Total Cycle Time (sec) — calculated</Label>
-            </div>
+            {isVmc ? (
+              <>
+                {/* A VMC part is run from a program: its time and how many pieces it
+                    makes give the Product Cycle Time, which is calculated, never typed. */}
+                <Label className="mb-2 d-block">Program</Label>
+                <Row className="g-2 align-items-end">
+                  <Col xs={6} md={4}>
+                    <div className="form-floating">
+                      <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handleChange} placeholder=" " />
+                      <Label>Program Time (min)</Label>
+                    </div>
+                  </Col>
+                  <Col xs={6} md={4}>
+                    <div className="form-floating">
+                      <NumberInput name="pcsPerProgram" value={values.pcsPerProgram} onChange={handleChange} decimals={false} placeholder=" " />
+                      <Label>No. of Piece In One Program</Label>
+                    </div>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <div className="form-floating">
+                      <NumberInput name="cycleFromProgram" value={cycleFromProgram(values)} onChange={() => {}} placeholder=" " disabled />
+                      <Label>Product Cycle Time (sec)</Label>
+                    </div>
+                  </Col>
+                </Row>
+                {isSubmit && formErrors.program && <p className="text-danger mt-1">{formErrors.program}</p>}
+                <div className="form-text">Product Cycle Time is calculated. The program is copied onto a VMC entry when this part is picked — still editable there.</div>
+              </>
+            ) : (
+              <>
+                <Label className="mb-2 d-block">Operation Times (sec)</Label>
+                <Row className="g-2 align-items-end">
+                  {CYCLE_OP_FIELDS.map((f) => (
+                    <Col key={f.key} xs={6} md={3}>
+                      <div className="form-floating">
+                        <NumberInput
+                          name={f.key}
+                          value={values[f.key]}
+                          onChange={handleChange}
+                          decimals={false}
+                          placeholder=" "
+                        />
+                        <Label>{cycleOpLabel(f).replace(" (sec)", "")}</Label>
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+                {isSubmit && formErrors.cycleOps && <p className="text-danger mt-1">{formErrors.cycleOps}</p>}
+                {/* Never typed on its own — it's this part's operation times'
+                    own sum, kept in step by handleChange as soon as any of them
+                    changes, so it can't drift out of sync with its own inputs. */}
+                <div className="form-floating mt-3">
+                  <NumberInput
+                    name="totalCycleSec"
+                    value={values.totalCycleSec}
+                    onChange={() => {}}
+                    decimals={false}
+                    placeholder=" "
+                    disabled
+                  />
+                  <Label>Total Cycle Time (sec) — calculated</Label>
+                </div>
+              </>
+            )}
             <div className="mt-3">
               <Input
                 type="checkbox"

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext js,jsx --fix",
-    "test": "esbuild src/utils/entryValidation.test.mjs --bundle --platform=node --format=esm --log-level=warning --outfile=.test-build/entryValidation.test.mjs && node --test .test-build/entryValidation.test.mjs"
+    "test": "esbuild src/utils/entryValidation.test.mjs src/utils/vmcSheet.test.mjs --bundle --platform=node --format=esm --log-level=warning --outdir=.test-build --out-extension:.js=.mjs && node --test .test-build/entryValidation.test.mjs .test-build/vmcSheet.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

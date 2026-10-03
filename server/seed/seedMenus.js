@@ -26,7 +26,8 @@ const Operator = require("../models/Operator");
 //   4. Operator Management        (group)
 //   5. Production                 (group: Part Master, Machines, Processes, Operators)
 //   6. CNC Data Entry             (link — its own top-level item)
-//   7. Support                    (link)
+//   7. VMC Data Entry             (link — the VMC sheet, its own page and data)
+//   8. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 // Dashboard sits right under Home as its own top-level link. It used to be
 // the last item inside Production — see promoteMenuToLinkGroup below for how
@@ -43,7 +44,11 @@ const PRODUCTION_GROUP = { menuGroupName: "Production", sequence: 5, isLink: fal
 // often than the master lists it used to sit beside). Same promotion
 // mechanism as Dashboard above; the URL is unchanged.
 const DATA_ENTRY_GROUP = { menuGroupName: "CNC Data Entry", sequence: 6, isLink: true, menuUrl: "/hqepl/production/cnc-data-entry", portal: "Both", icon: "ClipboardList" };
-const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 7, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
+// The VMC sheet: same kind of page as CNC Data Entry, over its own data. A new
+// page, so nothing to promote — a role only gets it once an admin ticks it in
+// Manage Role (Super Admin always sees it).
+const VMC_DATA_ENTRY_GROUP = { menuGroupName: "VMC Data Entry", sequence: 7, isLink: true, menuUrl: "/hqepl/production/vmc-data-entry", portal: "Both", icon: "ClipboardList" };
+const SUPPORT_GROUP = { menuGroupName: "Support", sequence: 8, isLink: true, menuUrl: "/hqepl/support", portal: "Both", icon: "Headphones" };
 
 const ADMINISTRATION_MENUS = [
   { menuName: "Menu Group", menuUrl: "/x/menu-groups", sequence: 1, icon: "FolderTree" },
@@ -168,6 +173,8 @@ async function run() {
 
   const dataEntryGroup = await upsertGroup(DATA_ENTRY_GROUP);
   await promoteMenuToLinkGroup(/\/production\/data-entry\/?$/, dataEntryGroup);
+
+  await upsertGroup(VMC_DATA_ENTRY_GROUP);
 
   const empMgmtGroup = await upsertGroup(EMPLOYEE_MANAGEMENT_GROUP);
   await upsertMenus(EMPLOYEE_MANAGEMENT_MENUS, empMgmtGroup);

@@ -16,7 +16,8 @@ import DeleteModal from "../Components/Common/DeleteModal";
 import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import ProductionEntriesTable from "../Components/Production/ProductionEntriesTable";
-import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
+import { VMC_COLUMNS } from "../Components/Production/vmcColumns";
+import VmcEntryForm from "../Components/Production/VmcEntryForm";
 import NumberInput from "../Components/Production/NumberInput";
 import FilterPanel from "../Components/ProcessDashboard/FilterPanel";
 import "../Components/ProcessDashboard/processDashboard.css";
@@ -27,79 +28,55 @@ import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
 import { useMachineOperators } from "../hooks/useMachineOperators";
 import {
-  deleteProductionRow,
-  getProductionExtent,
-  getProductionFilterOptions,
-  getOccupiedTimes,
-  getOperatorOccupied,
-  getProductionSheet,
-  saveProductionRow,
-  unlockProductionRow,
-} from "../api/productionSheet.api";
-import {
-  CYCLE_OP_FIELDS,
-  REJECT_REASONS,
-  STOPPAGE_FIELDS,
-  dayCalc,
-  isoDay,
-  sortByMachineOn,
-} from "../utils/productionSheet";
-import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, validateEntry } from "../utils/entryValidation";
+  deleteVmcRow,
+  getVmcExtent,
+  getVmcFilterOptions,
+  getVmcOccupiedTimes,
+  getVmcOperatorOccupied,
+  getVmcSheet,
+  saveVmcRow,
+  unlockVmcRow,
+} from "../api/vmcSheet.api";
+import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionSheet";
+import { VMC_FORMULAS, vmcDayCalc, vmcRowCalc } from "../utils/vmcSheet";
+import { firstVmcError, validateVmcEntry } from "../utils/vmcValidation";
+import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
 import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
 
 /**
- * Production Data Entry — the month's records, and one form per record.
+ * VMC Data Entry — the VMC sheet's records, and one form per record.
  *
- * The roll-up charts live on their own page (pages/ProductionDashboardPage),
- * so this page loads only what the list and the form need.
+ * ProductionSheet's twin (the CNC page): the same list with its filters and
+ * paging, the same Add/Edit form behaviour, the same two-working-day lock and
+ * Super Admin unlock — over the VMC sheet's own data (/vmc-sheet) and columns.
+ * A record is keyed by (date, machine, entry no.); the entry no. is assigned by
+ * the server (slot "auto") and machine stays locked while editing, because
+ * changing it would move the record to a different key.
  *
- * A record is still keyed by (date, machine, entry no.) the way the Indo
- * "Section Wise Eff. (CNC)" sheet is, but the entry no. is no longer typed:
- * a new entry is sent with slot "auto" and the server gives it the machine's
- * next free slot for that date (1–3), reporting a machine that already has
- * three entries that day rather than overwriting one. Machine stays locked
- * while editing,
- * because changing it would move the record to a different key rather than
- * edit it — delete and re-add instead.
- *
- * Every formula lives in utils/productionSheet.js and is shared with the
- * dashboard page, so the form's read-only boxes and the charts can't disagree.
- * Every rule the form enforces lives in utils/entryValidation.js; the errors
- * are worked out live from the entries, so the Save button, the messages and
- * the scroll to the first incomplete field all read from one answer.
+ * The figures live in utils/vmcSheet.js (which feeds the CNC formulas the VMC
+ * cycle time) and the rules in utils/vmcValidation.js, so the form's grey boxes,
+ * the table and the Save button can't disagree.
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const CYCLE_OP_KEYS = CYCLE_OP_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
-const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = [
-  "actualQty",
-  "okQty",
-  "plannedOperatorShiftHours",
-  "totalCycleSec",
-  ...STOPPAGE_KEYS,
-  ...CYCLE_OP_KEYS,
-];
+const TEXT_FIELDS = ["operator", "machineNotRun", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+const TIME_FIELDS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
+const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is
-// closed (Cancel, the X, Escape, clicking away isn't possible — backdrop is
-// static) so an accidental close doesn't lose it. Reopening "Add Entry"
-// within a minute brings it back; after that (or on a successful Save) it's
-// gone, so the form doesn't come back stale hours later.
-const DRAFT_KEY = "productionEntryDraft";
+// closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
+// Reopening "Add Entry" within a minute brings it back; after that (or on a
+// successful Save) it's gone, so the form doesn't come back stale hours later.
+const DRAFT_KEY = "vmcEntryDraft";
 const DRAFT_TTL_MS = 60 * 1000;
 
 const hasAnyEntryData = (list) =>
   list.some((v) => {
-    if (v.machine || v.operator || v.itemName || v.drawingNo || v.remarks) return true;
-    if (v.machineOnTime || v.machineOffTime || v.plannedOperatorShiftHours !== "") return true;
-    if ([v.actualQty, v.okQty].some((q) => q !== "" && q !== undefined && q !== null)) return true;
-    if (Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null && Number(n) !== 0)) return true;
-    return [...STOPPAGE_KEYS, ...CYCLE_OP_KEYS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
+    if (v.machine) return true;
+    return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
 const loadDraft = () => {
@@ -140,81 +117,46 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
-  rejectBreakdown: {},
-  // Operations this entry has unticked out of what its Part carries — subtracted
-  // from its Total Cycle Time; the Part's own record is never touched.
-  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
 });
 
 // A saved record -> form values ("" for anything unset, so inputs stay controlled).
-//
-// actualQty is never shown or typed here — Ideal Quantity does that job — but
-// it's still sent back on save (see toPayload), recomputed from this record's
-// own Ideal Quantity rather than kept from what was last stored.
-const toFormValues = (row) => {
-  return {
-    ...emptyEntry(),
-    ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
-    item: row.item || "",
-    slot: row.slot,
-    // A stored shift is decimal hours; the box shows it as H.MM (7.5 → "7.30").
-    plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
-    // A record saved before the split existed has only a single rejectReason;
-    // its rejected pieces are put against that reason so editing it doesn't
-    // look like the reason was lost.
-    rejectBreakdown: (() => {
-      const stored = row.rejectBreakdown;
-      if (stored && Object.keys(stored).length) {
-        return Object.fromEntries(Object.entries(stored).filter(([r]) => REJECT_REASONS.includes(r)));
-      }
-      const rejected = Number(row.rejectedQty);
-      return row.rejectReason && REJECT_REASONS.includes(row.rejectReason) && Number.isFinite(rejected) && rejected > 0
-        ? { [row.rejectReason]: rejected }
-        : {};
-    })(),
-  };
-};
+const toFormValues = (row) => ({
+  ...emptyEntry(),
+  ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
+  item: row.item || "",
+  slot: row.slot,
+  // A stored shift is decimal hours; the box shows it as H.MM (7.5 → "7.30").
+  plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
+});
 
 // Form values -> request body. "" tells the server to unset that field.
-// rejectedQty is deliberately absent: the server derives it from Actual − OK.
-const toPayload = (v, isEdit) => {
-  const split = cleanSplit(v.rejectBreakdown);
-  // The entries table and older records still carry one reason per entry, so
-  // the biggest contributor in the split is saved there too — the table column
-  // keeps working without needing a second shape.
-  const topReason = Object.entries(split).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-  return {
-    date: v.date,
-    machine: v.machine,
-    // An edited record saves back to its own slot; a new one asks the server for
-    // the machine's next free slot on that date, since only the server can see
-    // every entry — the page may be filtered to one machine.
-    slot: isEdit ? Number(v.slot) : "auto",
-    item: v.item || null,
-    excludedOps: v.excludedOps || [],
-    rejectBreakdown: split,
-    rejectReason: topReason,
-    ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
-    // A remark only belongs to an "Other" that is still in use — once that
-    // figure goes back to zero the remark is cleared with it.
-    rejectOtherRemark: split.Other > 0 ? String(v.rejectOtherRemark ?? "").trim() : "",
-    otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
-    ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
-    ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
-    // Typed as H.MM, saved as decimal hours (3.30 → 3.5).
-    plannedOperatorShiftHours: (() => {
-      const { hours } = parseHm(v.plannedOperatorShiftHours);
-      return hours === null ? "" : hmToWireHours(hours);
-    })(),
-    // Lunch / Rest is optional on the form; the server wants a 0 rather than nothing.
-    lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
-  };
-};
+const toPayload = (v, isEdit) => ({
+  date: v.date,
+  machine: v.machine,
+  // An edited record saves back to its own slot; a new one asks the server for
+  // the machine's next free slot on that date, since only the server can see
+  // every entry — the page may be filtered to one machine.
+  slot: isEdit ? Number(v.slot) : "auto",
+  item: v.item || null,
+  ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+  // A remark only belongs to an "Others" that is still in use — once that figure
+  // goes back to zero the remark is cleared with it.
+  otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
+  ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
+  ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // Typed as H.MM, saved as decimal hours (3.30 → 3.5).
+  plannedOperatorShiftHours: (() => {
+    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    return hours === null ? "" : hmToWireHours(hours);
+  })(),
+  // Lunch is optional on the form; the server wants a 0 rather than nothing.
+  lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
+});
 
-const ProductionSheet = () => {
+const VmcDataEntry = () => {
   const toast = useAlert();
   const { currentPagePermissions, isAdmin } = useContext(MenuContext) || {};
   const canCreate = currentPagePermissions ? !!currentPagePermissions.create : true;
@@ -249,7 +191,7 @@ const ProductionSheet = () => {
   const handleUnlock = useCallback(
     (row) => {
       setUnlockingId(row._id);
-      unlockProductionRow(row._id)
+      unlockVmcRow(row._id)
         .then((res) => {
           toast.success(res?.data?.message || "Unlocked for 24 hours");
           fetchRows();
@@ -389,7 +331,7 @@ const ProductionSheet = () => {
   const fetchRows = useCallback(() => {
     if (!validRange) return;
     setLoading(true);
-    getProductionSheet({ from: fromDate, to: toDate, page, machine: filters.machine, operator: filters.operator, item: filters.item })
+    getVmcSheet({ from: fromDate, to: toDate, page, machine: filters.machine, operator: filters.operator, item: filters.item })
       .then((res) => {
         setRows(res.data.data || []);
         setServerMachineNames((n) => ({ ...n, ...(res.data.machineNames || {}) }));
@@ -421,7 +363,7 @@ const ProductionSheet = () => {
   // Year tab — independent of the sheet's own current page.
   const [extent, setExtent] = useState(null);
   useEffect(() => {
-    getProductionExtent()
+    getVmcExtent()
       .then((res) => setExtent(res?.data?.data || null))
       .catch(() => setExtent(null));
   }, []);
@@ -435,7 +377,7 @@ const ProductionSheet = () => {
   const [rangeFilterValues, setRangeFilterValues] = useState({ machine: [], operator: [], item: [] });
   useEffect(() => {
     if (!validRange) return;
-    getProductionFilterOptions({ from: fromDate, to: toDate })
+    getVmcFilterOptions({ from: fromDate, to: toDate })
       .then((res) => {
         setRangeFilterValues(res?.data?.data || { machine: [], operator: [], item: [] });
         setServerMachineNames((n) => ({ ...n, ...(res?.data?.machineNames || {}) }));
@@ -517,7 +459,7 @@ const ProductionSheet = () => {
       // sorted the same way here (via the same helper, not a second copy of
       // the logic) so result i still lines up with sorted[i].
       const sorted = sortByMachineOn(group);
-      const results = dayCalc(sorted);
+      const results = vmcDayCalc(sorted);
       sorted.forEach((r, i) => {
         out[r._id] = results[i];
       });
@@ -536,7 +478,7 @@ const ProductionSheet = () => {
       const key = `${v.machine}|${v.date}`;
       if (occupiedAsked.current.has(key)) continue;
       occupiedAsked.current.add(key);
-      getOccupiedTimes({ date: v.date, machine: v.machine })
+      getVmcOccupiedTimes({ date: v.date, machine: v.machine })
         .then((res) => setOccupied((o) => ({ ...o, [key]: res.data.data || [] })))
         // Save is still checked by the server. Look again in a while — not on
         // every keystroke while the lookup keeps failing.
@@ -554,7 +496,7 @@ const ProductionSheet = () => {
       const key = `${op}|${v.date}`;
       if (operatorAsked.current.has(key)) continue;
       operatorAsked.current.add(key);
-      getOperatorOccupied({ date: v.date, operator: op })
+      getVmcOperatorOccupied({ date: v.date, operator: op })
         .then((res) => setOperatorOccupied((o) => ({ ...o, [key]: res.data.data || [] })))
         // The server still checks on Save; look again in a while.
         .catch(() => setTimeout(() => operatorAsked.current.delete(key), 15000));
@@ -571,7 +513,7 @@ const ProductionSheet = () => {
     });
     // A block's own problems (blank / invalid / OFF before ON) come first, then a
     // clash with the machine's own entries, then with the operator's other machines.
-    return entries.map((v, i) => ({ ...operatorClash[i], ...overlap[i], ...validateEntry(v, { saved }) }));
+    return entries.map((v, i) => ({ ...operatorClash[i], ...overlap[i], ...validateVmcEntry(v, { saved }) }));
   }, [entries, occupied, operatorOccupied, editing, machineName]);
   // Warn the moment a pick creates (or changes) a time-rule problem — not only
   // when Save is pressed. Nothing repeats while the problem stays as it was.
@@ -648,12 +590,6 @@ const ProductionSheet = () => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
   }, []);
 
-  const handleRejectChange = useCallback((index, reason, value) => {
-    setEntries((list) =>
-      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
-    );
-  }, []);
-
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
   const handleAddBlock = useCallback(() => {
@@ -664,14 +600,16 @@ const ProductionSheet = () => {
     setEntries((list) => (list.length > 1 ? list.filter((_, i) => i !== index) : list));
   }, []);
 
-  // Picking an item copies its master values onto the form — still editable,
-  // so a later change to the master never rewrites saved records.
+  // Picking an item copies its Drawing No., Setup No. and program (Program Time,
+  // pieces per program — set in Production › Items) onto the form — still editable,
+  // so a later change to the master never rewrites saved records. A part with no
+  // program leaves those two boxes blank to be typed.
   const handleItemSelect = useCallback(
     (index, itemId) => {
       setEntries((list) =>
         list.map((v, i) => {
           if (i !== index) return v;
-          if (!itemId) return { ...v, item: "", itemName: "", excludedOps: [] };
+          if (!itemId) return { ...v, item: "", itemName: "", drawingNo: "" };
           const it = items.find((item) => item._id === itemId);
           if (!it) return { ...v, item: "" };
           return {
@@ -679,15 +617,9 @@ const ProductionSheet = () => {
             item: it._id,
             itemName: it.itemName,
             drawingNo: it.drawingNo || "",
-            // Copies the item's own Total Cycle Time and operation times onto
-            // the entry. These are locked to the item, not typed here — a
-            // later change to the master is picked up again next time this
-            // part is (re)selected. A freshly (re)picked part starts with
-            // every operation ticked; whichever were unticked belonged to
-            // the part picked before.
-            totalCycleSec: it.totalCycleSec ?? "",
-            excludedOps: [],
-            ...Object.fromEntries(CYCLE_OP_KEYS.map((k) => [k, it[k] ?? ""])),
+            setupNo: it.setupNo || v.setupNo,
+            programTimeMin: it.programTimeMin ?? "",
+            pcsPerProgram: it.pcsPerProgram ?? "",
           };
         }),
       );
@@ -703,7 +635,7 @@ const ProductionSheet = () => {
     // Nothing is saved while any block is incomplete — the button only looks
     // inactive so it can still be pressed, and pressing it opens the first
     // incomplete block and scrolls to its first missing field.
-    const first = firstError(errorsList);
+    const first = firstVmcError(errorsList);
     if (first) {
       setFocusTarget({ ...first, nonce: Date.now() });
       return;
@@ -717,7 +649,7 @@ const ProductionSheet = () => {
     const savedIndexes = new Set();
     try {
       for (const [i, v] of entries.entries()) {
-        await saveProductionRow(toPayload(v, modalMode === "edit"));
+        await saveVmcRow(toPayload(v, modalMode === "edit"));
         savedIndexes.add(i);
       }
       const saved = savedIndexes.size;
@@ -744,7 +676,7 @@ const ProductionSheet = () => {
   const handleDelete = (e) => {
     e.preventDefault();
     setIsDeleting(true);
-    deleteProductionRow(removeId)
+    deleteVmcRow(removeId)
       .then((res) => {
         setDeleteOpen(false);
         toast.success(res?.data?.message || "Entry deleted successfully!");
@@ -774,7 +706,7 @@ const ProductionSheet = () => {
     );
   }, [sortedRows, search]);
 
-  document.title = `Production Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+  document.title = `VMC Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
     <React.Fragment>
@@ -789,7 +721,7 @@ const ProductionSheet = () => {
           <Card className="mb-0 d-flex flex-column flex-grow-1" style={{ minHeight: 0 }}>
             <CardHeader>
               <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                <h5 className="mb-0 fs-6 fw-semibold">Production Data Entry</h5>
+                <h5 className="mb-0 fs-6 fw-semibold">VMC Data Entry</h5>
 
                 <div className="d-flex flex-wrap align-items-center gap-2">
                   <div style={{ position: "relative" }}>
@@ -870,8 +802,11 @@ const ProductionSheet = () => {
                 rows={searchedRows}
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}
+                columns={VMC_COLUMNS}
+                formulas={VMC_FORMULAS}
+                calcRow={vmcRowCalc}
                 loading={loading}
-                emptyText={`No entries for ${periodLabel}. Click “Add Entry” to start.`}
+                emptyText={`No VMC entries for ${periodLabel}. Click “Add Entry” to start.`}
                 canEdit={canEdit}
                 canDelete={canDelete}
                 onEdit={openEdit}
@@ -893,7 +828,7 @@ const ProductionSheet = () => {
       <Modal isOpen={modalMode !== null} toggle={() => closeModal()} centered backdrop="static" size="xl" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={() => closeModal()}>
           <div className="d-flex align-items-center gap-2">
-            <span>{modalMode === "edit" ? "Update Production Entry" : "Add Production Entry"}</span>
+            <span>{modalMode === "edit" ? "Update VMC Entry" : "Add VMC Entry"}</span>
             {modalMode === "add" && hasAnyEntryData(entries) && (
               <button
                 type="button"
@@ -910,7 +845,7 @@ const ProductionSheet = () => {
               rather than relying on Bootstrap's .modal-dialog-scrollable, so the
               body scrolls and the Save/Cancel footer stays reachable. */}
           <ModalBody style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
-            <ProductionEntryForm
+            <VmcEntryForm
               entries={entries}
               errors={errorsList}
               isSubmit={isSubmit}
@@ -922,7 +857,6 @@ const ProductionSheet = () => {
               booked={bookedList}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
-              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />
@@ -958,4 +892,4 @@ const ProductionSheet = () => {
   );
 };
 
-export default ProductionSheet;
+export default VmcDataEntry;

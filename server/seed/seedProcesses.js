@@ -8,9 +8,10 @@
  *
  * Safe to re-run: a process that already exists (by name) is left exactly as
  * it is — its machines and chosen visuals are never overwritten. The
- * existing machines come from the "Section Wise Eff. — CNC" sheet, so any
- * machine that isn't in a process yet is put under CNC; move them in
- * Production › Processes if that's wrong.
+ * existing machines and parts come from the "Section Wise Eff. — CNC" sheet,
+ * so any machine or part that isn't in a process yet is put under CNC; move
+ * machines in Production › Processes, and parts in Production › Items, if
+ * that's wrong.
  *
  *   node seed/seedProcesses.js
  */
@@ -20,6 +21,7 @@ const mongoose = require("mongoose");
 const connectDB = require("../config/db");
 const Process = require("../models/Process");
 const Machine = require("../models/Machine");
+const Item = require("../models/Item");
 
 const PROCESSES = [
   { processName: "SPM" },
@@ -46,8 +48,13 @@ async function run() {
 
   const cnc = await Process.findOne({ processName: "CNC" });
   const moved = cnc ? await Machine.updateMany({ process: null }, { $set: { process: cnc._id } }) : { modifiedCount: 0 };
+  // Parts too, so the CNC data entry page keeps offering every part it always
+  // has once parts are told apart by process.
+  const movedItems = cnc ? await Item.updateMany({ process: null }, { $set: { process: cnc._id } }) : { modifiedCount: 0 };
 
-  console.log(`Processes: ${created} created, ${PROCESSES.length - created} already existed. Machines put under CNC: ${moved.modifiedCount}.`);
+  console.log(
+    `Processes: ${created} created, ${PROCESSES.length - created} already existed. Machines put under CNC: ${moved.modifiedCount}. Parts put under CNC: ${movedItems.modifiedCount}.`,
+  );
   await mongoose.connection.close();
   process.exit(0);
 }
