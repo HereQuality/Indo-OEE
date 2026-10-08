@@ -25,7 +25,7 @@ const PAGE_SIZE_DAYS = 10;
 const MAX_RANGE_DAYS = 366 * 5;
 
 const TEXT_KEYS = ["operator", "machineNotRun", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
-const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
+const TIME_KEYS = ["machineOnTime", "machineOffTime"];
 const NUMBER_KEYS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 const fail = (message) => Object.assign(new Error(message), { status: 400 });
@@ -146,15 +146,6 @@ const entryRuleError = (body, existing = null) => {
   if (on === null || off === null) return "Machine ON/OFF Time must be HH:mm";
   // The machine runs within one day: a shift through midnight is two entries.
   if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
-
-  // Setting Time is optional, but both ends or neither, and OFF after ON.
-  if (isBlank(body.settingOnTime) !== isBlank(body.settingOffTime)) return "Enter both Setting Time ON and OFF, or neither";
-  if (!isBlank(body.settingOnTime)) {
-    const sOn = clockMinutes(body.settingOnTime);
-    const sOff = clockMinutes(body.settingOffTime);
-    if (sOn === null || sOff === null) return "Setting Time ON/OFF must be HH:mm";
-    if (sOff <= sOn) return "Setting Time OFF must be after Setting Time ON";
-  }
 
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
   // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ program time).

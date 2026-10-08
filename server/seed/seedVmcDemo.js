@@ -59,11 +59,11 @@ const PART_NAMES = Object.values(PARTS).map((p) => p.itemName);
 const FIRST = { machineOnTime: "09:00", machineOffTime: "17:30", plannedOperatorShiftHours: 9.5 };
 const ENTRIES = [
   // ── newest day: four machines ──
-  { ago: 1, machine: 0, op: 0, part: "A", ...FIRST, settingOnTime: "09:00", settingOffTime: "09:20",
+  { ago: 1, machine: 0, op: 0, part: "A", ...FIRST,
     okQty: 160, rejectedQty: 4, setupMin: 20, lunchMin: 30, noMaterialMin: 10, remarks: "Smooth run" },
   { ago: 1, machine: 1, op: 1, part: "B", ...FIRST,
     okQty: 480, rejectedQty: 12, lunchMin: 30, bdMechMin: 25 },
-  { ago: 1, machine: 2, op: 2, part: "C", ...FIRST, settingOnTime: "09:00", settingOffTime: "09:30",
+  { ago: 1, machine: 2, op: 2, part: "C", ...FIRST,
     okQty: 47, rejectedQty: 2, setupMin: 30, lunchMin: 30 },
   { ago: 1, machine: 3, op: 3, part: "D", ...FIRST,
     okQty: 190, rejectedQty: 6, lunchMin: 30, noManPowerMin: 15, otherMin: 10, otherMinRemark: "Coolant top-up", remarks: "Waited for fixture" },
@@ -75,7 +75,7 @@ const ENTRIES = [
     okQty: 495, rejectedQty: 8, lunchMin: 30, noPowerMin: 20 },
   { ago: 2, machine: 1, op: 3, part: "B", machineOnTime: "18:00", machineOffTime: "22:00", plannedOperatorShiftHours: 4.5,
     okQty: 228, rejectedQty: 4, lunchMin: 15, setupMin: 10, remarks: "Overtime shift" },
-  { ago: 2, machine: 3, op: 3, part: "D", ...FIRST, settingOnTime: "09:00", settingOffTime: "09:15",
+  { ago: 2, machine: 3, op: 3, part: "D", ...FIRST,
     okQty: 196, rejectedQty: 5, setupMin: 15, lunchMin: 30, bdEleMin: 15 },
 
   // ── earlier ──

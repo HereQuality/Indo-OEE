@@ -53,8 +53,6 @@ const VmcEntrySchema = new mongoose.Schema(
 
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },
-    settingOnTime: { type: String, match: HHMM },
-    settingOffTime: { type: String, match: HHMM },
 
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },

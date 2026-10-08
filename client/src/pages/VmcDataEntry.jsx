@@ -65,7 +65,7 @@ import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
 // `workOrderNo` is only shown here — the server takes the number from the work order itself.
 const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
-const TIME_FIELDS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
+const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is

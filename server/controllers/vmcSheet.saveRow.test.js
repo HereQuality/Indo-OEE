@@ -131,16 +131,6 @@ test("OK + Rejected can't be more than Ideal Quantity", async () => {
   await refused({ okQty: 167, rejectedQty: 4 }, /can't be more than Ideal Quantity \(170\)/);
 });
 
-test("Setting Time is both-or-neither, and OFF after ON", async () => {
-  await withDb([], async (db) => {
-    const res = await call(saveRow, { body: body({ settingOnTime: "09:00", settingOffTime: "09:20" }) });
-    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
-    assert.equal(db.saved[0].settingOffTime, "09:20");
-  });
-  await refused({ settingOnTime: "09:00" }, /both Setting Time ON and OFF/);
-  await refused({ settingOnTime: "09:20", settingOffTime: "09:00" }, /Setting Time OFF must be after/);
-});
-
 test("Planned Operator Shift can't be less than the Machine Shift, and stoppage fits what is left", async () => {
   await refused({ plannedOperatorShiftHours: 8 }, /can't be less than Machine Shift/);
   await refused({ lunchMin: 30, setupMin: 31 }, /Total stoppage \(61 min\) can't be more than .* \(60 min\)/);

@@ -67,7 +67,7 @@ const LINES = [
     title: "Work Order, Part, Setup No., Program, Product Cycle Time",
     fields: ["workOrder", "itemName", "setupNo", "programTimeMin", "pcsPerProgram"],
   },
-  { id: 3, title: "Machine ON–OFF Time, Setting Time, Machine Shift", fields: ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"] },
+  { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
   { id: 7, title: "Planned Operator Shift", fields: ["plannedOperatorShiftHours"] },
   { id: 8, title: "Downtime / Stoppage (min)", fields: [...VMC_DOWNTIME_KEYS, "stoppageTotal", "otherMinRemark"] },
@@ -181,7 +181,6 @@ const EntryBlock = ({
     return next >= 1440 ? null : `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
   };
   const offEarliest = useMemo(() => after(values.machineOnTime), [values.machineOnTime]);
-  const settingOffEarliest = useMemo(() => after(values.settingOnTime), [values.settingOnTime]);
   const errorCount = Object.keys(errors).length;
   const handle = (e) => onChange(index, e.target.name, e.target.value);
 
@@ -428,18 +427,6 @@ const EntryBlock = ({
                 onChange={handle}
                 hasError={!!err("machineOffTime")}
                 minTime={offEarliest}
-              />
-            </Field>
-            <Field label="Setting Time ON" error={err("settingOnTime")} md={3} fieldKey="settingOnTime">
-              <TimePicker name="settingOnTime" value={values.settingOnTime} onChange={handle} hasError={!!err("settingOnTime")} />
-            </Field>
-            <Field label="Setting Time OFF" error={err("settingOffTime")} md={3} fieldKey="settingOffTime">
-              <TimePicker
-                name="settingOffTime"
-                value={values.settingOffTime}
-                onChange={handle}
-                hasError={!!err("settingOffTime")}
-                minTime={settingOffEarliest}
               />
             </Field>
             <Calc

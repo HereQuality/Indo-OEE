@@ -70,13 +70,6 @@ test("pieces per program is a whole number, program time more than 0", () => {
   assert.ok(validateVmcEntry(entry({ programTimeMin: "0" })).programTimeMin);
 });
 
-test("Setting Time is optional but a pair, OFF after ON", () => {
-  assert.equal(validateVmcEntry(entry({ settingOnTime: "09:00", settingOffTime: "09:20" })).settingOffTime, undefined);
-  assert.ok(validateVmcEntry(entry({ settingOnTime: "09:00" })).settingOffTime);
-  assert.ok(validateVmcEntry(entry({ settingOffTime: "09:20" })).settingOnTime);
-  assert.match(validateVmcEntry(entry({ settingOnTime: "09:20", settingOffTime: "09:00" })).settingOffTime, /must be after/);
-});
-
 test("stoppage has to fit Planned Operator Shift − Machine Shift, and Others needs a remark", () => {
   // planned 9.30 = 570 min, shift 510 → 60 min allowed
   assert.equal(validateVmcEntry(entry({ lunchMin: "30", setupMin: "30" })).stoppageTotal, undefined);

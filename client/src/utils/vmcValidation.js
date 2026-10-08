@@ -53,8 +53,6 @@ export const VMC_FIELD_ORDER = [
   "pcsPerProgram",
   "machineOnTime",
   "machineOffTime",
-  "settingOnTime",
-  "settingOffTime",
   "okQty",
   "rejectedQty",
   "plannedOperatorShiftHours",
@@ -103,17 +101,6 @@ export const validateVmcEntry = (v, { saved = null } = {}) => {
     const on = clock(v.machineOnTime);
     const off = clock(v.machineOffTime);
     if (on !== null && off !== null && off <= on) errors.machineOffTime = "Machine OFF Time must be after Machine ON Time";
-  }
-
-  // Setting Time: optional, but a pair.
-  if (blank(v.settingOnTime) !== blank(v.settingOffTime)) {
-    errors[blank(v.settingOnTime) ? "settingOnTime" : "settingOffTime"] = "Enter both Setting Time ON and OFF, or neither";
-  } else if (!blank(v.settingOnTime)) {
-    const sOn = clock(v.settingOnTime);
-    const sOff = clock(v.settingOffTime);
-    if (sOn === null) errors.settingOnTime = "Enter a valid time";
-    if (sOff === null) errors.settingOffTime = "Enter a valid time";
-    if (sOn !== null && sOff !== null && sOff <= sOn) errors.settingOffTime = "Setting Time OFF must be after Setting Time ON";
   }
 
   // OK and Rejected are both typed; together they can't beat what the shift could make.
