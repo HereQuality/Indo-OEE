@@ -34,7 +34,6 @@ const initialState = {
   // VMC Data Entry form instead, never on the Part itself).
   process: "",
   drawingNo: "",
-  setupNo: "",
   totalCycleSec: "",
   ...emptyOps(),
   isActive: true,
@@ -109,7 +108,6 @@ const ItemMaster = () => {
           itemName: it.itemName,
           process: it.process || "",
           drawingNo: it.drawingNo || "",
-          setupNo: it.setupNo || "",
           totalCycleSec: it.totalCycleSec ?? "",
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           isActive: it.isActive,
@@ -179,7 +177,6 @@ const ItemMaster = () => {
       ...values,
       itemName: values.itemName.trim(),
       drawingNo: values.drawingNo.trim(),
-      setupNo: values.setupNo.trim(),
       ...cycleFields,
     };
 
@@ -246,7 +243,6 @@ const ItemMaster = () => {
     { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
     { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "110px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
-    { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
     { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
@@ -373,6 +369,10 @@ const ItemMaster = () => {
                 ))}
               </Input>
               <Label>Process (the data entry page that offers this part)</Label>
+            </div>
+            <div className="form-floating mb-3">
+              <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
+              <Label>Drawing No.</Label>
             </div>
             {isVmc ? (
               // A VMC part carries no cycle info of its own — Program Time
