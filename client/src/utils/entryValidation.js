@@ -18,7 +18,11 @@ import { hoursToHm, parseHm } from "./shiftHours";
  *               entries on a date can't overlap in time (see overlapErrors).
  *   Downtime    Optional (Lunch / Rest included — blank counts as 0), but
  *               whatever is typed must be 0–1440, and the total can't exceed
- *               Planned Operator Shift − Machine Shift, in minutes. Less is fine.
+ *               the Machine Shift itself, in minutes — stoppage/lunch happens
+ *               inside the machine's own ON–OFF span, not some separate block
+ *               of time beyond it (see dayCalc's dayAvailH in productionSheet.js,
+ *               which is what keeps OEE math correct no matter how much of
+ *               the shift was lost to it).
  *   "Other"     Rejecting pieces as "Other", or logging Other downtime, needs
  *               its own remark.
  *
@@ -188,15 +192,17 @@ export const FIELD_ORDER = [
   ...CYCLE_OP_KEYS,
 ];
 
-// Minutes of the operator's planned shift the machine wasn't running — the
-// most stoppage the entry can account for (Planned Operator Shift − Machine
-// Shift). null until both numbers exist. Works on DECIMAL planned hours (a saved
-// row); the form's typed H.MM goes through withDecimalPlanned first.
+// The most stoppage (Lunch / Rest included) an entry can account for — the
+// Machine Shift itself, since stoppage happens inside the machine's own
+// ON–OFF span, not in some separate block of time beyond it. null until
+// Machine ON/OFF are both usable. dayCalc's dayAvailH (productionSheet.js)
+// is what keeps the OEE formulas correct regardless of how much of the
+// shift this stoppage actually was — this cap is just the physical sanity
+// bound (an entry can't log more downtime than the shift it happened in).
 export const stoppageLimitMin = (v) => {
-  const planned = num(v.plannedOperatorShiftHours);
   const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
-  if (!isNum(planned) || shiftMin === null) return null;
-  return Math.max(0, Math.round(planned * 60 - shiftMin));
+  if (shiftMin === null) return null;
+  return shiftMin;
 };
 
 // A form block with Planned Operator Shift converted from typed H.MM to decimal
@@ -300,7 +306,7 @@ export const validateEntry = (v, { saved = null } = {}) => {
 
   const limit = stoppageLimitMin(v);
   if (limit !== null && calc.totalStoppageMin > limit) {
-    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Planned Operator Shift − Machine Shift)`;
+    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but the Machine Shift is only ${limit} min`;
   }
   if (num(v.otherMin) > 0 && blank(v.otherMinRemark)) {
     errors.otherMinRemark = "Remark is required when Other downtime is entered";

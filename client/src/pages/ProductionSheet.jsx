@@ -187,6 +187,11 @@ const toPayload = (v, isEdit) => {
   // keeps working without needing a second shape.
   const topReason = Object.entries(split).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
   return {
+    // Tells the server which exact document this edit belongs to, so
+    // changing Date or Machine No. moves that document instead of leaving it
+    // behind and quietly creating a second one at the new date/machine (see
+    // saveRow's _id lookup) — absent on a new entry, which has no document yet.
+    ...(isEdit && v._id ? { _id: v._id } : {}),
     date: v.date,
     machine: v.machine,
     // An edited record saves back to its own slot; a new one asks the server for
@@ -233,14 +238,18 @@ const ProductionSheet = () => {
     getCompanyHolidays().then((res) => setHolidays(res?.data?.data || [])).catch(() => setHolidays([]));
     getWeeklyOff().then((res) => setWeeklyOffDays(res?.data?.data?.weeklyOffDays || [0])).catch(() => {});
   }, []);
+  // The window counts from when the row was actually saved (createdAt), not
+  // its own Date — a catch-up entry for an old date gets its own fresh
+  // 2 working days starting from today, the moment it's created (see the
+  // server's matching comment on checkNotLocked).
   const lockInfo = useCallback(
     (row) => {
       if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
       const asOf = isoDay(new Date());
-      const deadline = getLockDeadline(row.date, weeklyOffDays, holidays, LOCK_WORKING_DAYS);
+      const deadline = getLockDeadline(isoDay(new Date(row.createdAt)), weeklyOffDays, holidays, LOCK_WORKING_DAYS);
       if (asOf <= deadline) return "";
       const [y, m, d] = deadline.split("-");
-      return `Locked — more than ${LOCK_WORKING_DAYS} working days old (editable through ${d}/${m}/${y})`;
+      return `Locked — saved more than ${LOCK_WORKING_DAYS} working days ago (editable through ${d}/${m}/${y})`;
     },
     [weeklyOffDays, holidays],
   );

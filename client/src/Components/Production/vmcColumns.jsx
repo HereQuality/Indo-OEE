@@ -76,6 +76,10 @@ export const VMC_COLUMNS = [
     get: (r, c, d) => pct(d.unutilized),
     align: "text-center",
     tone: "day",
+    // Combined across every entry of this machine's date (see dayCalc), so
+    // it's shown once per machine/date group, same as Unreported Time and
+    // the three OEE columns below.
+    merge: "machineDay",
   },
   {
     key: "downtime",

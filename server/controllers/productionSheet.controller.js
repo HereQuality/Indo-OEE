@@ -11,7 +11,12 @@ const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
 
 // An existing entry can only be edited/deleted within 2 *working* days of
-// its own date (see utils/workingDays.js) — past that it's treated as
+// when it was actually SAVED (its own createdAt) — not its own Date field.
+// A catch-up entry typed in today for a date from last week starts its own
+// 2-day window today, the moment it's created, exactly like any other entry
+// — it used to start from the entry's (already old) Date instead, which
+// meant a backdated row could be locked the instant it was first saved,
+// with no real chance to fix a typo in it. Past that window it's treated as
 // closed, the same way a finalized ledger period would be — for Super Admin
 // too; the only way past it (for anyone, Super Admin included) is a still-
 // current `unlockedUntil` (see unlockRow below), a Super Admin-granted,
@@ -20,14 +25,14 @@ const { machineNamesFor } = require("../utils/machineNames");
 // action, not an invisible standing power.
 const LOCK_WORKING_DAYS = 2;
 
-const checkNotLocked = async (entryDateISO, user, unlockedUntil) => {
+const checkNotLocked = async (createdAtISO, user, unlockedUntil) => {
   if (unlockedUntil && new Date(unlockedUntil) > new Date()) return null;
   const [{ weeklyOffDays }, holidays] = await Promise.all([
     WeeklyOffSetting.findOne().lean().then((d) => d || { weeklyOffDays: [0] }),
     CompanyHoliday.find({ isActive: true }).lean(),
   ]);
-  if (isEntryLocked(entryDateISO, weeklyOffDays, holidays, undefined, LOCK_WORKING_DAYS)) {
-    return `This entry is more than ${LOCK_WORKING_DAYS} working days old and is locked. Ask a Super Admin to unlock it.`;
+  if (isEntryLocked(createdAtISO, weeklyOffDays, holidays, undefined, LOCK_WORKING_DAYS)) {
+    return `This entry was saved more than ${LOCK_WORKING_DAYS} working days ago and is locked. Ask a Super Admin to unlock it.`;
   }
   return null;
 };
@@ -232,8 +237,10 @@ const entryRuleError = (body, existing = null) => {
     return "A remark is required when Other downtime is entered";
   }
 
-  // Total stoppage (Lunch / Rest included, as everywhere else) has to fit in
-  // the part of the operator's planned shift the machine wasn't running.
+  // Total stoppage (Lunch / Rest included, as everywhere else) has to fit
+  // inside the machine's own ON–OFF span — stoppage happens inside the
+  // shift, not in some separate block of time beyond it (client/src/utils/
+  // entryValidation.js's stoppageLimitMin; keep the two in step).
   const on = clockMinutes(body.machineOnTime);
   const off = clockMinutes(body.machineOffTime);
   if (on === null || off === null) return "Machine ON/OFF Time must be HH:mm";
@@ -241,7 +248,7 @@ const entryRuleError = (body, existing = null) => {
   // midnight is two entries, one per date).
   if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
-  const limit = Math.max(0, Math.round(Number(body.plannedOperatorShiftHours) * 60 - shiftMin));
+  const limit = shiftMin;
   // The operator's planned shift has to cover the time the machine ran.
   if (Math.round(Number(body.plannedOperatorShiftHours) * 60) < shiftMin) {
     return `Planned Operator Shift (${hm(Number(body.plannedOperatorShiftHours))}) can't be less than Machine Shift (${hm(shiftMin / 60)})`;
@@ -249,7 +256,7 @@ const entryRuleError = (body, existing = null) => {
   // Lunch / Rest is optional like every other stoppage: blank counts as 0.
   const total = STOPPAGE_KEYS.reduce((sum, k) => sum + minutesOf(k), 0);
   if (total > limit) {
-    return `Total stoppage (${total} min) can't be more than Planned Operator Shift − Machine Shift (${limit} min)`;
+    return `Total stoppage (${total} min) can't be more than the Machine Shift (${limit} min)`;
   }
   return null;
 };
@@ -378,7 +385,7 @@ exports.getFilterOptions = async (req, res) => {
 // with every field blank is deleted instead.
 exports.saveRow = async (req, res) => {
   try {
-    const { date, machine, slot } = req.body;
+    const { date, machine, slot, _id } = req.body;
     const day = parseDay(date);
     if (!day) return res.status(400).json({ isOk: false, message: "Valid date (YYYY-MM-DD) is required" });
     if (!mongoose.isValidObjectId(machine) || !(await Machine.exists({ _id: machine, isActive: true }))) {
@@ -386,13 +393,26 @@ exports.saveRow = async (req, res) => {
     }
     // An edit names its slot; the row already saved there decides whether the
     // time rules still apply (see sameTimes) and whether it is locked.
+    //
+    // Found by _id when the client sends one (every edit does) — NOT by
+    // (date, machine, slot), which used to be the only lookup. That broke
+    // the moment an edit changed the Date (or Machine): nothing at the NEW
+    // (date, machine, slot) matched yet, so upsert below created a second
+    // row there instead of moving the first, leaving the original stranded
+    // at its old date. Falls back to the composite-key lookup only for a
+    // caller that still doesn't send _id.
     const editSlot = slot === "auto" ? null : Number(slot);
-    const existing =
-      editSlot && SLOT_NUMBERS.includes(editSlot)
-        ? await ProductionEntry.findOne({ date: day, machine, slot: editSlot })
-            .select("unlockedUntil machineOnTime machineOffTime operator")
+    let existing =
+      _id && mongoose.isValidObjectId(_id)
+        ? await ProductionEntry.findById(_id)
+            .select("unlockedUntil machineOnTime machineOffTime operator date machine createdAt")
             .lean()
         : null;
+    if (!existing && editSlot && SLOT_NUMBERS.includes(editSlot)) {
+      existing = await ProductionEntry.findOne({ date: day, machine, slot: editSlot })
+        .select("unlockedUntil machineOnTime machineOffTime operator createdAt")
+        .lean();
+    }
     const ruleError = entryRuleError(req.body, existing);
     if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
@@ -416,11 +436,40 @@ exports.saveRow = async (req, res) => {
       if (!SLOT_NUMBERS.includes(slotNo)) {
         return res.status(400).json({ isOk: false, message: `Slot must be 1–${MAX_SLOTS}` });
       }
+      // An edit that moved to a different Date (or Machine) carries its old
+      // slot number over, which may already belong to an unrelated entry on
+      // the new date — reassign to that date's next free slot instead of
+      // colliding with (or, worse, overwriting) someone else's row, the same
+      // way a brand new entry picks one above.
+      if (existing) {
+        const existingDay = existing.date instanceof Date ? existing.date.toISOString().slice(0, 10) : String(existing.date).slice(0, 10);
+        const moved = existingDay !== date || String(existing.machine) !== String(machine);
+        if (moved) {
+          const used = new Set(
+            (await ProductionEntry.find({ date: day, machine, _id: { $ne: existing._id } }).select("slot").lean()).map((e) => e.slot),
+          );
+          if (used.has(slotNo)) {
+            const free = SLOT_NUMBERS.find((n) => !used.has(n));
+            if (!free) {
+              return res.status(400).json({
+                isOk: false,
+                message: `This machine already has ${MAX_SLOTS} entries on ${date} — can't move this entry there`,
+              });
+            }
+            slotNo = free;
+          }
+        }
+      }
       // Only an edit of an already-saved row can be locked — a brand new
       // entry (slot "auto", handled above) is never blocked just because
       // its own date is old; catching up on late-entered data is fine.
-      const lockMessage = await checkNotLocked(date, req.user, existing?.unlockedUntil);
-      if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+      // The window counts from when that row was first saved (createdAt),
+      // not from its own Date — see checkNotLocked above.
+      if (existing) {
+        const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
+        const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
+        if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+      }
     }
 
     // One machine runs one thing at a time: its entries on a date can't
@@ -469,15 +518,29 @@ exports.saveRow = async (req, res) => {
 
     const { set, unset } = buildFields(req.body);
     const key = { date: day, machine, slot: slotNo };
+    // date/machine/slot aren't in `set` (buildFields never touches them — see
+    // above), but an edit by _id has to carry them explicitly, since it's no
+    // longer the findOneAndUpdate filter doing that for free the way an
+    // upsert's match fields do.
+    const fields = { ...set, date: day, machine, slot: slotNo };
 
-    const doc = await ProductionEntry.findOneAndUpdate(
-      key,
-      {
-        $set: { ...set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
-        ...(Object.keys(unset).length ? { $unset: unset } : {}),
-      },
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
-    ).lean();
+    const doc = existing
+      ? await ProductionEntry.findByIdAndUpdate(
+          existing._id,
+          {
+            $set: { ...fields, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+            ...(Object.keys(unset).length ? { $unset: unset } : {}),
+          },
+          { new: true, runValidators: true },
+        ).lean()
+      : await ProductionEntry.findOneAndUpdate(
+          key,
+          {
+            $set: { ...set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+            ...(Object.keys(unset).length ? { $unset: unset } : {}),
+          },
+          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+        ).lean();
 
     if (isRowEmpty(doc)) {
       await ProductionEntry.deleteOne({ _id: doc._id });
@@ -558,9 +621,9 @@ exports.deleteRow = async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ isOk: false, message: "Invalid entry" });
     }
-    const existing = await ProductionEntry.findById(req.params.id).select("date unlockedUntil").lean();
+    const existing = await ProductionEntry.findById(req.params.id).select("createdAt unlockedUntil").lean();
     if (!existing) return res.status(404).json({ isOk: false, message: "Entry not found" });
-    const lockMessage = await checkNotLocked(new Date(existing.date).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
+    const lockMessage = await checkNotLocked(new Date(existing.createdAt).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
     if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
 
     const deleted = await ProductionEntry.findByIdAndDelete(req.params.id);

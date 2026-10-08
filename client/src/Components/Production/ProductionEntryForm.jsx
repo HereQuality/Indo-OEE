@@ -184,7 +184,7 @@ const EntryBlock = ({
         warning(
           stoppageLimit === null
             ? "Downtime can't be more than 1440 minutes (a day)."
-            : `Total stoppage can't be more than ${stoppageLimit} min (Planned Operator Shift − Machine Shift) — only ${room} min left for this box.`,
+            : `Total stoppage can't be more than the Machine Shift (${stoppageLimit} min) — only ${room} min left for this box.`,
         ),
     };
   };
@@ -641,7 +641,7 @@ const EntryBlock = ({
             <span className={overStoppage ? "text-danger fw-semibold" : "fw-semibold"}>{fmtNum(calc.totalStoppageMin) || 0} min</span>
             <span className="text-muted">
               {stoppageLimit === null
-                ? " — enter Planned Operator Shift and Machine ON/OFF Time to see the allowance"
+                ? " — enter Machine ON/OFF Time to see the allowance"
                 : ` of ${stoppageLimit} min allowed`}
             </span>
             {err("stoppageTotal") && <p className="text-danger mb-0 mt-1">{err("stoppageTotal")}</p>}

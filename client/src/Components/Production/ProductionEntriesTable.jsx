@@ -405,6 +405,11 @@ const COLUMNS = [
     get: (r, c, d) => pct(d.unutilized),
     align: "text-center",
     tone: "day",
+    // Combined across every entry of this machine's date (see dayCalc), so
+    // it's shown once per machine/date group — spanning its rows exactly
+    // like Unreported Time and the three OEE columns — rather than
+    // repeating the same figure down every one of that machine's entries.
+    merge: "machineDay",
   },
   {
     key: "downtime",

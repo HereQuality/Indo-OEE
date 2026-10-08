@@ -11,8 +11,8 @@ import { MenuContext } from "../context/MenuContext";
 import { useInvalidateItems } from "../hooks/useItems";
 import { useProcesses } from "../hooks/useProcesses";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
-import { CYCLE_OP_FIELDS, cycleOpLabel, fmtNum } from "../utils/productionSheet";
-import { isVmcProcess, programCycleSec } from "../utils/vmcSheet";
+import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
+import { isVmcProcess } from "../utils/vmcSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -26,23 +26,16 @@ const sumOps = (v) => {
   return nums.reduce((s, n) => s + Number(n), 0);
 };
 
-// A VMC part's Product Cycle Time = Program Time (min) × 60 ÷ pieces per program,
-// to two decimals. Blank until both are usable.
-const cycleFromProgram = (v) => {
-  const sec = programCycleSec(v);
-  return sec === null ? "" : Math.round(sec * 100) / 100;
-};
-
 const initialState = {
   itemName: "",
   // Which process runs this part — decides which data entry page offers it, and
-  // whether it carries operation times (CNC) or a program (VMC).
+  // whether it carries operation times (CNC) or nothing extra (VMC — its
+  // Program Time / No. of Piece In One Program are typed per entry on the
+  // VMC Data Entry form instead, never on the Part itself).
   process: "",
   drawingNo: "",
   setupNo: "",
   totalCycleSec: "",
-  programTimeMin: "",
-  pcsPerProgram: "",
   ...emptyOps(),
   isActive: true,
 };
@@ -115,8 +108,6 @@ const ItemMaster = () => {
           drawingNo: it.drawingNo || "",
           setupNo: it.setupNo || "",
           totalCycleSec: it.totalCycleSec ?? "",
-          programTimeMin: it.programTimeMin ?? "",
-          pcsPerProgram: it.pcsPerProgram ?? "",
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           isActive: it.isActive,
         });
@@ -149,16 +140,10 @@ const ItemMaster = () => {
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
-    if (isVmc) {
-      // The program is optional here (it can be typed per entry), but a program
-      // time without its pieces — or the reverse — gives no cycle time.
-      const hasTime = v.programTimeMin !== "";
-      const hasPieces = v.pcsPerProgram !== "";
-      if (hasTime && !(Number(v.programTimeMin) > 0)) errors.program = "Program Time must be more than 0";
-      else if (hasPieces && !(Number.isInteger(Number(v.pcsPerProgram)) && Number(v.pcsPerProgram) >= 1)) {
-        errors.program = "No. of Piece In One Program must be a whole number, 1 or more";
-      } else if (hasTime !== hasPieces) errors.program = "Enter both Program Time and No. of Piece In One Program, or neither";
-    } else if (CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
+    // A VMC part carries no cycle info of its own — Program Time / No. of
+    // Piece In One Program are typed fresh on each VMC Data Entry row, not
+    // set once here, so there's nothing of that kind to validate for it.
+    if (!isVmc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
       errors.cycleOps = "Cycle times must be 0 or more";
     }
     return errors;
@@ -172,14 +157,15 @@ const ItemMaster = () => {
     if (Object.keys(errors).length) return;
 
     const num = (x) => (x === "" ? null : Number(x));
-    // Only the fields the form showed are kept: a part moved to the VMC process
-    // drops its operation times, one moved back drops its program, so a part never
-    // carries the other kind's leftovers.
+    // Only the fields the form showed are kept: a part moved to the VMC
+    // process drops its operation times (and never had a program of its
+    // own), one moved back to CNC drops its operation times too if it's
+    // still blank — so a part never carries another kind's leftovers.
     const cycleFields = isVmc
       ? {
-          programTimeMin: num(values.programTimeMin),
-          pcsPerProgram: num(values.pcsPerProgram),
-          totalCycleSec: num(cycleFromProgram(values)),
+          programTimeMin: null,
+          pcsPerProgram: null,
+          totalCycleSec: null,
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null])),
         }
       : {
@@ -260,11 +246,6 @@ const ItemMaster = () => {
     { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "110px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
     { name: "Setup No.", selector: (row) => row.setupNo || "", sortable: true, sortField: "setupNo", minWidth: "110px" },
-    {
-      name: "Program (min / pcs)",
-      selector: (row) => (row.programTimeMin != null && row.pcsPerProgram != null ? `${fmtNum(row.programTimeMin)} / ${row.pcsPerProgram}` : ""),
-      minWidth: "140px",
-    },
     { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
@@ -407,33 +388,10 @@ const ItemMaster = () => {
               </Col>
             </Row>
             {isVmc ? (
-              <>
-                {/* A VMC part is run from a program: its time and how many pieces it
-                    makes give the Product Cycle Time, which is calculated, never typed. */}
-                <Label className="mb-2 d-block">Program</Label>
-                <Row className="g-2 align-items-end">
-                  <Col xs={6} md={4}>
-                    <div className="form-floating">
-                      <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handleChange} placeholder=" " />
-                      <Label>Program Time (min)</Label>
-                    </div>
-                  </Col>
-                  <Col xs={6} md={4}>
-                    <div className="form-floating">
-                      <NumberInput name="pcsPerProgram" value={values.pcsPerProgram} onChange={handleChange} decimals={false} placeholder=" " />
-                      <Label>No. of Piece In One Program</Label>
-                    </div>
-                  </Col>
-                  <Col xs={12} md={4}>
-                    <div className="form-floating">
-                      <NumberInput name="cycleFromProgram" value={cycleFromProgram(values)} onChange={() => {}} placeholder=" " disabled />
-                      <Label>Product Cycle Time (sec)</Label>
-                    </div>
-                  </Col>
-                </Row>
-                {isSubmit && formErrors.program && <p className="text-danger mt-1">{formErrors.program}</p>}
-                <div className="form-text">Product Cycle Time is calculated. The program is copied onto a VMC entry when this part is picked — still editable there.</div>
-              </>
+              // A VMC part carries no cycle info of its own — Program Time
+              // and No. of Piece In One Program are typed fresh on each VMC
+              // Data Entry row instead, never set once here on the Part.
+              <div className="form-text">Program Time and No. of Piece In One Program are entered on the VMC Data Entry form, not here.</div>
             ) : (
               <>
                 <Label className="mb-2 d-block">Operation Times (sec)</Label>

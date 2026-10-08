@@ -20,7 +20,7 @@ export const FORMULAS = {
     "Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.",
   effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).",
   unreported:
-    "Unreported Time (min) = Planned Operator Shift − Machine Shift − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
+    "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   setupEff: "Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time",
   oeeLosses:
     "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",
