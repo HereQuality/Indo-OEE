@@ -8,7 +8,7 @@ import PartOptions from "./PartOptions";
 import { useAlert } from "../../context/AlertContext";
 import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { MACHINE_NOT_RUN, vmcRowCalc } from "../../utils/vmcSheet";
+import { vmcRowCalc } from "../../utils/vmcSheet";
 import { VMC_DOWNTIME_KEYS } from "../../utils/vmcValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -23,12 +23,10 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * downtime box within what Planned Operator Shift leaves after the machine's own
  * run).
  *
- * What differs is the VMC sheet's own fields: a "Machine not run" reason; an
- * optional Work Order No. (picking one fills in its part); Setup No.; Program Time
- * and the number of pieces one program makes, which give the Product Cycle Time
- * (so no cycle-time breakdown by operation); an optional Setting Time ON/OFF;
- * Actual OK and Rejected Quantity both typed (so no reject reason split); and all
- * ten downtime boxes.
+ * What differs is the VMC sheet's own fields: Program Time and the number of
+ * pieces one program makes, which give the Product Cycle Time (so no
+ * cycle-time breakdown by operation); Actual OK and Rejected Quantity both
+ * typed (so no reject reason split); and all ten downtime boxes.
  *
  * The rules live in utils/vmcValidation.js; the figures in utils/vmcSheet.js.
  */
@@ -61,15 +59,17 @@ const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
 const LINES = [
-  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator", "machineNotRun"] },
+  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
   {
     id: 2,
-    title: "Work Order, Part, Setup No., Program, Product Cycle Time",
-    fields: ["workOrder", "itemName", "setupNo", "programTimeMin", "pcsPerProgram"],
+    title: "Part, Program, Product Cycle Time",
+    fields: ["itemName", "programTimeMin", "pcsPerProgram"],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
-  { id: 7, title: "Planned Operator Shift", fields: ["plannedOperatorShiftHours"] },
+  // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
+  // still just one more stoppage box toward the total (see rowCalc).
+  { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
   { id: 8, title: "Downtime / Stoppage (min)", fields: [...VMC_DOWNTIME_KEYS, "stoppageTotal", "otherMinRemark"] },
   { id: 12, title: "Remarks", fields: ["remarks"] },
 ];
@@ -110,7 +110,6 @@ const DOWNTIME_BOXES = [
   ["bdMechMin", "B.D. Mech. (min)"],
   ["bdEleMin", "B.D. Ele. (min)"],
   ["noPowerMin", "No Power (min)"],
-  ["lunchMin", "Lunch / Tea / Washroom etc (min)"],
   ["otherMin", "Others (min)"],
 ];
 
@@ -183,17 +182,6 @@ const EntryBlock = ({
   const offEarliest = useMemo(() => after(values.machineOnTime), [values.machineOnTime]);
   const errorCount = Object.keys(errors).length;
   const handle = (e) => onChange(index, e.target.name, e.target.value);
-
-  // The Work Order No. box: once a part is picked it offers that part's work orders,
-  // before that every work order of this sheet's parts — each with its part's name.
-  // The one this entry already carries stays in the list even when it has since been
-  // deactivated or removed, so editing the entry doesn't look like it lost it.
-  const partName = useMemo(() => Object.fromEntries(items.map((it) => [it._id, it.itemName])), [items]);
-  const workOrderChoices = useMemo(
-    () => (values.item ? workOrders.filter((wo) => String(wo.item) === String(values.item)) : workOrders),
-    [workOrders, values.item],
-  );
-  const workOrderMissing = !!values.workOrder && !workOrders.some((wo) => wo._id === values.workOrder);
 
   // Picking a machine in a closed block opens its entry fields straight away —
   // no separate "+" press needed (the "+" stays for reopening a collapsed one).
@@ -340,40 +328,12 @@ const EntryBlock = ({
                 ))}
               </Input>
             </Field>
-            <Field label="Machine not run" error={err("machineNotRun")} md={3} fieldKey="machineNotRun">
-              <Input type="select" bsSize="sm" name="machineNotRun" value={values.machineNotRun} onChange={handle}>
-                <option value="">— (machine ran)</option>
-                {MACHINE_NOT_RUN.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
-                  </option>
-                ))}
-              </Input>
-            </Field>
           </Row>
         </Line>
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Work Order No." error={err("workOrder")} md={4} fieldKey="workOrder">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="workOrder"
-                value={values.workOrder || ""}
-                onChange={(e) => onWorkOrderSelect(index, e.target.value)}
-              >
-                <option value="">{workOrderChoices.length || workOrderMissing ? "Select work order (optional)" : "No work orders yet"}</option>
-                {workOrderMissing && <option value={values.workOrder}>{values.workOrderNo}</option>}
-                {workOrderChoices.map((wo) => (
-                  <option key={wo._id} value={wo._id}>
-                    {values.item ? wo.workOrderNo : `${wo.workOrderNo} — ${partName[String(wo.item)] || "—"}`}
-                  </option>
-                ))}
-              </Input>
-              {!values.workOrder && <p className="text-muted mb-0 small mt-1">Picking one fills in the part and its program.</p>}
-            </Field>
-            <Field label="Part Name" required error={err("itemName")} md={5} fieldKey="itemName">
+            <Field label="Part Name" required error={err("itemName")} md={3} fieldKey="itemName">
               <Input
                 type="select"
                 bsSize="sm"
@@ -387,12 +347,6 @@ const EntryBlock = ({
                     own fields below instead), so there's nothing to show. */}
                 <PartOptions items={items} selectedId={values.item} selectedName={values.itemName} label={(it) => it.itemName} />
               </Input>
-            </Field>
-            <Calc label="Drawing No." value={values.drawingNo} md={3} title="From the part picked" />
-          </Row>
-          <Row className="g-1">
-            <Field label="Setup No." error={err("setupNo")} md={3} fieldKey="setupNo">
-              <Input type="text" bsSize="sm" name="setupNo" value={values.setupNo || ""} onChange={handle} maxLength={40} />
             </Field>
             <Field label="Program Time (min)" required error={err("programTimeMin")} md={3} fieldKey="programTimeMin">
               <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handle} invalid={!!err("programTimeMin")} />
@@ -502,11 +456,14 @@ const EntryBlock = ({
                 </p>
               )}
             </Field>
+            <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={4} fieldKey="lunchMin">
+              <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} invalid={!!err("lunchMin")} {...minutesBox("lunchMin")} />
+            </Field>
             <Calc
               label="Stoppage Allowed (min)"
               value={stoppageLimit === null ? "" : String(stoppageLimit)}
               md={4}
-              title="Planned Operator Shift (min) − Machine Shift (min): the most every downtime below can add up to"
+              title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to"
             />
           </Row>
         </Line>
@@ -519,10 +476,11 @@ const EntryBlock = ({
               </Field>
             ))}
           </Row>
-          {/* Every stoppage box has to fit inside what Planned Operator Shift leaves
-              after the machine's own run, so the running total sits next to that allowance. */}
+          {/* Every stoppage box, Lunch / Rest included, has to fit inside what Planned
+              Operator Shift leaves after the machine's own run, so the running
+              total sits next to that allowance. */}
           <div className="mb-2 small" data-field="stoppageTotal">
-            <span className="text-muted">Total stoppage: </span>
+            <span className="text-muted">Total stoppage (with Lunch / Rest): </span>
             <span className={overStoppage ? "text-danger fw-semibold" : "fw-semibold"}>{fmtNum(calc.totalStoppageMin) || 0} min</span>
             <span className="text-muted">
               {stoppageLimit === null

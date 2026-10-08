@@ -31,6 +31,14 @@ export const isVmcProcess = (process) => {
   return /\bvmc\b/i.test(process?.processName || "");
 };
 
+// The same, for CNC — Item Master reads it to offer a CNC part its Operation
+// Times boxes, the one thing neither VMC nor any other process type uses.
+export const isCncProcess = (process) => {
+  const page = process?.dataEntryMenu || "";
+  if (page) return /\/cnc-data-entry\/?$/.test(page) || /\/data-entry\/?$/.test(page);
+  return /\bcnc\b/i.test(process?.processName || "");
+};
+
 const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 const isNum = (v) => v !== null && Number.isFinite(v);
 

@@ -29,7 +29,9 @@ const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v)
 const isNum = (v) => v !== null && Number.isFinite(v);
 const blank = (v) => v === "" || v === null || v === undefined || String(v).trim() === "";
 
-// In the order the sheet lists them. Lunch / Rest is a stoppage too.
+// In the order the sheet lists them. Lunch / Rest has its own box beside
+// Planned Operator Shift (see VMC_FIELD_ORDER) and isn't in this group, though
+// it still counts toward the total (see rowCalc).
 export const VMC_DOWNTIME_KEYS = [
   "plannedDownMin",
   "setupMin",
@@ -39,7 +41,6 @@ export const VMC_DOWNTIME_KEYS = [
   "bdMechMin",
   "bdEleMin",
   "noPowerMin",
-  "lunchMin",
   "otherMin",
 ];
 
@@ -56,6 +57,7 @@ export const VMC_FIELD_ORDER = [
   "okQty",
   "rejectedQty",
   "plannedOperatorShiftHours",
+  "lunchMin",
   ...VMC_DOWNTIME_KEYS,
   "stoppageTotal",
   "otherMinRemark",
@@ -128,6 +130,10 @@ export const validateVmcEntry = (v, { saved = null } = {}) => {
     }
   }
   const decimal = withDecimalPlanned(v);
+
+  // Lunch / Rest is optional, like every other stoppage box: blank counts as 0.
+  const lunch = num(v.lunchMin);
+  if (!blank(v.lunchMin) && (!Number.isFinite(lunch) || lunch < 0 || lunch > 1440)) errors.lunchMin = "0–1440";
 
   for (const key of VMC_DOWNTIME_KEYS) {
     const n = num(v[key]);

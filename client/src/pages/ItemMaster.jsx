@@ -12,7 +12,7 @@ import { useInvalidateItems } from "../hooks/useItems";
 import { useProcesses } from "../hooks/useProcesses";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
 import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
-import { isVmcProcess } from "../utils/vmcSheet";
+import { isCncProcess, isVmcProcess } from "../utils/vmcSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -59,8 +59,11 @@ const ItemMaster = () => {
   const { data: processes = [] } = useProcesses();
   const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
   const [processFilter, setProcessFilter] = useState("");
-  // A VMC part has a program; every other part has operation times.
-  const isVmc = useMemo(() => isVmcProcess(processes.find((p) => p._id === values.process)), [processes, values.process]);
+  // A VMC part has a program; a CNC part has operation times; anything else
+  // (not in a process yet, or another process type) carries neither.
+  const selectedProcess = useMemo(() => processes.find((p) => p._id === values.process), [processes, values.process]);
+  const isVmc = useMemo(() => isVmcProcess(selectedProcess), [selectedProcess]);
+  const isCnc = useMemo(() => isCncProcess(selectedProcess), [selectedProcess]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -140,10 +143,9 @@ const ItemMaster = () => {
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
-    // A VMC part carries no cycle info of its own — Program Time / No. of
-    // Piece In One Program are typed fresh on each VMC Data Entry row, not
-    // set once here, so there's nothing of that kind to validate for it.
-    if (!isVmc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
+    // Only a CNC part's form shows the Operation Times boxes — nothing else
+    // to validate for a VMC part or one in no process / another process type.
+    if (isCnc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
       errors.cycleOps = "Cycle times must be 0 or more";
     }
     return errors;
@@ -157,22 +159,21 @@ const ItemMaster = () => {
     if (Object.keys(errors).length) return;
 
     const num = (x) => (x === "" ? null : Number(x));
-    // Only the fields the form showed are kept: a part moved to the VMC
-    // process drops its operation times (and never had a program of its
-    // own), one moved back to CNC drops its operation times too if it's
-    // still blank — so a part never carries another kind's leftovers.
-    const cycleFields = isVmc
+    // Only the fields the form showed are kept: a part moved off CNC drops its
+    // operation times (and a VMC one never had a program of its own either) —
+    // so a part never carries another kind's leftovers.
+    const cycleFields = isCnc
       ? {
-          programTimeMin: null,
-          pcsPerProgram: null,
-          totalCycleSec: null,
-          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null])),
-        }
-      : {
           programTimeMin: null,
           pcsPerProgram: null,
           totalCycleSec: num(values.totalCycleSec),
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+        }
+      : {
+          programTimeMin: null,
+          pcsPerProgram: null,
+          totalCycleSec: null,
+          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null])),
         };
     const data = {
       ...values,
@@ -373,26 +374,12 @@ const ItemMaster = () => {
               </Input>
               <Label>Process (the data entry page that offers this part)</Label>
             </div>
-            <Row>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
-                  <Label>Drawing No.</Label>
-                </div>
-              </Col>
-              <Col md={6}>
-                <div className="form-floating mb-3">
-                  <Input type="text" name="setupNo" value={values.setupNo} onChange={handleChange} placeholder=" " maxLength={40} />
-                  <Label>Setup No.</Label>
-                </div>
-              </Col>
-            </Row>
             {isVmc ? (
               // A VMC part carries no cycle info of its own — Program Time
               // and No. of Piece In One Program are typed fresh on each VMC
               // Data Entry row instead, never set once here on the Part.
               <div className="form-text">Program Time and No. of Piece In One Program are entered on the VMC Data Entry form, not here.</div>
-            ) : (
+            ) : isCnc ? (
               <>
                 <Label className="mb-2 d-block">Operation Times (sec)</Label>
                 <Row className="g-2 align-items-end">
@@ -427,7 +414,7 @@ const ItemMaster = () => {
                   <Label>Total Cycle Time (sec) — calculated</Label>
                 </div>
               </>
-            )}
+            ) : null}
             <div className="mt-3">
               <Input
                 type="checkbox"
