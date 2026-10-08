@@ -115,6 +115,13 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/vmc-sheet/filter-options`,
         OCCUPIED: `${V1}/vmc-sheet/occupied`,
     },
+    SPM_SHEET: {
+        BASE: `${V1}/spm-sheet`,
+        ROW: `${V1}/spm-sheet/row`,
+        EXTENT: `${V1}/spm-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/spm-sheet/filter-options`,
+        OCCUPIED: `${V1}/spm-sheet/occupied`,
+    },
 
     // Operator endpoints
     OPERATORS: {

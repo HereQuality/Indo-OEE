@@ -53,7 +53,7 @@ const ADMINISTRATION_MENUS = [
 const PRODUCTION_MENUS = [
   { menuName: "Processes", menuUrl: "/hqepl/production/processes", sequence: 1, icon: "Workflow" },
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
-  { menuName: "Items", menuUrl: "/hqepl/production/items", sequence: 3, icon: "Package" },
+  { menuName: "Parts", menuUrl: "/hqepl/production/parts", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
   { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardList" },
   // Dashboard and Data Entry are NOT listed here any more (they are
@@ -64,6 +64,7 @@ const PRODUCTION_MENUS = [
 const DATA_ENTRY_MENUS = [
   { menuName: "CNC", menuUrl: "/hqepl/production/cnc-data-entry", sequence: 1, icon: "ClipboardList" },
   { menuName: "VMC", menuUrl: "/hqepl/production/vmc-data-entry", sequence: 2, icon: "ClipboardList" },
+  { menuName: "SPM", menuUrl: "/hqepl/production/spm-data-entry", sequence: 3, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [
