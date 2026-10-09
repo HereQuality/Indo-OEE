@@ -122,6 +122,13 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/spm-sheet/filter-options`,
         OCCUPIED: `${V1}/spm-sheet/occupied`,
     },
+    RIVET_SHEET: {
+        BASE: `${V1}/rivet-sheet`,
+        ROW: `${V1}/rivet-sheet/row`,
+        EXTENT: `${V1}/rivet-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/rivet-sheet/filter-options`,
+        OCCUPIED: `${V1}/rivet-sheet/occupied`,
+    },
 
     // Operator endpoints
     OPERATORS: {

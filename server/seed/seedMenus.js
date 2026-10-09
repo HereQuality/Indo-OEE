@@ -24,8 +24,8 @@ const Operator = require("../models/Operator");
 //   2. Dashboard                  (link — the process dashboards)
 //   3. Administration             (group: Menu Group, Menu Master, Company)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Part Master, Machines, Processes, Operators, Work Orders)
-//   6. Data Entry                 (group: CNC, VMC — one entry per sheet)
+//   5. Production                 (group: Part Master, Machines, Processes, Operators)
+//   6. Data Entry                 (group: CNC, VMC, SPM — one entry per sheet)
 //   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
 // Dashboard sits right under Home as its own top-level link. It used to be
@@ -55,16 +55,17 @@ const PRODUCTION_MENUS = [
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Parts", menuUrl: "/hqepl/production/parts", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
-  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardList" },
   // Dashboard and Data Entry are NOT listed here any more (they are
-  // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
-  // re-activate its retired row on every run.
+  // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Work Orders is retired (no
+  // process uses it any more — VMC's Work Order field was dropped). Listing
+  // any of these again would re-activate its retired row on every run.
 ];
 
 const DATA_ENTRY_MENUS = [
   { menuName: "CNC", menuUrl: "/hqepl/production/cnc-data-entry", sequence: 1, icon: "ClipboardList" },
   { menuName: "VMC", menuUrl: "/hqepl/production/vmc-data-entry", sequence: 2, icon: "ClipboardList" },
   { menuName: "SPM", menuUrl: "/hqepl/production/spm-data-entry", sequence: 3, icon: "ClipboardList" },
+  { menuName: "RIVET", menuUrl: "/hqepl/production/rivet-data-entry", sequence: 4, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

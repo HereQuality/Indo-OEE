@@ -3,6 +3,9 @@ const Process = require("../models/Process");
 const Machine = require("../models/Machine");
 const Item = require("../models/Item");
 const ProductionEntry = require("../models/ProductionEntry");
+const VmcEntry = require("../models/VmcEntry");
+const SpmEntry = require("../models/SpmEntry");
+const RivetEntry = require("../models/RivetEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 
@@ -197,15 +200,53 @@ exports.listProcessByParams = async (req, res) => {
   }
 };
 
+const dashNum = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+const dashIsNum = (v) => v !== null && Number.isFinite(v);
+
+// Product Cycle Time (sec) = Program Time (min) × 60 ÷ pieces per program —
+// VmcEntry's own formula (client/src/utils/vmcSheet.js's programCycleSec).
+const vmcCycleSec = (e) => {
+  const minutes = dashNum(e.programTimeMin);
+  const pieces = dashNum(e.pcsPerProgram);
+  return dashIsNum(minutes) && dashIsNum(pieces) && pieces > 0 ? (minutes * 60) / pieces : null;
+};
+
+// Total Cycle Time (sec) = Loading + Process + Unloading and Cleaning + Other
+// Operations — SpmEntry's own formula (client/src/utils/spmSheet.js's cycle
+// helper). RivetEntry does NOT use this: checked against real rows, those
+// four fields are always blank there — RivetEntry stores totalCycleSec
+// directly, typed per entry, same as CNC (see rivetSheet.js).
+const fourPartCycleSec = (e) => {
+  const parts = [e.loadingSec, e.processSec, e.unloadingCleaningSec, e.otherOperationsSec].map(dashNum);
+  return parts.every(dashIsNum) ? parts.reduce((sum, n) => sum + n, 0) : null;
+};
+
+// Every sheet's own collection, and (for the ones that don't store a
+// totalCycleSec of their own) the function that works it out from that
+// collection's fields. CNC and RIVET both store totalCycleSec directly, so
+// neither needs one. The client's shared rowCalc/dayCalc
+// (utils/productionSheet.js) read `totalCycleSec` off the row however it's
+// reached them, so once it's attached here every sheet's entries can be
+// merged into one dashboard feed and treated identically from here on.
+const DASHBOARD_SHEETS = [
+  { Model: ProductionEntry, cycleSec: null },
+  { Model: VmcEntry, cycleSec: vmcCycleSec },
+  { Model: SpmEntry, cycleSec: fourPartCycleSec },
+  { Model: RivetEntry, cycleSec: null },
+];
+
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]
 // The raw entries a dashboard computes from — one process's machines, or
-// every machine when `process` is omitted. Same row shape as
-// GET /production-sheet so the client's shared formulas apply unchanged.
+// every machine when `process` is omitted — pooled across every sheet's own
+// collection (CNC, VMC, SPM, RIVET: see DASHBOARD_SHEETS), since a process's
+// machines only ever carry entries in the one collection its own Data Entry
+// page saves to. Same row shape as GET /production-sheet so the client's
+// shared formulas apply unchanged.
 //
-// `extent` is the first and last date this process has ANY entry on
-// (regardless of from/to), so the filter panel can offer the real years
-// without a second request. Both are index lookups on { date, machine, slot }.
-// `machineNames` names every machine the returned entries were made on.
+// `extent` is the first and last date this process has ANY entry on, across
+// every sheet (regardless of from/to), so the filter panel can offer the real
+// years without a second request. `machineNames` names every machine the
+// returned entries were made on.
 exports.getDashboardEntries = async (req, res) => {
   try {
     const from = parseDay(req.query.from);
@@ -228,28 +269,48 @@ exports.getDashboardEntries = async (req, res) => {
       scope.machine = { $in: machineIds };
     }
 
-    const edge = (dir) => ProductionEntry.findOne(scope).sort({ date: dir }).select("date").lean();
-    const [entries, first, last] = await Promise.all([
-      ProductionEntry.find({ ...scope, date: { $gte: from, $lte: to } })
-        .select("-__v -createdAt -updatedAt -updatedBy -updatedByModel")
-        .sort({ date: 1 })
-        .lean(),
-      edge(1),
-      edge(-1),
-    ]);
+    const results = await Promise.all(
+      DASHBOARD_SHEETS.map(async ({ Model, cycleSec }) => {
+        const edge = (dir) => Model.findOne(scope).sort({ date: dir }).select("date").lean();
+        const [entries, first, last] = await Promise.all([
+          Model.find({ ...scope, date: { $gte: from, $lte: to } })
+            .select("-__v -createdAt -updatedAt -updatedBy -updatedByModel")
+            .sort({ date: 1 })
+            .lean(),
+          edge(1),
+          edge(-1),
+        ]);
+        return {
+          first,
+          last,
+          rows: entries.map((e) => ({
+            ...e,
+            date: e.date.toISOString().slice(0, 10),
+            machine: String(e.machine),
+            item: e.item ? String(e.item) : null,
+            ...(cycleSec ? { totalCycleSec: cycleSec(e) } : {}),
+          })),
+        };
+      }),
+    );
+
+    const data = results.flatMap((r) => r.rows);
+    const firsts = results.map((r) => r.first).filter(Boolean);
+    const lasts = results.map((r) => r.last).filter(Boolean);
+    const extent = firsts.length
+      ? {
+          from: new Date(Math.min(...firsts.map((f) => f.date.getTime()))).toISOString().slice(0, 10),
+          to: new Date(Math.max(...lasts.map((l) => l.date.getTime()))).toISOString().slice(0, 10),
+        }
+      : null;
 
     // The dashboard's machine list is active-only; an entry made on a machine
     // that has since been deactivated (or deleted) still needs its name.
     res.status(200).json({
       isOk: true,
-      machineNames: await machineNamesFor(entries.map((e) => e.machine)),
-      extent: first && last ? { from: first.date.toISOString().slice(0, 10), to: last.date.toISOString().slice(0, 10) } : null,
-      data: entries.map((e) => ({
-        ...e,
-        date: e.date.toISOString().slice(0, 10),
-        machine: String(e.machine),
-        item: e.item ? String(e.item) : null,
-      })),
+      machineNames: await machineNamesFor(data.map((e) => e.machine)),
+      extent,
+      data,
     });
   } catch (error) {
     console.error("Error loading dashboard entries:", error);
