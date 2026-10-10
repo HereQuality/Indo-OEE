@@ -129,6 +129,13 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/rivet-sheet/filter-options`,
         OCCUPIED: `${V1}/rivet-sheet/occupied`,
     },
+    PRESS_SHEET: {
+        BASE: `${V1}/press-sheet`,
+        ROW: `${V1}/press-sheet/row`,
+        EXTENT: `${V1}/press-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/press-sheet/filter-options`,
+        OCCUPIED: `${V1}/press-sheet/occupied`,
+    },
 
     // Operator endpoints
     OPERATORS: {

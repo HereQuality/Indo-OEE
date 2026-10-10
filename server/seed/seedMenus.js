@@ -66,6 +66,7 @@ const DATA_ENTRY_MENUS = [
   { menuName: "VMC", menuUrl: "/hqepl/production/vmc-data-entry", sequence: 2, icon: "ClipboardList" },
   { menuName: "SPM", menuUrl: "/hqepl/production/spm-data-entry", sequence: 3, icon: "ClipboardList" },
   { menuName: "RIVET", menuUrl: "/hqepl/production/rivet-data-entry", sequence: 4, icon: "ClipboardList" },
+  { menuName: "PRESS", menuUrl: "/hqepl/production/press-data-entry", sequence: 5, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

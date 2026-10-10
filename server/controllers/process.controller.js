@@ -6,6 +6,7 @@ const ProductionEntry = require("../models/ProductionEntry");
 const VmcEntry = require("../models/VmcEntry");
 const SpmEntry = require("../models/SpmEntry");
 const RivetEntry = require("../models/RivetEntry");
+const PressEntry = require("../models/PressEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 
@@ -221,6 +222,15 @@ const fourPartCycleSec = (e) => {
   return parts.every(dashIsNum) ? parts.reduce((sum, n) => sum + n, 0) : null;
 };
 
+// Product Cycle Time (sec) = Standard Time Taken (min) × 60 ÷ No. Piece in
+// Standard Time — PressEntry's own formula, the same shape as VmcEntry's
+// (client/src/utils/pressSheet.js's standardCycleSec).
+const pressCycleSec = (e) => {
+  const minutes = dashNum(e.standardTimeMin);
+  const pieces = dashNum(e.pcsPerStandardTime);
+  return dashIsNum(minutes) && dashIsNum(pieces) && pieces > 0 ? (minutes * 60) / pieces : null;
+};
+
 // Every sheet's own collection, and (for the ones that don't store a
 // totalCycleSec of their own) the function that works it out from that
 // collection's fields. CNC and RIVET both store totalCycleSec directly, so
@@ -233,6 +243,7 @@ const DASHBOARD_SHEETS = [
   { Model: VmcEntry, cycleSec: vmcCycleSec },
   { Model: SpmEntry, cycleSec: fourPartCycleSec },
   { Model: RivetEntry, cycleSec: null },
+  { Model: PressEntry, cycleSec: pressCycleSec },
 ];
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]
