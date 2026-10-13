@@ -24,7 +24,7 @@ const minutes = { type: Number, min: [0, "Minutes cannot be negative"], max: [14
 // The sheet's own Operation choices. Add to this list to offer a new one —
 // nothing else needs changing. Keep in step with OPERATIONS in
 // client/src/Components/Production/PressEntryForm.jsx.
-const OPERATIONS = ["Bending", "Tapping", "Blank", "Blank/Bending"];
+const OPERATIONS = ["Bending", "Tapping", "Blank"];
 // The sheet's own Setup No. choices. Keep in step with SETUP_NUMBERS in
 // client/src/Components/Production/PressEntryForm.jsx.
 const SETUP_NUMBERS = ["1", "2", "3", "4", "5"];
@@ -46,9 +46,19 @@ const PressEntrySchema = new mongoose.Schema(
     drawingNo: { type: String, trim: true, maxlength: 40, default: "" },
     setupNo: { type: String, trim: true, maxlength: 40, default: "" },
 
-    // Product Cycle Time (sec) = (standardTimeMin ÷ pcsPerStandardTime) × 60.
+    // Product Cycle Time (sec) = (standardTimeMin ÷ pcsPerStandardTime) × 60 —
+    // set once on the Part (required there for a PRESS part) and copied onto
+    // the entry when picked.
     standardTimeMin: { type: Number, min: [0, "Standard Time Taken cannot be negative"] },
     pcsPerStandardTime: { type: Number, min: [1, "At least 1 piece in Standard Time"] },
+    // Which of the two above this entry shows unticked — same mechanism as
+    // VmcEntry's own excludedOps, but purely a per-entry note here: with only
+    // two factors multiplying together there's no honest partial cycle time,
+    // so this never changes the calculation (see utils/pressSheet.js).
+    excludedOps: {
+      type: [{ type: String, enum: ["standardTimeMin", "pcsPerStandardTime"] }],
+      default: [],
+    },
 
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },

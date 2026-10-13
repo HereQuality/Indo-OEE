@@ -4,11 +4,11 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import PartOptions from "./PartOptions";
+import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
-import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
+import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { vmcRowCalc } from "../../utils/vmcSheet";
+import { VMC_PROGRAM_FIELDS, vmcRowCalc } from "../../utils/vmcSheet";
 import { VMC_DOWNTIME_KEYS } from "../../utils/vmcValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -23,10 +23,10 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * downtime box within what Planned Operator Shift leaves after the machine's own
  * run).
  *
- * What differs is the VMC sheet's own fields: Program Time and the number of
- * pieces one program makes, which give the Product Cycle Time (so no
- * cycle-time breakdown by operation); Actual OK and Rejected Quantity both
- * typed (so no reject reason split); and all ten downtime boxes.
+ * What differs is the VMC sheet's own fields: Product Cycle Time, worked out
+ * from the Part's own Program Time and No. of Piece In One Program (set once
+ * in Production › Parts, not typed here); Actual OK and Rejected Quantity
+ * both typed (so no reject reason split); and all ten downtime boxes.
  *
  * The rules live in utils/vmcValidation.js; the figures in utils/vmcSheet.js.
  */
@@ -62,8 +62,8 @@ const LINES = [
   { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
   {
     id: 2,
-    title: "Part, Program, Product Cycle Time",
-    fields: ["itemName", "programTimeMin", "pcsPerProgram"],
+    title: "Part, Product Cycle Time",
+    fields: ["itemName"],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
@@ -135,6 +135,7 @@ const EntryBlock = ({
 }) => {
   const { warning } = useAlert();
   const calc = useMemo(() => vmcRowCalc(values), [values]);
+  const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // The most stoppage this entry can account for, against what's typed.
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
@@ -333,39 +334,71 @@ const EntryBlock = ({
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Part Name" required error={err("itemName")} md={3} fieldKey="itemName">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="item"
+            <Field label="Part Name" required error={err("itemName")} md={6} fieldKey="itemName">
+              {/* Program Time/No. of Piece hint, so two parts sharing a name
+                  can still be told apart before picking — set once in Parts,
+                  not typed here. */}
+              <SearchablePartSelect
+                items={items}
                 value={values.item || ""}
-                onChange={(e) => onItemSelect(index, e.target.value)}
+                itemName={values.itemName}
+                onSelect={(itemId) => onItemSelect(index, itemId)}
                 invalid={!!err("itemName")}
-              >
-                {/* No min/pcs hint here — a VMC part no longer carries Program
-                    Time/No. of Piece of its own (typed fresh on this form's
-                    own fields below instead), so there's nothing to show. */}
-                <PartOptions items={items} selectedId={values.item} selectedName={values.itemName} label={(it) => it.itemName} />
-              </Input>
-            </Field>
-            <Field label="Program Time (min)" required error={err("programTimeMin")} md={3} fieldKey="programTimeMin">
-              <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handle} invalid={!!err("programTimeMin")} />
-            </Field>
-            <Field label="No. of Piece In One Program" required error={err("pcsPerProgram")} md={3} fieldKey="pcsPerProgram">
-              <NumberInput
-                name="pcsPerProgram"
-                value={values.pcsPerProgram}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("pcsPerProgram")}
+                label={partCycleLabel}
               />
             </Field>
             <Calc
               label="Product Cycle Time (sec)"
               value={fmtNum(calc.totalCycleSec)}
-              md={3}
-              title="Program Time (min) × 60 ÷ No. of Piece In One Program"
+              md={6}
+              title="Program Time (min) × 60 ÷ No. of Piece In One Program — set on the Part (Production › Parts), not here"
             />
+          </Row>
+          <Row className="g-1">
+            {VMC_PROGRAM_FIELDS.map((f) => {
+              const label = f.label;
+              const checkId = `vmc-program-${index}-${f.key}`;
+              // Same look as CNC's own operation checkboxes — ticking/unticking
+              // here is a per-entry note only, same as there; unlike CNC's eight
+              // operations (which sum, so dropping one changes the total),
+              // Program Time and No. of Piece In One Program multiply together,
+              // so there's no well-defined "cycle time minus just this one" —
+              // Product Cycle Time keeps using both regardless of the tick.
+              const itemValue = selectedItem?.[f.key];
+              const canTick = itemValue !== undefined && itemValue !== null && itemValue !== "";
+              const excludedOps = values.excludedOps || [];
+              const excluded = excludedOps.includes(f.key);
+              const toggle = () => {
+                if (!canTick) return;
+                onChange(
+                  index,
+                  "excludedOps",
+                  excluded ? excludedOps.filter((k) => k !== f.key) : [...excludedOps, f.key],
+                );
+              };
+              return (
+                <Col key={f.key} md={3}>
+                  <div className="form-check mb-2 d-flex align-items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input flex-shrink-0"
+                      id={checkId}
+                      checked={canTick && !excluded}
+                      disabled={!canTick}
+                      onChange={toggle}
+                    />
+                    <Label className={`form-check-label ${labelClass} mb-0`} htmlFor={checkId}>
+                      {label}
+                      {canTick && (
+                        <span className={`ms-1 ${excluded ? "text-decoration-line-through text-muted" : "fw-semibold text-body"}`}>
+                          — {fmtNum(Number(itemValue))}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                </Col>
+              );
+            })}
           </Row>
         </Line>
 

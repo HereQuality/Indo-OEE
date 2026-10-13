@@ -4,9 +4,9 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import PartOptions from "./PartOptions";
+import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
-import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, rowCalc } from "../../utils/productionSheet";
+import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, partCycleLabel, rowCalc } from "../../utils/productionSheet";
 import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -364,25 +364,16 @@ const EntryBlock = ({
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
             <Field label="Part Name" required error={err("itemName")} md={8} fieldKey="itemName">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="item"
+              <SearchablePartSelect
+                items={items}
                 value={values.item || ""}
-                onChange={(e) => onItemSelect(index, e.target.value)}
+                itemName={values.itemName}
+                onSelect={(itemId) => onItemSelect(index, itemId)}
                 invalid={!!err("itemName")}
-              >
-                <PartOptions
-                  items={items}
-                  selectedId={values.item}
-                  selectedName={values.itemName}
-                  /* The cycle time rides along so two parts sharing a name (or a
-                     near-duplicate one) can still be told apart before picking. */
-                  label={(it) =>
-                    `${it.itemName}${Number.isFinite(Number(it.totalCycleSec)) && it.totalCycleSec !== "" ? ` — ${it.totalCycleSec} sec` : ""}`
-                  }
-                />
-              </Input>
+                /* The cycle time rides along so two parts sharing a name (or a
+                   near-duplicate one) can still be told apart before picking. */
+                label={partCycleLabel}
+              />
             </Field>
             <Calc
               label="Total Cycle Time (sec)"

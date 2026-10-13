@@ -137,12 +137,34 @@
 .pd-root .pd-filter-pop .react-datepicker__day--disabled:hover { color: var(--pd-muted) !important; opacity: 0.45; background-color: transparent !important; cursor: default; }
 .pd-filter-pop .react-datepicker__month-select, .pd-filter-pop .react-datepicker__year-select { border-radius: 6px; padding: 1px 4px; }
 .dark .pd-root .pd-filter-pop .react-datepicker, .dark .pd-root .pd-filter-pop .react-datepicker__header { background-color: var(--pd-surface) !important; border-color: var(--pd-border) !important; }
-/* On a phone the header stacks and the button can end up at the left edge,
-   so the panel anchors to the whole header card instead of to the button. */
-@media (max-width: 575.98px) {
-  .pd-header { position: relative; }
-  .pd-filter { position: static; }
-  .pd-filter-pop { left: 0; right: 0; width: auto; max-width: none; }
+/* On a phone, anchoring the panel under the button (its default
+   position:absolute/top:calc(100%+8px)) only works when the nearest
+   positioned ancestor is short — true on the Process Dashboard page, whose
+   sticky .pd-header is that ancestor. The Data Entry pages reuse this same
+   component without a .pd-header wrapper, so without a positioning context
+   of their own the panel fell back to Bootstrap's `.card { position:
+   relative }` — a ~700px-tall container — landing the whole panel off the
+   bottom of the screen, effectively invisible without scrolling past it.
+   position:fixed sidesteps the whole ancestor lookup: it's pinned to the
+   viewport itself as a bottom sheet, so it opens in view no matter which
+   page (or how tall its container) hosts the Filters button. A phone held
+   sideways (wide but ~340px tall) gets the same sheet, using the full height —
+   the ~470px dropdown would otherwise run off the bottom of the screen. */
+@media (max-width: 575.98px), (max-height: 500px) {
+  .pd-filter-pop {
+    position: fixed;
+    top: auto;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: min(70vh, calc(100vh - 24px));
+    overflow-y: auto;
+  }
+}
+@media (max-height: 500px) {
+  .pd-filter-pop { max-height: calc(100vh - 24px); }
 }
 
 /* KPI tiles */

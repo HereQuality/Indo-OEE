@@ -69,6 +69,18 @@ const buildFields = (body) => {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
   }
+  // Which of Standard Time Taken / No. Piece in Standard Time this entry shows
+  // unticked — a per-entry note only (see PressEntry's own comment); never
+  // changes the calculation.
+  if (body.excludedOps !== undefined) {
+    const raw = Array.isArray(body.excludedOps) ? body.excludedOps : [];
+    if (raw.some((k) => !["standardTimeMin", "pcsPerStandardTime"].includes(k))) {
+      throw fail("Unknown operation in excludedOps");
+    }
+    const excluded = [...new Set(raw)];
+    if (excluded.length) set.excludedOps = excluded;
+    else unset.excludedOps = "";
+  }
   return { set, unset };
 };
 
@@ -88,8 +100,6 @@ const sameTimes = (existing, body) =>
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
   ["itemName", "Part Name"],
-  ["standardTimeMin", "Standard Time Taken"],
-  ["pcsPerStandardTime", "No. Piece in Standard Time"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
   ["okQty", "Actual OK Quantity"],
@@ -112,8 +122,18 @@ const entryRuleError = (body, existing = null) => {
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
 
-  if (Number(body.standardTimeMin) <= 0) return "Standard Time Taken must be more than 0";
-  if (!Number.isInteger(Number(body.pcsPerStandardTime)) || Number(body.pcsPerStandardTime) < 1) {
+  // Standard Time Taken / No. Piece in Standard Time now come from the Part
+  // (Production › Parts, required there for a PRESS part), copied onto this
+  // entry when picked — not typed here. The entry's own checkboxes
+  // (client/src/utils/pressSheet.js's PRESS_PROGRAM_FIELDS) are a per-entry
+  // note only: these two multiply together, so there's no honest partial
+  // result once either is "removed" — ticking them never actually changes
+  // the calculation here. An older part saved before the Parts requirement
+  // existed may still lack them; such an entry just carries no cycle time
+  // (same as a part with no Standard Time set at all).
+  const hasStandard = !isBlank(body.standardTimeMin) && !isBlank(body.pcsPerStandardTime);
+  if (hasStandard && Number(body.standardTimeMin) <= 0) return "Standard Time Taken must be more than 0";
+  if (hasStandard && (!Number.isInteger(Number(body.pcsPerStandardTime)) || Number(body.pcsPerStandardTime) < 1)) {
     return "No. Piece in Standard Time must be a whole number, 1 or more";
   }
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));
@@ -128,10 +148,12 @@ const entryRuleError = (body, existing = null) => {
   if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
 
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
-  // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ standard time).
-  const ideal = Math.floor((shiftMin * Number(body.pcsPerStandardTime)) / Number(body.standardTimeMin));
-  if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
-    return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+  if (hasStandard) {
+    // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ standard time).
+    const ideal = Math.floor((shiftMin * Number(body.pcsPerStandardTime)) / Number(body.standardTimeMin));
+    if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
+      return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+    }
   }
 
   const plannedMin = Math.round(Number(body.plannedOperatorShiftHours) * 60);

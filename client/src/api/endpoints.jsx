@@ -136,6 +136,13 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/press-sheet/filter-options`,
         OCCUPIED: `${V1}/press-sheet/occupied`,
     },
+    CONTACT_SHEET: {
+        BASE: `${V1}/contact-sheet`,
+        ROW: `${V1}/contact-sheet/row`,
+        EXTENT: `${V1}/contact-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/contact-sheet/filter-options`,
+        OCCUPIED: `${V1}/contact-sheet/occupied`,
+    },
 
     // Operator endpoints
     OPERATORS: {

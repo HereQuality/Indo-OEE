@@ -13,10 +13,17 @@ import { useProcesses } from "../hooks/useProcesses";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
 import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
 import { isCncProcess, isVmcProcess } from "../utils/vmcSheet";
+import { SPM_OP_FIELDS, SPM_REFERENCE_FIELDS, isSpmProcess } from "../utils/spmSheet";
+import { RIVET_OP_FIELDS, RIVET_PROCESS_TYPES, isRivetProcess } from "../utils/rivetSheet";
+import { PRESS_OPERATIONS, isPressProcess } from "../utils/pressSheet";
+import { isContactProcess } from "../utils/contactSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
 const emptyOps = () => Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, ""]));
+const emptySpmOps = () => Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, ""]));
+const emptySpmReference = () => Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, ""]));
+const emptyRivetOps = () => Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, ""]));
 
 // Total Cycle Time is the operation times' own sum — never typed separately.
 // Blank when every operation box is blank, rather than showing a false "0".
@@ -26,16 +33,39 @@ const sumOps = (v) => {
   return nums.reduce((s, n) => s + Number(n), 0);
 };
 
+// Same idea, for SPM's own four operations.
+const sumSpmOps = (v) => {
+  const nums = SPM_OP_FIELDS.map((f) => v[f.key]).filter((n) => n !== "" && n !== null && n !== undefined);
+  if (!nums.length) return "";
+  return nums.reduce((s, n) => s + Number(n), 0);
+};
+
+// Same idea, for RIVET's own four operations.
+const sumRivetOps = (v) => {
+  const nums = RIVET_OP_FIELDS.map((f) => v[f.key]).filter((n) => n !== "" && n !== null && n !== undefined);
+  if (!nums.length) return "";
+  return nums.reduce((s, n) => s + Number(n), 0);
+};
+
 const initialState = {
   itemName: "",
   // Which process runs this part — decides which data entry page offers it, and
-  // whether it carries operation times (CNC) or nothing extra (VMC — its
-  // Program Time / No. of Piece In One Program are typed per entry on the
-  // VMC Data Entry form instead, never on the Part itself).
+  // whether it carries operation times (CNC), a program (VMC — Program Time and
+  // No. of Piece In One Program) or its own four operations (SPM — Loading,
+  // Process, Unloading and Cleaning, Other Operations), all set once here.
   process: "",
   drawingNo: "",
   totalCycleSec: "",
+  programTimeMin: "",
+  pcsPerProgram: "",
+  standardTimeMin: "",
+  pcsPerStandardTime: "",
+  rivetProcessType: "",
+  pressOperation: "",
   ...emptyOps(),
+  ...emptySpmOps(),
+  ...emptySpmReference(),
+  ...emptyRivetOps(),
   isActive: true,
 };
 
@@ -58,11 +88,16 @@ const ItemMaster = () => {
   const { data: processes = [] } = useProcesses();
   const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
   const [processFilter, setProcessFilter] = useState("");
-  // A VMC part has a program; a CNC part has operation times; anything else
-  // (not in a process yet, or another process type) carries neither.
+  // A VMC part has a program; a CNC or SPM part has operation times (CNC's
+  // eight, SPM's own four); anything else (not in a process yet, or another
+  // process type) carries neither.
   const selectedProcess = useMemo(() => processes.find((p) => p._id === values.process), [processes, values.process]);
   const isVmc = useMemo(() => isVmcProcess(selectedProcess), [selectedProcess]);
   const isCnc = useMemo(() => isCncProcess(selectedProcess), [selectedProcess]);
+  const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
+  const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
+  const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
+  const isContact = useMemo(() => isContactProcess(selectedProcess), [selectedProcess]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -109,7 +144,16 @@ const ItemMaster = () => {
           process: it.process || "",
           drawingNo: it.drawingNo || "",
           totalCycleSec: it.totalCycleSec ?? "",
+          programTimeMin: it.programTimeMin ?? "",
+          pcsPerProgram: it.pcsPerProgram ?? "",
+          standardTimeMin: it.standardTimeMin ?? "",
+          pcsPerStandardTime: it.pcsPerStandardTime ?? "",
+          rivetProcessType: it.rivetProcessType || "",
+          pressOperation: it.pressOperation || "",
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
+          ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
+          ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
+          ...Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           isActive: it.isActive,
         });
       })
@@ -134,6 +178,8 @@ const ItemMaster = () => {
       // Total Cycle Time is derived from the operation boxes, so any of
       // their changes recompute it — it's never typed on its own.
       if (CYCLE_OP_FIELDS.some((f) => f.key === name)) next.totalCycleSec = sumOps(next);
+      if (SPM_OP_FIELDS.some((f) => f.key === name)) next.totalCycleSec = sumSpmOps(next);
+      if (RIVET_OP_FIELDS.some((f) => f.key === name)) next.totalCycleSec = sumRivetOps(next);
       return next;
     });
   };
@@ -141,10 +187,62 @@ const ItemMaster = () => {
   const validate = (v) => {
     const errors = {};
     if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
+    if (!v.drawingNo.trim()) errors.drawingNo = "Drawing No. is required!";
     // Only a CNC part's form shows the Operation Times boxes — nothing else
     // to validate for a VMC part or one in no process / another process type.
     if (isCnc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
       errors.cycleOps = "Cycle times must be 0 or more";
+    }
+    // A VMC part's program drives its Product Cycle Time everywhere this part
+    // is used (every VMC Data Entry row), so it has to be set here, not left
+    // to be typed — or guessed — on the entry form.
+    if (isVmc) {
+      const program = v.programTimeMin === "" ? NaN : Number(v.programTimeMin);
+      if (v.programTimeMin === "") errors.programTimeMin = "Program Time is required";
+      else if (!Number.isFinite(program) || program <= 0) errors.programTimeMin = "Must be more than 0";
+      const pieces = v.pcsPerProgram === "" ? NaN : Number(v.pcsPerProgram);
+      if (v.pcsPerProgram === "") errors.pcsPerProgram = "No. of Piece In One Program is required";
+      else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerProgram = "Must be a whole number, 1 or more";
+    }
+    // An SPM part's four operations drive its Total Cycle Time everywhere
+    // this part is used, so all four have to be set here, same reasoning as
+    // VMC's program above.
+    if (isSpm) {
+      for (const f of SPM_OP_FIELDS) {
+        if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
+        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+      }
+      for (const f of SPM_REFERENCE_FIELDS) {
+        if (v[f.key] === "") errors[f.key] = `${f.label} is required`;
+        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+      }
+    }
+    // A RIVET part's four operations drive its Total Cycle Time everywhere
+    // this part is used, same reasoning as SPM's above.
+    if (isRivet) {
+      for (const f of RIVET_OP_FIELDS) {
+        if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
+        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+      }
+      if (!v.rivetProcessType) errors.rivetProcessType = "Process is required";
+    }
+    // A PRESS part's standard time drives its Product Cycle Time everywhere
+    // this part is used, same reasoning as VMC's program above.
+    if (isPress) {
+      const standard = v.standardTimeMin === "" ? NaN : Number(v.standardTimeMin);
+      if (v.standardTimeMin === "") errors.standardTimeMin = "Standard Time Taken is required";
+      else if (!Number.isFinite(standard) || standard <= 0) errors.standardTimeMin = "Must be more than 0";
+      const pieces = v.pcsPerStandardTime === "" ? NaN : Number(v.pcsPerStandardTime);
+      if (v.pcsPerStandardTime === "") errors.pcsPerStandardTime = "No. Piece in Standard Time is required";
+      else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerStandardTime = "Must be a whole number, 1 or more";
+      if (!v.pressOperation) errors.pressOperation = "Operation is required";
+    }
+    // A Contact part has no operation breakdown — its Total Cycle Time is
+    // typed straight in here and drives every Contact Data Entry row.
+    if (isContact) {
+      const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
+      if (v.totalCycleSec === "") errors.totalCycleSec = "Total Cycle Time is required";
+      else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
     }
     return errors;
   };
@@ -158,21 +256,108 @@ const ItemMaster = () => {
 
     const num = (x) => (x === "" ? null : Number(x));
     // Only the fields the form showed are kept: a part moved off CNC drops its
-    // operation times (and a VMC one never had a program of its own either) —
-    // so a part never carries another kind's leftovers.
+    // operation times, one moved off VMC drops its program, and one moved off
+    // SPM drops its own four operations — so a part never carries another
+    // kind's leftovers.
+    const noProgram = { programTimeMin: null, pcsPerProgram: null };
+    const noPress = { standardTimeMin: null, pcsPerStandardTime: null };
+    const noCycleOps = Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null]));
+    const noSpmOps = Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, null]));
+    const noSpmReference = Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, null]));
+    const noRivetOps = Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, null]));
+    const noRivetProcessType = { rivetProcessType: null };
+    const noPressOperation = { pressOperation: null };
     const cycleFields = isCnc
       ? {
-          programTimeMin: null,
-          pcsPerProgram: null,
+          ...noProgram,
+          ...noPress,
           totalCycleSec: num(values.totalCycleSec),
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+          ...noSpmOps,
+          ...noSpmReference,
+          ...noRivetOps,
+          ...noRivetProcessType,
+          ...noPressOperation,
         }
-      : {
-          programTimeMin: null,
-          pcsPerProgram: null,
-          totalCycleSec: null,
-          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null])),
-        };
+      : isVmc
+        ? {
+            programTimeMin: num(values.programTimeMin),
+            pcsPerProgram: num(values.pcsPerProgram),
+            // Kept in step so the Parts list's own Total Cycle (sec) column
+            // (and anything else reading it directly) shows the same figure
+            // the VMC Data Entry sheet computes from this program.
+            totalCycleSec: (Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram),
+            ...noPress,
+            ...noCycleOps,
+            ...noSpmOps,
+            ...noSpmReference,
+            ...noRivetOps,
+            ...noRivetProcessType,
+            ...noPressOperation,
+          }
+        : isSpm
+          ? {
+              ...noProgram,
+              ...noPress,
+              totalCycleSec: num(values.totalCycleSec),
+              ...noCycleOps,
+              ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+              ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, num(values[f.key])])),
+              ...noRivetOps,
+              ...noRivetProcessType,
+              ...noPressOperation,
+            }
+          : isRivet
+            ? {
+                ...noProgram,
+                ...noPress,
+                totalCycleSec: num(values.totalCycleSec),
+                ...noCycleOps,
+                ...noSpmOps,
+                ...noSpmReference,
+                ...Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+                rivetProcessType: values.rivetProcessType,
+                ...noPressOperation,
+              }
+            : isPress
+              ? {
+                  ...noProgram,
+                  standardTimeMin: num(values.standardTimeMin),
+                  pcsPerStandardTime: num(values.pcsPerStandardTime),
+                  // Kept in step so the Parts list's own Total Cycle (sec)
+                  // column shows the same figure the PRESS Data Entry sheet
+                  // computes from this standard time.
+                  totalCycleSec: (Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime),
+                  ...noCycleOps,
+                  ...noSpmOps,
+                  ...noSpmReference,
+                  ...noRivetOps,
+                  ...noRivetProcessType,
+                  pressOperation: values.pressOperation,
+                }
+              : isContact
+                ? {
+                    ...noProgram,
+                    ...noPress,
+                    totalCycleSec: num(values.totalCycleSec),
+                    ...noCycleOps,
+                    ...noSpmOps,
+                    ...noSpmReference,
+                    ...noRivetOps,
+                    ...noRivetProcessType,
+                    ...noPressOperation,
+                  }
+              : {
+                  ...noProgram,
+                  ...noPress,
+                  totalCycleSec: null,
+                  ...noCycleOps,
+                  ...noSpmOps,
+                  ...noSpmReference,
+                  ...noRivetOps,
+                  ...noRivetProcessType,
+                  ...noPressOperation,
+                };
     const data = {
       ...values,
       itemName: values.itemName.trim(),
@@ -372,13 +557,55 @@ const ItemMaster = () => {
             </div>
             <div className="form-floating mb-3">
               <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
-              <Label>Drawing No.</Label>
+              <Label>
+                Drawing No. <span className="text-danger">*</span>
+              </Label>
+              {isSubmit && formErrors.drawingNo && <p className="text-danger">{formErrors.drawingNo}</p>}
             </div>
             {isVmc ? (
-              // A VMC part carries no cycle info of its own — Program Time
-              // and No. of Piece In One Program are typed fresh on each VMC
-              // Data Entry row instead, never set once here on the Part.
-              <div className="form-text">Program Time and No. of Piece In One Program are entered on the VMC Data Entry form, not here.</div>
+              // A VMC part's program drives its Product Cycle Time everywhere
+              // it's used — set once here, copied onto every VMC Data Entry
+              // row the part is picked on (still editable there as just the
+              // read-only, ticked-off-able figures, never retyped).
+              <Row className="g-2 align-items-end mb-1">
+                <Col xs={6} md={6}>
+                  <div className="form-floating">
+                    <NumberInput name="programTimeMin" value={values.programTimeMin} onChange={handleChange} placeholder=" " />
+                    <Label>
+                      Program Time (min) <span className="text-danger">*</span>
+                    </Label>
+                  </div>
+                  {isSubmit && formErrors.programTimeMin && <p className="text-danger mb-0 small mt-1">{formErrors.programTimeMin}</p>}
+                </Col>
+                <Col xs={6} md={6}>
+                  <div className="form-floating">
+                    <NumberInput name="pcsPerProgram" value={values.pcsPerProgram} onChange={handleChange} decimals={false} placeholder=" " />
+                    <Label>
+                      No. of Piece In One Program <span className="text-danger">*</span>
+                    </Label>
+                  </div>
+                  {isSubmit && formErrors.pcsPerProgram && <p className="text-danger mb-0 small mt-1">{formErrors.pcsPerProgram}</p>}
+                </Col>
+                {/* Never typed on its own — Program Time × 60 ÷ No. of Piece
+                    In One Program, worked out live so this matches what Save
+                    will store without waiting for a round trip. */}
+                <Col xs={12} className="mt-3">
+                  <div className="form-floating">
+                    <NumberInput
+                      name="vmcTotalCycleSec"
+                      value={
+                        values.programTimeMin !== "" && values.pcsPerProgram !== "" && Number(values.pcsPerProgram) > 0
+                          ? (Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram)
+                          : ""
+                      }
+                      onChange={() => {}}
+                      placeholder=" "
+                      disabled
+                    />
+                    <Label>Total Cycle Time (sec) — calculated</Label>
+                  </div>
+                </Col>
+              </Row>
             ) : isCnc ? (
               <>
                 <Label className="mb-2 d-block">Operation Times (sec)</Label>
@@ -414,6 +641,171 @@ const ItemMaster = () => {
                   <Label>Total Cycle Time (sec) — calculated</Label>
                 </div>
               </>
+            ) : isSpm ? (
+              <>
+                <Row className="g-2 align-items-end mb-1">
+                  {SPM_REFERENCE_FIELDS.map((f) => (
+                    <Col key={f.key} xs={12} md={6}>
+                      <div className="form-floating">
+                        <NumberInput name={f.key} value={values[f.key]} onChange={handleChange} decimals={false} placeholder=" " />
+                        <Label>
+                          {f.label} <span className="text-danger">*</span>
+                        </Label>
+                      </div>
+                      {isSubmit && formErrors[f.key] && <p className="text-danger mb-0 small mt-1">{formErrors[f.key]}</p>}
+                    </Col>
+                  ))}
+                </Row>
+                <Label className="mb-2 d-block">
+                  Operation Times (sec) <span className="text-danger">*</span>
+                </Label>
+                <Row className="g-2 align-items-end">
+                  {SPM_OP_FIELDS.map((f) => (
+                    <Col key={f.key} xs={6} md={3}>
+                      <div className="form-floating">
+                        <NumberInput name={f.key} value={values[f.key]} onChange={handleChange} decimals={false} placeholder=" " />
+                        <Label>{f.label.replace(" (sec)", "")}</Label>
+                      </div>
+                      {isSubmit && formErrors[f.key] && <p className="text-danger mb-0 small mt-1">{formErrors[f.key]}</p>}
+                    </Col>
+                  ))}
+                </Row>
+                {/* Never typed on its own — it's this part's operation times'
+                    own sum, kept in step by handleChange as soon as any of them
+                    changes, so it can't drift out of sync with its own inputs. */}
+                <div className="form-floating mt-3">
+                  <NumberInput
+                    name="totalCycleSec"
+                    value={values.totalCycleSec}
+                    onChange={() => {}}
+                    decimals={false}
+                    placeholder=" "
+                    disabled
+                  />
+                  <Label>Total Cycle Time (sec) — calculated</Label>
+                </div>
+              </>
+            ) : isRivet ? (
+              <>
+                <div className="form-floating mb-3">
+                  <Input type="select" name="rivetProcessType" value={values.rivetProcessType} onChange={handleChange}>
+                    <option value="">Select process</option>
+                    {RIVET_PROCESS_TYPES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </Input>
+                  <Label>
+                    Process <span className="text-danger">*</span>
+                  </Label>
+                  {isSubmit && formErrors.rivetProcessType && <p className="text-danger">{formErrors.rivetProcessType}</p>}
+                </div>
+                <Label className="mb-2 d-block">
+                  Operation Times (sec) <span className="text-danger">*</span>
+                </Label>
+                <Row className="g-2 align-items-end">
+                  {RIVET_OP_FIELDS.map((f) => (
+                    <Col key={f.key} xs={6} md={3}>
+                      <div className="form-floating">
+                        <NumberInput name={f.key} value={values[f.key]} onChange={handleChange} decimals={false} placeholder=" " />
+                        <Label>{f.label.replace(" (sec)", "")}</Label>
+                      </div>
+                      {isSubmit && formErrors[f.key] && <p className="text-danger mb-0 small mt-1">{formErrors[f.key]}</p>}
+                    </Col>
+                  ))}
+                </Row>
+                {/* Never typed on its own — it's this part's operation times'
+                    own sum, kept in step by handleChange as soon as any of them
+                    changes, so it can't drift out of sync with its own inputs. */}
+                <div className="form-floating mt-3">
+                  <NumberInput
+                    name="totalCycleSec"
+                    value={values.totalCycleSec}
+                    onChange={() => {}}
+                    decimals={false}
+                    placeholder=" "
+                    disabled
+                  />
+                  <Label>Total Cycle Time (sec) — calculated</Label>
+                </div>
+              </>
+            ) : isPress ? (
+              // A PRESS part's standard time drives its Product Cycle Time
+              // everywhere it's used — set once here, copied onto every PRESS
+              // Data Entry row the part is picked on (shown there as a
+              // read-only tick box, same as VMC's). Operation is a plain
+              // required dropdown, independent of the entry's own Operation box.
+              <>
+                <div className="form-floating mb-3">
+                  <Input type="select" name="pressOperation" value={values.pressOperation} onChange={handleChange}>
+                    <option value="">Select operation</option>
+                    {PRESS_OPERATIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </Input>
+                  <Label>
+                    Operation <span className="text-danger">*</span>
+                  </Label>
+                  {isSubmit && formErrors.pressOperation && <p className="text-danger">{formErrors.pressOperation}</p>}
+                </div>
+                <Row className="g-2 align-items-end mb-1">
+                <Col xs={6} md={6}>
+                  <div className="form-floating">
+                    <NumberInput name="standardTimeMin" value={values.standardTimeMin} onChange={handleChange} placeholder=" " />
+                    <Label>
+                      Standard Time Taken (min) <span className="text-danger">*</span>
+                    </Label>
+                  </div>
+                  {isSubmit && formErrors.standardTimeMin && <p className="text-danger mb-0 small mt-1">{formErrors.standardTimeMin}</p>}
+                </Col>
+                <Col xs={6} md={6}>
+                  <div className="form-floating">
+                    <NumberInput name="pcsPerStandardTime" value={values.pcsPerStandardTime} onChange={handleChange} decimals={false} placeholder=" " />
+                    <Label>
+                      No. Piece in Standard Time <span className="text-danger">*</span>
+                    </Label>
+                  </div>
+                  {isSubmit && formErrors.pcsPerStandardTime && <p className="text-danger mb-0 small mt-1">{formErrors.pcsPerStandardTime}</p>}
+                </Col>
+                {/* Never typed on its own — Standard Time Taken × 60 ÷ No.
+                    Piece in Standard Time, worked out live so this matches
+                    what Save will store without waiting for a round trip. */}
+                <Col xs={12} className="mt-3">
+                  <div className="form-floating">
+                    <NumberInput
+                      name="pressTotalCycleSec"
+                      value={
+                        values.standardTimeMin !== "" && values.pcsPerStandardTime !== "" && Number(values.pcsPerStandardTime) > 0
+                          ? (Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime)
+                          : ""
+                      }
+                      onChange={() => {}}
+                      placeholder=" "
+                      disabled
+                    />
+                    <Label>Total Cycle Time (sec) — calculated</Label>
+                  </div>
+                </Col>
+                </Row>
+              </>
+            ) : isContact ? (
+              // A Contact part has no operation breakdown — Total Cycle Time is
+              // typed straight in, and fills in every Contact Data Entry row the
+              // part is picked on (still changeable there for the day).
+              <div className="form-floating mb-1">
+                <NumberInput name="totalCycleSec" value={values.totalCycleSec} onChange={handleChange} placeholder=" " />
+                <Label>
+                  Total Cycle Time (sec) <span className="text-danger">*</span>
+                </Label>
+                {isSubmit && formErrors.totalCycleSec ? (
+                  <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>
+                ) : (
+                  <p className="text-muted mb-0 small mt-1">Filled in on each Contact entry — can be changed there for the day.</p>
+                )}
+              </div>
             ) : null}
             <div className="mt-3">
               <Input

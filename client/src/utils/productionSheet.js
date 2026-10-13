@@ -86,7 +86,20 @@ export const REJECT_REASONS = [
   "Other",
 ];
 
-export const WORKING_STATUSES = ["M/C OFF", "ABSENT", "SUNDAY", "HOLIDAY", "STOCK COUNTING", "REPORT NOT FILLUP"];
+// Every value the real Contact sheet uses (its typos, e.g. "PRSENT", folded in).
+export const WORKING_STATUSES = [
+  "PRESENT",
+  "ABSENT",
+  "LEAVE",
+  "M/C OFF",
+  "M/C STOP",
+  "UNDER MAINT.",
+  "SUNDAY",
+  "W/OFF",
+  "HOLIDAY",
+  "STOCK COUNTING",
+  "REPORT NOT FILLUP",
+];
 
 export const STOPPAGE_FIELDS = [
   { key: "plannedDownMin", label: "Planned Down Time (min)" },
@@ -403,6 +416,17 @@ export const fmtNum = (v, digits = 2) => {
   return Number.isInteger(v) ? String(v) : v.toFixed(digits).replace(/\.?0+$/, "");
 };
 export const fmtPct = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "" : `${(v * 100).toFixed(2)}%`);
+
+// A Part Name option's label, as every entry form's Part Name picker shows
+// it: the name, plus " — N sec" when the part actually has a usable Total
+// Cycle Time — never for a part that doesn't (an earlier, per-form version of
+// this check read `Number(it.totalCycleSec)` straight off a null/undefined
+// value, which coerces to 0 — finite — so it showed "— null sec" instead of
+// leaving the suffix off).
+export const partCycleLabel = (it) => {
+  const n = it?.totalCycleSec;
+  return `${it.itemName}${n !== null && n !== undefined && n !== "" && Number.isFinite(Number(n)) ? ` — ${n} sec` : ""}`;
+};
 
 // ── Dates ──────────────────────────────────────────────────────────────────
 const pad = (n) => String(n).padStart(2, "0");

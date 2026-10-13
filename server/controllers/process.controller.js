@@ -7,6 +7,7 @@ const VmcEntry = require("../models/VmcEntry");
 const SpmEntry = require("../models/SpmEntry");
 const RivetEntry = require("../models/RivetEntry");
 const PressEntry = require("../models/PressEntry");
+const ContactEntry = require("../models/ContactEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 
@@ -244,6 +245,7 @@ const DASHBOARD_SHEETS = [
   { Model: SpmEntry, cycleSec: fourPartCycleSec },
   { Model: RivetEntry, cycleSec: null },
   { Model: PressEntry, cycleSec: pressCycleSec },
+  { Model: ContactEntry, cycleSec: null },
 ];
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]

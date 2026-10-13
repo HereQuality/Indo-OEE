@@ -125,6 +125,10 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  // Which of Standard Time Taken / No. Piece in Standard Time this entry shows
+  // unticked — a per-entry note only, never changes the calculation (see
+  // utils/pressSheet.js's PRESS_PROGRAM_FIELDS).
+  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -154,6 +158,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
@@ -169,7 +174,8 @@ const toPayload = (v, isEdit) => ({
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
 });
 
-// The part's Drawing No., as an entry carries it — still editable, so a later
+// The part's Drawing No. and standard time, as an entry carries them — still
+// editable (the standard time by tick only; Drawing No. as text), so a later
 // change to the master never rewrites saved records. Operation and Setup No.
 // are this entry's own (the real PRESS sheet varies them per row, not per part).
 const withPart = (v, it) => ({
@@ -177,6 +183,11 @@ const withPart = (v, it) => ({
   item: it._id,
   itemName: it.itemName,
   drawingNo: it.drawingNo || "",
+  standardTimeMin: it.standardTimeMin ?? "",
+  pcsPerStandardTime: it.pcsPerStandardTime ?? "",
+  // A freshly (re)picked part starts with both ticked; whichever were
+  // unticked belonged to the part picked before.
+  excludedOps: [],
 });
 
 const PressDataEntry = () => {
@@ -776,7 +787,7 @@ const PressDataEntry = () => {
               <span className="small text-muted">
                 Page {page} of {totalPages}
               </span>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"

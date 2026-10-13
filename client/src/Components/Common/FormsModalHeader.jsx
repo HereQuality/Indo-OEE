@@ -19,7 +19,7 @@ const FormsHeader = ({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4">
       {showAddButton && !showForm && !updateForm && (
         <button
           type="button"
@@ -65,7 +65,7 @@ const FormsHeader = ({
         </div>
       )}
 
-      <div className="flex items-center gap-3 sm:ml-auto w-full sm:w-auto">
+      <div className="flex flex-wrap items-center gap-3 sm:ml-auto w-full sm:w-auto">
         {extraControls}
         <input
           type="text"

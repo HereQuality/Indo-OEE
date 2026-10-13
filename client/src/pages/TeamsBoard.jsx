@@ -1437,7 +1437,7 @@ const TeamsBoard = () => {
                         <div>
                             <h4 className="mb-0">Teams</h4>
                         </div>
-                        <div className="d-flex align-items-center gap-2">
+                        <div className="d-flex flex-wrap align-items-center gap-2">
                             <div className="position-relative">
                                 <Search size={16} className="position-absolute" style={{ left: 10, top: 10, opacity: 0.5 }} />
                                 <Input

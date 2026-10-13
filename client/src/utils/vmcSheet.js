@@ -42,6 +42,21 @@ export const isCncProcess = (process) => {
 const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 const isNum = (v) => v !== null && Number.isFinite(v);
 
+// Program Time and No. of Piece In One Program, as the entry form's tick
+// boxes offer them (copied from the Part, read-only — see VmcEntryForm.jsx),
+// the same look as CNC's own operation checkboxes. Ticking them off is purely
+// a per-entry note here — unlike CNC's (and SPM's) operations, which sum, so
+// dropping one still leaves a usable total, these two multiply together to
+// make one cycle time: there is no honest partial result once either is
+// removed (it would mean inventing a stand-in for the missing factor), so
+// Product Cycle Time keeps using both regardless of which are ticked. Decided
+// with the user 2026-10-13, pending their own check with their senior —
+// revisit if that changes.
+export const VMC_PROGRAM_FIELDS = [
+  { key: "programTimeMin", label: "Program Time (min)" },
+  { key: "pcsPerProgram", label: "No. of Piece In One Program" },
+];
+
 // Product Cycle Time (sec) = Program Time (min) × 60 ÷ pieces per program; null until both are usable.
 export const programCycleSec = (row) => {
   const minutes = num(row?.programTimeMin);

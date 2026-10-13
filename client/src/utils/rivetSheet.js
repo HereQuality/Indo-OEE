@@ -4,12 +4,15 @@ import { dayCalc, rowCalc } from "./productionSheet";
 /**
  * utils/rivetSheet.js
  * ─────────────────────
- * The RIVET Data Entry sheet's figures. Checked against two real rows: Loading/
- * Process/Unloading and Cleaning/Other Operations were blank on both — RIVET
- * doesn't build its cycle time up from those the way SPM does. Total Cycle
- * Time is just typed directly on the entry (`totalCycleSec`), same as CNC's
- * own cycle time, so rowCalc/dayCalc in utils/productionSheet.js already read
- * it exactly as they need to — no adapter required here, unlike VMC/SPM.
+ * The RIVET Data Entry sheet's figures. Like SPM, a RIVET part's cycle time is
+ * set once on the Part (Production › Parts, required there): its own four
+ * named operations — Loading, Process, Unloading and Cleaning, Other
+ * Operations — which sum to Total Cycle Time. Picking a part copies both the
+ * sum (totalCycleSec) and the four operations onto the entry (display only);
+ * ticking one off there subtracts its own seconds from this entry's Total
+ * Cycle Time, the Part's own record never touched — the same mechanism SPM
+ * uses (utils/spmSheet.js's spmCycleSec), just reimplemented here for RIVET's
+ * own four field names.
  *
  * No. of Holes in One Piece is typed and shown on the sheet, but nobody has
  * given us the rule connecting it to Ideal Quantity (or anything else) yet —
@@ -26,17 +29,53 @@ export const isRivetProcess = (process) => {
   return /\brivet\b/i.test(process?.processName || "");
 };
 
-export const rivetRowCalc = (row) => rowCalc(row);
+// A RIVET part's Process choices — set once on the Part (Production › Parts,
+// required there), independent of the entry's own Process box (same choices,
+// same dropdown look). Kept in step with RIVET_PROCESS_TYPES in
+// server/models/Item.js and PROCESS_TYPES in server/models/RivetEntry.js.
+export const RIVET_PROCESS_TYPES = ["Rivet", "Clamp"];
+
+// The named operation-time boxes, in sheet order — Total Cycle Time is their
+// sum (the same shape as SPM_OP_FIELDS in utils/spmSheet.js, but RIVET's own
+// four fields). Kept in step with RIVET_OP_FIELDS in server/models/Item.js.
+export const RIVET_OP_FIELDS = [
+  { key: "rivetLoadingSec", label: "Loading (sec)" },
+  { key: "rivetProcessSec", label: "Process (sec)" },
+  { key: "rivetUnloadingCleaningSec", label: "Unloading and Cleaning (sec)" },
+  { key: "rivetOtherOperationsSec", label: "Other Operations (sec)" },
+];
+
+const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+const isNum = (v) => v !== null && Number.isFinite(v);
+const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
+
+// Total Cycle Time (sec) = the Part's own Total Cycle Time (copied onto the
+// entry as totalCycleSec when picked), minus whichever of the four operations
+// are unticked for this entry — the same rule as SPM's own cycle
+// (utils/spmSheet.js's spmCycleSec), just keyed to RIVET_OP_FIELDS instead of
+// SPM_OP_FIELDS. Blank without a Part Name, same as SPM.
+export const rivetCycleSec = (row) => {
+  if (!String(row?.itemName || "").trim()) return null;
+  const excluded = new Set(row?.excludedOps || []);
+  const excludedSec = sumOrZero(RIVET_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
+  const ownTotal = num(row?.totalCycleSec);
+  return isNum(ownTotal) ? ownTotal - excludedSec : null;
+};
+
+// The row as the shared formulas read it: its own cycle time in `totalCycleSec`.
+const withCycle = (row) => ({ ...row, totalCycleSec: rivetCycleSec(row) ?? "" });
+
+export const rivetRowCalc = (row) => rowCalc(withCycle(row));
 
 // One result per row of one machine's one date, same order and meaning as dayCalc.
-export const rivetDayCalc = (rows) => dayCalc(rows || []);
+export const rivetDayCalc = (rows) => dayCalc((rows || []).map(withCycle));
 
 // The formula popovers for the RIVET table's calculated headers: the CNC ones, with
-// the two that read differently here.
+// the one that reads differently here.
 export const RIVET_FORMULAS = (() => {
   const { rejectedQty: _typedHere, ...shared } = FORMULAS;
   return {
     ...shared,
-    cycle: "Total Cycle Time is typed directly for this entry.",
+    cycle: "Total Cycle Time = Loading (Sec) + Process (Sec) + Unloading and Cleaning (Sec) + Other Operations (Sec).",
   };
 })();

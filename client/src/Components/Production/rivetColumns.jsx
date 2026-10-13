@@ -8,10 +8,9 @@ import { DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBl
  * The RIVET Data Entry table's columns, left to right in the sheet's own
  * order, in the shape ProductionEntriesTable draws (see COLUMNS there for
  * what each key means) — the same column set as the CNC/VMC/SPM tables, with
- * No. of Holes in One Piece (reference only) and a typed Total Cycle Time
- * (Sec) — checked against real rows: unlike SPM, RIVET doesn't build it up
- * from Loading/Process/Unloading and Cleaning/Other Operations (those are
- * always blank), it's just one number, same as CNC's own cycle time.
+ * No. of Holes in One Piece (reference only) and SPM's own cycle breakdown
+ * (Loading/Process/Unloading and Cleaning/Other Operations summing to Total
+ * Cycle Time, set on the Part and ticked off per entry).
  * Calculated cells read `calc`/`day` from utils/rivetSheet.js; the ten
  * stoppage figures fold behind Total Stoppage the way they do on the CNC sheet.
  *
@@ -57,8 +56,13 @@ export const RIVET_COLUMNS = [
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
+  { key: "processType", label: "Process", get: (r) => dash(r.processType) },
   { key: "noOfHoles", label: "No. of Holes in One Piece", get: (r) => min(r.noOfHoles), align: "text-center" },
-  { key: "cycle", label: "Total Cycle Time (Sec)", get: (r) => min(r.totalCycleSec), align: "text-center" },
+  { key: "rivetLoadingSec", label: "Loading (Sec)", get: (r) => min(r.rivetLoadingSec), align: "text-center" },
+  { key: "rivetProcessSec", label: "Process (Sec)", get: (r) => min(r.rivetProcessSec), align: "text-center" },
+  { key: "rivetUnloadingCleaningSec", label: "Unloading and Cleaning (Sec)", get: (r) => min(r.rivetUnloadingCleaningSec), align: "text-center" },
+  { key: "rivetOtherOperationsSec", label: "Other Operations (Sec)", get: (r) => min(r.rivetOtherOperationsSec), align: "text-center" },
+  { key: "cycle", label: "Total Cycle Time (Sec)", get: (r, c) => n(c.totalCycleSec), align: "text-center", tone: "calc" },
   { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime), align: "text-center" },
   { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-center" },
   { key: "shift", label: "Machine Shift Time (hr:min)", get: (r, c) => hm(c.shiftHours), align: "text-center", tone: "calc" },

@@ -11,13 +11,13 @@ import { hoursToHm, parseHm } from "./shiftHours";
  * operator overlap checks and the stoppage allowance are the CNC ones, imported
  * as they are; what is VMC's own is below.
  *
- *   Required    Date, Machine No., Operator, Part Name, Program Time, No. of
- *               Piece In One Program, Machine ON/OFF Time, Actual OK Quantity,
+ *   Required    Date, Machine No., Operator, Part Name (and that Part needs its
+ *               own Program Time / No. of Piece In One Program set in Parts —
+ *               see validateVmcEntry), Machine ON/OFF Time, Actual OK Quantity,
  *               Rejected Quantity, Planned Operator Shift (typed H.MM, not less
  *               than the Machine Shift).
  *   Quantities  OK + Rejected can't be more than Ideal Quantity.
- *   Times       Machine OFF after ON; Setting Time ON/OFF optional, but both or
- *               neither, OFF after ON.
+ *   Times       Machine OFF after ON.
  *   Downtime    Optional (blank counts as 0), 0–1440 each, total within Planned
  *               Operator Shift − Machine Shift. "Others" needs a remark.
  *
@@ -50,8 +50,6 @@ export const VMC_FIELD_ORDER = [
   "machine",
   "operator",
   "itemName",
-  "programTimeMin",
-  "pcsPerProgram",
   "machineOnTime",
   "machineOffTime",
   "okQty",
@@ -84,13 +82,13 @@ export const validateVmcEntry = (v, { saved = null } = {}) => {
   if (blank(v.machine)) errors.machine = "Machine No. is required";
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
-
-  const program = num(v.programTimeMin);
-  if (blank(v.programTimeMin)) errors.programTimeMin = "Program Time is required";
-  else if (!isNum(program) || program <= 0) errors.programTimeMin = "Must be more than 0";
-  const pieces = num(v.pcsPerProgram);
-  if (blank(v.pcsPerProgram)) errors.pcsPerProgram = "No. of Piece In One Program is required";
-  else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerProgram = "Must be a whole number, 1 or more";
+  // Program Time / No. of Piece In One Program are set on the Part itself
+  // (Production › Parts, required there for a VMC part) — if a part still
+  // lacks them (an older one from before that requirement), there's no cycle
+  // time to compute from, so Save can't go through until the Part is fixed.
+  else if (!isNum(calc.totalCycleSec)) {
+    errors.itemName = "This Part has no Program Time / No. of Piece In One Program set — edit it in Parts first";
+  }
 
   for (const [key, label] of [
     ["machineOnTime", "Machine ON Time"],

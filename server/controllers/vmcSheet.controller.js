@@ -68,6 +68,19 @@ const buildFields = (body) => {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
   }
+  // Which of Program Time / No. of Piece In One Program this entry has
+  // unticked — a per-entry note only (see VmcEntry's own comment; neither
+  // value actually changes Product Cycle Time).
+  if (body.excludedOps !== undefined) {
+    const raw = Array.isArray(body.excludedOps) ? body.excludedOps : [];
+    const validKeys = ["programTimeMin", "pcsPerProgram"];
+    if (raw.some((k) => !validKeys.includes(k))) {
+      throw fail("Unknown field in excludedOps");
+    }
+    const excluded = [...new Set(raw)];
+    if (excluded.length) set.excludedOps = excluded;
+    else unset.excludedOps = "";
+  }
   return { set, unset };
 };
 
@@ -108,8 +121,6 @@ const sameTimes = (existing, body) =>
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
   ["itemName", "Part Name"],
-  ["programTimeMin", "Program Time"],
-  ["pcsPerProgram", "No. of Piece In One Program"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
   ["okQty", "Actual OK Quantity"],
@@ -132,8 +143,18 @@ const entryRuleError = (body, existing = null) => {
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
 
-  if (Number(body.programTimeMin) <= 0) return "Program Time must be more than 0";
-  if (!Number.isInteger(Number(body.pcsPerProgram)) || Number(body.pcsPerProgram) < 1) {
+  // Program Time / No. of Piece In One Program now come from the Part
+  // (Production › Parts, required there for a VMC part), copied onto this
+  // entry when picked — not typed here. The entry's own checkboxes
+  // (client/src/utils/vmcSheet.js's VMC_PROGRAM_FIELDS) are a per-entry note
+  // only: unlike CNC's/SPM's summed operations, these two multiply together,
+  // so there's no honest partial result once either is "removed" — ticking
+  // them never actually changes the calculation here. An older part saved
+  // before the Parts requirement existed may still lack them; such an entry
+  // just carries no cycle time (same as a part with no Program set at all).
+  const hasProgram = !isBlank(body.programTimeMin) && !isBlank(body.pcsPerProgram);
+  if (hasProgram && Number(body.programTimeMin) <= 0) return "Program Time must be more than 0";
+  if (hasProgram && (!Number.isInteger(Number(body.pcsPerProgram)) || Number(body.pcsPerProgram) < 1)) {
     return "No. of Piece In One Program must be a whole number, 1 or more";
   }
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));
@@ -148,10 +169,12 @@ const entryRuleError = (body, existing = null) => {
   if (off <= on && !sameTimes(existing, body)) return "Machine OFF Time must be after Machine ON Time";
 
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
-  // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ program time).
-  const ideal = Math.floor((shiftMin * Number(body.pcsPerProgram)) / Number(body.programTimeMin));
-  if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
-    return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+  if (hasProgram) {
+    // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ program time).
+    const ideal = Math.floor((shiftMin * Number(body.pcsPerProgram)) / Number(body.programTimeMin));
+    if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
+      return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+    }
   }
 
   const plannedMin = Math.round(Number(body.plannedOperatorShiftHours) * 60);

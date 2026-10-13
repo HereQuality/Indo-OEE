@@ -32,11 +32,13 @@ const NUMBER_KEYS = [
   "processSec",
   "unloadingCleaningSec",
   "otherOperationsSec",
+  "totalCycleSec",
   "okQty",
   "rejectedQty",
   "plannedOperatorShiftHours",
   ...STOPPAGE_KEYS,
 ];
+const SPM_OP_KEYS = ["loadingSec", "processSec", "unloadingCleaningSec", "otherOperationsSec"];
 
 const fail = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -74,6 +76,17 @@ const buildFields = (body) => {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
   }
+  // Which of the four operations this entry has unticked — see SpmEntry's own
+  // comment; subtracted from totalCycleSec, the item's own record untouched.
+  if (body.excludedOps !== undefined) {
+    const raw = Array.isArray(body.excludedOps) ? body.excludedOps : [];
+    if (raw.some((k) => !SPM_OP_KEYS.includes(k))) {
+      throw fail("Unknown operation in excludedOps");
+    }
+    const excluded = [...new Set(raw)];
+    if (excluded.length) set.excludedOps = excluded;
+    else unset.excludedOps = "";
+  }
   return { set, unset };
 };
 
@@ -93,10 +106,6 @@ const sameTimes = (existing, body) =>
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
   ["itemName", "Part Name"],
-  ["loadingSec", "Loading (Sec)"],
-  ["processSec", "Process (Sec)"],
-  ["unloadingCleaningSec", "Unloading and Cleaning (Sec)"],
-  ["otherOperationsSec", "Other Operations (Sec)"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
   ["okQty", "Actual OK Quantity"],
@@ -119,8 +128,20 @@ const entryRuleError = (body, existing = null) => {
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
 
-  const cycleSec =
-    Number(body.loadingSec) + Number(body.processSec) + Number(body.unloadingCleaningSec) + Number(body.otherOperationsSec);
+  // Total Cycle Time = the Part's own figure (copied onto this entry as
+  // totalCycleSec when picked), minus whichever of the four operations are
+  // ticked off here — same rule as CNC's own cycle (client/src/utils/spmSheet.js's
+  // spmCycleSec; keep the two in step).
+  if (isBlank(body.totalCycleSec)) return "This Part has no Operation Times set — edit it in Parts first";
+  // No. of Holes in One Piece, No. of Piece in One Cycle, Stroke Required for
+  // One Piece are set on the Part (required there) and only shown here —
+  // an older part saved before that requirement existed may still lack them.
+  if ([body.noOfHoles, body.piecesPerCycle, body.strokeRequired].some(isBlank)) {
+    return "This Part is missing No. of Holes / No. of Piece in One Cycle / Stroke Required — edit it in Parts first";
+  }
+  const excludedSet = new Set(Array.isArray(body.excludedOps) ? body.excludedOps : []);
+  const excludedSec = SPM_OP_KEYS.filter((k) => excludedSet.has(k)).reduce((sum, k) => sum + (isBlank(body[k]) ? 0 : Number(body[k])), 0);
+  const cycleSec = Number(body.totalCycleSec) - excludedSec;
   if (cycleSec <= 0) return "Total Cycle Time must be more than 0";
 
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));

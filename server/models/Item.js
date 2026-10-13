@@ -36,6 +36,52 @@ const CYCLE_OP_FIELDS = [
 
 const cycleOpNumber = { type: Number, min: [0, "Cycle time cannot be negative"] };
 
+// An SPM part's own four named operations, in sheet order — Total Cycle Time
+// is their sum, the same shape as CYCLE_OP_FIELDS above but SPM's own field
+// names. Kept in one place so the Item master, SPM entry row and the client's
+// own copy (client/src/utils/spmSheet.js) name the same four fields the same way.
+const SPM_OP_FIELDS = [
+  { key: "loadingSec", label: "Loading (sec)" },
+  { key: "processSec", label: "Process (sec)" },
+  { key: "unloadingCleaningSec", label: "Unloading and Cleaning (sec)" },
+  { key: "otherOperationsSec", label: "Other Operations (sec)" },
+];
+
+// A RIVET part's own four named operations — the same shape as SPM_OP_FIELDS
+// above (SPM and RIVET share this sheet layout), but kept as its own named
+// constant/fields so a part's RIVET values and SPM values stay independent.
+// Kept in step with the client's own copy (client/src/utils/rivetSheet.js).
+const RIVET_OP_FIELDS = [
+  { key: "rivetLoadingSec", label: "Loading (sec)" },
+  { key: "rivetProcessSec", label: "Process (sec)" },
+  { key: "rivetUnloadingCleaningSec", label: "Unloading and Cleaning (sec)" },
+  { key: "rivetOtherOperationsSec", label: "Other Operations (sec)" },
+];
+
+// A RIVET part's own Process choice — which kind of work this part is. Kept in
+// step with PROCESS_TYPES in server/models/RivetEntry.js and
+// client/src/Components/Production/RivetEntryForm.jsx.
+const RIVET_PROCESS_TYPES = ["Rivet", "Clamp"];
+
+// A PRESS part's own Operation choice — which kind of work this part is, the
+// same shape as RIVET_PROCESS_TYPES above. Kept in step with OPERATIONS in
+// server/models/PressEntry.js and PRESS_OPERATIONS in
+// client/src/utils/pressSheet.js.
+const PRESS_OPERATIONS = ["Bending", "Tapping", "Blank"];
+
+// An SPM part's own three reference figures — No. of Holes in One Piece, No.
+// of Piece in One Cycle, Stroke Required for One Piece. Not part of any
+// formula (nobody has given us the rule connecting them to Ideal Quantity
+// yet), but set once here and copied onto an SPM entry read-only, the same
+// way Drawing No. is — required there, so they can't drift between entries
+// of the same part. Kept in step with the client's own copy
+// (client/src/utils/spmSheet.js's SPM_REFERENCE_FIELDS).
+const SPM_REFERENCE_FIELDS = [
+  { key: "noOfHoles", label: "No. of Holes in One Piece" },
+  { key: "piecesPerCycle", label: "No. of Piece in One Cycle" },
+  { key: "strokeRequired", label: "Stroke Required for One Piece" },
+];
+
 const ItemSchema = new mongoose.Schema(
   {
     itemName: {
@@ -75,6 +121,28 @@ const ItemSchema = new mongoose.Schema(
     // programTimeMin × 60 ÷ pcsPerProgram (stored in totalCycleSec too).
     programTimeMin: { type: Number, min: [0, "Program Time cannot be negative"] },
     pcsPerProgram: { type: Number, min: [1, "At least 1 piece per program"] },
+    // PRESS parts: Standard Time Taken (min) and how many pieces are made in
+    // it — the same shape as VMC's program above, copied onto a PRESS entry
+    // when the part is picked. Product Cycle Time = standardTimeMin × 60 ÷
+    // pcsPerStandardTime (stored in totalCycleSec too).
+    standardTimeMin: { type: Number, min: [0, "Standard Time Taken cannot be negative"] },
+    pcsPerStandardTime: { type: Number, min: [1, "At least 1 piece in Standard Time"] },
+    // PRESS parts: which kind of work this part is (Bending, Tapping, …) — a
+    // required dropdown, independent of the entry's own Operation box.
+    pressOperation: { type: String, trim: true, maxlength: 40, default: "" },
+    // SPM parts: Loading/Process/Unloading and Cleaning/Other Operations
+    // (sec), copied onto an SPM entry when the part is picked — Total Cycle
+    // Time is their sum (stored in totalCycleSec too, same as CNC).
+    ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, cycleOpNumber])),
+    // SPM parts: No. of Holes in One Piece, No. of Piece in One Cycle, Stroke
+    // Required for One Piece — reference figures only, set once here.
+    ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, cycleOpNumber])),
+    // RIVET parts: the same four operations, RIVET's own fields — copied onto
+    // a RIVET entry when the part is picked, same mechanism as SPM's above.
+    ...Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, cycleOpNumber])),
+    // RIVET parts: which kind of work this part is (Rivet or Clamp) — a
+    // required dropdown, independent of the entry's own Process box.
+    rivetProcessType: { type: String, trim: true, maxlength: 40, default: "" },
     // Superseded by the eight named fields above; kept only so items saved
     // before they existed don't lose their Op 1…Op 5 cycle times.
     cycleOpsSec: {
@@ -96,3 +164,8 @@ const ItemSchema = new mongoose.Schema(
 module.exports = mongoose.model("Item", ItemSchema);
 module.exports.MAX_CYCLE_OPS = MAX_CYCLE_OPS;
 module.exports.CYCLE_OP_FIELDS = CYCLE_OP_FIELDS;
+module.exports.SPM_OP_FIELDS = SPM_OP_FIELDS;
+module.exports.RIVET_OP_FIELDS = RIVET_OP_FIELDS;
+module.exports.RIVET_PROCESS_TYPES = RIVET_PROCESS_TYPES;
+module.exports.PRESS_OPERATIONS = PRESS_OPERATIONS;
+module.exports.SPM_REFERENCE_FIELDS = SPM_REFERENCE_FIELDS;

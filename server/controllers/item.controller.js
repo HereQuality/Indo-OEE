@@ -2,7 +2,15 @@ const mongoose = require("mongoose");
 const Item = require("../models/Item");
 const ItemLog = require("../models/ItemLog");
 const Process = require("../models/Process");
-const { MAX_CYCLE_OPS, CYCLE_OP_FIELDS } = require("../models/Item");
+const {
+  MAX_CYCLE_OPS,
+  CYCLE_OP_FIELDS,
+  SPM_OP_FIELDS,
+  SPM_REFERENCE_FIELDS,
+  RIVET_OP_FIELDS,
+  RIVET_PROCESS_TYPES,
+  PRESS_OPERATIONS,
+} = require("../models/Item");
 const { diffItem, updateAction, partLabel } = require("../utils/itemDiff");
 
 // Keeps Op 1…Op 5 positional: blanks in the middle stay null so Op 3 never
@@ -33,6 +41,50 @@ const pickProgram = (body) =>
       .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
   );
 
+// A PRESS part's standard time: the same shape as pickProgram above, PRESS's
+// own fields.
+const pickPressProgram = (body) =>
+  Object.fromEntries(
+    ["standardTimeMin", "pcsPerStandardTime"]
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+// An SPM part's four operations (Loading, Process, Unloading and Cleaning,
+// Other Operations). Blank stays unset, like the CNC operation times above —
+// totalCycleSec itself is already covered by pickCycleOps.
+const pickSpmOps = (body) =>
+  Object.fromEntries(
+    SPM_OP_FIELDS.map((f) => f.key)
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+// An SPM part's three reference figures (No. of Holes in One Piece, No. of
+// Piece in One Cycle, Stroke Required for One Piece) — same shape as
+// pickSpmOps above.
+const pickSpmReference = (body) =>
+  Object.fromEntries(
+    SPM_REFERENCE_FIELDS.map((f) => f.key)
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+// A RIVET part's four operations — same shape as pickSpmOps above, RIVET's own fields.
+const pickRivetOps = (body) =>
+  Object.fromEntries(
+    RIVET_OP_FIELDS.map((f) => f.key)
+      .filter((k) => body[k] !== undefined)
+      .map((k) => [k, body[k] === "" || body[k] === null ? null : Number(body[k])]),
+  );
+
+// A RIVET part's Process choice (Rivet/Clamp) — a plain required dropdown,
+// like Drawing No./Setup No. above, not a cycle-time figure.
+const pickRivetProcessType = (body) => (body.rivetProcessType !== undefined ? { rivetProcessType: body.rivetProcessType } : {});
+
+// A PRESS part's Operation choice — same shape as pickRivetProcessType above.
+const pickPressOperation = (body) => (body.pressOperation !== undefined ? { pressOperation: body.pressOperation } : {});
+
 // `process` is only touched when the request actually sends it, so a form that
 // doesn't know about processes can't clear the link by accident; "" (the "Not
 // in any process" choice) clears it.
@@ -43,6 +95,12 @@ const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive, process
   ...(cycleOpsSec !== undefined ? { cycleOpsSec: normalizeCycleOps(cycleOpsSec) } : {}),
   ...pickCycleOps(body),
   ...pickProgram(body),
+  ...pickPressProgram(body),
+  ...pickSpmOps(body),
+  ...pickSpmReference(body),
+  ...pickRivetOps(body),
+  ...pickRivetProcessType(body),
+  ...pickPressOperation(body),
   ...(process !== undefined ? { process: process || null } : {}),
   isActive,
 });
@@ -51,6 +109,20 @@ const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive, process
 const processError = async (process) => {
   if (!process) return null;
   if (!mongoose.isValidObjectId(process) || !(await Process.exists({ _id: process }))) return "Process not found";
+  return null;
+};
+
+// A RIVET part's Process box has to be one of its two choices.
+const rivetProcessTypeError = (rivetProcessType) => {
+  if (!rivetProcessType) return null;
+  if (!RIVET_PROCESS_TYPES.includes(rivetProcessType)) return `"${rivetProcessType}" is not a valid Process`;
+  return null;
+};
+
+// A PRESS part's Operation box has to be one of its listed choices.
+const pressOperationError = (pressOperation) => {
+  if (!pressOperation) return null;
+  if (!PRESS_OPERATIONS.includes(pressOperation)) return `"${pressOperation}" is not a valid Operation`;
   return null;
 };
 
@@ -87,6 +159,10 @@ exports.createItem = async (req, res) => {
   try {
     const badProcess = await processError(req.body.process);
     if (badProcess) return res.status(400).json({ isOk: false, message: badProcess });
+    const badRivetProcessType = rivetProcessTypeError(req.body.rivetProcessType);
+    if (badRivetProcessType) return res.status(400).json({ isOk: false, message: badRivetProcessType });
+    const badPressOperation = pressOperationError(req.body.pressOperation);
+    if (badPressOperation) return res.status(400).json({ isOk: false, message: badPressOperation });
     const item = await Item.create(pickItem(req.body, req.body));
     await recordItemLog(req, "create", {}, item);
     res.status(201).json({ isOk: true, data: item, message: "Item created successfully" });
@@ -100,6 +176,10 @@ exports.updateItem = async (req, res) => {
   try {
     const badProcess = await processError(req.body.process);
     if (badProcess) return res.status(400).json({ isOk: false, message: badProcess });
+    const badRivetProcessType = rivetProcessTypeError(req.body.rivetProcessType);
+    if (badRivetProcessType) return res.status(400).json({ isOk: false, message: badRivetProcessType });
+    const badPressOperation = pressOperationError(req.body.pressOperation);
+    if (badPressOperation) return res.status(400).json({ isOk: false, message: badPressOperation });
     // The part as it was, to work out afterwards what this save changed.
     const before = await Item.findById(req.params.itemId);
     if (!before) return res.status(404).json({ isOk: false, message: "Item not found" });

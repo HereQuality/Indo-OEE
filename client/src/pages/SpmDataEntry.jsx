@@ -38,7 +38,7 @@ import {
   unlockSpmRow,
 } from "../api/spmSheet.api";
 import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionSheet";
-import { SPM_FORMULAS, spmDayCalc, spmRowCalc } from "../utils/spmSheet";
+import { SPM_FORMULAS, SPM_OP_FIELDS, SPM_REFERENCE_FIELDS, spmDayCalc, spmRowCalc } from "../utils/spmSheet";
 import { firstSpmError, validateSpmEntry } from "../utils/spmValidation";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -57,12 +57,15 @@ import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
  * changing it would move the record to a different key.
  *
  * The figures live in utils/spmSheet.js (which feeds the CNC formulas the SPM
- * cycle time, worked out from Loading/Process/Unloading and Cleaning/Other
- * Operations) and the rules in utils/spmValidation.js, so the form's grey
- * boxes, the table and the Save button can't disagree.
+ * cycle time — the Part's own Loading/Process/Unloading and Cleaning/Other
+ * Operations, copied on when picked, minus whichever are unticked on this
+ * entry) and the rules in utils/spmValidation.js, so the form's grey boxes,
+ * the table and the Save button can't disagree.
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
+const SPM_OP_KEYS = SPM_OP_FIELDS.map((f) => f.key);
+const SPM_REFERENCE_KEYS = SPM_REFERENCE_FIELDS.map((f) => f.key);
 const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = [
@@ -73,6 +76,7 @@ const NUMBER_FIELDS = [
   "processSec",
   "unloadingCleaningSec",
   "otherOperationsSec",
+  "totalCycleSec",
   "okQty",
   "rejectedQty",
   "plannedOperatorShiftHours",
@@ -130,6 +134,9 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  // Which of the four operations this entry has unticked — a per-entry note,
+  // subtracted from Total Cycle Time only (see utils/spmSheet.js's SPM_OP_FIELDS).
+  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -159,6 +166,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
@@ -174,13 +182,20 @@ const toPayload = (v, isEdit) => ({
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
 });
 
-// The part's Drawing No., as an entry carries it — still editable, so a later
+// The part's Drawing No. and operation times, as an entry carries them — still
+// editable (the operations by tick only; Drawing No. as text), so a later
 // change to the master never rewrites saved records.
 const withPart = (v, it) => ({
   ...v,
   item: it._id,
   itemName: it.itemName,
   drawingNo: it.drawingNo || "",
+  totalCycleSec: it.totalCycleSec ?? "",
+  ...Object.fromEntries(SPM_OP_KEYS.map((k) => [k, it[k] ?? ""])),
+  ...Object.fromEntries(SPM_REFERENCE_KEYS.map((k) => [k, it[k] ?? ""])),
+  // A freshly (re)picked part starts with every operation ticked; whichever
+  // were unticked belonged to the part picked before.
+  excludedOps: [],
 });
 
 const SpmDataEntry = () => {
@@ -780,7 +795,7 @@ const SpmDataEntry = () => {
               <span className="small text-muted">
                 Page {page} of {totalPages}
               </span>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"

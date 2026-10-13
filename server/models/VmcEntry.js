@@ -50,6 +50,14 @@ const VmcEntrySchema = new mongoose.Schema(
     // Product Cycle Time (sec) = programTimeMin × 60 ÷ pcsPerProgram.
     programTimeMin: { type: Number, min: [0, "Program Time cannot be negative"] },
     pcsPerProgram: { type: Number, min: [1, "At least 1 piece per program"] },
+    // Which of the two above this entry has unticked — a per-entry note only
+    // (same checkbox look as CNC's operations, but neither excluded value
+    // changes Product Cycle Time: the two multiply together, so there's no
+    // well-defined "minus just this one" the way CNC's summed operations have).
+    excludedOps: {
+      type: [{ type: String, enum: ["programTimeMin", "pcsPerProgram"] }],
+      default: [],
+    },
 
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },

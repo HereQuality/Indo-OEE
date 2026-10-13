@@ -11,10 +11,12 @@ import { hoursToHm, parseHm } from "./shiftHours";
  * operator overlap checks and the stoppage allowance are the CNC ones, imported
  * as they are; what is SPM's own is below.
  *
- *   Required    Date, Machine No., Operator, Part Name, Loading/Process/
- *               Unloading and Cleaning/Other Operations (Sec), Machine ON/OFF
- *               Time, Actual OK Quantity, Rejected Quantity, Planned Operator
- *               Shift (typed H.MM, not less than the Machine Shift).
+ *   Required    Date, Machine No., Operator, Part Name (and that Part needs its
+ *               own Loading/Process/Unloading and Cleaning/Other Operations set
+ *               in Parts, with at least one still ticked — see validateSpmEntry),
+ *               Machine ON/OFF Time, Actual OK Quantity, Rejected Quantity,
+ *               Planned Operator Shift (typed H.MM, not less than the Machine
+ *               Shift).
  *   Quantities  OK + Rejected can't be more than Ideal Quantity.
  *   Times       Machine OFF after ON.
  *   Downtime    Optional (blank counts as 0), 0–1440 each, total within Planned
@@ -49,10 +51,6 @@ export const SPM_FIELD_ORDER = [
   "machine",
   "operator",
   "itemName",
-  "loadingSec",
-  "processSec",
-  "unloadingCleaningSec",
-  "otherOperationsSec",
   "machineOnTime",
   "machineOffTime",
   "okQty",
@@ -85,16 +83,23 @@ export const validateSpmEntry = (v, { saved = null } = {}) => {
   if (blank(v.machine)) errors.machine = "Machine No. is required";
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
-
-  for (const [key, label] of [
-    ["loadingSec", "Loading"],
-    ["processSec", "Process"],
-    ["unloadingCleaningSec", "Unloading and Cleaning"],
-    ["otherOperationsSec", "Other Operations"],
-  ]) {
-    const n = num(v[key]);
-    if (blank(v[key])) errors[key] = `${label} is required`;
-    else if (!isNum(n) || n < 0) errors[key] = "Must be 0 or more";
+  // Loading/Process/Unloading and Cleaning/Other Operations are set on the
+  // Part itself (Production › Parts, required there for an SPM part) — if a
+  // part still lacks them (an older one from before that requirement), or
+  // every operation here has been unticked, there's no cycle time to compute
+  // from, so Save can't go through.
+  else if (!isNum(calc.totalCycleSec) || calc.totalCycleSec <= 0) {
+    errors.itemName = calc.totalCycleSec === null
+      ? "This Part has no Operation Times set — edit it in Parts first"
+      : "Total Cycle Time must be more than 0 — untick fewer operations";
+  }
+  // No. of Holes in One Piece, No. of Piece in One Cycle, Stroke Required for
+  // One Piece are set on the Part itself (Production › Parts, required there)
+  // and only shown here, read-only — not yet part of any formula (see
+  // spmSheet.js's file comment), but an older part saved before that
+  // requirement existed may still lack them.
+  else if (!errors.itemName && [v.noOfHoles, v.piecesPerCycle, v.strokeRequired].some(blank)) {
+    errors.itemName = "This Part is missing No. of Holes / No. of Piece in One Cycle / Stroke Required — edit it in Parts first";
   }
 
   for (const [key, label] of [

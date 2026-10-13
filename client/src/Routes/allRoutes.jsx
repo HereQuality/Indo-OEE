@@ -51,6 +51,7 @@ const VmcDataEntry = lazyWithRetry(() => import("../pages/VmcDataEntry"));
 const SpmDataEntry = lazyWithRetry(() => import("../pages/SpmDataEntry"));
 const RivetDataEntry = lazyWithRetry(() => import("../pages/RivetDataEntry"));
 const PressDataEntry = lazyWithRetry(() => import("../pages/PressDataEntry"));
+const ContactDataEntry = lazyWithRetry(() => import("../pages/ContactDataEntry"));
 const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
@@ -128,6 +129,7 @@ const protectedRoutes = [
   { path: "/production/spm-data-entry", component: <SpmDataEntry /> },
   { path: "/production/rivet-data-entry", component: <RivetDataEntry /> },
   { path: "/production/press-data-entry", component: <PressDataEntry /> },
+  { path: "/production/contact-data-entry", component: <ContactDataEntry /> },
   // Old URL, kept working for anyone with it bookmarked or pinned.
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },

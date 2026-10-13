@@ -23,8 +23,27 @@ export const isPressProcess = (process) => {
   return /\bpress\b/i.test(process?.processName || "");
 };
 
+// A PRESS part's Operation choices — set once on the Part (Production ›
+// Parts, required there), independent of the entry's own Operation box (same
+// choices, same dropdown look). Kept in step with PRESS_OPERATIONS in
+// server/models/Item.js and OPERATIONS in server/models/PressEntry.js.
+export const PRESS_OPERATIONS = ["Bending", "Tapping", "Blank"];
+
 const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 const isNum = (v) => v !== null && Number.isFinite(v);
+
+// Standard Time Taken and No. Piece in Standard Time, as the entry form's tick
+// boxes offer them (copied from the Part, read-only — see PressEntryForm.jsx),
+// the same look as VMC's own program checkboxes. Ticking them off is purely a
+// per-entry note here — same reasoning as VMC_PROGRAM_FIELDS in
+// utils/vmcSheet.js: these two multiply together to make one cycle time, so
+// there's no honest partial result once either is unticked. Product Cycle
+// Time keeps using both regardless of which are ticked, pending the user's
+// own check with their senior (same open question as VMC's).
+export const PRESS_PROGRAM_FIELDS = [
+  { key: "standardTimeMin", label: "Standard Time Taken (min)" },
+  { key: "pcsPerStandardTime", label: "No. Piece in Standard Time" },
+];
 
 // Product Cycle Time (sec) = Standard Time Taken (min) × 60 ÷ No. Piece in Standard Time; null until both are usable.
 export const standardCycleSec = (row) => {

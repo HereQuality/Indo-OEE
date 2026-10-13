@@ -4,11 +4,11 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import PartOptions from "./PartOptions";
+import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
-import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
+import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { spmRowCalc } from "../../utils/spmSheet";
+import { SPM_OP_FIELDS, spmRowCalc } from "../../utils/spmSheet";
 import { SPM_DOWNTIME_KEYS } from "../../utils/spmValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -24,11 +24,13 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * machine's own run).
  *
  * What differs is the SPM sheet's own fields: Loading, Process, Unloading and
- * Cleaning and Other Operations (sec), which sum to Total Cycle Time; No. of
- * Holes in One Piece, No. of Piece in One Cycle and Stroke Required for One
- * Piece, typed and shown but not yet part of any formula; Actual OK and
- * Rejected Quantity both typed (so no reject reason split); and all ten
- * downtime boxes.
+ * Cleaning and Other Operations (sec), set once on the Part (required there,
+ * not typed here) and shown as CNC-style tick boxes — unticking one subtracts
+ * its own seconds from this entry's Total Cycle Time, the Part's own record
+ * untouched; No. of Holes in One Piece, No. of Piece in One Cycle and Stroke
+ * Required for One Piece, typed and shown but not yet part of any formula;
+ * Actual OK and Rejected Quantity both typed (so no reject reason split); and
+ * all ten downtime boxes.
  *
  * The rules live in utils/spmValidation.js; the figures in utils/spmSheet.js.
  */
@@ -65,16 +67,7 @@ const LINES = [
   {
     id: 2,
     title: "Part, Cycle Breakdown",
-    fields: [
-      "itemName",
-      "noOfHoles",
-      "piecesPerCycle",
-      "strokeRequired",
-      "loadingSec",
-      "processSec",
-      "unloadingCleaningSec",
-      "otherOperationsSec",
-    ],
+    fields: ["itemName", "noOfHoles", "piecesPerCycle", "strokeRequired"],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
@@ -144,6 +137,7 @@ const EntryBlock = ({
 }) => {
   const { warning } = useAlert();
   const calc = useMemo(() => spmRowCalc(values), [values]);
+  const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // The most stoppage this entry can account for, against what's typed.
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
@@ -342,70 +336,74 @@ const EntryBlock = ({
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Part Name" required error={err("itemName")} md={3} fieldKey="itemName">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="item"
+            <Field label="Part Name" required error={err("itemName")} md={12} fieldKey="itemName">
+              <SearchablePartSelect
+                items={items}
                 value={values.item || ""}
-                onChange={(e) => onItemSelect(index, e.target.value)}
+                itemName={values.itemName}
+                onSelect={(itemId) => onItemSelect(index, itemId)}
                 invalid={!!err("itemName")}
-              >
-                <PartOptions items={items} selectedId={values.item} selectedName={values.itemName} label={(it) => it.itemName} />
-              </Input>
-            </Field>
-            <Field label="No. of Holes in One Piece" error={err("noOfHoles")} md={3} fieldKey="noOfHoles">
-              <NumberInput name="noOfHoles" value={values.noOfHoles} onChange={handle} decimals={false} invalid={!!err("noOfHoles")} />
-            </Field>
-            <Field label="No. of Piece in One Cycle" error={err("piecesPerCycle")} md={3} fieldKey="piecesPerCycle">
-              <NumberInput
-                name="piecesPerCycle"
-                value={values.piecesPerCycle}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("piecesPerCycle")}
-              />
-            </Field>
-            <Field label="Stroke Required for One Piece" error={err("strokeRequired")} md={3} fieldKey="strokeRequired">
-              <NumberInput
-                name="strokeRequired"
-                value={values.strokeRequired}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("strokeRequired")}
+                label={partCycleLabel}
               />
             </Field>
           </Row>
           <Row className="g-1">
-            <Field label="Loading (Sec)" required error={err("loadingSec")} md={3} fieldKey="loadingSec">
-              <NumberInput name="loadingSec" value={values.loadingSec} onChange={handle} invalid={!!err("loadingSec")} />
-            </Field>
-            <Field label="Process (Sec)" required error={err("processSec")} md={3} fieldKey="processSec">
-              <NumberInput name="processSec" value={values.processSec} onChange={handle} invalid={!!err("processSec")} />
-            </Field>
-            <Field label="Unloading and Cleaning (Sec)" required error={err("unloadingCleaningSec")} md={3} fieldKey="unloadingCleaningSec">
-              <NumberInput
-                name="unloadingCleaningSec"
-                value={values.unloadingCleaningSec}
-                onChange={handle}
-                invalid={!!err("unloadingCleaningSec")}
-              />
-            </Field>
-            <Field label="Other Operations (Sec)" required error={err("otherOperationsSec")} md={3} fieldKey="otherOperationsSec">
-              <NumberInput
-                name="otherOperationsSec"
-                value={values.otherOperationsSec}
-                onChange={handle}
-                invalid={!!err("otherOperationsSec")}
-              />
-            </Field>
+            {/* Set once on the Part (Production › Parts, required there) and
+                copied onto this entry read-only — editable only from Parts,
+                never typed here. */}
+            <Calc label="No. of Holes in One Piece" value={fmtNum(values.noOfHoles)} md={4} />
+            <Calc label="No. of Piece in One Cycle" value={fmtNum(values.piecesPerCycle)} md={4} />
+            <Calc label="Stroke Required for One Piece" value={fmtNum(values.strokeRequired)} md={4} />
+          </Row>
+          <Row className="g-1">
+            {SPM_OP_FIELDS.map((f) => {
+              const checkId = `spm-op-${index}-${f.key}`;
+              // Same look as CNC's own operation checkboxes: value always
+              // comes from the Part (never typed here), unticking subtracts
+              // just this operation's own seconds from this entry's Total
+              // Cycle Time — the Part's own record is never touched.
+              const itemValue = selectedItem?.[f.key];
+              const canTick = itemValue !== undefined && itemValue !== null && itemValue !== "";
+              const excludedOps = values.excludedOps || [];
+              const excluded = excludedOps.includes(f.key);
+              const toggle = () => {
+                if (!canTick) return;
+                onChange(
+                  index,
+                  "excludedOps",
+                  excluded ? excludedOps.filter((k) => k !== f.key) : [...excludedOps, f.key],
+                );
+              };
+              return (
+                <Col key={f.key} md={3}>
+                  <div className="form-check mb-2 d-flex align-items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input flex-shrink-0"
+                      id={checkId}
+                      checked={canTick && !excluded}
+                      disabled={!canTick}
+                      onChange={toggle}
+                    />
+                    <Label className={`form-check-label ${labelClass} mb-0`} htmlFor={checkId}>
+                      {f.label.replace(" (sec)", "")}
+                      {canTick && (
+                        <span className={`ms-1 ${excluded ? "text-decoration-line-through text-muted" : "fw-semibold text-body"}`}>
+                          — {fmtNum(Number(itemValue))}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                </Col>
+              );
+            })}
           </Row>
           <Row className="g-1">
             <Calc
               label="Total Cycle Time (Sec)"
               value={fmtNum(calc.totalCycleSec)}
               md={3}
-              title="Loading + Process + Unloading and Cleaning + Other Operations (seconds)"
+              title="The Part's own Total Cycle Time, minus any unticked operation above"
             />
           </Row>
         </Line>

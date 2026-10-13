@@ -4,11 +4,11 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import PartOptions from "./PartOptions";
+import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
 import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { pressRowCalc } from "../../utils/pressSheet";
+import { PRESS_PROGRAM_FIELDS, pressRowCalc } from "../../utils/pressSheet";
 import { PRESS_DOWNTIME_KEYS } from "../../utils/pressValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -25,9 +25,12 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  *
  * What differs is the PRESS sheet's own fields: Operation and Setup No., both
  * dropdowns (neither tied to any formula); Standard Time Taken and the number
- * of pieces made in it, which give the Product Cycle Time (same shape as
- * VMC's Program Time); Actual OK and Rejected Quantity both typed (so no
- * reject reason split); and all ten downtime boxes.
+ * of pieces made in it, set once on the Part (required there, not typed
+ * here) and shown as VMC-style tick boxes — ticking/unticking here is a
+ * per-entry note only, same as VMC's (these two multiply together, so there's
+ * no honest partial cycle time once either is "removed"); Actual OK and
+ * Rejected Quantity both typed (so no reject reason split); and all ten
+ * downtime boxes.
  *
  * The rules live in utils/pressValidation.js; the figures in utils/pressSheet.js.
  */
@@ -36,7 +39,7 @@ const labelClass = "form-label small text-muted mb-1";
 
 // The sheet's own Operation choices. Keep in step with OPERATIONS in
 // server/models/PressEntry.js.
-const OPERATIONS = ["Bending", "Tapping", "Blank", "Blank/Bending"];
+const OPERATIONS = ["Bending", "Tapping", "Blank"];
 // The sheet's own Setup No. choices. Keep in step with SETUP_NUMBERS in
 // server/models/PressEntry.js.
 const SETUP_NUMBERS = ["1", "2", "3", "4", "5"];
@@ -69,11 +72,7 @@ const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
 const LINES = [
   { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
   { id: 2, title: "Part, Operation, Setup No.", fields: ["itemName", "operation", "setupNo"] },
-  {
-    id: 3,
-    title: "Standard Time, Product Cycle Time",
-    fields: ["standardTimeMin", "pcsPerStandardTime"],
-  },
+  { id: 3, title: "Standard Time, Product Cycle Time", fields: [] },
   { id: 4, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
   // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
@@ -142,6 +141,7 @@ const EntryBlock = ({
 }) => {
   const { warning } = useAlert();
   const calc = useMemo(() => pressRowCalc(values), [values]);
+  const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // The most stoppage this entry can account for, against what's typed.
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
@@ -341,16 +341,13 @@ const EntryBlock = ({
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
             <Field label="Part Name" required error={err("itemName")} md={4} fieldKey="itemName">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="item"
+              <SearchablePartSelect
+                items={items}
                 value={values.item || ""}
-                onChange={(e) => onItemSelect(index, e.target.value)}
+                itemName={values.itemName}
+                onSelect={(itemId) => onItemSelect(index, itemId)}
                 invalid={!!err("itemName")}
-              >
-                <PartOptions items={items} selectedId={values.item} selectedName={values.itemName} label={(it) => it.itemName} />
-              </Input>
+              />
             </Field>
             <Field label="Operation" error={err("operation")} md={4} fieldKey="operation">
               <Input type="select" bsSize="sm" name="operation" value={values.operation} onChange={handle} invalid={!!err("operation")}>
@@ -383,24 +380,56 @@ const EntryBlock = ({
 
         <Line id={3} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Standard Time Taken (min)" required error={err("standardTimeMin")} md={4} fieldKey="standardTimeMin">
-              <NumberInput name="standardTimeMin" value={values.standardTimeMin} onChange={handle} invalid={!!err("standardTimeMin")} />
-            </Field>
-            <Field label="No. Piece in Standard Time" required error={err("pcsPerStandardTime")} md={4} fieldKey="pcsPerStandardTime">
-              <NumberInput
-                name="pcsPerStandardTime"
-                value={values.pcsPerStandardTime}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("pcsPerStandardTime")}
-              />
-            </Field>
             <Calc
               label="Product Cycle Time (sec)"
               value={fmtNum(calc.totalCycleSec)}
-              md={4}
-              title="Standard Time Taken (min) × 60 ÷ No. Piece in Standard Time"
+              md={6}
+              title="Standard Time Taken (min) × 60 ÷ No. Piece in Standard Time — set on the Part (Production › Parts), not here"
             />
+          </Row>
+          <Row className="g-1">
+            {PRESS_PROGRAM_FIELDS.map((f) => {
+              const checkId = `press-program-${index}-${f.key}`;
+              // Same look as VMC's own program checkboxes — ticking/unticking
+              // here is a per-entry note only: Standard Time Taken and No.
+              // Piece in Standard Time multiply together, so there's no
+              // well-defined "cycle time minus just this one" — Product Cycle
+              // Time keeps using both regardless of the tick.
+              const itemValue = selectedItem?.[f.key];
+              const canTick = itemValue !== undefined && itemValue !== null && itemValue !== "";
+              const excludedOps = values.excludedOps || [];
+              const excluded = excludedOps.includes(f.key);
+              const toggle = () => {
+                if (!canTick) return;
+                onChange(
+                  index,
+                  "excludedOps",
+                  excluded ? excludedOps.filter((k) => k !== f.key) : [...excludedOps, f.key],
+                );
+              };
+              return (
+                <Col key={f.key} md={4}>
+                  <div className="form-check mb-2 d-flex align-items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input flex-shrink-0"
+                      id={checkId}
+                      checked={canTick && !excluded}
+                      disabled={!canTick}
+                      onChange={toggle}
+                    />
+                    <Label className={`form-check-label ${labelClass} mb-0`} htmlFor={checkId}>
+                      {f.label}
+                      {canTick && (
+                        <span className={`ms-1 ${excluded ? "text-decoration-line-through text-muted" : "fw-semibold text-body"}`}>
+                          — {fmtNum(Number(itemValue))}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                </Col>
+              );
+            })}
           </Row>
         </Line>
 

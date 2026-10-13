@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const RivetEntry = require("../models/RivetEntry");
+const { PROCESS_TYPES } = require("../models/RivetEntry");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
@@ -22,10 +23,12 @@ const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 const PAGE_SIZE_DAYS = 10;
 const MAX_RANGE_DAYS = 366 * 5;
 
-const TEXT_KEYS = ["operator", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_KEYS = ["operator", "processType", "itemName", "drawingNo", "remarks", "otherMinRemark"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime"];
+const RIVET_OP_KEYS = ["rivetLoadingSec", "rivetProcessSec", "rivetUnloadingCleaningSec", "rivetOtherOperationsSec"];
 const NUMBER_KEYS = [
   "noOfHoles",
+  ...RIVET_OP_KEYS,
   "totalCycleSec",
   "okQty",
   "rejectedQty",
@@ -50,6 +53,9 @@ const buildFields = (body) => {
   for (const k of TEXT_KEYS) {
     if (body[k] !== undefined) set[k] = String(body[k] ?? "").trim();
   }
+  if (set.processType && !PROCESS_TYPES.includes(set.processType)) {
+    throw fail(`"${set.processType}" is not a valid Process`);
+  }
   for (const k of TIME_KEYS) {
     if (body[k] === undefined) continue;
     if (body[k] === "" || body[k] === null) unset[k] = "";
@@ -69,6 +75,17 @@ const buildFields = (body) => {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
   }
+  // Which of the four operations this entry has unticked — see RivetEntry's own
+  // comment; subtracted from totalCycleSec, the item's own record untouched.
+  if (body.excludedOps !== undefined) {
+    const raw = Array.isArray(body.excludedOps) ? body.excludedOps : [];
+    if (raw.some((k) => !RIVET_OP_KEYS.includes(k))) {
+      throw fail("Unknown operation in excludedOps");
+    }
+    const excluded = [...new Set(raw)];
+    if (excluded.length) set.excludedOps = excluded;
+    else unset.excludedOps = "";
+  }
   return { set, unset };
 };
 
@@ -87,8 +104,8 @@ const sameTimes = (existing, body) =>
 
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
+  ["processType", "Process"],
   ["itemName", "Part Name"],
-  ["totalCycleSec", "Total Cycle Time (Sec)"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
   ["okQty", "Actual OK Quantity"],
@@ -111,7 +128,14 @@ const entryRuleError = (body, existing = null) => {
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
 
-  const cycleSec = Number(body.totalCycleSec);
+  // Total Cycle Time = the Part's own figure (copied onto this entry as
+  // totalCycleSec when picked), minus whichever of the four operations are
+  // ticked off here — same rule as SPM's own cycle (client/src/utils/rivetSheet.js's
+  // rivetCycleSec; keep the two in step).
+  if (isBlank(body.totalCycleSec)) return "This Part has no Operation Times set — edit it in Parts first";
+  const excludedSet = new Set(Array.isArray(body.excludedOps) ? body.excludedOps : []);
+  const excludedSec = RIVET_OP_KEYS.filter((k) => excludedSet.has(k)).reduce((sum, k) => sum + (isBlank(body[k]) ? 0 : Number(body[k])), 0);
+  const cycleSec = Number(body.totalCycleSec) - excludedSec;
   if (cycleSec <= 0) return "Total Cycle Time must be more than 0";
 
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));

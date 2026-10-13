@@ -4,15 +4,19 @@ import { dayCalc, rowCalc } from "./productionSheet";
 /**
  * utils/spmSheet.js
  * ───────────────────
- * The SPM Data Entry sheet's figures. The SPM sheet differs from the CNC one in
- * where its cycle time comes from, not in what it does with it: Total Cycle
- * Time (sec) = Loading + Process + Unloading and Cleaning + Other Operations
- * (the four operation times typed on the entry), instead of being copied from
- * the part. Once that's worked out, Ideal Quantity, Effective Run Time, Setup
- * Efficiency, Unutilized/Unreported Time and the three OEE figures are the
- * very same formulas rowCalc/dayCalc already use for CNC and VMC — SPM needs
- * no override of its own for any of those (unlike VMC's Ideal Quantity, which
- * has to divide the typed program/pieces rather than the generic shift÷cycle).
+ * The SPM Data Entry sheet's figures. Like CNC, an SPM part's cycle time is
+ * set once on the Part (Production › Parts, required there): its own four
+ * named operations — Loading, Process, Unloading and Cleaning, Other
+ * Operations — which sum to Total Cycle Time. Picking a part copies both the
+ * sum (totalCycleSec) and the four operations onto the entry (display only);
+ * ticking one off there subtracts its own seconds from this entry's Total
+ * Cycle Time, the Part's own record never touched — the exact same mechanism
+ * CNC's rowCalc already has for its eight operations (excludedOps), just
+ * reimplemented here for SPM's own four field names, since rowCalc's own
+ * version only knows CNC's CYCLE_OP_FIELDS. Once Total Cycle Time is worked
+ * out, Ideal Quantity, Effective Run Time, Setup Efficiency, Unutilized/
+ * Unreported Time and the three OEE figures are the very same formulas
+ * rowCalc/dayCalc already use for CNC and VMC.
  *
  * No. of Holes in One Piece, No. of Piece in One Cycle and Stroke Required for
  * One Piece are typed and shown on the sheet, but nobody has given us the rule
@@ -29,14 +33,43 @@ export const isSpmProcess = (process) => {
   return /\bspm\b/i.test(process?.processName || "");
 };
 
+// The named operation-time boxes, in sheet order — Total Cycle Time is their
+// sum (just like CNC's CYCLE_OP_FIELDS in utils/productionSheet.js, but SPM's
+// own four fields). Kept in step with SPM_OP_FIELDS in server/models/Item.js.
+export const SPM_OP_FIELDS = [
+  { key: "loadingSec", label: "Loading (sec)" },
+  { key: "processSec", label: "Process (sec)" },
+  { key: "unloadingCleaningSec", label: "Unloading and Cleaning (sec)" },
+  { key: "otherOperationsSec", label: "Other Operations (sec)" },
+];
+
+// An SPM part's three reference figures — No. of Holes in One Piece, No. of
+// Piece in One Cycle, Stroke Required for One Piece. Set once on the Part
+// (required there), copied onto an SPM entry read-only, same as the four
+// operations above — just not part of any formula yet (nobody has given us
+// the rule connecting them to Ideal Quantity). Kept in step with
+// SPM_REFERENCE_FIELDS in server/models/Item.js.
+export const SPM_REFERENCE_FIELDS = [
+  { key: "noOfHoles", label: "No. of Holes in One Piece" },
+  { key: "piecesPerCycle", label: "No. of Piece in One Cycle" },
+  { key: "strokeRequired", label: "Stroke Required for One Piece" },
+];
+
 const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 const isNum = (v) => v !== null && Number.isFinite(v);
+const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
 
-// Total Cycle Time (sec) = Loading + Process + Unloading and Cleaning + Other
-// Operations; null until every one of the four is usable.
+// Total Cycle Time (sec) = the Part's own Total Cycle Time (copied onto the
+// entry as totalCycleSec when picked), minus whichever of the four operations
+// are unticked for this entry — the exact same rule as CNC's own cycle
+// (utils/productionSheet.js's rowCalc), just keyed to SPM_OP_FIELDS instead
+// of CYCLE_OP_FIELDS. Blank without a Part Name, same as CNC.
 export const spmCycleSec = (row) => {
-  const parts = [row?.loadingSec, row?.processSec, row?.unloadingCleaningSec, row?.otherOperationsSec].map(num);
-  return parts.every(isNum) ? parts.reduce((sum, n) => sum + n, 0) : null;
+  if (!String(row?.itemName || "").trim()) return null;
+  const excluded = new Set(row?.excludedOps || []);
+  const excludedSec = sumOrZero(SPM_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
+  const ownTotal = num(row?.totalCycleSec);
+  return isNum(ownTotal) ? ownTotal - excludedSec : null;
 };
 
 // The row as the shared formulas read it: its own cycle time in `totalCycleSec`.

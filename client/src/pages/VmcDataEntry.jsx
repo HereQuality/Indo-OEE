@@ -120,6 +120,9 @@ const emptyEntry = () => ({
   slot: 1,
   item: "",
   workOrder: "",
+  // Which of Program Time / No. of Piece In One Program this entry has
+  // unticked — a per-entry note only (see utils/vmcSheet.js's VMC_PROGRAM_FIELDS).
+  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -150,6 +153,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  excludedOps: v.excludedOps || [],
   workOrder: v.workOrder || null,
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
@@ -177,6 +181,9 @@ const withPart = (v, it) => ({
   setupNo: it.setupNo || v.setupNo,
   programTimeMin: it.programTimeMin ?? "",
   pcsPerProgram: it.pcsPerProgram ?? "",
+  // A freshly (re)picked part starts with both ticked; whichever were
+  // unticked belonged to the part picked before.
+  excludedOps: [],
 });
 
 const VmcDataEntry = () => {
@@ -807,7 +814,7 @@ const VmcDataEntry = () => {
               <span className="small text-muted">
                 Page {page} of {totalPages}
               </span>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"

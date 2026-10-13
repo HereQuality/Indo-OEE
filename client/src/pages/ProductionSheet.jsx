@@ -838,7 +838,7 @@ const ProductionSheet = () => {
               <span className="small text-muted">
                 Page {page} of {totalPages}
               </span>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"

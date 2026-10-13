@@ -11,10 +11,12 @@ import { hoursToHm, parseHm } from "./shiftHours";
  * operator overlap checks and the stoppage allowance are the CNC ones, imported
  * as they are; what is RIVET's own is below.
  *
- *   Required    Date, Machine No., Operator, Part Name, Total Cycle Time (Sec,
- *               typed directly — see utils/rivetSheet.js), Machine ON/OFF
- *               Time, Actual OK Quantity, Rejected Quantity, Planned Operator
- *               Shift (typed H.MM, not less than the Machine Shift).
+ *   Required    Date, Machine No., Operator, Part Name (and that Part needs its
+ *               own Loading/Process/Unloading and Cleaning/Other Operations set
+ *               in Parts, with at least one still ticked — see validateRivetEntry),
+ *               Machine ON/OFF Time, Actual OK Quantity, Rejected Quantity,
+ *               Planned Operator Shift (typed H.MM, not less than the Machine
+ *               Shift).
  *   Quantities  OK + Rejected can't be more than Ideal Quantity.
  *   Times       Machine OFF after ON.
  *   Downtime    Optional (blank counts as 0), 0–1440 each, total within Planned
@@ -48,8 +50,8 @@ export const RIVET_FIELD_ORDER = [
   "date",
   "machine",
   "operator",
+  "processType",
   "itemName",
-  "totalCycleSec",
   "machineOnTime",
   "machineOffTime",
   "okQty",
@@ -81,11 +83,18 @@ export const validateRivetEntry = (v, { saved = null } = {}) => {
   if (blank(v.date)) errors.date = "Date is required";
   if (blank(v.machine)) errors.machine = "Machine No. is required";
   if (blank(v.operator)) errors.operator = "Operator is required";
+  if (blank(v.processType)) errors.processType = "Process is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
-
-  const cycle = num(v.totalCycleSec);
-  if (blank(v.totalCycleSec)) errors.totalCycleSec = "Total Cycle Time is required";
-  else if (!isNum(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
+  // Loading/Process/Unloading and Cleaning/Other Operations are set on the
+  // Part itself (Production › Parts, required there for a RIVET part) — if a
+  // part still lacks them (an older one from before that requirement), or
+  // every operation here has been unticked, there's no cycle time to compute
+  // from, so Save can't go through.
+  else if (!isNum(calc.totalCycleSec) || calc.totalCycleSec <= 0) {
+    errors.itemName = calc.totalCycleSec === null
+      ? "This Part has no Operation Times set — edit it in Parts first"
+      : "Total Cycle Time must be more than 0 — untick fewer operations";
+  }
 
   for (const [key, label] of [
     ["machineOnTime", "Machine ON Time"],

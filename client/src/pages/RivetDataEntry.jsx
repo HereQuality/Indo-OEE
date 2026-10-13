@@ -38,7 +38,7 @@ import {
   unlockRivetRow,
 } from "../api/rivetSheet.api";
 import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionSheet";
-import { RIVET_FORMULAS, rivetDayCalc, rivetRowCalc } from "../utils/rivetSheet";
+import { RIVET_FORMULAS, RIVET_OP_FIELDS, rivetDayCalc, rivetRowCalc } from "../utils/rivetSheet";
 import { firstRivetError, validateRivetEntry } from "../utils/rivetValidation";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -56,17 +56,20 @@ import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
  * the server (slot "auto") and machine stays locked while editing, because
  * changing it would move the record to a different key.
  *
- * The figures live in utils/rivetSheet.js (RIVET's own Total Cycle Time is
- * typed directly, so it feeds the CNC formulas unchanged) and the rules in
- * utils/rivetValidation.js, so the form's grey boxes, the table and the Save
- * button can't disagree.
+ * The figures live in utils/rivetSheet.js (which feeds the CNC formulas the
+ * RIVET cycle time — the Part's own Loading/Process/Unloading and Cleaning/
+ * Other Operations, copied on when picked, minus whichever are unticked on
+ * this entry) and the rules in utils/rivetValidation.js, so the form's grey
+ * boxes, the table and the Save button can't disagree.
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const RIVET_OP_KEYS = RIVET_OP_FIELDS.map((f) => f.key);
+const TEXT_FIELDS = ["operator", "processType", "itemName", "drawingNo", "remarks", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = [
   "noOfHoles",
+  ...RIVET_OP_KEYS,
   "totalCycleSec",
   "okQty",
   "rejectedQty",
@@ -125,6 +128,9 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  // Which of the four operations this entry has unticked — a per-entry note,
+  // subtracted from Total Cycle Time only (see utils/rivetSheet.js's RIVET_OP_FIELDS).
+  excludedOps: [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -154,6 +160,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
@@ -169,13 +176,19 @@ const toPayload = (v, isEdit) => ({
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
 });
 
-// The part's Drawing No., as an entry carries it — still editable, so a later
+// The part's Drawing No. and operation times, as an entry carries them — still
+// editable (the operations by tick only; Drawing No. as text), so a later
 // change to the master never rewrites saved records.
 const withPart = (v, it) => ({
   ...v,
   item: it._id,
   itemName: it.itemName,
   drawingNo: it.drawingNo || "",
+  totalCycleSec: it.totalCycleSec ?? "",
+  ...Object.fromEntries(RIVET_OP_KEYS.map((k) => [k, it[k] ?? ""])),
+  // A freshly (re)picked part starts with every operation ticked; whichever
+  // were unticked belonged to the part picked before.
+  excludedOps: [],
 });
 
 const RivetDataEntry = () => {
@@ -775,7 +788,7 @@ const RivetDataEntry = () => {
               <span className="small text-muted">
                 Page {page} of {totalPages}
               </span>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"

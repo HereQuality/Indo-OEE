@@ -7,15 +7,16 @@ const { STOPPAGE_KEYS } = require("./ProductionEntry");
  * One row of the RIVET Data Entry sheet. Same idea as ProductionEntry/VmcEntry/
  * SpmEntry — keyed by (date, machine, slot), up to three per machine per date,
  * and it only exists while something is typed into it — with RIVET's own
- * columns: Total Cycle Time (sec) is typed directly on the entry (checked
- * against two real rows: Loading/Process/Unloading and Cleaning/Other
- * Operations were blank on both, so RIVET doesn't build its cycle time up
- * from those the way SPM does — it's just one typed number, same as CNC's own
- * totalCycleSec), plus one reference figure (No. of Holes in One Piece)
- * that's typed and shown on the sheet but doesn't feed any formula yet —
- * nobody has given us the rule connecting it to Ideal Quantity, so it stays
- * display-only until that's confirmed against real data. A typed Rejected
- * Quantity, same as VMC/SPM (no reject reason split).
+ * columns: four operation times (Loading, Process, Unloading and Cleaning,
+ * Other Operations) that sum to Total Cycle Time, set once on the Part
+ * (required there for a RIVET part) and copied onto the entry when picked —
+ * same mechanism as SPM's own four operations (excludedOps lets an entry
+ * tick one off, subtracting it from this entry's Total Cycle Time only) —
+ * plus one reference figure (No. of Holes in One Piece) that's typed and
+ * shown on the sheet but doesn't feed any formula yet — nobody has given us
+ * the rule connecting it to Ideal Quantity, so it stays display-only until
+ * that's confirmed against real data. A typed Rejected Quantity, same as
+ * VMC/SPM (no reject reason split).
  *
  * Only the entered values are stored. Every calculated column (Ideal Qty,
  * Effective Run Time, OEE, …) is derived on display — see
@@ -24,6 +25,12 @@ const { STOPPAGE_KEYS } = require("./ProductionEntry");
 const HHMM = [/^([01]\d|2[0-3]):([0-5]\d)$/, "Time must be HH:mm"];
 
 const minutes = { type: Number, min: [0, "Minutes cannot be negative"], max: [1440, "Minutes cannot exceed 1440"] };
+const seconds = { type: Number, min: [0, "Seconds cannot be negative"] };
+
+// The sheet's own Process choices — which kind of work this entry's row is.
+// Add to this list to offer a new one — nothing else needs changing. Keep in
+// step with PROCESS_TYPES in client/src/Components/Production/RivetEntryForm.jsx.
+const PROCESS_TYPES = ["Rivet", "Clamp"];
 
 const RivetEntrySchema = new mongoose.Schema(
   {
@@ -34,6 +41,9 @@ const RivetEntrySchema = new mongoose.Schema(
 
     operator: { type: String, trim: true, maxlength: 60, default: "" },
 
+    // Which kind of work this row is — a required dropdown.
+    processType: { type: String, trim: true, maxlength: 40, default: "" },
+
     item: { type: mongoose.Schema.Types.ObjectId, ref: "Item", default: null },
     itemName: { type: String, trim: true, maxlength: 120, default: "" },
     drawingNo: { type: String, trim: true, maxlength: 40, default: "" },
@@ -41,7 +51,24 @@ const RivetEntrySchema = new mongoose.Schema(
     // Reference figure only — not part of any formula yet.
     noOfHoles: { type: Number, min: [0, "No. of Holes cannot be negative"] },
 
+    // Loading, Process, Unloading and Cleaning, Other Operations — copied from
+    // the Part when picked (display only, like SPM's own four operations).
+    rivetLoadingSec: seconds,
+    rivetProcessSec: seconds,
+    rivetUnloadingCleaningSec: seconds,
+    rivetOtherOperationsSec: seconds,
+    // The cycle time every formula actually uses, copied from the item's own
+    // Total Cycle Time (the four operations' own sum there) — not derived from
+    // the operations above, same reasoning as SpmEntry's own field.
     totalCycleSec: { type: Number, min: [0, "Total Cycle Time cannot be negative"] },
+    // Which of the four operations above didn't apply on THIS entry — their
+    // seconds are subtracted out of totalCycleSec for this entry only; the
+    // item's own master values are never touched. Same mechanism as SpmEntry's
+    // own excludedOps, just this sheet's own four keys.
+    excludedOps: {
+      type: [{ type: String, enum: ["rivetLoadingSec", "rivetProcessSec", "rivetUnloadingCleaningSec", "rivetOtherOperationsSec"] }],
+      default: [],
+    },
 
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },
@@ -70,3 +97,4 @@ const RivetEntrySchema = new mongoose.Schema(
 RivetEntrySchema.index({ date: 1, machine: 1, slot: 1 }, { unique: true });
 
 module.exports = mongoose.model("RivetEntry", RivetEntrySchema);
+module.exports.PROCESS_TYPES = PROCESS_TYPES;

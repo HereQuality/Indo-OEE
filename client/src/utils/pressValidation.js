@@ -11,10 +11,11 @@ import { hoursToHm, parseHm } from "./shiftHours";
  * operator overlap checks and the stoppage allowance are the CNC ones, imported
  * as they are; what is PRESS's own is below.
  *
- *   Required    Date, Machine No., Operator, Part Name, Standard Time Taken,
- *               No. Piece in Standard Time, Machine ON/OFF Time, Actual OK
- *               Quantity, Rejected Quantity, Planned Operator Shift (typed
- *               H.MM, not less than the Machine Shift).
+ *   Required    Date, Machine No., Operator, Part Name (and that Part needs
+ *               its own Standard Time Taken / No. Piece in Standard Time set
+ *               in Parts — see validatePressEntry), Machine ON/OFF Time,
+ *               Actual OK Quantity, Rejected Quantity, Planned Operator Shift
+ *               (typed H.MM, not less than the Machine Shift).
  *   Optional    Operation, Drawing No., Setup No. — the real PRESS sheet
  *               carries these, but they feed no formula here.
  *   Quantities  OK + Rejected can't be more than Ideal Quantity.
@@ -51,8 +52,6 @@ export const PRESS_FIELD_ORDER = [
   "machine",
   "operator",
   "itemName",
-  "standardTimeMin",
-  "pcsPerStandardTime",
   "machineOnTime",
   "machineOffTime",
   "okQty",
@@ -85,13 +84,13 @@ export const validatePressEntry = (v, { saved = null } = {}) => {
   if (blank(v.machine)) errors.machine = "Machine No. is required";
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
-
-  const standard = num(v.standardTimeMin);
-  if (blank(v.standardTimeMin)) errors.standardTimeMin = "Standard Time Taken is required";
-  else if (!isNum(standard) || standard <= 0) errors.standardTimeMin = "Must be more than 0";
-  const pieces = num(v.pcsPerStandardTime);
-  if (blank(v.pcsPerStandardTime)) errors.pcsPerStandardTime = "No. Piece in Standard Time is required";
-  else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerStandardTime = "Must be a whole number, 1 or more";
+  // Standard Time Taken / No. Piece in Standard Time are set on the Part
+  // itself (Production › Parts, required there for a PRESS part) — if a part
+  // still lacks them (an older one from before that requirement), there's no
+  // cycle time to compute from, so Save can't go through until the Part is fixed.
+  else if (!isNum(calc.totalCycleSec)) {
+    errors.itemName = "This Part has no Standard Time Taken / No. Piece in Standard Time set — edit it in Parts first";
+  }
 
   for (const [key, label] of [
     ["machineOnTime", "Machine ON Time"],

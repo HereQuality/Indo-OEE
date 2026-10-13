@@ -4,11 +4,11 @@ import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
-import PartOptions from "./PartOptions";
+import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
-import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
+import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { rivetRowCalc } from "../../utils/rivetSheet";
+import { RIVET_OP_FIELDS, RIVET_PROCESS_TYPES, rivetRowCalc } from "../../utils/rivetSheet";
 import { RIVET_DOWNTIME_KEYS } from "../../utils/rivetValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -24,10 +24,12 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * machine's own run).
  *
  * What differs is the RIVET sheet's own fields: Loading, Process, Unloading and
- * Cleaning and Other Operations (sec), which sum to Total Cycle Time; No. of
- * Holes in One Piece, typed and shown but not yet part of any formula; Actual
- * OK and Rejected Quantity both typed (so no reject reason split); and all ten
- * downtime boxes.
+ * Cleaning and Other Operations (sec), set once on the Part (required there,
+ * not typed here) and shown as CNC/SPM-style tick boxes — unticking one
+ * subtracts its own seconds from this entry's Total Cycle Time, the Part's
+ * own record untouched; No. of Holes in One Piece, typed and shown but not
+ * yet part of any formula; Actual OK and Rejected Quantity both typed (so no
+ * reject reason split); and all ten downtime boxes.
  *
  * The rules live in utils/rivetValidation.js; the figures in utils/rivetSheet.js.
  */
@@ -63,8 +65,8 @@ const LINES = [
   { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
   {
     id: 2,
-    title: "Part, Total Cycle Time",
-    fields: ["itemName", "noOfHoles", "totalCycleSec"],
+    title: "Process, Part, Total Cycle Time",
+    fields: ["processType", "itemName", "noOfHoles"],
   },
   { id: 3, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
@@ -134,6 +136,7 @@ const EntryBlock = ({
 }) => {
   const { warning } = useAlert();
   const calc = useMemo(() => rivetRowCalc(values), [values]);
+  const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // The most stoppage this entry can account for, against what's typed.
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
@@ -332,24 +335,87 @@ const EntryBlock = ({
 
         <Line id={2} errors={errors} isSubmit={isSubmit}>
           <Row className="g-1">
-            <Field label="Part Name" required error={err("itemName")} md={4} fieldKey="itemName">
-              <Input
-                type="select"
-                bsSize="sm"
-                name="item"
+            <Field label="Part Name" required error={err("itemName")} md={12} fieldKey="itemName">
+              <SearchablePartSelect
+                items={items}
                 value={values.item || ""}
-                onChange={(e) => onItemSelect(index, e.target.value)}
+                itemName={values.itemName}
+                onSelect={(itemId) => onItemSelect(index, itemId)}
                 invalid={!!err("itemName")}
-              >
-                <PartOptions items={items} selectedId={values.item} selectedName={values.itemName} label={(it) => it.itemName} />
+                label={partCycleLabel}
+              />
+            </Field>
+          </Row>
+          <Row className="g-1">
+            <Field label="Process" required error={err("processType")} md={6} fieldKey="processType">
+              <Input type="select" bsSize="sm" name="processType" value={values.processType} onChange={handle} invalid={!!err("processType")}>
+                {/* A record saved before this box existed, or with a value since
+                    retired from the list, still shows what it has rather than an
+                    empty box. */}
+                <option value="">
+                  {values.processType && !RIVET_PROCESS_TYPES.includes(values.processType) ? values.processType : "Select process"}
+                </option>
+                {RIVET_PROCESS_TYPES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
               </Input>
             </Field>
-            <Field label="No. of Holes in One Piece" error={err("noOfHoles")} md={4} fieldKey="noOfHoles">
+            <Field label="No. of Holes in One Piece" error={err("noOfHoles")} md={6} fieldKey="noOfHoles">
               <NumberInput name="noOfHoles" value={values.noOfHoles} onChange={handle} decimals={false} invalid={!!err("noOfHoles")} />
             </Field>
-            <Field label="Total Cycle Time (Sec)" required error={err("totalCycleSec")} md={4} fieldKey="totalCycleSec">
-              <NumberInput name="totalCycleSec" value={values.totalCycleSec} onChange={handle} invalid={!!err("totalCycleSec")} />
-            </Field>
+          </Row>
+          <Row className="g-1">
+            {RIVET_OP_FIELDS.map((f) => {
+              const checkId = `rivet-op-${index}-${f.key}`;
+              // Same look as CNC's/SPM's own operation checkboxes: value always
+              // comes from the Part (never typed here), unticking subtracts
+              // just this operation's own seconds from this entry's Total
+              // Cycle Time — the Part's own record is never touched.
+              const itemValue = selectedItem?.[f.key];
+              const canTick = itemValue !== undefined && itemValue !== null && itemValue !== "";
+              const excludedOps = values.excludedOps || [];
+              const excluded = excludedOps.includes(f.key);
+              const toggle = () => {
+                if (!canTick) return;
+                onChange(
+                  index,
+                  "excludedOps",
+                  excluded ? excludedOps.filter((k) => k !== f.key) : [...excludedOps, f.key],
+                );
+              };
+              return (
+                <Col key={f.key} md={3}>
+                  <div className="form-check mb-2 d-flex align-items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="form-check-input flex-shrink-0"
+                      id={checkId}
+                      checked={canTick && !excluded}
+                      disabled={!canTick}
+                      onChange={toggle}
+                    />
+                    <Label className={`form-check-label ${labelClass} mb-0`} htmlFor={checkId}>
+                      {f.label.replace(" (sec)", "")}
+                      {canTick && (
+                        <span className={`ms-1 ${excluded ? "text-decoration-line-through text-muted" : "fw-semibold text-body"}`}>
+                          — {fmtNum(Number(itemValue))}
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                </Col>
+              );
+            })}
+          </Row>
+          <Row className="g-1">
+            <Calc
+              label="Total Cycle Time (Sec)"
+              value={fmtNum(calc.totalCycleSec)}
+              md={3}
+              title="The Part's own Total Cycle Time, minus any unticked operation above"
+            />
           </Row>
         </Line>
 
