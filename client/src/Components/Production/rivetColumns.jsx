@@ -1,6 +1,6 @@
 import React from "react";
 import { displayDay, remarkParts } from "../../utils/productionSheet";
-import { DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
 
 /**
  * components/Production/rivetColumns.jsx
@@ -54,6 +54,7 @@ export const RIVET_COLUMNS = [
     frozen: "machine",
   },
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
+  MACHINE_STATUS_COLUMN,
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   { key: "processType", label: "Process", get: (r) => dash(r.processType) },
@@ -131,6 +132,7 @@ export const RIVET_COLUMNS = [
     tone: "oee",
     merge: "machineDay",
   },
+  ...APQ_COLUMNS,
   {
     key: "remarks",
     label: "Remarks",

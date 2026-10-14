@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { operatorsForMachine } from "../../utils/operatorsForMachine";
+import { isNonWorking } from "../../utils/productionSheet";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
 import TimePicker from "../Common/TimePicker";
 import NumberInput from "./NumberInput";
+import MachineStatusSelect from "./MachineStatusSelect";
+import OeeCheck from "./OeeCheck";
+import FormLine from "./FormLine";
+import { metricsOver100 } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
 import { useAlert } from "../../context/AlertContext";
 import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
@@ -44,8 +50,8 @@ const Calc = ({ label, value, md = 3, title }) => (
 );
 
 // A typed field. `fieldKey` is what Save's scroll-to-first-error looks for.
-const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
-  <Col md={md}>
+const Field = ({ label, required, error, children, md = 3, lg, fieldKey }) => (
+  <Col md={md} lg={lg}>
     <div className="mb-1" data-field={fieldKey}>
       <Label className={labelClass}>
         {label} {required && <span className="text-danger">*</span>}
@@ -59,7 +65,7 @@ const Field = ({ label, required, error, children, md = 3, fieldKey }) => (
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
 const LINES = [
-  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator"] },
+  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator", "machineStatus"] },
   {
     id: 2,
     title: "Part, Product Cycle Time",
@@ -80,25 +86,13 @@ const findLine = (id) => LINES.find((l) => l.id === id);
 // inside EntryBlock would make React see a brand-new component type on every
 // keystroke and remount the whole subtree, dropping focus out of whatever input
 // was being typed in.
-const Line = ({ id, errors, isSubmit, children }) => {
-  const def = findLine(id);
-  const hasError = isSubmit && def.fields.some((f) => errors[f]);
-  return (
-    <div className={`border rounded mb-1 ${hasError ? "border-danger" : ""}`}>
-      <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
-        <span className="fw-semibold small">{def.title}</span>
-        {hasError && <span className="badge bg-danger-subtle text-danger ms-auto">Check this line</span>}
-      </div>
-      <div className="px-2 pt-1">{children}</div>
-    </div>
-  );
-};
+const Line = ({ id, ...rest }) => <FormLine title={findLine(id).title} fields={findLine(id).fields} {...rest} />;
 
 // Everything a block can hold beyond the machine itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
 const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal"].includes(k));
 
-const hasData = (v) => DATA_KEYS.some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
+const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
 
 // One downtime box: a capped minutes input labelled like the sheet.
 const DOWNTIME_BOXES = [
@@ -126,6 +120,7 @@ const EntryBlock = ({
   canRemove,
   expanded,
   booked = [],
+  plannedLock = null,
   onExpand,
   onChange,
   onItemSelect,
@@ -134,7 +129,14 @@ const EntryBlock = ({
   registerRef,
 }) => {
   const { warning } = useAlert();
+  const opList = operatorsForMachine(operators, machines, values.machine);
+  const nonWorking = isNonWorking(values);
   const calc = useMemo(() => vmcRowCalc(values), [values]);
+  // Availability / Performance / Quality as Save will work them out (planned
+  // shift converted from its typed H.MM first) — any above 100% sends the
+  // entry to Admin review, so it's flagged here before Save.
+  const oeeCalc = useMemo(() => vmcRowCalc(withDecimalPlanned(values)), [values]);
+  const overMetrics = metricsOver100(oeeCalc);
   const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
   // The most stoppage this entry can account for, against what's typed.
@@ -305,34 +307,52 @@ const EntryBlock = ({
       </div>
 
       <div className="p-2">
-        <Line id={1} errors={errors} isSubmit={isSubmit}>
+        <Line id={1} errors={errors} isSubmit={isSubmit} values={values}>
           <Row className="g-1">
-            <Field label="Date" required error={err("date")} md={3} fieldKey="date">
+            <Field label="Date" required error={err("date")} md={6} lg={3} fieldKey="date">
               <DatePicker name="date" value={values.date} onChange={handle} hasError={!!err("date")} />
             </Field>
-            <Field label="Machine No." required error={err("machine")} md={3} fieldKey="machine">
+            <Field label="Machine No." required error={err("machine")} md={6} lg={3} fieldKey="machine">
               {machineSelect}
             </Field>
-            <Field label="Operator" required error={err("operator")} md={3} fieldKey="operator">
+            <Field label="Operator" required={!nonWorking} error={err("operator")} md={6} lg={3} fieldKey="operator">
               <Input type="select" bsSize="sm" name="operator" value={values.operator} onChange={handle} invalid={!!err("operator")}>
                 {/* A record saved before this box read from Operator Master, or one
                     whose operator has since been deactivated, still has a name
                     typed here that this list won't contain — keep showing that
                     name rather than an empty box. */}
                 <option value="">
-                  {values.operator && !operators.some((o) => o.name === values.operator) ? values.operator : "Select operator"}
+                  {values.operator && !opList.some((o) => o.name === values.operator) ? values.operator : "Select operator"}
                 </option>
-                {operators.map((o) => (
+                {opList.map((o) => (
                   <option key={o._id} value={o.name}>
                     {o.name}
                   </option>
                 ))}
               </Input>
             </Field>
+            <Field label="Machine Working Status" error={err("workingMode")} md={6} lg={3} fieldKey="workingMode">
+              <Input type="select" bsSize="sm" name="workingMode" value={values.workingMode || "Working"} onChange={handle}>
+                <option value="Working">Working</option>
+                <option value="Non Working">Non Working</option>
+              </Input>
+            </Field>
+            {nonWorking && (
+              <Field label="Reason" error={err("machineStatus")} md={6} lg={3} fieldKey="machineStatus">
+                <MachineStatusSelect value={values.machineStatus} onChange={(list) => onChange(index, "machineStatus", list)} />
+              </Field>
+            )}
           </Row>
         </Line>
 
-        <Line id={2} errors={errors} isSubmit={isSubmit}>
+        {nonWorking ? (
+          <p className="text-muted small mb-1 px-1">
+            <b>Non Working</b> — the machine did not run, so nothing else is needed. Pick a reason if you like and press Save.
+          </p>
+        ) : (
+          <>
+
+        <Line id={2} errors={errors} isSubmit={isSubmit} values={values}>
           <Row className="g-1">
             <Field label="Part Name" required error={err("itemName")} md={6} fieldKey="itemName">
               {/* Program Time/No. of Piece hint, so two parts sharing a name
@@ -402,7 +422,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={3} errors={errors} isSubmit={isSubmit}>
+        <Line id={3} errors={errors} isSubmit={isSubmit} values={values}>
           <Row className="g-1">
             <Field label="Machine ON Time" required error={err("machineOnTime")} md={3} fieldKey="machineOnTime">
               <TimePicker name="machineOnTime" value={values.machineOnTime} onChange={handle} hasError={!!err("machineOnTime")} />
@@ -416,12 +436,6 @@ const EntryBlock = ({
                 minTime={offEarliest}
               />
             </Field>
-            <Calc
-              label="Machine Shift (hr)"
-              value={hoursToHm(calc.shiftHours)}
-              md={3}
-              title="Machine OFF Time − Machine ON Time, as hours:minutes"
-            />
           </Row>
           {booked.length > 0 && (
             <p className="text-muted small mb-1">
@@ -430,15 +444,8 @@ const EntryBlock = ({
           )}
         </Line>
 
-        <Line id={5} errors={errors} isSubmit={isSubmit}>
+        <Line id={5} errors={errors} isSubmit={isSubmit} values={values}>
           <Row className="g-1">
-            <Calc
-              label="Ideal Quantity"
-              value={fmtNum(calc.idealQty)}
-              md={3}
-              title="Machine Shift (min) × No. of Piece In One Program ÷ Program Time (min), rounded down — the most the shift could make, so OK + Rejected can't go above it"
-            />
-            <Calc label="Ideal Quantity / Hour" value={fmtNum(calc.idealQtyPerHour)} md={3} title="Ideal Quantity ÷ Machine Shift (hours)" />
             <Field label="Actual OK Quantity" required error={err("okQty")} md={3} fieldKey="okQty">
               <NumberInput
                 name="okQty"
@@ -462,16 +469,15 @@ const EntryBlock = ({
               />
             </Field>
           </Row>
-          <Row className="g-1">
-            <Calc label="% OK Quantity" value={fmtPct(calc.pctOk)} md={3} title="OK Quantity ÷ (OK Quantity + Rejected Quantity)" />
-          </Row>
+          <OeeCheck calc={oeeCalc} over={overMetrics} />
         </Line>
 
-        <Line id={7} errors={errors} isSubmit={isSubmit}>
+        <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Fixed — nothing to enter" : ""}>
           <Row className="g-1">
             <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
+                disabled={!!plannedLock}
                 value={values.plannedOperatorShiftHours}
                 onChange={handle}
                 invalid={!!err("plannedOperatorShiftHours")}
@@ -488,6 +494,15 @@ const EntryBlock = ({
                       : "Type hours.minutes — 3.30 is 3 h 30 min."}
                 </p>
               )}
+              {plannedLock && (
+                <p className="text-muted small mb-0 mt-1">
+                  {plannedLock.fromEntry
+                    ? "Kept as this entry was saved — set by Process Master"
+                    : plannedLock.locked
+                      ? "Fixed at 12 hr — locked in Process Master"
+                      : `Set to ${hoursToHm(plannedLock.hours)} hr in Process Master`}
+                </p>
+              )}
             </Field>
             <Field label="Lunch / Rest (min)" error={err("lunchMin")} md={4} fieldKey="lunchMin">
               <NumberInput name="lunchMin" value={values.lunchMin} onChange={handle} decimals={false} invalid={!!err("lunchMin")} {...minutesBox("lunchMin")} />
@@ -501,7 +516,7 @@ const EntryBlock = ({
           </Row>
         </Line>
 
-        <Line id={8} errors={errors} isSubmit={isSubmit}>
+        <Line id={8} errors={errors} isSubmit={isSubmit} values={values} optional>
           <Row className="g-1">
             {DOWNTIME_BOXES.map(([key, label]) => (
               <Field key={key} label={label} error={err(key)} md={3} fieldKey={key}>
@@ -541,12 +556,14 @@ const EntryBlock = ({
           )}
         </Line>
 
-        <Line id={12} errors={errors} isSubmit={isSubmit}>
+        <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional>
           <div className="mb-2">
             <Label className={labelClass}>Remarks</Label>
             <Input type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
           </div>
         </Line>
+          </>
+        )}
       </div>
     </div>
   );
@@ -563,6 +580,7 @@ const VmcEntryForm = ({
   operators = [],
   isEdit = false,
   booked = [],
+  plannedLocks = [],
   onChange,
   onItemSelect,
   onWorkOrderSelect,
@@ -668,6 +686,7 @@ const VmcEntryForm = ({
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}
           booked={booked[i] || []}
+          plannedLock={plannedLocks[i] || null}
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}

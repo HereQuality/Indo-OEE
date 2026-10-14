@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { entryCommonFields } = require("./entryCommon");
 const { STOPPAGE_KEYS } = require("./ProductionEntry");
 
 /**
@@ -73,6 +74,10 @@ const VmcEntrySchema = new mongoose.Schema(
     // Why "Others" downtime was used — required whenever that box has minutes.
     otherMinRemark: { type: String, trim: true, maxlength: 300, default: "" },
 
+    // Machine Working Status, the server-worked Availability / Performance /
+    // Quality, and Admin review state — shared by every sheet (entryCommon.js).
+    ...entryCommonFields,
+
     updatedBy: { type: mongoose.Schema.Types.ObjectId, refPath: "updatedByModel" },
     updatedByModel: { type: String, enum: ["User", "Operator"] },
 
@@ -84,6 +89,7 @@ const VmcEntrySchema = new mongoose.Schema(
 );
 
 VmcEntrySchema.index({ date: 1, machine: 1, slot: 1 }, { unique: true });
+VmcEntrySchema.index({ "review.status": 1 }, { sparse: true });
 
 module.exports = mongoose.model("VmcEntry", VmcEntrySchema);
 module.exports.MACHINE_NOT_RUN = MACHINE_NOT_RUN;

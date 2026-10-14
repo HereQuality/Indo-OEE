@@ -18,6 +18,9 @@ import { createProcess, deleteProcess, getProcessById, updateProcess, searchProc
 import { getAllMenus, getAllMenuGroups } from "../api/menus.api";
 import { CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, STATS_BY_KEY, resolveWidgets } from "../utils/processDashboard";
 import { toRolePath } from "../utils/roleUrl";
+import NumberInput from "../Components/Production/NumberInput";
+import { useReviewAccess } from "../hooks/useReviewAccess";
+import { LOCKED_SHIFT_HOURS } from "../utils/plannedShift";
 
 /**
  * Production > Processes.
@@ -42,12 +45,18 @@ const initialState = {
   // read-only.
   dataEntryMenu: "",
   dataEntryMenuLabel: "",
+  // Operator Planned Shift for every entry on this process's machines — locked
+  // at 12 h by default; unlocked, the hours set here. Admin / Super Admin only.
+  plannedShiftLocked: true,
+  plannedShiftHours: LOCKED_SHIFT_HOURS,
   isActive: true,
 };
 
 const ProcessMaster = () => {
   const toast = useAlert();
   const { currentPagePermissions = { read: true, write: true, edit: true, delete: true }, isAdmin } = useContext(MenuContext) || {};
+  // Admin / Super Admin — the only ones who may change the Operator Planned Shift.
+  const { canReview: canSetShift } = useReviewAccess();
   const { roleSlug } = useParams();
 
   const [values, setValues] = useState(initialState);
@@ -142,6 +151,8 @@ const ProcessMaster = () => {
           charts: resolveWidgets(p.charts, CHARTS_BY_KEY, DEFAULT_CHARTS).map((w) => w.key),
           dataEntryMenu: p.dataEntryMenu || "",
           dataEntryMenuLabel: p.dataEntryMenuLabel || "",
+          plannedShiftLocked: p.plannedShiftLocked !== false,
+          plannedShiftHours: p.plannedShiftHours ?? LOCKED_SHIFT_HOURS,
           isActive: p.isActive,
         });
       })
@@ -167,6 +178,8 @@ const ProcessMaster = () => {
   const payload = () => ({
     ...values,
     processName: values.processName.trim(),
+    plannedShiftLocked: values.plannedShiftLocked !== false,
+    plannedShiftHours: values.plannedShiftHours === "" ? LOCKED_SHIFT_HOURS : Number(values.plannedShiftHours),
   });
 
   const handleSave = (e) => {
@@ -295,6 +308,11 @@ const ProcessMaster = () => {
           },
         ]
       : []),
+    {
+      name: "Planned Shift",
+      selector: (row) => (row.plannedShiftLocked === false ? "Unlocked · manual" : "Locked · 12 hr"),
+      minWidth: "140px",
+    },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), maxWidth: "110px" },
     {
       name: "Action",
@@ -433,6 +451,36 @@ const ProcessMaster = () => {
                 rearrange. A non-admin still creates/edits everything else on
                 this form; they just get whatever stats/charts the process
                 already has (or the defaults, until an admin sets it). */}
+            <div className="mb-3 border rounded p-2">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
+                <Label className="mb-0 fw-semibold">Operator Planned Shift</Label>
+                {canSetShift ? (
+                  <div className="form-check form-switch mb-0">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      id="planned-shift-lock"
+                      checked={values.plannedShiftLocked}
+                      onChange={(e) => setValues({ ...values, plannedShiftLocked: e.target.checked })}
+                    />
+                    <label className="form-check-label small" htmlFor="planned-shift-lock">
+                      {values.plannedShiftLocked ? "Locked at 12 hr" : "Unlocked"}
+                    </label>
+                  </div>
+                ) : (
+                  <span className="badge bg-secondary-subtle text-secondary-emphasis">
+                    {values.plannedShiftLocked ? "Locked · 12 hr" : "Unlocked · typed on each entry"}
+                  </span>
+                )}
+              </div>
+              <div className="text-muted small mb-2">
+                Planned Operator Shift for this process's machines. Locked: a
+                fixed 12 hours on every entry. Unlocked: the hours are typed by hand on each data entry. Entries already saved keep their own value.
+                {!canSetShift && " Only Admin or Super Admin can change this."}
+              </div>
+            </div>
+
             {isAdmin && (
               <div className="mb-3">
                 <Label className="mb-1 d-block fw-semibold">Dashboard — what this process shows</Label>

@@ -8,6 +8,11 @@ const VmcEntry = require("../models/VmcEntry");
 const Machine = require("../models/Machine");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const AuditLog = require("../models/AuditLog");
+const Notification = require("../models/Notification");
+const User = require("../models/user.model");
+const Operator = require("../models/Operator");
+const RoleMaster = require("../models/RoleMaster");
 const { ENTRIES, PARTS, dateOf } = require("../seed/seedVmcDemo");
 const { saveRow } = require("./vmcSheet.controller");
 
@@ -42,6 +47,15 @@ const withGrowingTable = async (fn) => {
     restore.push(() => (obj[name] = orig));
   };
   stub(Machine, "exists", async () => ({ _id: "m" }));
+  // No process (so typed planned shifts stand), machine names, the audit log
+  // and review notifications — none of them touch a database here.
+  stub(Machine, "findById", () => chain({ _id: "m", process: null }));
+  stub(Machine, "find", () => chain([]));
+  stub(AuditLog, "create", async (row) => row);
+  stub(Notification, "create", async (p) => ({ toObject: () => p }));
+  stub(User, "find", () => chain([]));
+  stub(Operator, "find", () => chain([]));
+  stub(RoleMaster, "find", () => chain([]));
   stub(VmcEntry, "find", (q) => chain(match(q)));
   stub(VmcEntry, "findOne", (q) => chain(match(q)[0] || null));
   stub(VmcEntry, "findOneAndUpdate", (key, update) => ({

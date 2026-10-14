@@ -1,3 +1,4 @@
+import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, withDecimalPlanned } from "./entryValidation";
 import { contactRowCalc, isStatusOnly } from "./contactSheet";
@@ -86,7 +87,7 @@ export const validateContactEntry = (v, { saved = null } = {}) => {
   if (blank(v.date)) errors.date = "Date is required";
   if (blank(v.machine)) errors.machine = "Machine No. is required";
   // ABSENT, SUNDAY, M/C OFF, … — a day with no production records just its status.
-  if (isStatusOnly(v)) return errors;
+  if (isStatusOnly(v) || isNonWorking(v)) return errors;
 
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";

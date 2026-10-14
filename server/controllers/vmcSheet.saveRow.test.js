@@ -7,6 +7,11 @@ const VmcEntry = require("../models/VmcEntry");
 const Machine = require("../models/Machine");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const Process = require("../models/Process");
+const AuditLog = require("../models/AuditLog");
+const User = require("../models/user.model");
+const Operator = require("../models/Operator");
+const RoleMaster = require("../models/RoleMaster");
 const WorkOrder = require("../models/WorkOrder");
 const { saveRow, getOccupied } = require("./vmcSheet.controller");
 
@@ -15,8 +20,8 @@ const TODAY = new Date().toISOString().slice(0, 10);
 
 // A tiny table of saved entries for one machine/date, with just the query
 // shapes the controller uses.
-const fakeDb = (rows = []) => {
-  const table = rows.map((r) => ({ date: new Date(`${TODAY}T00:00:00.000Z`), machine: MACHINE, ...r }));
+const fakeDb = (rows = [], process = null) => {
+  const table = rows.map((r) => ({ date: new Date(`${TODAY}T00:00:00.000Z`), machine: MACHINE, createdAt: new Date(), ...r }));
   const match = (q) =>
     table.filter(
       (r) =>
@@ -28,8 +33,10 @@ const fakeDb = (rows = []) => {
     );
   const chain = (rows) => ({ select: () => chain(rows), sort: () => chain(rows), populate: () => chain(rows), lean: async () => rows });
   const saved = [];
+  const logs = [];
   return {
     saved,
+    logs,
     install() {
       const restore = [];
       const stub = (obj, name, fn) => {
@@ -38,6 +45,15 @@ const fakeDb = (rows = []) => {
         restore.push(() => (obj[name] = orig));
       };
       stub(Machine, "exists", async () => ({ _id: MACHINE }));
+      // The machine's process (none unless a test says so) and its name, for the
+      // planned-shift rule and the audit log; the audit log itself is captured.
+      stub(Machine, "findById", () => chain(process ? { _id: MACHINE, process: "64b0c0ffee0000000000dddd" } : { _id: MACHINE, process: null }));
+      stub(Machine, "find", () => chain([{ _id: MACHINE, machineName: "7A" }]));
+      stub(Process, "findById", () => chain(process));
+      stub(AuditLog, "create", async (row) => (logs.push(row), row));
+      stub(User, "find", () => chain([]));
+      stub(Operator, "find", () => chain([]));
+      stub(RoleMaster, "find", () => chain([]));
       stub(VmcEntry, "find", (q) => chain(match(q)));
       stub(VmcEntry, "findOne", (q) => chain(match(q)[0] || null));
       stub(VmcEntry, "findOneAndUpdate", (key, update) => ({
@@ -80,8 +96,8 @@ const call = async (handler, req) => {
   return res;
 };
 
-const withDb = async (rows, fn) => {
-  const db = fakeDb(rows);
+const withDb = async (rows, fn, process = null) => {
+  const db = fakeDb(rows, process);
   const restore = db.install();
   try {
     await fn(db);
@@ -110,7 +126,8 @@ test("a normal entry saves into the lowest free slot", async () => {
 });
 
 test("required fields are named", async () => {
-  await refused({ operator: "", programTimeMin: "", pcsPerProgram: "", rejectedQty: "" }, /Required: Operator, Program Time, No\. of Piece In One Program, Rejected Quantity/);
+  // Program Time / pieces come from the Part now, not typed on the entry.
+  await refused({ operator: "", rejectedQty: "" }, /Required: Operator, Rejected Quantity/);
 });
 
 test("OFF must be after ON", async () => {
@@ -133,7 +150,8 @@ test("OK + Rejected can't be more than Ideal Quantity", async () => {
 
 test("Planned Operator Shift can't be less than the Machine Shift, and stoppage fits what is left", async () => {
   await refused({ plannedOperatorShiftHours: 8 }, /can't be less than Machine Shift/);
-  await refused({ lunchMin: 30, setupMin: 31 }, /Total stoppage \(61 min\) can't be more than .* \(60 min\)/);
+  // 09:00–17:30 is a 510 min run — stoppage has to fit inside it.
+  await refused({ lunchMin: 30, setupMin: 481 }, /Total stoppage \(511 min\) can't be more than the Machine Shift \(510 min\)/);
 });
 
 test("Others downtime needs a remark", async () => {

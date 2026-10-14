@@ -263,10 +263,12 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
               const Chart = CHART_COMPONENTS[w.key];
               const measureStat = w.measure && STATS_BY_KEY[w.measure];
               return (
-                <WidgetCard key={w.key} title={w.label} hint={w.hint} size={w.size} tableOnly={TABLE_ONLY.has(w.key)}
+                <WidgetCard key={w.key} title={w.label} hint={w.hint} size={w.size} preview={w.preview} tone={w.tone} tableOnly={TABLE_ONLY.has(w.key)} resetKey={JSON.stringify(filters)}
                   onDrill={measureStat ? () => setDrill(statMeasure(measureStat)) : undefined}>
-                  {({ view, expanded }) => (
-                    <Chart rowsFor={rowsFor} ctx={ctx} c={c} filters={filters} onToggle={onToggle} onDrill={setDrill} view={view} expanded={expanded} />
+                  {({ view, expanded, showChart }) => (
+                    // Picking a machine / operator / etc. from a table view filters the
+                    // dashboard — and puts the card back on its chart, so the result shows.
+                    <Chart rowsFor={rowsFor} ctx={ctx} c={c} filters={filters} onToggle={(dim, key) => { onToggle(dim, key); showChart?.(); }} onDrill={setDrill} view={view} expanded={expanded} />
                   )}
                 </WidgetCard>
               );

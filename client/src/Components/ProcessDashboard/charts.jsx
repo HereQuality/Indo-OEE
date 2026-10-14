@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from "react";
 import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart,
+  PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, RadialBar, RadialBarChart,
   ReferenceLine, ResponsiveContainer, Tooltip, Treemap, XAxis, YAxis,
 } from "recharts";
 import {
-  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, compareMachines, formatExact,
+  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, causeLabel, compareMachines, formatExact,
   reasonMeasure, summarize, summarizeBy,
 } from "../../utils/processDashboard";
 import { axisProps, markOpacity, tooltipProps } from "./chartTheme";
+import { STOPPAGE_FIELDS } from "../../utils/productionSheet";
 
 /**
  * Components/ProcessDashboard/charts.jsx
@@ -149,7 +151,7 @@ const OutputByItem = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   );
 };
 
-const RejectByReason = ({ rowsFor, c, onDrill, ...rest }) => {
+const RejectByReason = ({ rowsFor, c, onDrill, view }) => {
   const rows = rowsFor(null);
   const data = useMemo(
     () => Object.entries(summarize(rows).rejectByReason)
@@ -157,9 +159,44 @@ const RejectByReason = ({ rowsFor, c, onDrill, ...rest }) => {
       .sort((a, b) => b.value - a.value),
     [rows],
   );
+  if (!data.length) return <Empty>Nothing rejected in this period.</Empty>;
+  if (view === "table") {
+    return (
+      <MiniTable columns={["Reason", "Rejected"]} onRowClick={(k) => onDrill(reasonMeasure(k))}
+        rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("qty", d.value)] }))} />
+    );
+  }
+  const total = data.reduce((sum, d) => sum + d.value, 0);
   return (
-    <HBars {...rest} data={data} c={c} color={c.reject} format="qty" onSelect={(k) => onDrill(reasonMeasure(k))}
-      dimLabel="Reason" valueLabel="Rejected" emptyText="Nothing rejected in this period." />
+    <div className="d-flex flex-wrap align-items-center justify-content-center h-100 gap-3">
+      <div style={{ flex: "1 1 200px", height: "100%", minHeight: 200, minWidth: 0, position: "relative" }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="label" innerRadius="58%" outerRadius="92%" paddingAngle={2} stroke={c.surface} strokeWidth={2}
+              isAnimationActive={false} onClick={(d) => onDrill(reasonMeasure(d.key ?? d.payload?.key))} style={{ cursor: "pointer" }}>
+              {data.map((d, i) => <Cell key={d.key} fill={MACHINE_HUES[i % MACHINE_HUES.length]} />)}
+            </Pie>
+            <Tooltip {...tooltipProps(c)} formatter={(v, name) => [`${formatExact("qty", v)} (${((v / total) * 100).toFixed(1)}%)`, name]} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <b style={{ color: c.ink, fontSize: 20 }}>{formatExact("qty", total)}</b>
+          <span style={{ color: c.muted, fontSize: 11 }}>rejected</span>
+        </div>
+      </div>
+      <div style={{ flex: "1 1 150px", minWidth: 0, maxHeight: "100%", overflow: "auto" }}>
+        {data.map((d, i) => (
+          <button key={d.key} type="button" onClick={() => onDrill(reasonMeasure(d.key))}
+            className="d-flex align-items-center justify-content-between gap-2 py-1 w-100 border-0 bg-transparent text-start" style={{ fontSize: 12.5, color: c.axis }}>
+            <span className="d-inline-flex align-items-center gap-2" style={{ minWidth: 0 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: MACHINE_HUES[i % MACHINE_HUES.length], flex: "0 0 auto" }} />
+              <span className="text-truncate">{d.label}</span>
+            </span>
+            <b style={{ color: c.ink }}>{formatExact("qty", d.value)}</b>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -188,13 +225,51 @@ const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
+// Effective run time per machine, in sheet order — one bar each, hours on top.
+const RunTimeByMachineBars = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
+  const data = useDimBars(rowsFor("machine"), "machine", ctx, (s) => s.effectiveHours, { sort: "machine" });
+  if (!data.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
+  if (view === "table") {
+    return (
+      <MiniTable columns={["Machine", "Effective run time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+        rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
+    );
+  }
+  return (
+    <ResponsiveContainer>
+      <BarChart data={data} margin={{ top: 18, right: 8, left: -8, bottom: 0 }}>
+        <CartesianGrid stroke={c.grid} vertical={false} />
+        <XAxis dataKey="label" {...axisProps(c)} />
+        <YAxis unit=" hr" {...axisProps(c)} />
+        <Tooltip {...tooltipProps(c)} formatter={(v) => [formatExact("hours", v), "Effective run time"]} />
+        <Bar isAnimationActive={false} dataKey="value" fill={c.ok} radius={[4, 4, 0, 0]} maxBarSize={38} onClick={(d) => onToggle("machine", clickedKey(d))} style={{ cursor: "pointer" }}>
+          {data.map((d) => <Cell key={d.key} fillOpacity={markOpacity(filters.machine, d.key)} />)}
+          <LabelList dataKey="value" position="top" fill={c.axis} fontSize={11} formatter={(v) => v.toFixed(1)} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+};
+
 const OEE_SERIES = [
   { key: "oeeLosses", label: "Considering losses" },
   { key: "oeeLunch", label: "Not considering losses, but lunch" },
   { key: "oeeLunchCot", label: "Not considering losses, but lunch & setup time" },
 ];
 
-const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
+// The three OEE components — each the entries' minutes and pieces added up
+// and divided once (summarize's oeeAvailability/…), not averaged percentages.
+const APQ_SERIES = [
+  { key: "oeeAvailability", label: "Availability" },
+  { key: "oeePerformance", label: "Performance" },
+  { key: "oeeQuality", label: "Quality" },
+];
+
+// Several percentage series over time (date, or month on long ranges) — the
+// shape both OEE trend charts share. `ceiling` draws a dashed 100% line: the
+// Availability / Performance / Quality chart needs it, since anything above
+// it is an entry held for Admin review.
+const PctTrend = ({ series, empty, ceiling = false, fit = false, area = false, rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
   const rows = rowsFor(dim);
   // Clicking a legend entry hides/shows that one OEE line — a filter on the
@@ -208,25 +283,27 @@ const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
     });
   const data = useMemo(
     () => summarizeBy(rows, dim, ctx)
-      .map((g) => ({ key: g.key, label: g.label, ...Object.fromEntries(OEE_SERIES.map((s) => [s.key, pct100(g.summary[s.key])])) }))
-      .filter((d) => OEE_SERIES.some((s) => d[s.key] !== null))
+      .map((g) => ({ key: g.key, label: g.label, ...Object.fromEntries(series.map((s) => [s.key, pct100(g.summary[s.key])])) }))
+      .filter((d) => series.some((s) => d[s.key] !== null))
       .sort((a, b) => a.key.localeCompare(b.key)),
-    [rows, dim, ctx],
+    [rows, dim, ctx, series],
   );
-  if (!data.length) return <Empty>Needs machine ON/OFF times and OK quantity.</Empty>;
+  if (!data.length) return <Empty>{empty}</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={[DIMENSIONS[dim].label, ...OEE_SERIES.map((s) => s.label)]} selected={filters[dim]} onRowClick={(k) => onToggle(dim, k)}
-        rows={data.map((d) => ({ key: d.key, cells: [d.label, ...OEE_SERIES.map((s) => (d[s.key] === null ? "—" : `${d[s.key].toFixed(2)}%`))] }))} />
+      <MiniTable columns={[DIMENSIONS[dim].label, ...series.map((s) => s.label)]} selected={filters[dim]} onRowClick={(k) => onToggle(dim, k)}
+        rows={data.map((d) => ({ key: d.key, cells: [d.label, ...series.map((s) => (d[s.key] === null ? "—" : `${d[s.key].toFixed(2)}%`))] }))} />
     );
   }
   const few = data.length <= 45;
+  const Chart2 = area ? AreaChart : LineChart;
+  const Series = area ? Area : Line;
   return (
     <ResponsiveContainer>
-      <LineChart data={data} margin={{ top: 8, right: 12, left: -14, bottom: 0 }} onClick={(state) => state?.activeLabel && onToggle(dim, state.activeLabel)} style={{ cursor: "pointer" }}>
+      <Chart2 data={data} margin={{ top: 8, right: 12, left: -14, bottom: 0 }} onClick={(state) => state?.activeLabel && onToggle(dim, state.activeLabel)} style={{ cursor: "pointer" }}>
         <CartesianGrid stroke={c.grid} vertical={false} />
         <XAxis dataKey="key" {...axisProps(c)} tickFormatter={(k) => (dim === "date" ? `${k.slice(8)}/${k.slice(5, 7)}` : DIMENSIONS.month.text(k))} minTickGap={24} />
-        <YAxis unit="%" {...axisProps(c)} domain={[0, (max) => Math.max(100, Math.ceil(max / 10) * 10)]} />
+        <YAxis unit="%" {...axisProps(c)} domain={fit ? [0, (max) => Math.max(10, Math.ceil(max / 10) * 10)] : [0, (max) => Math.max(100, Math.ceil(max / 10) * 10)]} />
         <Tooltip {...tooltipProps(c)} cursor={{ stroke: c.muted }} labelFormatter={(k) => DIMENSIONS[dim].text(k)} formatter={(v, name) => [`${Number(v).toFixed(2)}%`, name]} />
         <Legend
           itemSorter={null}
@@ -239,16 +316,73 @@ const OeeTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
             </span>
           )}
         />
+        {ceiling && <ReferenceLine y={100} stroke={c.muted} strokeDasharray="4 4" label={{ value: "100%", position: "insideTopRight", fill: c.muted, fontSize: 10 }} />}
         {filters[dim].map((k) => <ReferenceLine key={k} x={k} stroke={c.muted} strokeDasharray="3 3" />)}
-        {OEE_SERIES.map((s, i) => (
-          <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={c.series[i]} strokeWidth={2} connectNulls
+        {series.map((s, i) => (
+          <Series key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.tone ? c[s.tone] : c.series[i]} strokeWidth={2} connectNulls
+            {...(area ? { fill: s.tone ? c[s.tone] : c.series[i], fillOpacity: 0.22 } : {})}
             hide={hidden.has(s.key)}
-            dot={few ? { r: 3, strokeWidth: 0, fill: c.series[i] } : false} activeDot={{ r: 5, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
+            dot={few ? { r: 3, strokeWidth: 0, fill: s.tone ? c[s.tone] : c.series[i] } : false} activeDot={{ r: 5, stroke: c.surface, strokeWidth: 2 }} isAnimationActive={false} />
         ))}
-      </LineChart>
+      </Chart2>
     </ResponsiveContainer>
   );
 };
+
+const OeeTrend = (props) => <PctTrend {...props} series={OEE_SERIES} empty="Needs machine ON/OFF times and OK quantity." />;
+
+// Availability · Performance · Quality for the period as three concentric
+// rings (a full ring is 100%), with the exact figures beside them. A figure
+// over 100% fills its ring and is marked — that is an entry held for Admin
+// review. The table view keeps the by-date numbers.
+const ApqRings = (props) => {
+  const { rowsFor, c, view } = props;
+  const rows = rowsFor(null);
+  const sum = useMemo(() => summarize(rows), [rows]);
+  if (view === "table") {
+    return <PctTrend {...props} series={APQ_SERIES} ceiling empty="Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities." />;
+  }
+  const items = APQ_SERIES.map((s, i) => ({ ...s, color: c.series[i], value: pct100(sum[s.key]) }));
+  if (items.every((d) => d.value === null)) return <Empty>Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities.</Empty>;
+  const data = [...items].reverse().map((d) => ({ name: d.label, value: Math.min(100, Math.max(0, d.value ?? 0)), fill: d.color }));
+  return (
+    <div className="d-flex flex-wrap align-items-center justify-content-center h-100 gap-3">
+      <div style={{ flex: "1 1 220px", height: "100%", minHeight: 200, minWidth: 0 }}>
+        <ResponsiveContainer>
+          <RadialBarChart data={data} innerRadius="28%" outerRadius="100%" startAngle={90} endAngle={-270} barSize={16}>
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+            <RadialBar dataKey="value" background={{ fill: c.grid }} cornerRadius={8} isAnimationActive={false} />
+          </RadialBarChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+        {items.map((d) => {
+          const over = d.value !== null && d.value > 100 + 1e-9;
+          return (
+            <div key={d.key} className="d-flex align-items-center justify-content-between gap-2 py-2" style={{ borderBottom: `1px solid ${c.grid}` }}>
+              <span className="d-inline-flex align-items-center gap-2" style={{ color: c.axis, fontSize: 13 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, display: "inline-block" }} />
+                {d.label}
+              </span>
+              <b style={{ color: over ? "#e34948" : c.ink, fontSize: 18 }}>
+                {d.value === null ? "—" : `${d.value.toFixed(1)}%`}
+                {over ? " ▲" : ""}
+              </b>
+            </div>
+          );
+        })}
+        <div className="small mt-2" style={{ color: c.muted }}>A full ring is 100%. ▲ = over 100%, held for Admin review.</div>
+      </div>
+    </div>
+  );
+};
+const ApqTrend = ApqRings;
+
+// Unutilized Machine Time over time — one filled area (every entry's own figure,
+// averaged per date, or per month on long ranges). `fit` keeps the axis to the
+// data instead of stretching it to 100%.
+const UTIL_SERIES = [{ key: "unutilized", label: "Unutilized machine time", tone: "downtime" }];
+const UnutilizedTrend = (props) => <PctTrend {...props} series={UTIL_SERIES} fit area empty="Needs machine ON/OFF times." />;
 
 const OkRejectedTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
@@ -287,41 +421,83 @@ const OkRejectedTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
+// One hue per machine (white text sits on all of them); a machine keeps its
+// colour by its place in the sheet order, so filtering never repaints it.
+const MACHINE_HUES = ["#2f6fe0", "#1e2a8a", "#d4682f", "#5b1a7a", "#17855f", "#a8700a", "#b02a5b", "#3a7f8c"];
+const shortCause = (key) => causeLabel(key).replace(/Lunch\/Tea\/Wash room etc\./, "Lunch / Tea");
+
+// Machine block → one tile per stoppage cause inside it, area = minutes.
+const StoppageTile = ({ x, y, width, height, depth, name, value, parentName, first, color, nodeKey, selected, onSelect, c }) => {
+  const fade = markOpacity(selected, nodeKey);
+  if (depth === 2) {
+    const room = width > 56 && height > 24;
+    return (
+      <g onClick={() => onSelect(nodeKey)} style={{ cursor: "pointer" }}>
+        <rect x={x} y={y} width={width} height={height} fill={color} fillOpacity={fade} stroke="#ffffff" strokeOpacity={0.55} strokeWidth={1} />
+        {/* A machine's biggest tile sits in its top-left corner, so the machine's name rides on it. */}
+        {first && width > 30 && height > 20 && <text x={x + 6} y={y + 16} fill="#ffffff" fontSize={13} fontWeight={700}>{truncate(parentName, Math.floor(width / 8))}</text>}
+        {room && (
+          <>
+            <text x={x + 6} y={y + height - (height > 42 ? 22 : 8)} fill="#ffffff" fontSize={11} fontWeight={600}>{truncate(name, Math.floor(width / 6.5))}</text>
+            {height > 42 && <text x={x + 6} y={y + height - 7} fill="#ffffff" fontSize={11}>{FORMATS.minutes(value)}</text>}
+          </>
+        )}
+      </g>
+    );
+  }
+  if (depth !== 1) return null;
+  return (
+    <g onClick={() => onSelect(nodeKey)} style={{ cursor: "pointer" }}>
+      <rect x={x} y={y} width={width} height={height} fill="none" stroke={c.surface} strokeWidth={3} />
+      {width > 34 && height > 22 && <text x={x + 6} y={y + 16} fill="#ffffff" fontSize={13} fontWeight={700} stroke={color} strokeWidth={3} paintOrder="stroke">{truncate(name, Math.floor(width / 8))}</text>}
+    </g>
+  );
+};
+
+const StoppageTip = ({ active, payload, c }) => {
+  const n = active && payload?.[0]?.payload;
+  if (!n || n.children) return null;
+  return (
+    <div style={{ background: c.surface, border: `1px solid ${c.grid}`, borderRadius: 8, fontSize: 12, color: c.ink, padding: "6px 10px" }}>
+      <div style={{ fontWeight: 600 }}>{n.parentName}</div>
+      <div>{n.name} : {formatExact("minutes", n.value)}</div>
+    </div>
+  );
+};
+
 const DowntimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const rows = rowsFor("machine");
-  const data = useMemo(
+  const machines = useMemo(
     () => summarizeBy(rows, "machine", ctx)
-      .map((g) => ({
-        key: g.key,
-        label: g.label,
-        ...Object.fromEntries(STOPPAGE_GROUPS.map((grp) => [grp.key, grp.fields.reduce((sum, f) => sum + g.summary.downtimeByCause[f], 0)])),
-      }))
-      .filter((d) => STOPPAGE_GROUPS.some((grp) => d[grp.key] > 0))
+      .filter((g) => g.summary.downtimeMin > 0)
       .sort(compareMachines(ctx)),
     [rows, ctx],
   );
-  if (!data.length) return <Empty>No downtime recorded.</Empty>;
+  if (!machines.length) return <Empty>No downtime recorded.</Empty>;
+  const groupTotal = (g, grp) => grp.fields.reduce((sum, f) => sum + g.summary.downtimeByCause[f], 0);
   if (view === "table") {
     return (
       <MiniTable columns={["Machine", ...STOPPAGE_GROUPS.map((g) => `${g.label} (min)`)]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
-        rows={data.map((d) => ({ key: d.key, cells: [d.label, ...STOPPAGE_GROUPS.map((g) => formatExact("qty", d[g.key]))] }))} />
+        rows={machines.map((g) => ({ key: g.key, cells: [g.label, ...STOPPAGE_GROUPS.map((grp) => formatExact("qty", groupTotal(g, grp)))] }))} />
     );
   }
+  const data = machines.map((g, i) => {
+    const color = MACHINE_HUES[i % MACHINE_HUES.length];
+    return {
+      name: g.label, nodeKey: g.key, color,
+      children: STOPPAGE_FIELDS
+        .map((f) => ({ name: shortCause(f.key), value: g.summary.downtimeByCause[f.key] || 0, parentName: g.label, color, nodeKey: g.key }))
+        .filter((d) => d.value > 0)
+        .sort((x, y) => y.value - x.value)
+        .map((d, k) => ({ ...d, first: k === 0 })),
+    };
+  });
   return (
     <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-        <CartesianGrid stroke={c.grid} vertical={false} />
-        <XAxis dataKey="label" {...axisProps(c)} />
-        <YAxis {...axisProps(c)} tickFormatter={(v) => FORMATS.qty(v)} />
-        <Tooltip {...tooltipProps(c)} formatter={(v, name) => [formatExact("minutes", v), name]} />
-        <Legend itemSorter={null} wrapperStyle={{ fontSize: 12 }} formatter={(v) => <span style={{ color: c.axis }}>{v}</span>} />
-        {STOPPAGE_GROUPS.map((g, i) => (
-          <Bar isAnimationActive={false} key={g.key} dataKey={g.key} name={g.label} stackId="d" fill={c.series[i]} stroke={c.surface} strokeWidth={1} maxBarSize={42}
-            radius={i === STOPPAGE_GROUPS.length - 1 ? [4, 4, 0, 0] : 0} onClick={(d) => onToggle("machine", clickedKey(d))} style={{ cursor: "pointer" }}>
-            {data.map((d) => <Cell key={d.key} fillOpacity={markOpacity(filters.machine, d.key)} />)}
-          </Bar>
-        ))}
-      </BarChart>
+      <Treemap data={data} dataKey="value" aspectRatio={4 / 3} isAnimationActive={false}
+        content={<StoppageTile c={c} selected={filters.machine} onSelect={(k) => onToggle("machine", k)} />}>
+        <Tooltip content={<StoppageTip c={c} />} />
+      </Treemap>
     </ResponsiveContainer>
   );
 };
@@ -344,22 +520,61 @@ const TreemapCell = ({ x, y, width, height, depth, name, value, nodeKey, c, sele
   );
 };
 
-const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
-  const bars = useDimBars(rowsFor("machine"), "machine", ctx, (s) => s.effectiveHours);
-  if (!bars.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
+// Every stoppage cause on one radar — a spoke per cause, the further out the
+// more minutes lost. (All ten causes, none folded into "Other".) The table
+// view adds each machine's split with its effective run time beside it.
+const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, ...rest }) => {
+  const rows = rowsFor("machine");
+  const causes = useMemo(() => {
+    const total = summarize(rows).downtimeByCause;
+    return STOPPAGE_FIELDS
+      .map((f) => ({ key: f.key, label: shortCause(f.key), value: total[f.key] || 0 }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [rows]);
+  const machines = useMemo(
+    () => summarizeBy(rows, "machine", ctx).sort(compareMachines(ctx)),
+    [rows, ctx],
+  );
   if (view === "table") {
+    if (!machines.length) return <Empty>No entries for this period.</Empty>;
     return (
-      <MiniTable columns={["Machine", "Effective run time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
-        rows={bars.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
+      <MiniTable
+        columns={["Machine", "Effective run time", ...STOPPAGE_FIELDS.map((f) => `${causeLabel(f.key)} (min)`)]}
+        selected={filters.machine}
+        onRowClick={(k) => onToggle("machine", k)}
+        rows={machines.map((g) => ({
+          key: g.key,
+          cells: [g.label, formatExact("hours", g.summary.effectiveHours), ...STOPPAGE_FIELDS.map((f) => formatExact("qty", g.summary.downtimeByCause[f.key]))],
+        }))}
+      />
     );
   }
-  const data = bars.map((d) => ({ name: d.label, value: d.value, nodeKey: d.key }));
+  // A radar needs at least three spokes; with fewer causes the bars read better.
+  if (causes.length < 3) {
+    return (
+      <HBars {...rest} view="chart" data={causes} c={c} color={c.downtime} format="minutes"
+        dimLabel="Stoppage" valueLabel="Time lost" emptyText="No stoppage recorded." />
+    );
+  }
+  const spoke = ({ x, y, payload, textAnchor }) => {
+    const d = causes.find((k) => k.label === payload.value);
+    return (
+      <text x={x} y={y} textAnchor={textAnchor} fontSize={11} fill={c.axis}>
+        <tspan x={x} dy="0">{truncate(payload.value, 16)}</tspan>
+        <tspan x={x} dy="13" fill={c.muted}>{d ? FORMATS.minutes(d.value) : ""}</tspan>
+      </text>
+    );
+  };
   return (
     <ResponsiveContainer>
-      <Treemap data={data} dataKey="value" aspectRatio={4 / 3} isAnimationActive={false}
-        content={<TreemapCell c={c} selected={filters.machine} onSelect={(k) => onToggle("machine", k)} />}>
-        <Tooltip {...tooltipProps(c)} formatter={(v) => [formatExact("hours", v), "Effective run time"]} labelFormatter={() => ""} />
-      </Treemap>
+      <RadarChart data={causes} outerRadius="60%" margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+        <PolarGrid stroke={c.grid} />
+        <PolarAngleAxis dataKey="label" tick={spoke} />
+        <PolarRadiusAxis tick={false} axisLine={false} />
+        <Tooltip {...tooltipProps(c)} formatter={(v) => [formatExact("minutes", v), "Time lost"]} />
+        <Radar dataKey="value" stroke={c.downtime} fill={c.downtime} fillOpacity={0.3} strokeWidth={2} dot={{ r: 3, fill: c.downtime, strokeWidth: 0 }} isAnimationActive={false} />
+      </RadarChart>
     </ResponsiveContainer>
   );
 };
@@ -508,9 +723,12 @@ const MachineSummary = ({ rowsFor, ctx, filters, onToggle }) => {
 
 export const CHART_COMPONENTS = {
   oeeTrend: OeeTrend,
+  apqTrend: ApqTrend,
   runTimeByOperator: RunTimeByOperator,
   downtimeByMachine: DowntimeByMachine,
   runTimeByMachine: RunTimeByMachine,
+  runTimeByMachineBars: RunTimeByMachineBars,
+  unutilizedTrend: UnutilizedTrend,
   unreportedByMachine: UnreportedByMachine,
   okRejectedTrend: OkRejectedTrend,
   oeeByMachine: OeeByMachine,

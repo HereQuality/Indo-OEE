@@ -16,3 +16,6 @@ export const updateWorkOrder = async (id, data) => api.put(ENDPOINTS.WORK_ORDERS
 export const deleteWorkOrder = async (id) => api.delete(ENDPOINTS.WORK_ORDERS.BY_ID(id));
 
 export const searchWorkOrders = async (params) => api.post(ENDPOINTS.WORK_ORDERS.SEARCH, params);
+
+// Pieces made so far and the Production Complete Date of the work order with this number.
+export const getWorkOrderProgress = async (no) => api.get(ENDPOINTS.WORK_ORDERS.PROGRESS, { params: { no } });

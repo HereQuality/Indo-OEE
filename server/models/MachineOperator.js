@@ -22,6 +22,13 @@ const MachineOperatorSchema = new mongoose.Schema(
       trim: true,
       maxlength: [100, "Operator name must be 100 characters or fewer"],
     },
+    // The processes this operator works in. The entry forms only offer the
+    // operator on machines of these processes. Empty (an operator saved before
+    // this field existed) means "not assigned yet": offered everywhere.
+    processes: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Process" }],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,

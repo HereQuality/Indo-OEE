@@ -15,7 +15,7 @@ export const FORMULAS = {
   rejectedQty:
     "Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.",
   pctOk: "% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)",
-  unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone.",
+  unutilized: "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone. Shown as 0% when the result is below 0 and 100% when it is above 100.",
   totalStoppage:
     "Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.",
   effective: "Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).",
@@ -28,4 +28,11 @@ export const FORMULAS = {
     "OEE not considering losses but lunch = Effective Run Time ÷ (Available Hours − Lunch ÷ 60), combined across every entry of this machine's date.",
   oeeLunchCot:
     "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Available Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
+  availability:
+    "Availability = Operating Time ÷ Planned Production Time, for this entry. Operating Time = Machine Shift − every stoppage; Planned Production Time = Planned Operator Shift − Lunch − Planned Down Time (the planned stops). Above 100% (red) sends the entry to Admin review.",
+  performance:
+    "Performance = Cycle Time × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong cycle time, quantity or stoppage.",
+  quality: "Quality = OK Quantity ÷ (OK + Rejected), for this entry.",
+  review:
+    "Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.",
 };

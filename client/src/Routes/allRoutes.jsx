@@ -57,6 +57,7 @@ const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const WorkOrderMaster = lazyWithRetry(() => import("../pages/WorkOrderMaster"));
+const OeeReviewPage = lazyWithRetry(() => import("../pages/OeeReviewPage"));
 const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
@@ -121,6 +122,8 @@ const protectedRoutes = [
   // kept working above for anyone with it bookmarked or pinned.
   { path: "/production/parts", component: <ItemMaster /> },
   { path: "/production/work-orders", component: <WorkOrderMaster /> },
+  // Admin review of entries whose OEE figures went over 100%, plus the audit log.
+  { path: "/production/oee-review", component: <OeeReviewPage /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },

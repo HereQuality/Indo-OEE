@@ -88,6 +88,7 @@ export const ENDPOINTS = {
         BASE: `${V1}/work-orders`,
         BY_ID: (id) => `${V1}/work-orders/${id}`,
         SEARCH: `${V1}/work-orders/search`,
+        PROGRESS: `${V1}/work-orders/progress`,
     },
 
     MACHINE_OPERATORS: {
@@ -135,6 +136,13 @@ export const ENDPOINTS = {
         EXTENT: `${V1}/press-sheet/extent`,
         FILTER_OPTIONS: `${V1}/press-sheet/filter-options`,
         OCCUPIED: `${V1}/press-sheet/occupied`,
+    },
+    // OEE review (entries over 100%) and the audit log — Admin / Super Admin
+    OEE_REVIEW: {
+        BASE: `${V1}/oee-review`,
+        ACCESS: `${V1}/oee-review/access`,
+        LOGS: `${V1}/oee-review/logs`,
+        DECIDE: (sheet, id) => `${V1}/oee-review/${sheet}/${id}`,
     },
     CONTACT_SHEET: {
         BASE: `${V1}/contact-sheet`,

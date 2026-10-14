@@ -86,6 +86,16 @@ export const REJECT_REASONS = [
   "Other",
 ];
 
+// Machine Working Status — any of these, ticked on every sheet's entry form.
+// Keep in step with MACHINE_STATUSES in server/models/entryCommon.js.
+// Machine Working Status: Working (normal entry) or Non Working (the machine did not
+// run — only the day, machine, operator, reason and remarks are recorded). Mirrors
+// server/utils/workingMode.js; "Working" is the default and is stored as nothing.
+export const WORKING_MODES = ["Working", "Non Working"];
+export const isNonWorking = (v) => v?.workingMode === "Non Working";
+
+export const MACHINE_STATUSES = ["Machine Breakdown", "No Manpower", "No Planning"];
+
 // Every value the real Contact sheet uses (its typos, e.g. "PRSENT", folded in).
 export const WORKING_STATUSES = [
   "PRESENT",
@@ -223,6 +233,12 @@ export function rowCalc(row) {
   // on Working Status/Operator.
   const effectiveHours = isNum(cycle) ? ((ok || 0) * cycle) / 3600 : null;
 
+  // 14–16) Availability / Performance / Quality — this entry alone, standard
+  // OEE over this sheet's own fields (see oeeParts). Never capped at 100%:
+  // anything above it is real and goes to Admin review instead.
+  const totalQty = isNum(actual) ? actual : isNum(ok) || isNum(rej) ? (ok || 0) + (rej || 0) : null;
+  const parts = oeeParts({ shiftMin, totalStoppageMin, row, cycle, ok, totalQty });
+
   return {
     totalCycleSec: cycle,
     actualQty: isNum(actual) ? actual : isNum(ok) || isNum(rej) ? totalProduced : null,
@@ -237,8 +253,49 @@ export function rowCalc(row) {
     effectiveHours,
     // 10) Setup Efficiency = Effective Run Time ÷ Machine Shift Time.
     setupEfficiency: ratio(effectiveHours, shiftHours),
+    ...parts,
   };
 }
+
+// Lunch / Tea and Planned Downtime are the planned stops — taken out of the
+// time the machine was meant to produce, so they never lower Availability.
+// Every other stoppage does.
+export const PLANNED_STOP_KEYS = ["lunchMin", "plannedDownMin"];
+
+// Availability, Performance and Quality for one entry, plus the sums they're
+// made of (so the dashboard can add those up across entries and divide once,
+// instead of averaging percentages):
+//   Planned Production Time = Planned Operator Shift − Lunch − Planned Downtime
+//   Operating Time          = Machine Shift (ON→OFF) − every stoppage
+//   Availability            = Operating Time ÷ Planned Production Time
+//   Performance             = Cycle Time × (OK + Rejected) ÷ Operating Time
+//   Quality                 = OK ÷ (OK + Rejected)
+// A row with no Planned Operator Shift (only the oldest ones) uses its Machine
+// Shift there. Mirrored on the server by server/utils/oeeMetrics.js — keep the
+// two in step, it's what decides which entries go to Admin review.
+function oeeParts({ shiftMin, totalStoppageMin, row, cycle, ok, totalQty }) {
+  const empty = { availability: null, performance: null, quality: null, plannedProdMin: null, operatingMin: null, idealRunSec: null };
+  if (shiftMin === null) return empty;
+  const plannedH = num(row.plannedOperatorShiftHours);
+  const plannedProdMin = (isNum(plannedH) ? plannedH * 60 : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(row[k])));
+  const operatingMin = shiftMin - (totalStoppageMin || 0);
+  const idealRunSec = isNum(cycle) && cycle > 0 && isNum(totalQty) ? cycle * totalQty : null;
+  return {
+    availability: plannedProdMin > 0 ? operatingMin / plannedProdMin : null,
+    performance: operatingMin > 0 && isNum(idealRunSec) ? idealRunSec / 60 / operatingMin : null,
+    quality: isNum(totalQty) && totalQty > 0 && isNum(ok) ? ok / totalQty : null,
+    plannedProdMin,
+    operatingMin,
+    idealRunSec,
+  };
+}
+
+// Whichever of Availability / Performance / Quality is above 100% on a row's
+// calc — [] when none. Uses a tiny tolerance so a figure that's 100% on paper
+// isn't flagged over floating-point dust.
+export const OEE_METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
+export const metricsOver100 = (calc) =>
+  Object.keys(OEE_METRIC_LABELS).filter((k) => isNum(calc?.[k]) && calc[k] > 1 + 1e-9);
 
 // Unutilized Machine Time is one result per row of one machine's one date,
 // not one shared value for the whole group: the Excel formula reads "this
@@ -375,7 +432,10 @@ export function dayCalc(rows) {
       // 13) … but lunch and Setup Time are all combined across this
       // machine's whole date (computed once above), so every entry of that
       // machine/date shows the same figure.
-      unutilized: dayUnutilized,
+      // Shown within 0–100%: the formula's result below 0 reads 0% and above
+      // 100% reads 100%. The formula itself is untouched (raw figure kept).
+      unutilized: dayUnutilized === null ? null : Math.min(1, Math.max(0, dayUnutilized)),
+      unutilizedRaw: dayUnutilized,
       unreportedMin: dayUnreportedMin,
       oeeLosses: dayOeeLosses,
       oeeLunch: dayOeeLunch,

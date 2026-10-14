@@ -3,7 +3,8 @@ const mongoose = require("mongoose");
 /**
  * models/WorkOrder.js
  * ────────────────────────────
- * A work order: its Work Order No. and the part (see models/Item.js) it makes.
+ * A work order: its Work Order No., the part (see models/Item.js) it makes, a
+ * description of that part, the customer, how many pieces and when they ship.
  * A data entry sheet that offers work orders (the VMC sheet) lets the operator
  * pick the work order instead of hunting for the part — the part's Drawing No.,
  * Setup No. and program then fill in from it.
@@ -27,8 +28,28 @@ const WorkOrderSchema = new mongoose.Schema(
       ref: "Item",
       required: [true, "Part is required"],
     },
-    // Optional: how many pieces the work order is for.
-    orderQty: { type: Number, min: [0, "Order Quantity cannot be negative"] },
+    // Who the work order is for — optional.
+    customerName: {
+      type: String,
+      trim: true,
+      maxlength: [120, "Customer Name must be 120 characters or fewer"],
+      default: "",
+    },
+    partDescription: {
+      type: String,
+      trim: true,
+      required: [true, "Part Description is required"],
+      maxlength: [300, "Part Description must be 300 characters or fewer"],
+    },
+    // How many pieces the work order is for — a whole number, at least 1.
+    orderQty: {
+      type: Number,
+      required: [true, "Quantity is required"],
+      min: [1, "Quantity must be at least 1"],
+      validate: { validator: Number.isInteger, message: "Quantity must be a whole number" },
+    },
+    // The day the order is due to be dispatched — stored at UTC midnight.
+    dispatchDate: { type: Date, required: [true, "Dispatch Date is required"] },
     remarks: { type: String, trim: true, maxlength: [300, "Remarks must be 300 characters or fewer"], default: "" },
     isActive: { type: Boolean, default: true },
   },

@@ -46,6 +46,7 @@ import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters 
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
 import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
+import { shiftSettingForMachine } from "../utils/plannedShift";
 
 /**
  * VMC Data Entry — the VMC sheet's records, and one form per record.
@@ -115,6 +116,10 @@ const clearDraft = () => {
 const emptyEntry = () => ({
   date: isoDay(new Date()),
   machine: "",
+  // Machine Working Status — any of Machine Breakdown / No Manpower / No Planning.
+  machineStatus: [],
+  // Working (default) or Non Working — see utils/productionSheet.js.
+  workingMode: "Working",
   // Assigned on save from the machine's free slots for that date; kept in the
   // values only because an edited record has to save back to its own slot.
   slot: 1,
@@ -148,6 +153,8 @@ const toPayload = (v, isEdit) => ({
   ...(isEdit && v._id ? { _id: v._id } : {}),
   date: v.date,
   machine: v.machine,
+  machineStatus: v.machineStatus || [],
+  workingMode: v.workingMode || "Working",
   // An edited record saves back to its own slot; a new one asks the server for
   // the machine's next free slot on that date, since only the server can see
   // every entry — the page may be filtered to one machine.
@@ -574,6 +581,36 @@ const VmcDataEntry = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [errorsList, modalMode]);
 
+  // Operator Planned Shift from each block's machine's process (Process
+  // Master): a new entry takes that process's hours, filled in here; an edited
+  // one keeps the shift it was saved with. Either way the box is read-only —
+  // and the server enforces the same on Save (server/utils/plannedShift.js).
+  const plannedLocks = useMemo(
+    () =>
+      entries.map((v) => {
+        const setting = shiftSettingForMachine(v.machine, machines, processes);
+        if (!setting) return null;
+        const kept = modalMode === "edit" && editing?.savedPlanned !== null && editing?.savedPlanned !== undefined;
+        return { ...setting, fromEntry: kept };
+      }),
+    [entries, machines, processes, modalMode, editing],
+  );
+  useEffect(() => {
+    if (!modalMode) return;
+    setEntries((list) => {
+      let changed = false;
+      const next = list.map((v, i) => {
+        const lock = plannedLocks[i];
+        if (!lock || lock.fromEntry) return v;
+        const want = hoursToHmInput(lock.hours);
+        if (v.plannedOperatorShiftHours === want) return v;
+        changed = true;
+        return { ...v, plannedOperatorShiftHours: want };
+      });
+      return changed ? next : list;
+    });
+  }, [modalMode, plannedLocks]);
+
   const bookedList = useMemo(
     () => entries.map((v) => bookedRanges(v, occupied, editing?.slot ?? null)),
     [entries, occupied, editing],
@@ -621,7 +658,7 @@ const VmcDataEntry = () => {
 
   const openEdit = (row) => {
     setEntries([toFormValues(row)]);
-    setEditing({ slot: row.slot, machine: row.machine, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
+    setEditing({ slot: row.slot, machine: row.machine, savedPlanned: row.plannedOperatorShiftHours ?? null, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
     resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);
@@ -909,6 +946,7 @@ const VmcDataEntry = () => {
               operators={operators}
               isEdit={modalMode === "edit"}
               booked={bookedList}
+              plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
               onWorkOrderSelect={handleWorkOrderSelect}

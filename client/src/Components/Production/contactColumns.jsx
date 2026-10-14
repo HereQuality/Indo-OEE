@@ -1,6 +1,6 @@
 import React from "react";
 import { STOPPAGE_FIELDS, displayDay, remarkParts } from "../../utils/productionSheet";
-import { RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
 
 /**
  * components/Production/contactColumns.jsx
@@ -34,6 +34,7 @@ export const CONTACT_COLUMNS = [
   },
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
   { key: "workingStatus", label: "Working Status", get: (r) => dash(r.workingStatus) },
+  MACHINE_STATUS_COLUMN,
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   // Typed per entry (prefilled from the Part), so not a grey "calc" column.
@@ -108,6 +109,7 @@ export const CONTACT_COLUMNS = [
     tone: "oee",
     merge: "machineDay",
   },
+  ...APQ_COLUMNS,
   {
     key: "remarks",
     label: "Remarks",

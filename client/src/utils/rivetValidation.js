@@ -1,3 +1,4 @@
+import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, withDecimalPlanned } from "./entryValidation";
 import { rivetRowCalc } from "./rivetSheet";
@@ -82,6 +83,8 @@ export const validateRivetEntry = (v, { saved = null } = {}) => {
 
   if (blank(v.date)) errors.date = "Date is required";
   if (blank(v.machine)) errors.machine = "Machine No. is required";
+  // Non Working: the machine did not run, so nothing else is asked for.
+  if (isNonWorking(v)) return errors;
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.processType)) errors.processType = "Process is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";

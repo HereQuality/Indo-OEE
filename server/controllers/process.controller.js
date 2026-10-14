@@ -10,6 +10,9 @@ const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
+const { isAdminUser, actorOf } = require("../utils/adminAccess");
+const { settingOf } = require("../utils/plannedShift");
+const AuditLog = require("../models/AuditLog");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
@@ -34,6 +37,52 @@ const pickProcess = ({ processName, description, stats, charts, isActive, dataEn
     ? { dataEntryMenu: dataEntryMenu || null, dataEntryMenuLabel: dataEntryMenu ? dataEntryMenuLabel || null : null }
     : {}),
 });
+
+// The Operator Planned Shift setting a request carries — { plannedShiftLocked,
+// plannedShiftHours } with only the keys it actually sent — or a 400 message.
+const pickShiftSetting = (body) => {
+  const out = {};
+  if (body.plannedShiftLocked !== undefined) out.plannedShiftLocked = body.plannedShiftLocked !== false && body.plannedShiftLocked !== "false";
+  if (body.plannedShiftHours !== undefined && body.plannedShiftHours !== "" && body.plannedShiftHours !== null) {
+    const hours = Number(body.plannedShiftHours);
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return { error: "Planned shift hours must be more than 0 and at most 24" };
+    out.plannedShiftHours = hours;
+  }
+  return { setting: out };
+};
+
+// How a setting reads in the audit log: "Locked — 12 hr" / "Unlocked — entered on each entry".
+const shiftText = (raw) => {
+  const locked = raw.plannedShiftLocked !== false;
+  return locked ? "Locked — 12 hr" : "Unlocked — entered on each entry";
+};
+
+// Only Admin / Super Admin may change the Operator Planned Shift — the lock
+// or the hours, even the hours kept behind a lock. Anyone else may still save
+// the rest of the process, as long as what they send matches what's there
+// (the form always sends it back unchanged).
+const shiftChangeError = async (req, current, next) => {
+  const before = { plannedShiftLocked: current?.plannedShiftLocked !== false, plannedShiftHours: current?.plannedShiftHours ?? 12 };
+  const after = { ...before, ...next };
+  const changed = before.plannedShiftLocked !== after.plannedShiftLocked || Number(before.plannedShiftHours) !== Number(after.plannedShiftHours);
+  if (changed && !(await isAdminUser(req))) return { status: 403, message: "Only Admin or Super Admin can change the Operator Planned Shift" };
+  return { changed, before, after };
+};
+
+const logShiftChange = async (req, process, before, after) => {
+  try {
+    await AuditLog.create({
+      entityType: "process",
+      entity: process._id,
+      label: `Process · ${process.processName}`,
+      action: "setting",
+      changes: [{ field: "plannedShift", label: "Operator Planned Shift", from: shiftText(before), to: shiftText(after) }],
+      actor: await actorOf(req),
+    });
+  } catch (error) {
+    console.error("Error logging planned shift change:", error);
+  }
+};
 
 const isDuplicateName = async (processName, excludeId) => {
   const escaped = String(processName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -92,8 +141,14 @@ exports.createProcess = async (req, res) => {
     if (await isDuplicateName(data.processName)) {
       return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
     }
-    const process = await Process.create(data);
+    const { setting, error: settingError } = pickShiftSetting(req.body);
+    if (settingError) return res.status(400).json({ isOk: false, message: settingError });
+    // A new process starts locked at 12 hr; anything else needs Admin.
+    const shift = await shiftChangeError(req, {}, setting);
+    if (shift.status) return res.status(shift.status).json({ isOk: false, message: shift.message });
+    const process = await Process.create({ ...data, ...setting });
     if (machineIds) await syncMachines(process._id, machineIds);
+    if (shift.changed) await logShiftChange(req, process, shift.before, shift.after);
     res.status(201).json({ isOk: true, data: process, message: "Process created successfully" });
   } catch (error) {
     console.error("Error creating process:", error);
@@ -112,9 +167,16 @@ exports.updateProcess = async (req, res) => {
     if (data.processName !== undefined && (await isDuplicateName(data.processName, processId))) {
       return res.status(409).json({ isOk: false, message: `Process "${data.processName}" already exists` });
     }
-    const process = await Process.findByIdAndUpdate(processId, data, { new: true, runValidators: true });
+    const { setting, error: settingError } = pickShiftSetting(req.body);
+    if (settingError) return res.status(400).json({ isOk: false, message: settingError });
+    const current = mongoose.isValidObjectId(processId) ? await Process.findById(processId).lean() : null;
+    if (!current) return res.status(404).json({ isOk: false, message: "Process not found" });
+    const shift = await shiftChangeError(req, current, setting);
+    if (shift.status) return res.status(shift.status).json({ isOk: false, message: shift.message });
+    const process = await Process.findByIdAndUpdate(processId, { ...data, ...setting }, { new: true, runValidators: true });
     if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
     if (machineIds) await syncMachines(process._id, machineIds);
+    if (shift.changed) await logShiftChange(req, process, shift.before, shift.after);
     res.status(200).json({ isOk: true, data: process, message: "Process updated successfully" });
   } catch (error) {
     console.error("Error updating process:", error);

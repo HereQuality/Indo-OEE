@@ -39,6 +39,11 @@ export const STAT_CATALOG = [
   { key: "rejectionPct", label: "Rejection %", hint: "Rejected ÷ Actual", format: "pct", tone: "reject", example: "0.66%" },
   { key: "idealQty", label: "Ideal QTY", hint: "Shift time ÷ cycle time", format: "qty", example: "1.51M" },
   { key: "performance", label: "Actual vs Ideal", hint: "Actual ÷ Ideal quantity", format: "pct", example: "94.70%" },
+  // The three OEE components (same formulas as each sheet's own columns) —
+  // minutes and pieces added up over the entries, then divided once.
+  { key: "oeeAvailability", label: "Availability", hint: "Operating Time ÷ Planned Production Time", format: "pct", example: "86.96%" },
+  { key: "oeePerformance", label: "Performance", hint: "Cycle time × pieces ÷ Operating Time", format: "pct", example: "83.33%" },
+  { key: "oeeQuality", label: "Quality", hint: "OK ÷ (OK + Rejected)", format: "pct", tone: "ok", example: "98.00%" },
   { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%" },
   { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%" },
   // Key kept as oeeLunchCot: it is what a process's saved dashboard stores, so renaming it would drop the tile.
@@ -46,6 +51,7 @@ export const STAT_CATALOG = [
   { key: "effectiveHours", label: "Effective Machine Run Time", hint: "OK × cycle time", format: "hours", example: "7,281 hr" },
   { key: "shiftHours", label: "Machine Shift Time", hint: "Machine OFF − ON", format: "hours", example: "8,120 hr" },
   { key: "downtimeMin", label: "Total Downtime", hint: "All stoppage causes", format: "minutes", tone: "downtime", example: "5,160 min" },
+  { key: "unutilized", label: "Unutilized Machine Time", hint: "(12 − (Shift − Lunch)) ÷ 11 — averaged per entry", format: "pct", tone: "downtime", example: "8.33%" },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -54,20 +60,30 @@ export const STAT_CATALOG = [
 // picks the thumbnail sketch and `tone` its colour (WidgetPreview.jsx).
 export const CHART_CATALOG = [
   { key: "oeeTrend", measure: "oeeLosses", label: "OEE (over time)", hint: "The three OEE figures by date — by month on long ranges.", size: "lg", preview: "lines" },
+  {
+    key: "apqTrend",
+    measure: "oeeAvailability",
+    label: "Availability · Performance · Quality",
+    hint: "The three OEE components for the period, as rings. Table view: by date. Over 100% means an entry is held for Admin review.",
+    size: "md",
+    preview: "radial",
+  },
   { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok" },
-  { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "stacked" },
-  { key: "runTimeByMachine", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Each machine's share of effective run time.", size: "md", preview: "treemap" },
+  { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "nestedTreemap" },
+  { key: "runTimeByMachine", measure: "effectiveHours", label: "Stoppages by Cause (Min)", hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.", size: "md", preview: "radar", tone: "downtime" },
+  { key: "runTimeByMachineBars", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Hours of effective run time on each machine.", size: "md", preview: "vbars", tone: "ok" },
+  { key: "unutilizedTrend", measure: "unutilized", label: "Unutilized Machine Time (over time)", hint: "Unutilized share of the 12-hour day by date — by month on long ranges.", size: "md", preview: "area" },
   { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples" },
   { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected QTY (over time)", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
   { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by MC No.", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok" },
-  { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "hbars", tone: "reject" },
+  { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "donut", tone: "reject" },
   { key: "okPctByOperator", measure: "okPct", label: "Operator v/s OK QTY %", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
   { key: "outputByItem", measure: "okQty", label: "OK QTY by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
   { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table" },
 ];
 
-export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin"];
-export const DEFAULT_CHARTS = ["runTimeByOperator", "oeeTrend", "downtimeByMachine", "runTimeByMachine", "unreportedByMachine", "okRejectedTrend", "rejectByReason", "machineSummary"];
+export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin", "unutilized"];
+export const DEFAULT_CHARTS = ["runTimeByOperator", "oeeTrend", "apqTrend", "downtimeByMachine", "runTimeByMachine", "runTimeByMachineBars", "unutilizedTrend", "unreportedByMachine", "okRejectedTrend", "rejectByReason", "machineSummary"];
 
 const byKey = (catalog) => Object.fromEntries(catalog.map((w) => [w.key, w]));
 export const STATS_BY_KEY = byKey(STAT_CATALOG);
@@ -183,9 +199,27 @@ export function summarize(rows) {
   const downtimeByCause = Object.fromEntries(STOPPAGE_FIELDS.map((f) => [f.key, 0]));
   const rejectByReason = {};
   const byMachineDay = new Map();
+  // Availability / Performance / Quality: the minutes and pieces behind each
+  // row's own figure (oeeParts in productionSheet.js) are added up, and the
+  // ratio taken once over the totals — never an average of percentages. A row
+  // only joins a sum when its own figure exists, so the total can't disagree
+  // with the rows it's made of.
+  const apq = { plannedMin: 0, operatingMin: 0, idealRunMin: 0, runOperatingMin: 0, okQty: 0, totalQty: 0 };
 
   for (const row of rows) {
     const c = calcOf(row);
+    if (Number.isFinite(c.availability)) {
+      apq.plannedMin += c.plannedProdMin;
+      apq.operatingMin += c.operatingMin;
+    }
+    if (Number.isFinite(c.performance)) {
+      apq.idealRunMin += c.idealRunSec / 60;
+      apq.runOperatingMin += c.operatingMin;
+    }
+    if (Number.isFinite(c.quality)) {
+      apq.okQty += n(Number(row.okQty));
+      apq.totalQty += n(c.actualQty);
+    }
     s.totalQty += n(c.actualQty);
     s.okQty += n(Number(row.okQty));
     s.rejectedQty += n(c.rejectedQty);
@@ -208,10 +242,11 @@ export function summarize(rows) {
   // starting at that row), not one shared value for the whole day — so every
   // row's own figure is added in here, not the day's counted once.
   const oee = { oeeLosses: [], oeeLunch: [], oeeLunchCot: [] };
+  const unutilizedList = [];
   for (const group of byMachineDay.values()) {
     for (const d of dayCalc(group)) {
       if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
-      if (Number.isFinite(d.unutilized)) s.unutilizedDays += d.unutilized;
+      if (Number.isFinite(d.unutilized)) { s.unutilizedDays += d.unutilized; unutilizedList.push(d.unutilized); }
       for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
     }
   }
@@ -222,9 +257,13 @@ export function summarize(rows) {
     rejectionPct: s.totalQty > 0 ? s.rejectedQty / s.totalQty : null,
     performance: s.idealQty > 0 ? s.totalQty / s.idealQty : null,
     setupEfficiency: mean(setupEff),
+    unutilized: mean(unutilizedList),
     oeeLosses: mean(oee.oeeLosses),
     oeeLunch: mean(oee.oeeLunch),
     oeeLunchCot: mean(oee.oeeLunchCot),
+    oeeAvailability: apq.plannedMin > 0 ? apq.operatingMin / apq.plannedMin : null,
+    oeePerformance: apq.runOperatingMin > 0 ? apq.idealRunMin / apq.runOperatingMin : null,
+    oeeQuality: apq.totalQty > 0 ? apq.okQty / apq.totalQty : null,
     machineDays: byMachineDay.size,
     downtimeByCause,
     rejectByReason,

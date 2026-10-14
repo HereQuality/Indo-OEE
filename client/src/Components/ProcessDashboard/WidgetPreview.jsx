@@ -104,6 +104,42 @@ const NestedTreemap = () => (
 );
 
 // A wide band narrowing to a point — the funnel shape, sorted top to bottom.
+const Radial = () => (
+  <Frame>
+    {[34, 25, 16].map((r, i) => (
+      <g key={r}>
+        <circle cx="100" cy="42" r={r} fill="none" stroke={GRID} strokeWidth="6" />
+        <circle cx="100" cy="42" r={r} fill="none" stroke={S[i]} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * r * (0.86 - i * 0.12)} 999`} transform="rotate(-90 100 42)" />
+      </g>
+    ))}
+  </Frame>
+);
+
+const Radar = () => (
+  <Frame>
+    <polygon points="100,8 138,26 134,62 100,76 66,62 62,26" fill="none" stroke={GRID} strokeWidth="1.5" />
+    <polygon points="100,22 124,32 122,56 100,64 78,56 76,34" fill="none" stroke={GRID} strokeWidth="1" />
+    <polygon points="100,14 132,30 120,60 100,70 82,52 70,30" fill={S[2]} fillOpacity="0.3" stroke={S[2]} strokeWidth="2.5" strokeLinejoin="round" />
+  </Frame>
+);
+
+const Area = () => (
+  <Frame>
+    <Baseline />
+    <polygon points="14,74 14,52 44,40 74,46 104,26 134,34 164,22 192,30 192,74" fill={S[2]} fillOpacity="0.28" />
+    <polyline fill="none" stroke={S[2]} strokeWidth="2.5" strokeLinejoin="round" points="14,52 44,40 74,46 104,26 134,34 164,22 192,30" />
+  </Frame>
+);
+
+const Donut = () => (
+  <Frame>
+    {[0.38, 0.27, 0.2, 0.15].map((f, i, a) => {
+      const c = 2 * Math.PI * 26; const off = a.slice(0, i).reduce((x, y) => x + y, 0) * c;
+      return <circle key={i} cx="100" cy="42" r="26" fill="none" stroke={[S[0], S[1], S[2], S[3]][i]} strokeWidth="14" strokeDasharray={`${f * c - 2} 999`} strokeDashoffset={-off} transform="rotate(-90 100 42)" />;
+    })}
+  </Frame>
+);
+
 const Funnel = ({ color }) => (
   <Frame>
     {[172, 148, 128, 108, 90, 72, 54, 36, 20].map((w, i) => (
@@ -148,6 +184,10 @@ export const ChartPreview = ({ chart }) => {
     case "treemap": return <Treemap />;
     case "nestedTreemap": return <NestedTreemap />;
     case "funnel": return <Funnel color={color} />;
+    case "radial": return <Radial />;
+    case "radar": return <Radar />;
+    case "area": return <Area />;
+    case "donut": return <Donut />;
     case "multiples": return <Multiples />;
     case "table": return <Table />;
     default: return <VBars color={color} />;

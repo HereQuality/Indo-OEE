@@ -1,3 +1,4 @@
+import { isNonWorking } from "./productionSheet";
 import { CYCLE_OP_FIELDS, normalizeTime, rowCalc, spanMinutes } from "./productionSheet";
 import { hoursToHm, parseHm } from "./shiftHours";
 
@@ -225,6 +226,8 @@ export const validateEntry = (v, { saved = null } = {}) => {
 
   if (blank(v.date)) errors.date = "Date is required";
   if (blank(v.machine)) errors.machine = "Machine No. is required";
+  // Non Working: the machine did not run, so nothing else is asked for.
+  if (isNonWorking(v)) return errors;
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
 

@@ -7,6 +7,11 @@ const ProductionEntry = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const Process = require("../models/Process");
+const AuditLog = require("../models/AuditLog");
+const User = require("../models/user.model");
+const Operator = require("../models/Operator");
+const RoleMaster = require("../models/RoleMaster");
 const { saveRow, getOccupied } = require("./productionSheet.controller");
 
 const MACHINE = "64b0c0ffee0000000000aaaa";
@@ -14,8 +19,8 @@ const TODAY = new Date().toISOString().slice(0, 10);
 
 // A tiny table of saved entries for one machine/date, with just the query
 // shapes the controller uses.
-const fakeDb = (rows = []) => {
-  const table = rows.map((r) => ({ date: new Date(`${TODAY}T00:00:00.000Z`), machine: MACHINE, ...r }));
+const fakeDb = (rows = [], process = null) => {
+  const table = rows.map((r) => ({ date: new Date(`${TODAY}T00:00:00.000Z`), machine: MACHINE, createdAt: new Date(), ...r }));
   const match = (q) =>
     table.filter(
       (r) =>
@@ -27,8 +32,10 @@ const fakeDb = (rows = []) => {
     );
   const chain = (rows) => ({ select: () => chain(rows), sort: () => chain(rows), populate: () => chain(rows), lean: async () => rows });
   const saved = [];
+  const logs = [];
   return {
     saved,
+    logs,
     install() {
       const restore = [];
       const stub = (obj, name, fn) => {
@@ -37,6 +44,15 @@ const fakeDb = (rows = []) => {
         restore.push(() => (obj[name] = orig));
       };
       stub(Machine, "exists", async () => ({ _id: MACHINE }));
+      // The machine's process (none unless a test says so) and its name, for the
+      // planned-shift rule and the audit log; the audit log itself is captured.
+      stub(Machine, "findById", () => chain(process ? { _id: MACHINE, process: "64b0c0ffee0000000000dddd" } : { _id: MACHINE, process: null }));
+      stub(Machine, "find", () => chain([{ _id: MACHINE, machineName: "7A" }]));
+      stub(Process, "findById", () => chain(process));
+      stub(AuditLog, "create", async (row) => (logs.push(row), row));
+      stub(User, "find", () => chain([]));
+      stub(Operator, "find", () => chain([]));
+      stub(RoleMaster, "find", () => chain([]));
       stub(ProductionEntry, "find", (q) => chain(match(q)));
       stub(ProductionEntry, "findOne", (q) => chain(match(q)[0] || null));
       stub(ProductionEntry, "findOneAndUpdate", (key, update) => ({
@@ -75,8 +91,8 @@ const call = async (handler, req) => {
   return res;
 };
 
-const withDb = async (rows, fn) => {
-  const db = fakeDb(rows);
+const withDb = async (rows, fn, process = null) => {
+  const db = fakeDb(rows, process);
   const restore = db.install();
   try {
     await fn(db);
@@ -208,13 +224,13 @@ test("Lunch / Rest is optional, and less stoppage than allowed saves", async () 
   });
 });
 
-test("stoppage is capped by Planned Operator Shift − Machine Shift", async () => {
+test("stoppage is capped by the Machine Shift", async () => {
   await withDb([], async (db) => {
-    // 4 h run, 5 h planned -> 60 min allowed
-    const over = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 61 }) });
+    // 4 h run -> at most 240 min of stoppage (it happens inside the run)
+    const over = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 241 }) });
     assert.equal(over.statusCode, 400);
-    assert.match(over.payload.message, /can't be more than Planned Operator Shift − Machine Shift \(60 min\)/);
-    const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 60 }) });
+    assert.match(over.payload.message, /Total stoppage \(241 min\) can't be more than the Machine Shift \(240 min\)/);
+    const fits = await call(saveRow, { body: body({ plannedOperatorShiftHours: 5, setupMin: 240 }) });
     assert.equal(fits.statusCode, 200, JSON.stringify(fits.payload));
     assert.equal(db.saved.length, 1);
   });

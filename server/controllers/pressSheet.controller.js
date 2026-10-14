@@ -5,6 +5,10 @@ const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
+const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { enforcePlannedShift } = require("../utils/plannedShift");
+const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
+const { MACHINE_STATUSES } = require("../models/entryCommon");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
 
 /**
@@ -81,10 +85,31 @@ const buildFields = (body) => {
     if (excluded.length) set.excludedOps = excluded;
     else unset.excludedOps = "";
   }
+  // Machine Working Status — any of MACHINE_STATUSES (entryCommon.js); none unsets it.
+  // Machine Working Status: only "Non Working" is stored (see utils/workingMode.js).
+  if (body.workingMode !== undefined) {
+    if (isNonWorking(body)) set.workingMode = "Non Working";
+    else unset.workingMode = "";
+  }
+  if (body.machineStatus !== undefined) {
+    const raw = Array.isArray(body.machineStatus) ? body.machineStatus : [];
+    if (raw.some((v) => !MACHINE_STATUSES.includes(v))) {
+      throw Object.assign(new Error("Unknown Machine Working Status"), { status: 400 });
+    }
+    const list = MACHINE_STATUSES.filter((v) => raw.includes(v));
+    if (list.length) set.machineStatus = list;
+    else unset.machineStatus = "";
+  }
   return { set, unset };
 };
 
+// This sheet's key in the audit log, and the fields whose old → new values it records.
+const SHEET = "press";
+const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "machineStatus", "workingMode"])];
+
 const isRowEmpty = (doc) =>
+  doc.workingMode !== "Non Working" &&
+  !(doc.machineStatus || []).length &&
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
   NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null);
@@ -117,7 +142,9 @@ const hm = (hours) => {
 // save an incomplete entry. A body with every field blank is how a row is
 // cleared, so it passes. Keep in step with client/src/utils/pressValidation.js.
 const entryRuleError = (body, existing = null) => {
-  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k]))) return null;
+  // A Non Working entry records only the day, machine, operator, reason and remarks.
+  if (isNonWorking(body)) return null;
+  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && !(body.machineStatus || []).length) return null;
 
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
@@ -297,14 +324,19 @@ exports.saveRow = async (req, res) => {
     let existing =
       _id && mongoose.isValidObjectId(_id)
         ? await PressEntry.findById(_id)
-            .select("unlockedUntil machineOnTime machineOffTime operator date machine createdAt")
             .lean()
         : null;
     if (!existing && editSlot && SLOT_NUMBERS.includes(editSlot)) {
       existing = await PressEntry.findOne({ date: day, machine, slot: editSlot })
-        .select("unlockedUntil machineOnTime machineOffTime operator createdAt")
         .lean();
     }
+    // The Operator Planned Shift comes from the machine's process (Process
+    // Master), never from what was typed — see utils/plannedShift.js.
+    if (req.body.workingMode !== undefined && !WORKING_MODES.includes(String(req.body.workingMode).trim())) {
+      return res.status(400).json({ isOk: false, message: "Machine Working Status must be Working or Non Working" });
+    }
+    if (isNonWorking(req.body)) req.body = nonWorkingBody(req.body);
+    await enforcePlannedShift(req.body, existing);
     const ruleError = entryRuleError(req.body, existing);
     if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
@@ -393,6 +425,9 @@ exports.saveRow = async (req, res) => {
     }
 
     const { set, unset } = buildFields(req.body);
+    // Availability / Performance / Quality, and whether this save needs Admin
+    // review — written in the same update as the entry (utils/entryAudit.js).
+    const review = reviewFor(SHEET, existing, set, unset);
     // date/machine/slot aren't in `set` (buildFields never touches them), but
     // an edit by _id has to carry them explicitly, since it's no longer the
     // findOneAndUpdate filter doing that for free the way an upsert's match
@@ -403,24 +438,26 @@ exports.saveRow = async (req, res) => {
       ? await PressEntry.findByIdAndUpdate(
           existing._id,
           {
-            $set: { ...fields, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
-            ...(Object.keys(unset).length ? { $unset: unset } : {}),
+            $set: { ...fields, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+            ...(Object.keys({ ...unset, ...review.unset }).length ? { $unset: { ...unset, ...review.unset } } : {}),
           },
           { new: true, runValidators: true },
         ).lean()
       : await PressEntry.findOneAndUpdate(
           { date: day, machine, slot: slotNo },
           {
-            $set: { ...set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
-            ...(Object.keys(unset).length ? { $unset: unset } : {}),
+            $set: { ...set, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+            ...(Object.keys({ ...unset, ...review.unset }).length ? { $unset: { ...unset, ...review.unset } } : {}),
           },
           { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
         ).lean();
 
     if (isRowEmpty(doc)) {
       await PressEntry.deleteOne({ _id: doc._id });
+      if (existing) await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
       return res.status(200).json({ isOk: true, data: null, message: "Row cleared" });
     }
+    await logEntrySave({ sheet: SHEET, req, before: existing, after: doc, fields: LOG_FIELDS, review });
     res.status(200).json({ isOk: true, data: toRow(doc), message: "Row saved" });
   } catch (error) {
     console.error("Error saving PRESS row:", error);
@@ -475,13 +512,14 @@ exports.deleteRow = async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ isOk: false, message: "Invalid entry" });
     }
-    const existing = await PressEntry.findById(req.params.id).select("createdAt unlockedUntil").lean();
+    const existing = await PressEntry.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ isOk: false, message: "Entry not found" });
     const lockMessage = await checkNotLocked(new Date(existing.createdAt).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
     if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
 
     const deleted = await PressEntry.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
     res.status(200).json({ isOk: true, message: "Entry deleted" });
   } catch (error) {
     console.error("Error deleting PRESS row:", error);
@@ -499,6 +537,7 @@ exports.unlockRow = async (req, res) => {
     const unlockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const entry = await PressEntry.findByIdAndUpdate(req.params.id, { $set: { unlockedUntil } }, { new: true }).lean();
     if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    await logEntryUnlock({ sheet: SHEET, req, entry });
     res.status(200).json({ isOk: true, data: toRow(entry), message: "Unlocked for 24 hours" });
   } catch (error) {
     console.error("Error unlocking PRESS row:", error);

@@ -10,7 +10,20 @@
  * departments, roles, password). A MachineOperator is just a name on the
  * shop floor and never logs in, so the two are not interchangeable.
  */
+const mongoose = require("mongoose");
 const MachineOperator = require("../models/MachineOperator");
+const Process = require("../models/Process");
+
+// The request's processes as a de-duplicated id list, or { error }. Every id
+// must be a real process. Required (at least one) when `required` is set.
+const pickProcesses = async (raw, required) => {
+  if (raw === undefined) return required ? { error: "Select at least one process" } : { ids: undefined };
+  const list = [...new Set((Array.isArray(raw) ? raw : [raw]).map((v) => String(v?._id || v || "").trim()).filter(Boolean))];
+  if (required && !list.length) return { error: "Select at least one process" };
+  if (list.some((id) => !mongoose.isValidObjectId(id))) return { error: "Unknown process selected" };
+  if (list.length && (await Process.countDocuments({ _id: { $in: list } })) !== list.length) return { error: "Unknown process selected" };
+  return { ids: list };
+};
 
 // ── Create ────────────────────────────────────────────────────────────────
 exports.createMachineOperator = async (req, res) => {
@@ -21,8 +34,12 @@ exports.createMachineOperator = async (req, res) => {
       return res.status(400).json({ isOk: false, message: "Operator name is required" });
     }
 
+    const { ids, error } = await pickProcesses(req.body.processes, true);
+    if (error) return res.status(400).json({ isOk: false, message: error });
+
     const created = await MachineOperator.create({
       name: String(name).trim(),
+      processes: ids,
       isActive: isActive !== undefined ? isActive : true,
     });
 
@@ -46,6 +63,11 @@ exports.updateMachineOperator = async (req, res) => {
     const update = {};
     if (name !== undefined) update.name = String(name).trim();
     if (isActive !== undefined) update.isActive = isActive;
+    if (req.body.processes !== undefined) {
+      const { ids, error } = await pickProcesses(req.body.processes, true);
+      if (error) return res.status(400).json({ isOk: false, message: error });
+      update.processes = ids;
+    }
 
     const operator = await MachineOperator.findOneAndUpdate({ _id: operatorId }, update, { new: true });
     if (!operator) {
@@ -99,7 +121,7 @@ exports.getMachineOperatorById = async (req, res) => {
 // ── List all (for dropdown) ───────────────────────────────────────────────
 exports.listMachineOperators = async (req, res) => {
   try {
-    const operators = await MachineOperator.find({ isActive: true }).sort({ name: 1 });
+    const operators = await MachineOperator.find({ isActive: true }).sort({ name: 1 }).lean();
     res.status(200).json({ isOk: true, data: operators });
   } catch (error) {
     console.error("Error listing machine operators:", error);
@@ -115,13 +137,14 @@ exports.listMachineOperatorsByParams = async (req, res) => {
     const query = {};
     if (match) query.name = { $regex: match, $options: "i" };
     if (isActive !== undefined) query.isActive = isActive;
+    if (req.body.process) query.processes = req.body.process;
 
     let sortQuery = { createdAt: -1 };
     if (sorton && sortdir) sortQuery = { [sorton]: sortdir === "desc" ? -1 : 1 };
 
     const [totalCount, operators] = await Promise.all([
       MachineOperator.countDocuments(query),
-      MachineOperator.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).lean(),
+      MachineOperator.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: operators }] });

@@ -9,6 +9,7 @@ import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateMachineOperators } from "../hooks/useMachineOperators";
+import { useProcesses } from "../hooks/useProcesses";
 import {
   createMachineOperator,
   deleteMachineOperator,
@@ -21,12 +22,12 @@ import {
  * pages/OperatorMaster.jsx
  * ────────────────────────────
  * The shop-floor operator list behind Production Data Entry's "Operator"
- * dropdown — just a name and an active flag, on its own MachineOperator
+ * dropdown — a name, the processes they work in and an active flag, on its own MachineOperator
  * model. Deliberately not the Employee Management "Operator" page: that one
  * is people who log in (roles, departments, passwords); this is who ran a
  * machine on a given shift, and never logs in at all.
  */
-const initialState = { name: "", isActive: true };
+const initialState = { name: "", processes: [], isActive: true };
 
 const OperatorMaster = () => {
   const toast = useAlert();
@@ -41,6 +42,8 @@ const OperatorMaster = () => {
 
   const [operators, setOperators] = useState([]);
   const invalidateOperators = useInvalidateMachineOperators();
+  const { data: processes = [] } = useProcesses();
+  const activeProcesses = processes.filter((p) => p.isActive !== false);
   const [query, setQuery] = useState("");
 
   const [_id, set_Id] = useState("");
@@ -80,7 +83,7 @@ const OperatorMaster = () => {
     getMachineOperatorById(id)
       .then((res) => {
         const o = res.data.data;
-        setValues({ name: o.name || "", isActive: o.isActive });
+        setValues({ name: o.name || "", processes: (o.processes || []).map((p) => String(p._id || p)), isActive: o.isActive });
       })
       .catch(() => toast.error("Failed to fetch operator details"))
       .finally(() => setIsLoading(false));
@@ -96,6 +99,7 @@ const OperatorMaster = () => {
   const validate = (v) => {
     const errors = {};
     if (!v.name.trim()) errors.name = "Operator name is required!";
+    if (!v.processes.length) errors.processes = "Select at least one process";
     return errors;
   };
 
@@ -168,6 +172,20 @@ const OperatorMaster = () => {
   const col = [
     { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
     { name: "Operator Name", selector: (row) => row.name, sortable: true, sortField: "name", minWidth: "260px" },
+    {
+      name: "Process",
+      cell: (row) =>
+        row.processes?.length ? (
+          <div className="d-flex flex-wrap gap-1 py-1">
+            {row.processes.map((p) => (
+              <span key={p._id} className="badge bg-primary-subtle text-primary">{p.processName}</span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted small">Not assigned — shown in every process</span>
+        ),
+      minWidth: "220px",
+    },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
       name: "Action",
@@ -249,6 +267,29 @@ const OperatorMaster = () => {
                 Operator Name <span className="text-danger">*</span>
               </Label>
               {isSubmit && <p className="text-danger">{formErrors.name}</p>}
+            </div>
+            <div className="mb-3">
+              <Label className="fw-semibold mb-1 d-block">
+                Process <span className="text-danger">*</span>
+              </Label>
+              <div className="text-muted small mb-2">The entry forms offer this operator only on machines of the ticked processes.</div>
+              <div className="d-flex flex-wrap gap-2">
+                {activeProcesses.map((p) => {
+                  const on = values.processes.includes(p._id);
+                  return (
+                    <label key={p._id} className={`btn btn-sm ${on ? "btn-primary" : "btn-outline-secondary"} d-inline-flex align-items-center gap-2 mb-0`}>
+                      <input
+                        type="checkbox"
+                        className="form-check-input m-0"
+                        checked={on}
+                        onChange={() => setValues({ ...values, processes: on ? values.processes.filter((id) => id !== p._id) : [...values.processes, p._id] })}
+                      />
+                      {p.processName}
+                    </label>
+                  );
+                })}
+              </div>
+              {isSubmit && formErrors.processes && <p className="text-danger small mb-0 mt-1">{formErrors.processes}</p>}
             </div>
             <div className="mt-3">
               <Input

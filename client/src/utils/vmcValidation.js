@@ -1,3 +1,4 @@
+import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, withDecimalPlanned } from "./entryValidation";
 import { vmcRowCalc } from "./vmcSheet";
@@ -80,6 +81,8 @@ export const validateVmcEntry = (v, { saved = null } = {}) => {
 
   if (blank(v.date)) errors.date = "Date is required";
   if (blank(v.machine)) errors.machine = "Machine No. is required";
+  // Non Working: the machine did not run, so nothing else is asked for.
+  if (isNonWorking(v)) return errors;
   if (blank(v.operator)) errors.operator = "Operator is required";
   if (blank(v.itemName)) errors.itemName = "Part Name is required";
   // Program Time / No. of Piece In One Program are set on the Part itself

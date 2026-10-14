@@ -326,6 +326,52 @@ export const DOWNTIME_LABEL = {
 // `headStyle` overrides the label-length-based default (`autoHeadStyle`,
 // applied at render time) for the few columns whose values genuinely need
 // more room than their own label implies.
+// Machine Working Status — any of Machine Breakdown / No Manpower / No
+// Planning, ticked on the entry form. Shared by every sheet's column list.
+export const MACHINE_STATUS_COLUMN = {
+  key: "machineStatus",
+  label: "Machine Working Status",
+  // Working unless the entry says Non Working; then the reason(s) follow.
+  get: (r) => (r.workingMode === "Non Working" ? ["Non Working", ...(r.machineStatus || [])].join(" — ") : (r.machineStatus || []).length ? `Working — ${(r.machineStatus || []).join(", ")}` : "Working"),
+  headStyle: { minWidth: 150 },
+};
+
+// A percentage, in red when it's over 100% — such an entry is held for Admin
+// review, and the figure is shown exactly as worked out, never capped.
+const pctOver = (v) =>
+  Number.isFinite(v) && v > 1 + 1e-9 ? <span className="text-danger fw-semibold">{fmtPct(v)}</span> : pct(v);
+
+const REVIEW_STYLE = {
+  pending: ["Pending review", "bg-warning-subtle text-warning-emphasis"],
+  approved: ["Approved", "bg-success-subtle text-success-emphasis"],
+  rejected: ["Rejected", "bg-danger-subtle text-danger-emphasis"],
+};
+const METRIC_LABEL = { availability: "Availability", performance: "Performance", quality: "Quality" };
+
+// The entry's Admin review state, with what was over 100% (and any reviewer's
+// remark) on hover. "—" for an entry that never needed review.
+export const ReviewBadge = ({ review }) => {
+  const style = review && REVIEW_STYLE[review.status];
+  if (!style) return "—";
+  const over = (review.flagged || []).map((f) => `${METRIC_LABEL[f.metric] || f.metric} ${fmtPct(f.value)}`).join(", ");
+  const by = review.decidedBy?.name ? ` — ${review.status} by ${review.decidedBy.name}` : "";
+  const title = [over && `Over 100%: ${over}`, by && by.slice(3), review.remark && `Remark: ${review.remark}`].filter(Boolean).join("\n");
+  return (
+    <span className={`badge rounded-pill ${style[1]}`} title={title} style={{ whiteSpace: "nowrap" }}>
+      {style[0]}
+    </span>
+  );
+};
+
+// Availability / Performance / Quality for this entry alone (rowCalc), and its
+// review state — the same four columns, in the same place, on every sheet.
+export const APQ_COLUMNS = [
+  { key: "availability", label: "Availability (%)", get: (r, c) => pctOver(c.availability), align: "text-center", tone: "calc" },
+  { key: "performance", label: "Performance (%)", get: (r, c) => pctOver(c.performance), align: "text-center", tone: "calc" },
+  { key: "quality", label: "Quality (%)", get: (r, c) => pctOver(c.quality), align: "text-center", tone: "calc" },
+  { key: "review", label: "OEE Review", get: (r) => <ReviewBadge review={r.review} />, align: "text-center", headStyle: { minWidth: 120 } },
+];
+
 const COLUMNS = [
   { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date", tone: "date" },
   {
@@ -337,6 +383,7 @@ const COLUMNS = [
     frozen: "machine",
   },
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
+  MACHINE_STATUS_COLUMN,
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   {
@@ -489,6 +536,7 @@ const COLUMNS = [
   // The general Remarks box only. The two "Other" remarks are shown where their
   // figure is — the Other column of the Rejected Quantity and Total Stoppage
   // breakdowns (see WithRemark) — not repeated out here.
+  ...APQ_COLUMNS,
   {
     key: "remarks",
     label: "Remarks",

@@ -55,10 +55,17 @@ const PRODUCTION_MENUS = [
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Parts", menuUrl: "/hqepl/production/parts", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
+  // Work Orders is back as a master of its own (Work Order No., customer,
+  // part, quantity, dispatch date) — no entry form picks one yet.
+  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardCheck" },
+  // Admin review of entries whose Availability / Performance / Quality went
+  // over 100%, and the audit log. The API itself is Admin / Super Admin only
+  // (server/utils/adminAccess.js); this row just puts it in the sidebar —
+  // tick it in Manage Role for the Admin role.
+  { menuName: "OEE Review", menuUrl: "/hqepl/production/oee-review", sequence: 6, icon: "ShieldAlert" },
   // Dashboard and Data Entry are NOT listed here any more (they are
-  // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Work Orders is retired (no
-  // process uses it any more — VMC's Work Order field was dropped). Listing
-  // any of these again would re-activate its retired row on every run.
+  // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
+  // re-activate its retired row on every run.
 ];
 
 const DATA_ENTRY_MENUS = [

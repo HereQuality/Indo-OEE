@@ -8,6 +8,7 @@ const {
   getWorkOrderById,
   listWorkOrders,
   listWorkOrderByParams,
+  getWorkOrderProgress,
 } = require("../controllers/workOrder.controller");
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.use(authorize("SuperAdmin", "Operator"));
 router.get("/", listWorkOrders);
 router.post("/", requireMenuPermission(MENU_URL, "write"), createWorkOrder);
 router.post("/search", requireMenuPermission(MENU_URL, "read"), listWorkOrderByParams);
+router.get("/progress", requireMenuPermission(MENU_URL, "read"), getWorkOrderProgress);
 router.get("/:workOrderId", requireMenuPermission(MENU_URL, "read"), getWorkOrderById);
 router.put("/:workOrderId", requireMenuPermission(MENU_URL, "write"), updateWorkOrder);
 router.delete("/:workOrderId", requireMenuPermission(MENU_URL, "write"), deleteWorkOrder);

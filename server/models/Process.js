@@ -62,6 +62,18 @@ const ProcessSchema = new mongoose.Schema(
     charts: widgetKeys,
     dataEntryMenu: { type: String, trim: true, default: null },
     dataEntryMenuLabel: { type: String, trim: true, default: null },
+    // Operator Planned Shift for every entry on this process's machines —
+    // see utils/plannedShift.js. Locked (the default): a fixed 12 hours.
+    // Unlocked: plannedShiftHours, set here by an Admin / Super Admin. Either
+    // way, data entry can't change it; each entry keeps the value it was saved
+    // with, so changing this never rewrites past entries.
+    plannedShiftLocked: { type: Boolean, default: true },
+    plannedShiftHours: {
+      type: Number,
+      min: [0.25, "Planned shift must be more than 0 hours"],
+      max: [24, "Planned shift can't be more than 24 hours"],
+      default: 12,
+    },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },
