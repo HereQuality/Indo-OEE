@@ -242,6 +242,14 @@ test("locked process: a new entry gets 12 h whatever was typed; an edit keeps th
   });
 });
 
+test("locked process with its own hours (8): a new entry gets those hours", async () => {
+  await withWorld({ process: { plannedShiftLocked: true, plannedShiftHours: 8 } }, async ({ entries }) => {
+    const res = await call(saveRow, { body: body({ plannedOperatorShiftHours: 12 }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(entries[0].plannedOperatorShiftHours, 8);
+  });
+});
+
 test("unlocked process: the hours typed on the entry are kept", async () => {
   await withWorld({ process: { plannedShiftLocked: false, plannedShiftHours: 10 } }, async ({ entries }) => {
     const res = await call(saveRow, { body: body({ plannedOperatorShiftHours: 8 }) });

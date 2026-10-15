@@ -125,7 +125,7 @@ test("an entry that overlaps another of the same machine and date is refused wit
   await withDb([{ slot: 1, machineOnTime: "08:00", machineOffTime: "12:00" }], async (db) => {
     const res = await call(saveRow, { body: body({ machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 4 }) });
     assert.equal(res.statusCode, 400);
-    assert.match(res.payload.message, /already has an entry from 8:00 AM – 12:00 PM/);
+    assert.match(res.payload.message, /already has an entry from 08:00 – 12:00/);
     assert.match(res.payload.message, /can't overlap/);
     const [y, m, d] = TODAY.split("-");
     assert.ok(res.payload.message.includes(`${d}/${m}/${y}`), "dd/mm/yyyy date");
@@ -151,7 +151,7 @@ test("editing an entry does not clash with itself, but does with its neighbour",
     assert.equal(shrink.statusCode, 200, JSON.stringify(shrink.payload));
     const grow = await call(saveRow, { body: body({ slot: 1, machineOffTime: "13:30", plannedOperatorShiftHours: 8 }) });
     assert.equal(grow.statusCode, 400);
-    assert.match(grow.payload.message, /1:00 PM – 5:00 PM/);
+    assert.match(grow.payload.message, /13:00 – 17:00/);
   });
 });
 
@@ -242,7 +242,7 @@ test("one operator can't be on two machines at overlapping times on a date", asy
   await withDb([{ machine: OTHER_MACHINE, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00" }], async (db) => {
     const clash = await call(saveRow, { body: body({ operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 8 }) });
     assert.equal(clash.statusCode, 400);
-    assert.match(clash.payload.message, /Operator Asha is already on machine .* from 8:00 AM – 12:00 PM/);
+    assert.match(clash.payload.message, /Operator Asha is already on machine .* from 08:00 – 12:00/);
     assert.match(clash.payload.message, /can't run two machines at the same time/);
     assert.equal(db.saved.length, 0);
     // back to back is fine, and so is another operator

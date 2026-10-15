@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 /**
@@ -26,6 +26,22 @@ const FormLine = ({ title, fields = [], errors = {}, isSubmit, values = {}, opti
   useEffect(() => {
     if (hasValue || openByDefault || hasError) setOpen(true);
   }, [hasValue, openByDefault, hasError]);
+  const rootRef = useRef(null);
+  // The Status dropdown's "Remarks" option asks the Remarks section to open and take the cursor.
+  const isRemarks = fields.includes("remarks");
+  useEffect(() => {
+    if (!isRemarks) return undefined;
+    const onOpen = () => {
+      setOpen(true);
+      setTimeout(() => {
+        const box = rootRef.current?.querySelector('textarea[name="remarks"]');
+        box?.focus({ preventScroll: true });
+        box?.scrollIntoView({ block: "center", behavior: "smooth" });
+      }, 60);
+    };
+    window.addEventListener("entry:open-remarks", onOpen);
+    return () => window.removeEventListener("entry:open-remarks", onOpen);
+  }, [isRemarks]);
   const shown = !optional || open || hasError;
 
   const head = (
@@ -42,7 +58,7 @@ const FormLine = ({ title, fields = [], errors = {}, isSubmit, values = {}, opti
   );
 
   return (
-    <div className={`border rounded mb-1 ${hasError ? "border-danger" : ""}`}>
+    <div ref={rootRef} className={`border rounded mb-1 ${hasError ? "border-danger" : ""}`}>
       {optional ? (
         <button
           type="button"

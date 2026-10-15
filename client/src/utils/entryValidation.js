@@ -49,11 +49,11 @@ const clock = (t) => {
   return n ? Number(n.slice(0, 2)) * 60 + Number(n.slice(3)) : null;
 };
 
-// 0..1439 (or a next-day stretch beyond it) → "8:05 AM".
+// 0..1439 (or a next-day stretch beyond it) → "08:05" — 24-hour, so there is no AM/PM to mix up.
+// (Still exported as fmt12, the name its callers use.)
 export const fmt12 = (minutes) => {
   const m = ((minutes % 1440) + 1440) % 1440;
-  const h = Math.floor(m / 60);
-  return `${h % 12 || 12}:${String(m % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
 
 // The stretch of the day an entry occupies — { start, end } in minutes — or

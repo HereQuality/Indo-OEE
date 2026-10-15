@@ -170,7 +170,7 @@ test("Machine not run must be one of the offered reasons", async () => {
 test("an entry that overlaps another of the same machine and date is refused with the clash named", async () => {
   await refused(
     { machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 4, okQty: 10, rejectedQty: 0, lunchMin: 0 },
-    /already has an entry from 9:00 AM – 5:30 PM/,
+    /already has an entry from 09:00 – 17:30/,
     [{ slot: 1, machineOnTime: "09:00", machineOffTime: "17:30" }],
   );
 });

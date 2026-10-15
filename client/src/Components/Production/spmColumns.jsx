@@ -1,6 +1,6 @@
 import React from "react";
 import { displayDay, remarkParts } from "../../utils/productionSheet";
-import { APQ_COLUMNS, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
 
 /**
  * components/Production/spmColumns.jsx
@@ -116,6 +116,7 @@ export const SPM_COLUMNS = [
     merge: "machineDay",
   },
   { key: "setupEff", label: "Setup Efficiency (%)", get: (r, c) => pct(c.setupEfficiency), align: "text-center", tone: "calc" },
+  ...APQ_COLUMNS,
   { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-center", tone: "oee", merge: "machineDay" },
   {
     key: "oeeLunch",
@@ -133,7 +134,7 @@ export const SPM_COLUMNS = [
     tone: "oee",
     merge: "machineDay",
   },
-  ...APQ_COLUMNS,
+  REVIEW_COLUMN,
   {
     key: "remarks",
     label: "Remarks",

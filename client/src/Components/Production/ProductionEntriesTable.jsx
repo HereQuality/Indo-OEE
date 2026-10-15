@@ -369,8 +369,10 @@ export const APQ_COLUMNS = [
   { key: "availability", label: "Availability (%)", get: (r, c) => pctOver(c.availability), align: "text-center", tone: "calc" },
   { key: "performance", label: "Performance (%)", get: (r, c) => pctOver(c.performance), align: "text-center", tone: "calc" },
   { key: "quality", label: "Quality (%)", get: (r, c) => pctOver(c.quality), align: "text-center", tone: "calc" },
-  { key: "review", label: "OEE Review", get: (r) => <ReviewBadge review={r.review} />, align: "text-center", headStyle: { minWidth: 120 } },
 ];
+
+// The review state sits after the OEE columns.
+export const REVIEW_COLUMN = { key: "review", label: "OEE Review", get: (r) => <ReviewBadge review={r.review} />, align: "text-center", headStyle: { minWidth: 120 } };
 
 const COLUMNS = [
   { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date", tone: "date" },
@@ -509,6 +511,7 @@ const COLUMNS = [
     align: "text-center",
     tone: "calc",
   },
+  ...APQ_COLUMNS,
   {
     key: "oeeLosses",
     label: "OEE considering losses (%)",
@@ -536,7 +539,7 @@ const COLUMNS = [
   // The general Remarks box only. The two "Other" remarks are shown where their
   // figure is — the Other column of the Rejected Quantity and Total Stoppage
   // breakdowns (see WithRemark) — not repeated out here.
-  ...APQ_COLUMNS,
+  REVIEW_COLUMN,
   {
     key: "remarks",
     label: "Remarks",

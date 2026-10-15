@@ -338,17 +338,19 @@ const EntryBlock = ({
                 <option value="Non Working">Non Working</option>
               </Input>
             </Field>
-            {nonWorking && (
-              <Field label="Reason" error={err("machineStatus")} md={6} lg={3} fieldKey="machineStatus">
-                <MachineStatusSelect value={values.machineStatus} onChange={(list) => onChange(index, "machineStatus", list)} />
-              </Field>
-            )}
+            <Field label="Status" error={err("machineStatus")} md={6} lg={3} fieldKey="machineStatus">
+              <MachineStatusSelect
+                value={values.machineStatus}
+                onChange={(list) => onChange(index, "machineStatus", list)}
+                remark={values.remarks}
+              />
+            </Field>
           </Row>
         </Line>
 
         {nonWorking ? (
           <p className="text-muted small mb-1 px-1">
-            <b>Non Working</b> — the machine did not run, so nothing else is needed. Pick a reason if you like and press Save.
+            <b>Non Working</b> — the machine did not run, so nothing else is needed. Pick a Status if you like and press Save.
           </p>
         ) : (
           <>
@@ -516,7 +518,7 @@ const EntryBlock = ({
                   {plannedLock.fromEntry
                     ? "Kept as this entry was saved — set by Process Master"
                     : plannedLock.locked
-                      ? "Fixed at 12 hr — locked in Process Master"
+                      ? `Fixed at ${hoursToHm(plannedLock.hours)} hr — locked in Process Master`
                       : `Set to ${hoursToHm(plannedLock.hours)} hr in Process Master`}
                 </p>
               )}

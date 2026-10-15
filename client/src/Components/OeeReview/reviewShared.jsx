@@ -58,7 +58,7 @@ export const entryTitle = (row) =>
     .filter(Boolean)
     .join(" · ");
 
-export const fmtDateTime = (iso) => (iso ? dayjs(iso).format("D MMM YYYY, h:mm A") : "—");
+export const fmtDateTime = (iso) => (iso ? dayjs(iso).format("D MMM YYYY, HH:mm") : "—");
 
 // A metric as a percentage — in red and bold when it's over 100%, since
 // that's exactly what the entry is being reviewed for. Never capped.

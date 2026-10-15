@@ -29,10 +29,10 @@ test("an older row keeps saving while its times are untouched, and the rule retu
 });
 
 test("fmt12 / timeInterval", () => {
-  assert.equal(fmt12(0), "12:00 AM");
-  assert.equal(fmt12(480), "8:00 AM");
-  assert.equal(fmt12(720), "12:00 PM");
-  assert.equal(fmt12(1439), "11:59 PM");
+  assert.equal(fmt12(0), "00:00");
+  assert.equal(fmt12(480), "08:00");
+  assert.equal(fmt12(720), "12:00");
+  assert.equal(fmt12(1439), "23:59");
   assert.deepEqual(timeInterval("08:00", "12:30"), { start: 480, end: 750 });
   assert.deepEqual(timeInterval("22:00", "06:00"), { start: 1320, end: 1800 });
   assert.equal(timeInterval("", "12:00"), null);
@@ -48,13 +48,13 @@ const occupied = {
 test("an entry that starts inside a saved one is flagged on the ON box, with the clash named", () => {
   const [e] = overlapErrors([entry({ machineOnTime: "10:00", machineOffTime: "13:00" })], occupied);
   assert.deepEqual(Object.keys(e), ["machineOnTime"]);
-  assert.match(e.machineOnTime, /overlaps another entry for this machine on this date \(8:00 AM – 12:00 PM\)/);
+  assert.match(e.machineOnTime, /overlaps another entry for this machine on this date \(08:00 – 12:00\)/);
 });
 
 test("an entry that runs into the next one is flagged on the OFF box", () => {
   const [e] = overlapErrors([entry({ machineOnTime: "12:00", machineOffTime: "15:00" })], occupied);
   assert.deepEqual(Object.keys(e), ["machineOffTime"]);
-  assert.match(e.machineOffTime, /2:00 PM – 6:00 PM/);
+  assert.match(e.machineOffTime, /14:00 – 18:00/);
 });
 
 test("fitting exactly between two entries, touching both, is allowed", () => {
@@ -83,7 +83,7 @@ test("two blocks of one form can't overlap each other either (both are flagged)"
 test("editing: the row's own slot is not 'another entry', but its neighbours still are", () => {
   assert.deepEqual(overlapErrors([entry({ machineOnTime: "09:00", machineOffTime: "11:00" })], occupied, { editSlot: 1 }), [{}]);
   const [grown] = overlapErrors([entry({ machineOnTime: "09:00", machineOffTime: "15:00" })], occupied, { editSlot: 1 });
-  assert.match(grown.machineOffTime, /2:00 PM – 6:00 PM/);
+  assert.match(grown.machineOffTime, /14:00 – 18:00/);
 });
 
 test("an older overlapping row is left alone while its times are untouched", () => {
@@ -94,8 +94,8 @@ test("an older overlapping row is left alone while its times are untouched", () 
 });
 
 test("bookedRanges lists what the machine already has, minus the row being edited", () => {
-  assert.deepEqual(bookedRanges(entry(), occupied), ["8:00 AM – 12:00 PM", "2:00 PM – 6:00 PM"]);
-  assert.deepEqual(bookedRanges(entry(), occupied, 1), ["2:00 PM – 6:00 PM"]);
+  assert.deepEqual(bookedRanges(entry(), occupied), ["08:00 – 12:00", "14:00 – 18:00"]);
+  assert.deepEqual(bookedRanges(entry(), occupied, 1), ["14:00 – 18:00"]);
   assert.deepEqual(bookedRanges(entry({ machine: "m9" }), occupied), []);
 });
 
@@ -166,7 +166,7 @@ test("one operator can't be on two machines at overlapping times on a date", () 
   const mine = { date: "2026-09-28", machine: "m2", operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00" };
   const saved = { "Asha|2026-09-28": [{ machine: "m1", machineName: "7A", slot: 1, machineOnTime: "08:00", machineOffTime: "12:00" }] };
   const [err] = operatorOverlapErrors([mine], saved);
-  assert.equal(err.machineOnTime, "Operator Asha is already on machine 7A from 8:00 AM – 12:00 PM on this date — an operator can't run two machines at the same time");
+  assert.equal(err.machineOnTime, "Operator Asha is already on machine 7A from 08:00 – 12:00 on this date — an operator can't run two machines at the same time");
   assert.ok(isTimeRuleMessage(err.machineOnTime));
   // runs into it from before -> the OFF box is flagged
   assert.ok(operatorOverlapErrors([{ ...mine, machineOnTime: "06:00", machineOffTime: "09:00" }], saved)[0].machineOffTime);

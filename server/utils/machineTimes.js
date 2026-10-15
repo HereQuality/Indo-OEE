@@ -25,16 +25,15 @@ const intervalOf = (on, off) => {
 // Touching is fine (one ends at 16:00, the next starts at 16:00).
 const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 
-// 0..1439 (or a next-day stretch beyond it) -> "8:05 AM".
+// 0..1439 (or a next-day stretch beyond it) -> "08:05" (24-hour, no AM/PM).
 const fmt12 = (minutes) => {
   const m = ((minutes % 1440) + 1440) % 1440;
-  const h = Math.floor(m / 60);
-  return `${h % 12 || 12}:${String(m % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
 
 // The first of `others` ({ slot, machineOnTime, machineOffTime }) that the
 // interval [on, off) runs into, as { slot, start, end, text } — or null.
-// `text` reads "8:00 AM – 4:00 PM".
+// `text` reads "08:00 – 16:00".
 const findOverlap = (on, off, others) => {
   const mine = intervalOf(on, off);
   if (!mine) return null;

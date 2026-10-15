@@ -1,26 +1,66 @@
-import React, { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
 import { MACHINE_STATUSES } from "../../utils/productionSheet";
 
 /**
  * components/Production/MachineStatusSelect.jsx
  * ────────────────────────────────────────────────
- * Machine Working Status on every sheet's entry form: a dropdown holding a
- * tick box per status (Machine Breakdown, No Manpower, No Planning) — any
- * number of them, or none. The closed box lists what's ticked.
- * `value` is the ticked list; onChange gets the new list, in MACHINE_STATUSES order.
+ * The Status dropdown on every sheet's entry form: a tick box per status
+ * (Machine Breakdown, No Manpower, No Planning) plus a fourth, "Remarks". That one
+ * isn't stored on its own: on Apply it opens the form's existing Remarks box and
+ * puts the cursor in it (an "entry:open-remarks" event the Remarks section hears).
+ * `value` is the ticked status list; onChange gets the new list, in
+ * MACHINE_STATUSES order. `remark` is the form's Remarks text, so the box shows
+ * ticked while something is written there.
+ *
+ * The list is drawn in a portal at the box's screen position, so a card or the
+ * modal's edge can never clip it; it opens upward when there's no room below.
  */
-const MachineStatusSelect = ({ value = [], onChange, invalid = false }) => {
+const REMARKS = "Remarks";
+
+const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = false }) => {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
+  const [remarksOn, setRemarksOn] = useState(!!remark); // Remarks ticked
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
   const listId = useId();
   const ticked = Array.isArray(value) ? value : [];
+  // An entry opened for editing, or another row loaded into this form, brings its own text.
+  useEffect(() => {
+    if (remark) setRemarksOn(true);
+  }, [remark]);
+
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const panelH = panelRef.current?.offsetHeight || 230;
+    const below = window.innerHeight - r.bottom;
+    const up = below < panelH + 12 && r.top > below;
+    setPos({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 240) - 8)),
+      width: Math.max(r.width, 240),
+      top: up ? Math.max(8, r.top - panelH - 4) : r.bottom + 4,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   // Closes on a tap/click anywhere else, or Escape.
   useEffect(() => {
     if (!open) return undefined;
     const outside = (e) => {
-      if (!rootRef.current?.contains(e.target)) setOpen(false);
+      if (!btnRef.current?.contains(e.target) && !panelRef.current?.contains(e.target)) setOpen(false);
     };
     const esc = (e) => e.key === "Escape" && setOpen(false);
     document.addEventListener("pointerdown", outside);
@@ -33,52 +73,57 @@ const MachineStatusSelect = ({ value = [], onChange, invalid = false }) => {
 
   const toggle = (status) =>
     onChange(MACHINE_STATUSES.filter((s) => (s === status ? !ticked.includes(s) : ticked.includes(s))));
+  const toggleRemarks = () => setRemarksOn((on) => (remark ? true : !on)); // text written there keeps it ticked
+
+  // Apply closes the list and, when Remarks is ticked, opens the Remarks box and puts the cursor in it.
+  const apply = () => {
+    setOpen(false);
+    if (remarksOn || remark) window.dispatchEvent(new Event("entry:open-remarks"));
+  };
+
+  const summary = [...ticked, ...(remarksOn || remark ? [REMARKS] : [])].join(", ");
+
+  const row = (id, label, checked, onTick) => (
+    <label key={id} htmlFor={id} className="d-flex align-items-center gap-2 px-2 rounded mb-0" style={{ minHeight: 44, cursor: "pointer" }}>
+      <input type="checkbox" className="form-check-input m-0" style={{ width: 20, height: 20 }} id={id} checked={checked} onChange={onTick} />
+      <span className="flex-fill">{label}</span>
+    </label>
+  );
 
   return (
-    <div ref={rootRef} className="position-relative">
+    <div>
       <button
+        ref={btnRef}
         type="button"
         className={`form-select form-select-sm text-start text-truncate ${invalid ? "is-invalid" : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((o) => !o)}
-        title={ticked.join(", ")}
+        title={summary}
       >
-        {ticked.length ? ticked.join(", ") : <span className="text-muted">None</span>}
+        {summary || <span className="text-muted">Select status</span>}
       </button>
-      {open && (
-        <div
-          id={listId}
-          role="listbox"
-          aria-multiselectable="true"
-          className="position-absolute start-0 end-0 mt-1 bg-body border rounded shadow-sm p-2"
-          style={{ zIndex: 1060 }}
-        >
-          {MACHINE_STATUSES.map((status) => {
-            const id = `${listId}-${status.replace(/\W+/g, "-")}`;
-            return (
-              <div key={status} className="form-check py-1 mb-0">
-                <input
-                  type="checkbox"
-                  className="form-check-input"
-                  id={id}
-                  checked={ticked.includes(status)}
-                  onChange={() => toggle(status)}
-                />
-                <label className="form-check-label small w-100" htmlFor={id} style={{ cursor: "pointer" }}>
-                  {status}
-                </label>
-              </div>
-            );
-          })}
-          <div className="d-flex justify-content-end border-top pt-2 mt-1">
-            <button type="button" className="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" onClick={() => setOpen(false)}>
-              <ChevronDown size={14} /> Done
+
+
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={listId}
+            role="listbox"
+            aria-multiselectable="true"
+            className="bg-body border rounded shadow p-2"
+            style={{ position: "fixed", zIndex: 2000, left: pos?.left ?? 0, top: pos?.top ?? 0, width: pos?.width ?? 240, visibility: pos ? "visible" : "hidden", maxHeight: "70vh", overflowY: "auto" }}
+          >
+            {MACHINE_STATUSES.map((status) => row(`${listId}-${status.replace(/\W+/g, "-")}`, status, ticked.includes(status), () => toggle(status)))}
+            {row(`${listId}-remarks`, REMARKS, remarksOn || !!remark, toggleRemarks)}
+            <button type="button" className="btn btn-primary w-100 mt-2 d-inline-flex justify-content-center align-items-center gap-1" style={{ minHeight: 42 }} onClick={apply}>
+              <Check size={16} /> Apply
             </button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

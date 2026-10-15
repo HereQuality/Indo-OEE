@@ -27,13 +27,13 @@ test("touching intervals do not overlap; crossing ones do", () => {
 });
 
 test("fmt12", () => {
-  assert.equal(fmt12(0), "12:00 AM");
-  assert.equal(fmt12(5), "12:05 AM");
-  assert.equal(fmt12(480), "8:00 AM");
-  assert.equal(fmt12(720), "12:00 PM");
-  assert.equal(fmt12(960), "4:00 PM");
-  assert.equal(fmt12(1439), "11:59 PM");
-  assert.equal(fmt12(1500), "1:00 AM", "a next-day stretch wraps");
+  assert.equal(fmt12(0), "00:00");
+  assert.equal(fmt12(5), "00:05");
+  assert.equal(fmt12(480), "08:00");
+  assert.equal(fmt12(720), "12:00");
+  assert.equal(fmt12(960), "16:00");
+  assert.equal(fmt12(1439), "23:59");
+  assert.equal(fmt12(1500), "01:00", "a next-day stretch wraps");
 });
 
 test("findOverlap names the entry that is in the way", () => {
@@ -44,7 +44,7 @@ test("findOverlap names the entry that is in the way", () => {
   assert.equal(findOverlap("12:00", "14:00", others), null, "fits exactly between them");
   const hit = findOverlap("11:00", "13:00", others);
   assert.equal(hit.slot, 1);
-  assert.equal(hit.text, "8:00 AM – 12:00 PM");
+  assert.equal(hit.text, "08:00 – 12:00");
   assert.equal(findOverlap("13:00", "15:00", others).slot, 2);
   assert.equal(findOverlap("", "15:00", others), null, "no times, nothing to compare");
   assert.equal(findOverlap("09:00", "10:00", []), null);

@@ -74,7 +74,7 @@ const Field = ({ label, required, error, children, cols = QUARTER, fieldKey }) =
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
 const LINES = [
-  { id: 1, title: "Date, Machine No., Operator, Working Status", fields: ["date", "machine", "operator", "workingStatus", "machineStatus"] },
+  { id: 1, title: "Date, Machine No., Operator", fields: ["date", "machine", "operator", "machineStatus"] },
   { id: 2, title: "Part, Total Cycle Time", fields: ["itemName", "totalCycleSec"] },
   {
     id: 3,
@@ -344,33 +344,25 @@ const EntryBlock = ({
                 ))}
               </Input>
             </Field>
-            <Field label="Working Status" error={err("workingStatus")} fieldKey="workingStatus">
-              <Input type="select" bsSize="sm" name="workingStatus" value={values.workingStatus} onChange={handle} invalid={!!err("workingStatus")}>
-                <option value="">—</option>
-                {WORKING_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </Input>
-            </Field>
             <Field label="Machine Working Status" error={err("workingMode")} fieldKey="workingMode">
               <Input type="select" bsSize="sm" name="workingMode" value={values.workingMode || "Working"} onChange={handle}>
                 <option value="Working">Working</option>
                 <option value="Non Working">Non Working</option>
               </Input>
             </Field>
-            {nonWorking && (
-              <Field label="Reason" error={err("machineStatus")} fieldKey="machineStatus">
-                <MachineStatusSelect value={values.machineStatus} onChange={(list) => onChange(index, "machineStatus", list)} />
-              </Field>
-            )}
+            <Field label="Status" error={err("machineStatus")} fieldKey="machineStatus">
+              <MachineStatusSelect
+                value={values.machineStatus}
+                onChange={(list) => onChange(index, "machineStatus", list)}
+                remark={values.remarks}
+              />
+            </Field>
           </Row>
           {statusOnly && (
             <p className="text-muted small mb-2">
               {nonWorking ? (
                 <>
-                  <b>Non Working</b> — the machine did not run, so nothing else is needed. Pick a reason if you like and press Save.
+                  <b>Non Working</b> — the machine did not run, so nothing else is needed. Pick a Status if you like and press Save.
                 </>
               ) : (
                 <>
@@ -489,7 +481,7 @@ const EntryBlock = ({
                   {plannedLock.fromEntry
                     ? "Kept as this entry was saved — set by Process Master"
                     : plannedLock.locked
-                      ? "Fixed at 12 hr — locked in Process Master"
+                      ? `Fixed at ${hoursToHm(plannedLock.hours)} hr — locked in Process Master`
                       : `Set to ${hoursToHm(plannedLock.hours)} hr in Process Master`}
                 </p>
               )}

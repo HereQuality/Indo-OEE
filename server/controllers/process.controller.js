@@ -51,10 +51,10 @@ const pickShiftSetting = (body) => {
   return { setting: out };
 };
 
-// How a setting reads in the audit log: "Locked — 12 hr" / "Unlocked — entered on each entry".
+// How a setting reads in the audit log: "Locked — 10 hr" / "Unlocked — entered on each entry".
 const shiftText = (raw) => {
   const locked = raw.plannedShiftLocked !== false;
-  return locked ? "Locked — 12 hr" : "Unlocked — entered on each entry";
+  return locked ? `Locked — ${Number(raw.plannedShiftHours ?? 12)} hr` : "Unlocked — entered on each entry";
 };
 
 // Only Admin / Super Admin may change the Operator Planned Shift — the lock

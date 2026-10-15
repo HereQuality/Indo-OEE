@@ -172,6 +172,10 @@ const ProcessMaster = () => {
     if (!v.processName.trim()) errors.processName = "Process name is required!";
     else if (v.processName.length > 40) errors.processName = "Process name must not exceed 40 characters";
     if (v.description && v.description.length > 200) errors.description = "Description must not exceed 200 characters";
+    if (v.plannedShiftLocked) {
+      const h = Number(v.plannedShiftHours);
+      if (v.plannedShiftHours === "" || !Number.isFinite(h) || h <= 0 || h > 24) errors.plannedShiftHours = "Shift hours must be more than 0 and at most 24";
+    }
     return errors;
   };
 
@@ -310,7 +314,7 @@ const ProcessMaster = () => {
       : []),
     {
       name: "Planned Shift",
-      selector: (row) => (row.plannedShiftLocked === false ? "Unlocked · manual" : "Locked · 12 hr"),
+      selector: (row) => (row.plannedShiftLocked === false ? "Unlocked · manual" : `Locked · ${row.plannedShiftHours ?? LOCKED_SHIFT_HOURS} hr`),
       minWidth: "140px",
     },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), maxWidth: "110px" },
@@ -465,18 +469,43 @@ const ProcessMaster = () => {
                       onChange={(e) => setValues({ ...values, plannedShiftLocked: e.target.checked })}
                     />
                     <label className="form-check-label small" htmlFor="planned-shift-lock">
-                      {values.plannedShiftLocked ? "Locked at 12 hr" : "Unlocked"}
+                      {values.plannedShiftLocked ? "Locked" : "Unlocked"}
                     </label>
                   </div>
                 ) : (
                   <span className="badge bg-secondary-subtle text-secondary-emphasis">
-                    {values.plannedShiftLocked ? "Locked · 12 hr" : "Unlocked · typed on each entry"}
+                    {values.plannedShiftLocked ? `Locked · ${values.plannedShiftHours} hr` : "Unlocked · typed on each entry"}
                   </span>
                 )}
               </div>
+              {values.plannedShiftLocked && canSetShift && (
+                <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                  <span className="small fw-semibold">Shift hours</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.25"
+                    max="24"
+                    step="0.25"
+                    className="form-control form-control-sm"
+                    style={{ width: 96 }}
+                    aria-label="Locked shift hours"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    value={values.plannedShiftHours}
+                    onChange={(e) => setValues({ ...values, plannedShiftHours: e.target.value })}
+                  />
+                  <span className="small text-muted">hr</span>
+                  {[8, 12, 24].map((h) => (
+                    <button key={h} type="button" className={`btn btn-sm ${Number(values.plannedShiftHours) === h ? "btn-primary" : "btn-outline-secondary"}`} onClick={() => setValues({ ...values, plannedShiftHours: h })}>
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {formErrors.plannedShiftHours && <div className="text-danger small mb-2">{formErrors.plannedShiftHours}</div>}
               <div className="text-muted small mb-2">
-                Planned Operator Shift for this process's machines. Locked: a
-                fixed 12 hours on every entry. Unlocked: the hours are typed by hand on each data entry. Entries already saved keep their own value.
+                Planned Operator Shift for this process's machines. Locked: the
+                hours below, fixed on every entry. Unlocked: the hours are typed by hand on each data entry. Entries already saved keep their own value.
                 {!canSetShift && " Only Admin or Super Admin can change this."}
               </div>
             </div>
