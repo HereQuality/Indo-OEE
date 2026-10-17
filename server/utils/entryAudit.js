@@ -28,7 +28,7 @@ const { createNotificationForMany } = require("../services/notification.service"
  * save goes through, the same rule ItemLog follows.
  */
 
-const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT" };
+const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE" };
 
 const STOPPAGE_LABELS = {
   plannedDownMin: "Planned Down Time (min)",

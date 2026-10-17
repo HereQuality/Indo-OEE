@@ -17,6 +17,7 @@ import { SPM_OP_FIELDS, SPM_REFERENCE_FIELDS, isSpmProcess } from "../utils/spmS
 import { RIVET_OP_FIELDS, RIVET_PROCESS_TYPES, isRivetProcess } from "../utils/rivetSheet";
 import { PRESS_OPERATIONS, isPressProcess } from "../utils/pressSheet";
 import { isContactProcess } from "../utils/contactSheet";
+import { isTrobeProcess } from "../utils/trobeSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -97,7 +98,8 @@ const ItemMaster = () => {
   const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
   const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
   const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
-  const isContact = useMemo(() => isContactProcess(selectedProcess), [selectedProcess]);
+  // TROBE parts work the same way as Contact ones: one Total Cycle Time, typed straight in.
+  const isContact = useMemo(() => isContactProcess(selectedProcess) || isTrobeProcess(selectedProcess), [selectedProcess]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -803,7 +805,7 @@ const ItemMaster = () => {
                 {isSubmit && formErrors.totalCycleSec ? (
                   <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>
                 ) : (
-                  <p className="text-muted mb-0 small mt-1">Filled in on each Contact entry — can be changed there for the day.</p>
+                  <p className="text-muted mb-0 small mt-1">Filled in on each entry — can be changed there for the day.</p>
                 )}
               </div>
             ) : null}

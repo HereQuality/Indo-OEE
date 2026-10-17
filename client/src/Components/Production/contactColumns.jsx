@@ -7,8 +7,8 @@ import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRema
  * ────────────────────────────────────────────
  * The Contact Data Entry table's columns, left to right in the sheet's own
  * order, in the shape ProductionEntriesTable draws (see COLUMNS there for what
- * each key means) — the plain CNC column set (Working Status, Setting ON/OFF
- * Time included, Ideal Quantity/Hours included), but with Actual OK/Rejected
+ * each key means) — the plain CNC column set (Working Status,
+ * Ideal Quantity/Hours included), but with Actual OK/Rejected
  * Quantity typed directly (RIVET's pattern, no reject reason split) and no
  * named operation breakdown: Total Cycle Time is the entry's own figure,
  * prefilled from the Part.
@@ -41,8 +41,6 @@ export const CONTACT_COLUMNS = [
   { key: "cycle", label: "Total Cycle Time (Sec)", get: (r) => min(r.totalCycleSec), align: "text-center" },
   { key: "on", label: "Machine ON Time", get: (r) => dash(r.machineOnTime), align: "text-center" },
   { key: "off", label: "Machine OFF Time", get: (r) => dash(r.machineOffTime), align: "text-center" },
-  { key: "settingOn", label: "Setting ON Time", get: (r) => dash(r.settingOnTime), align: "text-center" },
-  { key: "settingOff", label: "Setting OFF Time", get: (r) => dash(r.settingOffTime), align: "text-center" },
   { key: "shift", label: "Machine Shift Time (hr:min)", get: (r, c) => hm(c.shiftHours), align: "text-center", tone: "calc" },
   { key: "idealQty", label: "Ideal Quantity", get: (r, c) => n(c.idealQty), align: "text-center", tone: "calc" },
   { key: "idealQtyPerHour", label: "Ideal Quantity/Hours", get: (r, c) => n(c.idealQtyPerHour), align: "text-center", tone: "calc" },

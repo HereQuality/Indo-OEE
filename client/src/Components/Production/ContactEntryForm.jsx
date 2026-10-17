@@ -31,8 +31,7 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  *
  * What differs from RIVET: no Process dropdown, no named operation
  * breakdown — Total Cycle Time is filled in from the Part when picked and
- * can be changed for the day; plus Working Status and Setting ON/OFF Time,
- * both optional. Any Working Status but PRESENT (ABSENT, SUNDAY, M/C OFF, …)
+ * can be changed for the day; plus Working Status, optional. Any Working Status but PRESENT (ABSENT, SUNDAY, M/C OFF, …)
  * hides every production line: that day is recorded by its status alone.
  *
  * The rules live in utils/contactValidation.js; the figures in utils/contactSheet.js.
@@ -78,8 +77,8 @@ const LINES = [
   { id: 2, title: "Part, Total Cycle Time", fields: ["itemName", "totalCycleSec"] },
   {
     id: 3,
-    title: "Machine ON–OFF Time, Setting ON–OFF Time, Machine Shift",
-    fields: ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"],
+    title: "Machine ON–OFF Time, Machine Shift",
+    fields: ["machineOnTime", "machineOffTime"],
   },
   { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
   // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
@@ -128,6 +127,7 @@ const EntryBlock = ({
   canRemove,
   expanded,
   booked = [],
+  takenMachines = [],
   plannedLock = null,
   onExpand,
   onChange,
@@ -218,8 +218,9 @@ const EntryBlock = ({
     >
       <option value="">Select machine</option>
       {machines.map((m) => (
-        <option key={m._id} value={m._id}>
+        <option key={m._id} value={m._id} disabled={takenMachines.includes(String(m._id))}>
           {m.machineName}
+          {takenMachines.includes(String(m._id)) ? " — already added" : ""}
         </option>
       ))}
     </Input>
@@ -345,18 +346,30 @@ const EntryBlock = ({
               </Input>
             </Field>
             <Field label="Machine Working Status" error={err("workingMode")} fieldKey="workingMode">
-              <Input type="select" bsSize="sm" name="workingMode" value={values.workingMode || "Working"} onChange={handle}>
+              <Input
+                type="select"
+                bsSize="sm"
+                name="workingMode"
+                value={values.workingMode || "Working"}
+                onChange={(e) => {
+                  handle(e);
+                  // Working has no Status — drop any picked while it was Non Working.
+                  if (e.target.value === "Working") onChange(index, "machineStatus", []);
+                }}
+              >
                 <option value="Working">Working</option>
                 <option value="Non Working">Non Working</option>
               </Input>
             </Field>
-            <Field label="Status" error={err("machineStatus")} fieldKey="machineStatus">
-              <MachineStatusSelect
-                value={values.machineStatus}
-                onChange={(list) => onChange(index, "machineStatus", list)}
-                remark={values.remarks}
-              />
-            </Field>
+            {nonWorking && (
+              <Field label="Status" error={err("machineStatus")} fieldKey="machineStatus">
+                <MachineStatusSelect
+                  value={values.machineStatus}
+                  onChange={(list) => onChange(index, "machineStatus", list)}
+                  remark={values.remarks}
+                />
+              </Field>
+            )}
           </Row>
           {statusOnly && (
             <p className="text-muted small mb-2">
@@ -411,12 +424,6 @@ const EntryBlock = ({
                 hasError={!!err("machineOffTime")}
                 minTime={offEarliest}
               />
-            </Field>
-            <Field label="Setting ON Time" error={err("settingOnTime")} fieldKey="settingOnTime">
-              <TimePicker name="settingOnTime" value={values.settingOnTime} onChange={handle} hasError={!!err("settingOnTime")} />
-            </Field>
-            <Field label="Setting OFF Time" error={err("settingOffTime")} fieldKey="settingOffTime">
-              <TimePicker name="settingOffTime" value={values.settingOffTime} onChange={handle} hasError={!!err("settingOffTime")} />
             </Field>
           </Row>
           {booked.length > 0 && (
@@ -665,6 +672,8 @@ const ContactEntryForm = ({
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}
           booked={booked[i] || []}
+          // Machines another block of this form already has on the same date can't be picked again.
+          takenMachines={entries.filter((o, j) => j !== i && o.machine && o.date === values.date).map((o) => String(o.machine))}
           plannedLock={plannedLocks[i] || null}
           onExpand={setExpandedIndex}
           onChange={onChange}

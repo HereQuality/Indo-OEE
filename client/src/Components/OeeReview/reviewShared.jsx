@@ -22,6 +22,7 @@ export const SHEET_PATHS = {
   rivet: "/hqepl/production/rivet-data-entry",
   press: "/hqepl/production/press-data-entry",
   contact: "/hqepl/production/contact-data-entry",
+  trobe: "/hqepl/production/trobe-data-entry",
 };
 
 export const REVIEW_STYLE = {

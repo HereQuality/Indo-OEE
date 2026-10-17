@@ -144,6 +144,13 @@ export const ENDPOINTS = {
         LOGS: `${V1}/oee-review/logs`,
         DECIDE: (sheet, id) => `${V1}/oee-review/${sheet}/${id}`,
     },
+    TROBE_SHEET: {
+        BASE: `${V1}/trobe-sheet`,
+        ROW: `${V1}/trobe-sheet/row`,
+        EXTENT: `${V1}/trobe-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/trobe-sheet/filter-options`,
+        OCCUPIED: `${V1}/trobe-sheet/occupied`,
+    },
     CONTACT_SHEET: {
         BASE: `${V1}/contact-sheet`,
         ROW: `${V1}/contact-sheet/row`,

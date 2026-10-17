@@ -75,6 +75,7 @@ const DATA_ENTRY_MENUS = [
   { menuName: "RIVET", menuUrl: "/hqepl/production/rivet-data-entry", sequence: 4, icon: "ClipboardList" },
   { menuName: "PRESS", menuUrl: "/hqepl/production/press-data-entry", sequence: 5, icon: "ClipboardList" },
   { menuName: "CONTACT", menuUrl: "/hqepl/production/contact-data-entry", sequence: 6, icon: "ClipboardList" },
+  { menuName: "TROBE", menuUrl: "/hqepl/production/trobe-data-entry", sequence: 7, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

@@ -127,6 +127,7 @@ const EntryBlock = ({
   canRemove,
   expanded,
   booked = [],
+  takenMachines = [],
   plannedLock = null,
   onExpand,
   onChange,
@@ -211,8 +212,9 @@ const EntryBlock = ({
     >
       <option value="">Select machine</option>
       {machines.map((m) => (
-        <option key={m._id} value={m._id}>
+        <option key={m._id} value={m._id} disabled={takenMachines.includes(String(m._id))}>
           {m.machineName}
+          {takenMachines.includes(String(m._id)) ? " — already added" : ""}
         </option>
       ))}
     </Input>
@@ -338,18 +340,30 @@ const EntryBlock = ({
               </Input>
             </Field>
             <Field label="Machine Working Status" error={err("workingMode")} md={6} lg={3} fieldKey="workingMode">
-              <Input type="select" bsSize="sm" name="workingMode" value={values.workingMode || "Working"} onChange={handle}>
+              <Input
+                type="select"
+                bsSize="sm"
+                name="workingMode"
+                value={values.workingMode || "Working"}
+                onChange={(e) => {
+                  handle(e);
+                  // Working has no Status — drop any picked while it was Non Working.
+                  if (e.target.value === "Working") onChange(index, "machineStatus", []);
+                }}
+              >
                 <option value="Working">Working</option>
                 <option value="Non Working">Non Working</option>
               </Input>
             </Field>
-            <Field label="Status" error={err("machineStatus")} md={6} lg={3} fieldKey="machineStatus">
-              <MachineStatusSelect
-                value={values.machineStatus}
-                onChange={(list) => onChange(index, "machineStatus", list)}
-                remark={values.remarks}
-              />
-            </Field>
+            {nonWorking && (
+              <Field label="Status" error={err("machineStatus")} md={6} lg={3} fieldKey="machineStatus">
+                <MachineStatusSelect
+                  value={values.machineStatus}
+                  onChange={(list) => onChange(index, "machineStatus", list)}
+                  remark={values.remarks}
+                />
+              </Field>
+            )}
           </Row>
         </Line>
 
@@ -588,6 +602,8 @@ const EntryBlock = ({
             </Row>
           )}
         </Line>
+          </>
+        )}
 
         <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional>
           <div className="mb-2">
@@ -595,8 +611,6 @@ const EntryBlock = ({
             <Input type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
           </div>
         </Line>
-          </>
-        )}
       </div>
     </div>
   );
@@ -716,6 +730,8 @@ const PressEntryForm = ({
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}
           booked={booked[i] || []}
+          // Machines another block of this form already has on the same date can't be picked again.
+          takenMachines={entries.filter((o, j) => j !== i && o.machine && o.date === values.date).map((o) => String(o.machine))}
           plannedLock={plannedLocks[i] || null}
           onExpand={setExpandedIndex}
           onChange={onChange}

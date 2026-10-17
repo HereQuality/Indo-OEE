@@ -72,6 +72,7 @@ const CYCLE_SEC = {
   rivet: (e) => minusExcluded(e, RIVET_OP_FIELDS),
   press: perPieceSec("standardTimeMin", "pcsPerStandardTime"),
   contact: (e) => num(e.totalCycleSec),
+  trobe: (e) => num(e.totalCycleSec),
 };
 
 // { availability, performance, quality } as fractions (1 = 100%), each null

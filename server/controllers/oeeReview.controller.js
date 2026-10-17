@@ -5,6 +5,7 @@ const SpmEntry = require("../models/SpmEntry");
 const RivetEntry = require("../models/RivetEntry");
 const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
+const TrobeEntry = require("../models/TrobeEntry");
 const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
@@ -21,7 +22,7 @@ const { createNotification } = require("../services/notification.service");
  * Everything here except /access is Admin / Super Admin only (route-level
  * requireAdmin). Figures are shown exactly as saved — never capped.
  */
-const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry };
+const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const parseDay = (s) => {
   if (!DATE_RE.test(String(s || ""))) return null;

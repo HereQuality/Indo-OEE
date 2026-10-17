@@ -161,7 +161,8 @@ const toFullPayload = (v, isEdit) => ({
   ...(isEdit && v._id ? { _id: v._id } : {}),
   date: v.date,
   machine: v.machine,
-  machineStatus: v.machineStatus || [],
+  // Status belongs to a Non Working day only; a Working entry carries none.
+  machineStatus: v.workingMode === "Non Working" ? v.machineStatus || [] : [],
   workingMode: v.workingMode || "Working",
   // An edited record saves back to its own slot; a new one asks the server for
   // the machine's next free slot on that date, since only the server can see
