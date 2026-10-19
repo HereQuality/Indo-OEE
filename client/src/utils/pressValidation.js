@@ -144,7 +144,7 @@ export const validatePressEntry = (v, { saved = null } = {}) => {
   }
   const limit = stoppageLimitMin(decimal);
   if (limit !== null && calc.totalStoppageMin > limit) {
-    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but only ${limit} min is allowed (Planned Operator Shift − Machine Shift)`;
+    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but the Machine Shift is only ${limit} min`;
   }
   if (num(v.otherMin) > 0 && blank(v.otherMinRemark)) {
     errors.otherMinRemark = "Remark is required when Others downtime is entered";

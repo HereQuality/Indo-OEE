@@ -230,8 +230,10 @@ export function rowCalc(row) {
   // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600.
   // Pure math off two typed values, same as Machine Shift Time above — shown
   // as soon as OK Quantity and a Part (for Cycle Time) are there, not gated
-  // on Working Status/Operator.
-  const effectiveHours = isNum(cycle) ? ((ok || 0) * cycle) / 3600 : null;
+  // on Working Status/Operator. A sheet whose own rule counts every piece run
+  // (SPRING FOR PINS: OK + Rejected) marks its rows runQtyBasis: "total".
+  const runQty = row.runQtyBasis === "total" ? totalProduced : ok || 0;
+  const effectiveHours = isNum(cycle) ? (runQty * cycle) / 3600 : null;
 
   // 14–16) Availability / Performance / Quality — this entry alone, standard
   // OEE over this sheet's own fields (see oeeParts). Never capped at 100%:
@@ -267,6 +269,7 @@ export const PLANNED_STOP_KEYS = ["lunchMin", "plannedDownMin"];
 // instead of averaging percentages):
 //   Planned Production Time = Planned Operator Shift − Lunch − Planned Downtime
 //   Operating Time          = Machine Shift (ON→OFF) − every stoppage
+//                             (− Other Activity, After Powder Coating only)
 //   Availability            = Operating Time ÷ Planned Production Time
 //   Performance             = Cycle Time × (OK + Rejected) ÷ Operating Time
 //   Quality                 = OK ÷ (OK + Rejected)
@@ -278,7 +281,9 @@ function oeeParts({ shiftMin, totalStoppageMin, row, cycle, ok, totalQty }) {
   if (shiftMin === null) return empty;
   const plannedH = num(row.plannedOperatorShiftHours);
   const plannedProdMin = (isNum(plannedH) ? plannedH * 60 : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(row[k])));
-  const operatingMin = shiftMin - (totalStoppageMin || 0);
+  // Time on other work (After Powder Coating's Other Activity) isn't idle,
+  // but it isn't inspecting either. No other sheet's rows carry it.
+  const operatingMin = shiftMin - (totalStoppageMin || 0) - (num(row.otherActivityMin) || 0);
   const idealRunSec = isNum(cycle) && cycle > 0 && isNum(totalQty) ? cycle * totalQty : null;
   return {
     availability: plannedProdMin > 0 ? operatingMin / plannedProdMin : null,
@@ -362,6 +367,8 @@ export function dayCalc(rows) {
   const dayEffectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
   const dayLunchMin = sumOrZero(list.map((r) => num(r.lunchMin)));
   const daySetupMin = sumOrZero(list.map((r) => num(r.setupMin)));
+  // Minutes on other work — only After Powder Coating's rows carry any.
+  const dayOtherActivityMin = sumOrZero(list.map((r) => num(r.otherActivityMin)));
   // Blank only when nothing on this machine/date has a Machine Shift Time at
   // all — otherwise the combined figures use whatever entries do have one.
   const dayHasShift = calcs.some((c) => isNum(c.shiftHours));
@@ -385,7 +392,7 @@ export function dayCalc(rows) {
     ? sumOrZero(
         list.map((r, i) => {
           const c = calcs[i];
-          const stop = c.totalStoppageMin || 0;
+          const stop = (c.totalStoppageMin || 0) + (num(r.otherActivityMin) || 0);
           const effectiveMin = (c.effectiveHours || 0) * 60;
           const planned = num(r.plannedOperatorShiftHours);
           const basisMin = isNum(planned) ? planned * 60 : isNum(c.shiftHours) ? c.shiftHours * 60 : null;
@@ -397,6 +404,14 @@ export function dayCalc(rows) {
   const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
   // (Named …Cot — the key saved dashboards use — though the column now reads "Setup Time".)
   const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null;
+  // After Powder Coating's two Productivity figures: Ideal Inspection Time
+  // (its Effective Run Time) over the time the worker had for inspecting —
+  // without, and then with, Lunch / Tea taken out. Checked against a real
+  // row (09/10/2026, Saroj: 1 h, 80 pcs × 30 s = 0.6667 h → 66.67% both, no
+  // lunch). Other Activity time is out of both: it was work, just not inspection.
+  const dayAvailForWorkH = dayAvailH - dayOtherActivityMin / 60;
+  const dayProductivity = dayHasShift ? ratio(dayEffectiveH, dayAvailForWorkH) : null;
+  const dayProductivityLunch = dayHasShift ? ratio(dayEffectiveH, dayAvailForWorkH - dayLunchMin / 60) : null;
 
   // 6) Unutilized Machine Time = (12 − (Day Shift − Day Lunch/60)) ÷ 11,
   // combined across every entry of this machine's date — same as Unreported
@@ -440,6 +455,8 @@ export function dayCalc(rows) {
       oeeLosses: dayOeeLosses,
       oeeLunch: dayOeeLunch,
       oeeLunchCot: dayOeeLunchCot,
+      productivity: dayProductivity,
+      productivityLunch: dayProductivityLunch,
       gapMin,
     };
   });

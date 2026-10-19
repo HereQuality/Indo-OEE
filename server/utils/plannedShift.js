@@ -32,18 +32,45 @@ const settingForMachine = async (machineId) => {
   return settingOf(await Process.findById(machine.process).select("plannedShiftLocked plannedShiftHours").lean());
 };
 
-// Overrides req.body.plannedOperatorShiftHours with the value this entry must
-// carry: an edited entry keeps the shift it was saved with (a later change to
-// the setting never rewrites it); a new one takes the process's locked hours.
-// An unlocked process enforces nothing: the typed value stands. Left alone when the body leaves it blank (clearing a row, or a
-// status-only day) and when the machine has no process.
-const enforcePlannedShift = async (body, existing) => {
+// Hours the save must use for an entry made straight on a process — the After
+// Powder Coating sheet, whose entries have a worker, not a machine.
+const settingForProcess = async (processId) =>
+  settingOf(await Process.findById(processId).select("plannedShiftLocked plannedShiftHours").lean());
+
+// Overrides body.plannedOperatorShiftHours with the value this entry must
+// carry under `setting`: an edited entry keeps the shift it was saved with (a
+// later change to the setting never rewrites it); a new one takes the
+// process's locked hours. An unlocked process enforces nothing: the typed
+// value stands. Left alone when the body leaves it blank (clearing a row, or a
+// status-only day) and when there's no setting.
+const applySetting = (body, existing, setting) => {
   const typed = body.plannedOperatorShiftHours;
   if (typed === undefined || typed === null || String(typed).trim() === "") return;
-  const setting = await settingForMachine(body.machine);
   if (!setting) return;
   const kept = existing?.plannedOperatorShiftHours;
   body.plannedOperatorShiftHours = kept !== undefined && kept !== null && Number.isFinite(Number(kept)) ? Number(kept) : setting.hours;
 };
 
-module.exports = { LOCKED_SHIFT_HOURS, lockedHours, settingOf, settingForMachine, enforcePlannedShift };
+// The rule for the machine's process — every machine sheet.
+const enforcePlannedShift = async (body, existing) => {
+  const typed = body.plannedOperatorShiftHours;
+  if (typed === undefined || typed === null || String(typed).trim() === "") return;
+  applySetting(body, existing, await settingForMachine(body.machine));
+};
+
+// The same rule for an entry saved straight on a process (After Powder Coating).
+const enforcePlannedShiftForProcess = async (body, existing, processId) => {
+  const typed = body.plannedOperatorShiftHours;
+  if (typed === undefined || typed === null || String(typed).trim() === "") return;
+  applySetting(body, existing, await settingForProcess(processId));
+};
+
+module.exports = {
+  LOCKED_SHIFT_HOURS,
+  lockedHours,
+  settingOf,
+  settingForMachine,
+  settingForProcess,
+  enforcePlannedShift,
+  enforcePlannedShiftForProcess,
+};

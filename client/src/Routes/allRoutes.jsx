@@ -53,6 +53,8 @@ const RivetDataEntry = lazyWithRetry(() => import("../pages/RivetDataEntry"));
 const PressDataEntry = lazyWithRetry(() => import("../pages/PressDataEntry"));
 const ContactDataEntry = lazyWithRetry(() => import("../pages/ContactDataEntry"));
 const TrobeDataEntry = lazyWithRetry(() => import("../pages/TrobeDataEntry"));
+const SpringDataEntry = lazyWithRetry(() => import("../pages/SpringDataEntry"));
+const PowderCoatingDataEntry = lazyWithRetry(() => import("../pages/PowderCoatingDataEntry"));
 const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
@@ -60,6 +62,7 @@ const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const WorkOrderMaster = lazyWithRetry(() => import("../pages/WorkOrderMaster"));
 const OeeReviewPage = lazyWithRetry(() => import("../pages/OeeReviewPage"));
 const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
+const VendorMaster = lazyWithRetry(() => import("../pages/VendorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
 const Operator = lazyWithRetry(() => import("../pages/Operator"));
 const ManageRole = lazyWithRetry(() => import("../pages/ManageRole"));
@@ -128,6 +131,7 @@ const protectedRoutes = [
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },
+  { path: "/production/vendors", component: <VendorMaster /> },
   { path: "/production/cnc-data-entry", component: <ProductionSheet /> },
   { path: "/production/vmc-data-entry", component: <VmcDataEntry /> },
   { path: "/production/spm-data-entry", component: <SpmDataEntry /> },
@@ -135,6 +139,8 @@ const protectedRoutes = [
   { path: "/production/press-data-entry", component: <PressDataEntry /> },
   { path: "/production/contact-data-entry", component: <ContactDataEntry /> },
   { path: "/production/trobe-data-entry", component: <TrobeDataEntry /> },
+  { path: "/production/spring-data-entry", component: <SpringDataEntry /> },
+  { path: "/production/powder-coating-data-entry", component: <PowderCoatingDataEntry /> },
   // Old URL, kept working for anyone with it bookmarked or pinned.
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },

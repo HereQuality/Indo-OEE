@@ -3,7 +3,8 @@ const mongoose = require("mongoose");
 /**
  * models/entryCommon.js
  * ───────────────────────
- * Fields every sheet's entry carries (CNC, VMC, SPM, RIVET, PRESS, CONTACT, TROBE),
+ * Fields every sheet's entry carries (CNC, VMC, SPM, RIVET, PRESS, CONTACT, TROBE, SPRING FOR PINS,
+ * AFTER POWDER COATING),
  * spread into each entry schema so the six stay identical.
  */
 
@@ -24,6 +25,11 @@ const reviewerSchema = new mongoose.Schema(
 );
 
 const entryCommonFields = {
+  // Vendor Name — optional, offered only on processes the vendor is ticked for
+  // in Vendor Master (see utils/entryVendor.js). The vendor's name is saved
+  // with it, so a renamed or removed vendor still reads right.
+  vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", default: undefined },
+  vendorName: { type: String, trim: true, maxlength: 100, default: undefined },
   // "Non Working" = the machine did not run (see utils/workingMode.js); absent = Working.
   workingMode: { type: String, enum: ["Non Working"], default: undefined },
   machineStatus: {

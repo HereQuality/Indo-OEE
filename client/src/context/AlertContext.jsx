@@ -9,6 +9,8 @@ export const AlertProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
     const [confirmState, setConfirmState] = useState(null); // { message, title, resolve, tone }
     const resolveRef = useRef(null);
+    // Where focus goes back to once a notice is closed (the box being typed in).
+    const returnFocusRef = useRef(null);
     // Each toast's dismiss timer, and which "type|message" is on screen as which
     // toast — so a message repeated while it is still showing can be recognised.
     const timersRef = useRef(new Map());
@@ -67,12 +69,39 @@ export const AlertProvider = ({ children }) => {
         });
     }, []);
 
+    // A one-button popup for a reason worth stopping for — e.g. a quantity typed
+    // past what the shift can make. `details` is { label, value, highlight } rows
+    // shown under the message (highlight: the figure that broke it), `hint` a
+    // last line on what to check. Returns a Promise resolved when it's closed.
+    // Focus goes back to the box that had it, unless `returnFocus: false` (the
+    // caller moves it somewhere itself, e.g. Save scrolling to the field).
+    const notice = useCallback((message, options = {}) => {
+        return new Promise((resolve) => {
+            // Raised again while open (one per blocked keystroke): the first
+            // caller is let go and focus still returns to the original box.
+            if (resolveRef.current) resolveRef.current(false);
+            else returnFocusRef.current = options.returnFocus === false ? null : document.activeElement;
+            resolveRef.current = resolve;
+            setConfirmState({
+                kind: "notice",
+                message,
+                title: options.title || "Can't do that",
+                details: options.details || [],
+                hint: options.hint || "",
+                confirmText: options.okText || "OK",
+            });
+        });
+    }, []);
+
     const handleConfirmResult = useCallback((result) => {
         if (resolveRef.current) {
             resolveRef.current(result);
             resolveRef.current = null;
         }
         setConfirmState(null);
+        const back = returnFocusRef.current;
+        returnFocusRef.current = null;
+        if (back?.isConnected) setTimeout(() => back.focus(), 0);
     }, []);
 
     useEffect(() => {
@@ -91,6 +120,7 @@ export const AlertProvider = ({ children }) => {
         warning,
         toast: pushToast,
         confirm,
+        notice,
     };
 
     return (

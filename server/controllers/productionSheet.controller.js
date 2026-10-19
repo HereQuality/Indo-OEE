@@ -10,6 +10,7 @@ const { isEntryLocked } = require("../utils/workingDays");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
 const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
@@ -205,7 +206,7 @@ const buildFields = (body) => {
 
 // This sheet's key in the audit log, and the fields whose old → new values it records.
 const SHEET = "cnc";
-const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "machineStatus", "workingMode", "rejectBreakdown"])];
+const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode", "rejectBreakdown"])];
 
 const isRowEmpty = (doc) =>
   doc.workingMode !== "Non Working" &&
@@ -549,6 +550,10 @@ exports.saveRow = async (req, res) => {
     }
 
     const { set, unset } = buildFields(req.body);
+    // Vendor Name — only a vendor ticked for this machine's process (utils/entryVendor.js).
+    const vendorUpdate = await vendorFields(req.body, existing, () => machineProcess(machine));
+    Object.assign(set, vendorUpdate.set);
+    Object.assign(unset, vendorUpdate.unset);
     // Availability / Performance / Quality, and whether this save needs Admin
     // review — written in the same update as the entry (utils/entryAudit.js).
     const review = reviewFor(SHEET, existing, set, unset);

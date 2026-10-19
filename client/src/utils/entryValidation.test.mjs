@@ -126,13 +126,13 @@ test("Planned Operator Shift can't be less than the Machine Shift, and its minut
   assert.equal(validate(block({ plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours, undefined);
 });
 
-test("Stoppage is capped by Planned Operator Shift − Machine Shift (9:00 − 8:00 → 60 min), and less is fine", () => {
+test("Stoppage is capped by the Machine Shift (08:00–16:00 → 480 min), and less is fine", () => {
   assert.deepEqual(validate(block()), {});
-  assert.deepEqual(validate(block({ lunchMin: "20", setupMin: "30" })), {}); // 50 of 60
-  assert.deepEqual(validate(block({ lunchMin: "30", setupMin: "30" })), {}); // exactly 60
+  assert.deepEqual(validate(block({ lunchMin: "20", setupMin: "30" })), {});
+  assert.deepEqual(validate(block({ lunchMin: "240", setupMin: "240" })), {}); // exactly 480
   assert.equal(
-    validate(block({ lunchMin: "30", setupMin: "31" })).stoppageTotal,
-    "Total stoppage is 61 min but only 60 min is allowed (Planned Operator Shift − Machine Shift)",
+    validate(block({ lunchMin: "240", setupMin: "241" })).stoppageTotal,
+    "Total stoppage is 481 min but the Machine Shift is only 480 min",
   );
 });
 

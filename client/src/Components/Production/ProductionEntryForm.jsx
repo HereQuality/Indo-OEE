@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { operatorsForMachine } from "../../utils/operatorsForMachine";
+import { vendorsForMachine } from "../../utils/vendorsFor";
 import { isNonWorking } from "../../utils/productionSheet";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
@@ -11,7 +12,9 @@ import OeeCheck from "./OeeCheck";
 import FormLine from "./FormLine";
 import { metricsOver100 } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
+import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
+import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
 import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, partCycleLabel, rowCalc } from "../../utils/productionSheet";
 import { DOWNTIME_KEYS, cleanSplit, isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
@@ -125,6 +128,7 @@ const EntryBlock = ({
   machines,
   items,
   operators,
+  vendors,
   isEdit,
   index,
   canRemove,
@@ -139,8 +143,12 @@ const EntryBlock = ({
   onRemove,
   registerRef,
 }) => {
-  const { warning } = useAlert();
+  const { warning, notice } = useAlert();
   const opList = operatorsForMachine(operators, machines, values.machine);
+  // Vendor Name shows only when this machine's process has vendors (Vendor
+  // Master) — or the entry already names one, so editing never hides it.
+  const blockVendors = vendorsForMachine(vendors, machines, values.machine);
+  const showVendor = blockVendors.length > 0 || !!values.vendor;
   const nonWorking = isNonWorking(values);
   const calc = useMemo(() => rowCalc(values), [values]);
   // Availability / Performance / Quality as Save will work them out (planned
@@ -183,12 +191,17 @@ const EntryBlock = ({
         : Math.min(1440, Math.max(0, stoppageLimit - ((calc.totalStoppageMin || 0) - (Number(values[key]) || 0))));
     return {
       max: room,
-      onExceedMax: () =>
-        warning(
-          stoppageLimit === null
-            ? "Downtime can't be more than 1440 minutes (a day)."
-            : `Total stoppage can't be more than the Machine Shift (${stoppageLimit} min) — only ${room} min left for this box.`,
-        ),
+      // Past the Machine Shift is a popup with the figures; the one-day cap
+      // before the times are in stays a plain warning.
+      onExceedMax: (max, typed) =>
+        stoppageLimit === null
+          ? warning("Downtime can't be more than 1440 minutes (a day).")
+          : notice(
+              ...stoppageNotice({
+                limitMin: stoppageLimit,
+                totalMin: (calc.totalStoppageMin || 0) - (Number(values[key]) || 0) + typed,
+              }),
+            ),
     };
   };
 
@@ -418,6 +431,19 @@ const EntryBlock = ({
               title="The Part's own Total Cycle Time, minus any unticked operation below"
             />
           </Row>
+          {showVendor && (
+            <Row className="g-1">
+              <Field label="Vendor Name" error={err("vendor")} md={6} fieldKey="vendor">
+                <VendorSelect
+                  vendors={blockVendors}
+                  value={values.vendor || ""}
+                  vendorName={values.vendorName}
+                  onSelect={(vendorId) => onChange(index, "vendor", vendorId)}
+                  invalid={!!err("vendor")}
+                />
+              </Field>
+            </Row>
+          )}
           <Row className="g-1">
             {CYCLE_OP_FIELDS.map((f) => {
               const label = cycleOpLabel(f);
@@ -504,7 +530,7 @@ const EntryBlock = ({
                 decimals={false}
                 invalid={!!err("actualQty")}
                 max={calc.idealQty}
-                onExceedMax={(max) => warning(`Actual Quantity can't be more than Ideal Quantity (${fmtNum(max)})`)}
+                onExceedMax={(max, typed) => notice(...qtyNotice({ calc, entered: typed, label: "Actual Quantity" }))}
               />
             </Field>
             <Field label="OK Quantity" required error={err("okQty")} md={3} fieldKey="okQty">
@@ -717,6 +743,7 @@ const ProductionEntryForm = ({
   machines = [],
   items = [],
   operators = [],
+  vendors = [],
   isEdit = false,
   booked = [],
   plannedLocks = [],
@@ -820,6 +847,7 @@ const ProductionEntryForm = ({
           machines={machines}
           items={items}
           operators={operators}
+          vendors={vendors}
           isEdit={isEdit}
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}

@@ -1,6 +1,6 @@
 import React from "react";
 import { displayDay, remarkParts } from "../../utils/productionSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/vmcColumns.jsx
@@ -53,6 +53,7 @@ export const VMC_COLUMNS = [
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
   MACHINE_STATUS_COLUMN,
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
+  VENDOR_COLUMN,
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   { key: "programTimeMin", label: "Program Time (min)", get: (r) => min(r.programTimeMin), align: "text-center" },
   { key: "pcsPerProgram", label: "No. of Piece In One Program", get: (r) => min(r.pcsPerProgram), align: "text-center" },

@@ -1,5 +1,5 @@
 const AuditLog = require("../models/AuditLog");
-const Machine = require("../models/Machine");
+const { machineNamesFor } = require("./machineNames");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const { CYCLE_OP_FIELDS, SPM_OP_FIELDS, RIVET_OP_FIELDS, SPM_REFERENCE_FIELDS } = require("../models/Item");
 const { entryMetrics, metricsOver100, METRIC_LABELS } = require("./oeeMetrics");
@@ -28,7 +28,7 @@ const { createNotificationForMany } = require("../services/notification.service"
  * save goes through, the same rule ItemLog follows.
  */
 
-const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE" };
+const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE", spring: "SPRING FOR PINS", powder: "AFTER POWDER COATING" };
 
 const STOPPAGE_LABELS = {
   plannedDownMin: "Planned Down Time (min)",
@@ -47,6 +47,7 @@ const FIELD_LABELS = {
   workingMode: "Machine Working Status",
   date: "Date",
   machine: "Machine No.",
+  worker: "Worker Name",
   operator: "Operator",
   workingStatus: "Working Status",
   machineStatus: "Machine Working Status",
@@ -75,6 +76,13 @@ const FIELD_LABELS = {
   remarks: "Remarks",
   rejectOtherRemark: "Remark (Reject Other)",
   otherMinRemark: "Remark (Other Downtime)",
+  vendorName: "Vendor Name",
+  lessCoatingQty: "Less Powder Coating",
+  dotsQty: "Dots",
+  missCoatingQty: "Miss Powder Coating",
+  otherDefectQty: "Other Defect / Rework",
+  otherActivity: "Other Activity Carried Out",
+  otherActivityMin: "Other Activity (min)",
   ...STOPPAGE_LABELS,
   ...Object.fromEntries([...CYCLE_OP_FIELDS, ...SPM_OP_FIELDS, ...RIVET_OP_FIELDS, ...SPM_REFERENCE_FIELDS].map((f) => [f.key, f.label])),
 };
@@ -86,7 +94,7 @@ const isBlank = (v) => v === undefined || v === null || (typeof v === "string" &
 const present = (field, v, machineNames) => {
   if (isBlank(v)) return null;
   if (field === "date") return (v instanceof Date ? v : new Date(v)).toISOString().slice(0, 10);
-  if (field === "machine") return machineNames[String(v)] || String(v);
+  if (field === "machine" || field === "worker") return machineNames[String(v)] || String(v);
   if (Array.isArray(v)) return v.join(", ");
   if (field === "rejectBreakdown") {
     const obj = v instanceof Map ? Object.fromEntries(v) : v;
@@ -97,12 +105,12 @@ const present = (field, v, machineNames) => {
   return v;
 };
 
-const machineNamesOf = async (...ids) => {
-  const list = ids.filter(Boolean).map(String);
-  if (!list.length) return {};
-  const rows = await Machine.find({ _id: { $in: [...new Set(list)] } }).select("machineName").lean();
-  return Object.fromEntries(rows.map((m) => [String(m._id), m.machineName]));
-};
+// Machine names (or, for After Powder Coating, worker names) by id.
+const machineNamesOf = (...ids) => machineNamesFor(ids.filter(Boolean));
+
+// What an entry is made on: its machine — or, on the After Powder Coating
+// sheet, which has none, its worker. Logged in the machine's place.
+const keyOf = (entry) => entry?.machine ?? entry?.worker;
 
 // Field-by-field old → new over `fields`, in that order.
 const diff = (fields, before, after, machineNames) =>
@@ -177,13 +185,13 @@ const notifyFlagged = async (req, label, over, sheet, entryId) => {
 // flagged/cleared row when the review state moved.
 const logEntrySave = async ({ sheet, req, before, after, fields, review }) => {
   try {
-    const names = await machineNamesOf(before?.machine, after?.machine);
-    const machineName = names[String(after.machine)] || "";
+    const names = await machineNamesOf(keyOf(before), keyOf(after));
+    const machineName = names[String(keyOf(after))] || "";
     const base = {
       entityType: "entry",
       sheet,
       entity: after._id,
-      machine: after.machine,
+      machine: keyOf(after),
       machineName,
       date: present("date", after.date, {}),
       label: labelOf(sheet, after, machineName),
@@ -204,13 +212,13 @@ const logEntrySave = async ({ sheet, req, before, after, fields, review }) => {
 
 const logEntryDelete = async ({ sheet, req, before, fields }) => {
   try {
-    const names = await machineNamesOf(before.machine);
-    const machineName = names[String(before.machine)] || "";
+    const names = await machineNamesOf(keyOf(before));
+    const machineName = names[String(keyOf(before))] || "";
     await write({
       entityType: "entry",
       sheet,
       entity: before._id,
-      machine: before.machine,
+      machine: keyOf(before),
       machineName,
       date: present("date", before.date, {}),
       label: labelOf(sheet, before, machineName),
@@ -226,13 +234,13 @@ const logEntryDelete = async ({ sheet, req, before, fields }) => {
 
 const logEntryUnlock = async ({ sheet, req, entry }) => {
   try {
-    const names = await machineNamesOf(entry.machine);
-    const machineName = names[String(entry.machine)] || "";
+    const names = await machineNamesOf(keyOf(entry));
+    const machineName = names[String(keyOf(entry))] || "";
     await write({
       entityType: "entry",
       sheet,
       entity: entry._id,
-      machine: entry.machine,
+      machine: keyOf(entry),
       machineName,
       date: present("date", entry.date, {}),
       label: labelOf(sheet, entry, machineName),
@@ -254,6 +262,7 @@ module.exports = {
   logEntryUnlock,
   labelOf,
   machineNamesOf,
+  keyOf,
   present,
   write,
   overText,

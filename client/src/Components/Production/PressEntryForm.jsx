@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { operatorsForMachine } from "../../utils/operatorsForMachine";
+import { vendorsForMachine } from "../../utils/vendorsFor";
 import { isNonWorking } from "../../utils/productionSheet";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
@@ -11,7 +12,9 @@ import OeeCheck from "./OeeCheck";
 import FormLine from "./FormLine";
 import { metricsOver100 } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
+import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
+import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
 import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
 import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { PRESS_PROGRAM_FIELDS, pressRowCalc } from "../../utils/pressSheet";
@@ -26,8 +29,7 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  * machines in one Save, one block open at a time, Save scrolling to the first
  * incomplete field, grey boxes calculated live, typed boxes capped so they
  * can't be typed past what is allowed (OK + Rejected within Ideal Quantity;
- * every downtime box within what Planned Operator Shift leaves after the
- * machine's own run).
+ * all downtime together within the Machine Shift — a popup explains either limit with its figures).
  *
  * What differs is the PRESS sheet's own fields: Operation and Setup No., both
  * dropdowns (neither tied to any formula); Standard Time Taken and the number
@@ -122,6 +124,7 @@ const EntryBlock = ({
   machines,
   items,
   operators,
+  vendors,
   isEdit,
   index,
   canRemove,
@@ -135,8 +138,12 @@ const EntryBlock = ({
   onRemove,
   registerRef,
 }) => {
-  const { warning } = useAlert();
+  const { warning, notice } = useAlert();
   const opList = operatorsForMachine(operators, machines, values.machine);
+  // Vendor Name shows only when this machine's process has vendors (Vendor
+  // Master) — or the entry already names one, so editing never hides it.
+  const blockVendors = vendorsForMachine(vendors, machines, values.machine);
+  const showVendor = blockVendors.length > 0 || !!values.vendor;
   const nonWorking = isNonWorking(values);
   const calc = useMemo(() => pressRowCalc(values), [values]);
   // Availability / Performance / Quality as Save will work them out (planned
@@ -164,19 +171,27 @@ const EntryBlock = ({
         : Math.min(1440, Math.max(0, stoppageLimit - ((calc.totalStoppageMin || 0) - (Number(values[key]) || 0))));
     return {
       max: room,
-      onExceedMax: () =>
-        warning(
-          stoppageLimit === null
-            ? "Downtime can't be more than 1440 minutes (a day)."
-            : `Total stoppage can't be more than the Machine Shift (${stoppageLimit} min) — only ${room} min left for this box.`,
-        ),
+      // Past the Machine Shift is a popup with the figures; the one-day cap
+      // before the times are in stays a plain warning.
+      onExceedMax: (max, typed) =>
+        stoppageLimit === null
+          ? warning("Downtime can't be more than 1440 minutes (a day).")
+          : notice(
+              ...stoppageNotice({
+                limitMin: stoppageLimit,
+                totalMin: (calc.totalStoppageMin || 0) - (Number(values[key]) || 0) + typed,
+              }),
+            ),
     };
   };
 
   // OK + Rejected can't go past Ideal Quantity: each box may take what the other leaves.
   const qtyRoom = (otherKey) =>
     Number.isFinite(calc.idealQty) ? Math.max(0, calc.idealQty - (Number(values[otherKey]) || 0)) : undefined;
-  const exceedIdeal = () => warning(`OK + Rejected can't be more than Ideal Quantity (${fmtNum(calc.idealQty)})`);
+  // A blocked keystroke pops up why, with the figures: what was typed plus what
+  // the other box already holds, against Ideal Quantity.
+  const exceedIdeal = (otherKey) => (max, typed) =>
+    notice(...qtyNotice({ calc, entered: typed + (Number(values[otherKey]) || 0) }));
 
   // The time rules (OFF after ON, no overlap) show as soon as the times are
   // picked; everything else waits until Save has been pressed.
@@ -412,6 +427,19 @@ const EntryBlock = ({
               </Input>
             </Field>
           </Row>
+          {showVendor && (
+            <Row className="g-1">
+              <Field label="Vendor Name" error={err("vendor")} md={6} fieldKey="vendor">
+                <VendorSelect
+                  vendors={blockVendors}
+                  value={values.vendor || ""}
+                  vendorName={values.vendorName}
+                  onSelect={(vendorId) => onChange(index, "vendor", vendorId)}
+                  invalid={!!err("vendor")}
+                />
+              </Field>
+            </Row>
+          )}
         </Line>
 
         <Line id={3} errors={errors} isSubmit={isSubmit} values={values}>
@@ -501,7 +529,7 @@ const EntryBlock = ({
                 decimals={false}
                 invalid={!!err("okQty")}
                 max={qtyRoom("rejectedQty")}
-                onExceedMax={exceedIdeal}
+                onExceedMax={exceedIdeal("rejectedQty")}
               />
             </Field>
             <Field label="Rejected Quantity" required error={err("rejectedQty")} md={3} fieldKey="rejectedQty">
@@ -512,7 +540,7 @@ const EntryBlock = ({
                 decimals={false}
                 invalid={!!err("rejectedQty")}
                 max={qtyRoom("okQty")}
-                onExceedMax={exceedIdeal}
+                onExceedMax={exceedIdeal("okQty")}
               />
             </Field>
           </Row>
@@ -624,6 +652,7 @@ const PressEntryForm = ({
   machines = [],
   items = [],
   operators = [],
+  vendors = [],
   isEdit = false,
   booked = [],
   plannedLocks = [],
@@ -726,6 +755,7 @@ const PressEntryForm = ({
           machines={machines}
           items={items}
           operators={operators}
+          vendors={vendors}
           isEdit={isEdit}
           canRemove={!isEdit && entries.length > 1}
           expanded={isEdit || expandedIndex === i}

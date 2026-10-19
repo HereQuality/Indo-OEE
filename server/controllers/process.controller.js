@@ -9,6 +9,8 @@ const RivetEntry = require("../models/RivetEntry");
 const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
+const SpringEntry = require("../models/SpringEntry");
+const PowderCoatingEntry = require("../models/PowderCoatingEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 const { isAdminUser, actorOf } = require("../utils/adminAccess");
@@ -310,6 +312,13 @@ const DASHBOARD_SHEETS = [
   { Model: PressEntry, cycleSec: pressCycleSec },
   { Model: ContactEntry, cycleSec: null },
   { Model: TrobeEntry, cycleSec: null },
+  // SPRING FOR PINS works out Effective Run Time on OK + Rejected (its own
+  // sheet's rule) — the flag tells the client's shared rowCalc to do so.
+  { Model: SpringEntry, cycleSec: null, extra: { runQtyBasis: "total" } },
+  // AFTER POWDER COATING has no machines: its entries carry their own process
+  // and a worker, who stands in the machine's place on the dashboard. Its
+  // Ideal Inspection Time counts Total Qty, like SPRING FOR PINS.
+  { Model: PowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total" } },
 ];
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]
@@ -347,10 +356,11 @@ exports.getDashboardEntries = async (req, res) => {
     }
 
     const results = await Promise.all(
-      DASHBOARD_SHEETS.map(async ({ Model, cycleSec }) => {
-        const edge = (dir) => Model.findOne(scope).sort({ date: dir }).select("date").lean();
+      DASHBOARD_SHEETS.map(async ({ Model, cycleSec, byProcess, extra }) => {
+        const own = byProcess ? (req.query.process ? { process: req.query.process } : {}) : scope;
+        const edge = (dir) => Model.findOne(own).sort({ date: dir }).select("date").lean();
         const [entries, first, last] = await Promise.all([
-          Model.find({ ...scope, date: { $gte: from, $lte: to } })
+          Model.find({ ...own, date: { $gte: from, $lte: to } })
             .select("-__v -createdAt -updatedAt -updatedBy -updatedByModel")
             .sort({ date: 1 })
             .lean(),
@@ -363,9 +373,10 @@ exports.getDashboardEntries = async (req, res) => {
           rows: entries.map((e) => ({
             ...e,
             date: e.date.toISOString().slice(0, 10),
-            machine: String(e.machine),
+            machine: String(e.machine ?? e.worker),
             item: e.item ? String(e.item) : null,
             ...(cycleSec ? { totalCycleSec: cycleSec(e) } : {}),
+            ...extra,
           })),
         };
       }),

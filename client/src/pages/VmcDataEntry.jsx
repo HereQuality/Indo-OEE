@@ -28,6 +28,8 @@ import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
 import { useWorkOrders } from "../hooks/useWorkOrders";
 import { useMachineOperators } from "../hooks/useMachineOperators";
+import { useVendors } from "../hooks/useVendors";
+import { anyVendorFor } from "../utils/vendorsFor";
 import {
   deleteVmcRow,
   getVmcExtent,
@@ -41,6 +43,7 @@ import {
 import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionSheet";
 import { VMC_FORMULAS, vmcDayCalc, vmcRowCalc } from "../utils/vmcSheet";
 import { firstVmcError, validateVmcEntry } from "../utils/vmcValidation";
+import { firstOverLimit } from "../utils/limitNotice";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
@@ -124,6 +127,9 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  // Vendor Name — offered only when the machine's process has vendors (Vendor Master).
+  vendor: "",
+  vendorName: "",
   workOrder: "",
   // Which of Program Time / No. of Piece In One Program this entry has
   // unticked — a per-entry note only (see utils/vmcSheet.js's VMC_PROGRAM_FIELDS).
@@ -161,6 +167,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  vendor: v.vendor || null,
   excludedOps: v.excludedOps || [],
   workOrder: v.workOrder || null,
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
@@ -273,6 +280,7 @@ const VmcDataEntry = () => {
   const { data: items = [] } = useItems();
   const { data: workOrders = [] } = useWorkOrders();
   const { data: operators = [] } = useMachineOperators();
+  const { data: vendors = [] } = useVendors();
 
   // Whichever process (Production › Processes) names *this* page as its own
   // Data Entry Page — matched on the route path with any role-slug prefix
@@ -728,7 +736,11 @@ const VmcDataEntry = () => {
     // incomplete block and scrolls to its first missing field.
     const first = firstVmcError(errorsList);
     if (first) {
-      setFocusTarget({ ...first, nonce: Date.now() });
+      // A quantity or stoppage past what the shift allows pops up why, with
+      // the figures, before Save takes the operator to it.
+      const over = firstOverLimit(entries, errorsList, vmcRowCalc, { machineName });
+      if (over) await toast.notice(...over.notice);
+      setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
     }
 
@@ -789,6 +801,13 @@ const VmcDataEntry = () => {
   // Search matches Part Name, Operator, Drawing No., or Work Order No. — only within this
   // page's own loaded rows, not the whole selection (see the `extent` state
   // above and getProductionExtent for what covers the full range).
+  // The Vendor Name column shows on a process that uses vendors (Vendor
+  // Master), or while any loaded entry names one.
+  const showVendorColumn = useMemo(
+    () => anyVendorFor(vendors, lockedProcess ? [lockedProcess._id] : machines.map((m) => m.process)) || sortedRows.some((r) => r.vendorName),
+    [vendors, lockedProcess, machines, sortedRows],
+  );
+
   const searchedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sortedRows;
@@ -891,6 +910,7 @@ const VmcDataEntry = () => {
             <CardBody className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
               <ProductionEntriesTable
                 rows={searchedRows}
+                showVendor={showVendorColumn}
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}
                 columns={VMC_COLUMNS}
@@ -945,6 +965,7 @@ const VmcDataEntry = () => {
               items={scopedItems}
               workOrders={scopedWorkOrders}
               operators={operators}
+              vendors={vendors}
               isEdit={modalMode === "edit"}
               booked={bookedList}
               plannedLocks={plannedLocks}

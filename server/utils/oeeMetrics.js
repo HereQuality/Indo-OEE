@@ -73,6 +73,8 @@ const CYCLE_SEC = {
   press: perPieceSec("standardTimeMin", "pcsPerStandardTime"),
   contact: (e) => num(e.totalCycleSec),
   trobe: (e) => num(e.totalCycleSec),
+  spring: (e) => num(e.totalCycleSec),
+  powder: (e) => num(e.totalCycleSec),
 };
 
 // { availability, performance, quality } as fractions (1 = 100%), each null
@@ -90,7 +92,10 @@ const entryMetrics = (sheet, e) => {
 
   const plannedH = num(e.plannedOperatorShiftHours);
   const plannedProdMin = (isNum(plannedH) ? plannedH * 60 : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(e[k])));
-  const operatingMin = shiftMin - sumOrZero(STOPPAGE_KEYS.map((k) => num(e[k])));
+  // Time spent on other work (After Powder Coating's Other Activity) isn't
+  // idle, but it isn't inspecting either — so it's out of Operating Time too.
+  // Only that sheet's rows carry it; on every other sheet it's 0.
+  const operatingMin = shiftMin - sumOrZero(STOPPAGE_KEYS.map((k) => num(e[k]))) - (num(e.otherActivityMin) || 0);
   const idealRunSec = isNum(cycle) && cycle > 0 && isNum(totalQty) ? cycle * totalQty : null;
 
   out.availability = plannedProdMin > 0 ? operatingMin / plannedProdMin : null;

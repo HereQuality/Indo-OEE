@@ -97,6 +97,13 @@ export const ENDPOINTS = {
         SEARCH: `${V1}/machine-operators/search`,
     },
 
+    // Vendor master (Production > Vendors) — the After Powder Coating sheet's Vendor box
+    VENDORS: {
+        BASE: `${V1}/vendors`,
+        BY_ID: (id) => `${V1}/vendors/${id}`,
+        SEARCH: `${V1}/vendors/search`,
+    },
+
     // Production Data Entry sheet endpoints
     PRODUCTION_SHEET: {
         BASE: `${V1}/production-sheet`,
@@ -143,6 +150,20 @@ export const ENDPOINTS = {
         ACCESS: `${V1}/oee-review/access`,
         LOGS: `${V1}/oee-review/logs`,
         DECIDE: (sheet, id) => `${V1}/oee-review/${sheet}/${id}`,
+    },
+    POWDER_SHEET: {
+        BASE: `${V1}/powder-coating-sheet`,
+        ROW: `${V1}/powder-coating-sheet/row`,
+        EXTENT: `${V1}/powder-coating-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/powder-coating-sheet/filter-options`,
+        OCCUPIED: `${V1}/powder-coating-sheet/occupied`,
+    },
+    SPRING_SHEET: {
+        BASE: `${V1}/spring-sheet`,
+        ROW: `${V1}/spring-sheet/row`,
+        EXTENT: `${V1}/spring-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/spring-sheet/filter-options`,
+        OCCUPIED: `${V1}/spring-sheet/occupied`,
     },
     TROBE_SHEET: {
         BASE: `${V1}/trobe-sheet`,

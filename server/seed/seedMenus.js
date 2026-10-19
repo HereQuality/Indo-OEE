@@ -24,7 +24,7 @@ const Operator = require("../models/Operator");
 //   2. Dashboard                  (link — the process dashboards)
 //   3. Administration             (group: Menu Group, Menu Master, Company)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Part Master, Machines, Processes, Operators)
+//   5. Production                 (group: Processes, Machines, Parts, Operators, Vendors, Work Orders, OEE Review)
 //   6. Data Entry                 (group: CNC, VMC, SPM — one entry per sheet)
 //   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
@@ -55,14 +55,17 @@ const PRODUCTION_MENUS = [
   { menuName: "Machines", menuUrl: "/hqepl/production/machines", sequence: 2, icon: "Wrench" },
   { menuName: "Parts", menuUrl: "/hqepl/production/parts", sequence: 3, icon: "Package" },
   { menuName: "Operators", menuUrl: "/hqepl/production/operators", sequence: 4, icon: "UserRound" },
+  // The vendor list the After Powder Coating sheet's Vendor box picks from.
+  // Its own page, so Work Orders and OEE Review each moved down one.
+  { menuName: "Vendors", menuUrl: "/hqepl/production/vendors", sequence: 5, icon: "Truck" },
   // Work Orders is back as a master of its own (Work Order No., customer,
   // part, quantity, dispatch date) — no entry form picks one yet.
-  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 5, icon: "ClipboardCheck" },
+  { menuName: "Work Orders", menuUrl: "/hqepl/production/work-orders", sequence: 6, icon: "ClipboardCheck" },
   // Admin review of entries whose Availability / Performance / Quality went
   // over 100%, and the audit log. The API itself is Admin / Super Admin only
   // (server/utils/adminAccess.js); this row just puts it in the sidebar —
   // tick it in Manage Role for the Admin role.
-  { menuName: "OEE Review", menuUrl: "/hqepl/production/oee-review", sequence: 6, icon: "ShieldAlert" },
+  { menuName: "OEE Review", menuUrl: "/hqepl/production/oee-review", sequence: 7, icon: "ShieldAlert" },
   // Dashboard and Data Entry are NOT listed here any more (they are
   // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
   // re-activate its retired row on every run.
@@ -76,6 +79,8 @@ const DATA_ENTRY_MENUS = [
   { menuName: "PRESS", menuUrl: "/hqepl/production/press-data-entry", sequence: 5, icon: "ClipboardList" },
   { menuName: "CONTACT", menuUrl: "/hqepl/production/contact-data-entry", sequence: 6, icon: "ClipboardList" },
   { menuName: "TROBE", menuUrl: "/hqepl/production/trobe-data-entry", sequence: 7, icon: "ClipboardList" },
+  { menuName: "SPRING FOR PINS", menuUrl: "/hqepl/production/spring-data-entry", sequence: 8, icon: "ClipboardList" },
+  { menuName: "AFTER POWDER COATING", menuUrl: "/hqepl/production/powder-coating-data-entry", sequence: 9, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

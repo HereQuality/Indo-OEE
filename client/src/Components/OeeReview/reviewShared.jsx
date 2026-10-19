@@ -23,6 +23,8 @@ export const SHEET_PATHS = {
   press: "/hqepl/production/press-data-entry",
   contact: "/hqepl/production/contact-data-entry",
   trobe: "/hqepl/production/trobe-data-entry",
+  spring: "/hqepl/production/spring-data-entry",
+  powder: "/hqepl/production/powder-coating-data-entry",
 };
 
 export const REVIEW_STYLE = {

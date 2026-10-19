@@ -18,6 +18,8 @@ import { RIVET_OP_FIELDS, RIVET_PROCESS_TYPES, isRivetProcess } from "../utils/r
 import { PRESS_OPERATIONS, isPressProcess } from "../utils/pressSheet";
 import { isContactProcess } from "../utils/contactSheet";
 import { isTrobeProcess } from "../utils/trobeSheet";
+import { isSpringProcess } from "../utils/springSheet";
+import { isPowderCoatingProcess } from "../utils/powderCoatingSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -98,8 +100,17 @@ const ItemMaster = () => {
   const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
   const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
   const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
-  // TROBE parts work the same way as Contact ones: one Total Cycle Time, typed straight in.
-  const isContact = useMemo(() => isContactProcess(selectedProcess) || isTrobeProcess(selectedProcess), [selectedProcess]);
+  // TROBE, SPRING FOR PINS and AFTER POWDER COATING parts work the same way as
+  // Contact ones: one Total Cycle Time (for After Powder Coating, its Standard
+  // Inspection Time per Piece), typed straight in.
+  const isContact = useMemo(
+    () =>
+      isContactProcess(selectedProcess) ||
+      isTrobeProcess(selectedProcess) ||
+      isSpringProcess(selectedProcess) ||
+      isPowderCoatingProcess(selectedProcess),
+    [selectedProcess],
+  );
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");

@@ -54,7 +54,17 @@ const MultiSelect = ({ label, options, selected, onChange, placeholder }) => (
   </div>
 );
 
-const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, options, active, onClearAll }) => {
+// What each picker is called. A sheet with no machines (After Powder Coating:
+// a worker per row) passes its own wording, and `operator: null` to leave out
+// the Operator picker when the row key already is the person.
+const DEFAULT_LABELS = {
+  machine: ["MC No.", "All machines"],
+  operator: ["Operator", "All operators"],
+  item: ["Part", "All parts"],
+};
+
+const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, options, active, onClearAll, labels: labelsIn }) => {
+  const labels = { ...DEFAULT_LABELS, ...labelsIn };
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState(() => periodTabOf(range));
   const wrapperRef = useRef(null);
@@ -162,9 +172,11 @@ const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, optio
           <div className="pd-filter-note">Showing <b>{appliedLabel}</b></div>
         </div>
 
-        <MultiSelect label="MC No." options={options.machine} selected={filters.machine} onChange={(v) => onFilterSet("machine", v)} placeholder="All machines" />
-        <MultiSelect label="Operator" options={options.operator} selected={filters.operator} onChange={(v) => onFilterSet("operator", v)} placeholder="All operators" />
-        <MultiSelect label="Part" options={options.item} selected={filters.item} onChange={(v) => onFilterSet("item", v)} placeholder="All parts" />
+        <MultiSelect label={labels.machine[0]} options={options.machine} selected={filters.machine} onChange={(v) => onFilterSet("machine", v)} placeholder={labels.machine[1]} />
+        {labels.operator && (
+          <MultiSelect label={labels.operator[0]} options={options.operator} selected={filters.operator} onChange={(v) => onFilterSet("operator", v)} placeholder={labels.operator[1]} />
+        )}
+        <MultiSelect label={labels.item[0]} options={options.item} selected={filters.item} onChange={(v) => onFilterSet("item", v)} placeholder={labels.item[1]} />
 
         <div className="d-flex justify-content-end pt-1">
           <button type="button" className="btn btn-primary btn-sm px-3" onClick={() => setOpen(false)}>Done</button>

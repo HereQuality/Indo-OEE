@@ -6,12 +6,14 @@ const RivetEntry = require("../models/RivetEntry");
 const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
+const SpringEntry = require("../models/SpringEntry");
+const PowderCoatingEntry = require("../models/PowderCoatingEntry");
 const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
 const { REVIEW_STATUSES } = require("../models/entryCommon");
 const { accessOf, actorOf } = require("../utils/adminAccess");
-const { SHEET_LABELS, labelOf, machineNamesOf, write, overText } = require("../utils/entryAudit");
+const { SHEET_LABELS, labelOf, machineNamesOf, keyOf, write, overText } = require("../utils/entryAudit");
 const { createNotification } = require("../services/notification.service");
 
 /**
@@ -22,7 +24,7 @@ const { createNotification } = require("../services/notification.service");
  * Everything here except /access is Admin / Super Admin only (route-level
  * requireAdmin). Figures are shown exactly as saved — never capped.
  */
-const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry };
+const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry, spring: SpringEntry, powder: PowderCoatingEntry };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const parseDay = (s) => {
   if (!DATE_RE.test(String(s || ""))) return null;
@@ -62,7 +64,7 @@ exports.listReviews = async (req, res) => {
         (
           await MODELS[sheet]
             .find(query)
-            .select("date machine slot operator itemName drawingNo oee review updatedAt")
+            .select("date machine worker process slot operator itemName drawingNo oee review updatedAt")
             .sort({ "review.flaggedAt": -1 })
             .limit(MAX_ROWS)
             .lean()
@@ -70,9 +72,12 @@ exports.listReviews = async (req, res) => {
       ),
     );
     const rows = lists.flat();
-    const names = await machineNamesOf(...rows.map((r) => r.machine));
-    const machines = await Machine.find({ _id: { $in: rows.map((r) => r.machine) } }).select("process").lean();
+    // An After Powder Coating entry has a worker in its machine's place, and
+    // carries its own process (there's no machine to find it through).
+    const names = await machineNamesOf(...rows.map(keyOf));
+    const machines = await Machine.find({ _id: { $in: rows.map((r) => r.machine).filter(Boolean) } }).select("process").lean();
     const processOf = Object.fromEntries(machines.map((m) => [String(m._id), m.process ? String(m.process) : null]));
+    for (const r of rows) if (r.worker && r.process) processOf[String(r.worker)] = String(r.process);
     const processes = await Process.find({ _id: { $in: Object.values(processOf).filter(Boolean) } }).select("processName").lean();
     const processName = Object.fromEntries(processes.map((p) => [String(p._id), p.processName]));
     const order = { pending: 0, rejected: 1, approved: 2 };
@@ -83,9 +88,9 @@ exports.listReviews = async (req, res) => {
         sheet: r.sheet,
         sheetLabel: SHEET_LABELS[r.sheet],
         date: r.date.toISOString().slice(0, 10),
-        machine: String(r.machine),
-        machineName: names[String(r.machine)] || "—",
-        processName: processName[processOf[String(r.machine)]] || "",
+        machine: String(keyOf(r)),
+        machineName: names[String(keyOf(r))] || "—",
+        processName: processName[processOf[String(keyOf(r))]] || "",
         slot: r.slot,
         operator: r.operator || "",
         itemName: r.itemName || "",
@@ -143,14 +148,14 @@ exports.decide = async (req, res) => {
       return res.status(409).json({ isOk: false, message: "This entry was edited after you opened it — reload and review the new figures" });
     }
 
-    const names = await machineNamesOf(entry.machine);
-    const label = labelOf(sheet, entry, names[String(entry.machine)] || "");
+    const names = await machineNamesOf(keyOf(entry));
+    const label = labelOf(sheet, entry, names[String(keyOf(entry))] || "");
     await write({
       entityType: "entry",
       sheet,
       entity: entry._id,
-      machine: entry.machine,
-      machineName: names[String(entry.machine)] || "",
+      machine: keyOf(entry),
+      machineName: names[String(keyOf(entry))] || "",
       date: entry.date.toISOString().slice(0, 10),
       label,
       action: decision,

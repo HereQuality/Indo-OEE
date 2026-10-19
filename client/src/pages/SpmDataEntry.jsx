@@ -27,6 +27,8 @@ import { useMachines } from "../hooks/useMachines";
 import { useProcesses } from "../hooks/useProcesses";
 import { useItems } from "../hooks/useItems";
 import { useMachineOperators } from "../hooks/useMachineOperators";
+import { useVendors } from "../hooks/useVendors";
+import { anyVendorFor } from "../utils/vendorsFor";
 import {
   deleteSpmRow,
   getSpmExtent,
@@ -40,6 +42,7 @@ import {
 import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionSheet";
 import { SPM_FORMULAS, SPM_OP_FIELDS, SPM_REFERENCE_FIELDS, spmDayCalc, spmRowCalc } from "../utils/spmSheet";
 import { firstSpmError, validateSpmEntry } from "../utils/spmValidation";
+import { firstOverLimit } from "../utils/limitNotice";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors } from "../utils/entryValidation";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
@@ -139,6 +142,9 @@ const emptyEntry = () => ({
   // values only because an edited record has to save back to its own slot.
   slot: 1,
   item: "",
+  // Vendor Name — offered only when the machine's process has vendors (Vendor Master).
+  vendor: "",
+  vendorName: "",
   // Which of the four operations this entry has unticked — a per-entry note,
   // subtracted from Total Cycle Time only (see utils/spmSheet.js's SPM_OP_FIELDS).
   excludedOps: [],
@@ -174,6 +180,7 @@ const toPayload = (v, isEdit) => ({
   // every entry — the page may be filtered to one machine.
   slot: isEdit ? Number(v.slot) : "auto",
   item: v.item || null,
+  vendor: v.vendor || null,
   excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
   // A remark only belongs to an "Others" that is still in use — once that figure
@@ -284,6 +291,7 @@ const SpmDataEntry = () => {
   const { data: processes = [] } = useProcesses();
   const { data: items = [] } = useItems();
   const { data: operators = [] } = useMachineOperators();
+  const { data: vendors = [] } = useVendors();
 
   // Whichever process (Production › Processes) names *this* page as its own
   // Data Entry Page — matched on the route path with any role-slug prefix
@@ -711,7 +719,11 @@ const SpmDataEntry = () => {
     // incomplete block and scrolls to its first missing field.
     const first = firstSpmError(errorsList);
     if (first) {
-      setFocusTarget({ ...first, nonce: Date.now() });
+      // A quantity or stoppage past what the shift allows pops up why, with
+      // the figures, before Save takes the operator to it.
+      const over = firstOverLimit(entries, errorsList, spmRowCalc, { machineName });
+      if (over) await toast.notice(...over.notice);
+      setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
     }
 
@@ -772,6 +784,13 @@ const SpmDataEntry = () => {
   // Search matches Part Name, Operator, or Drawing No. — only within this
   // page's own loaded rows, not the whole selection (see the `extent` state
   // above and getProductionExtent for what covers the full range).
+  // The Vendor Name column shows on a process that uses vendors (Vendor
+  // Master), or while any loaded entry names one.
+  const showVendorColumn = useMemo(
+    () => anyVendorFor(vendors, lockedProcess ? [lockedProcess._id] : machines.map((m) => m.process)) || sortedRows.some((r) => r.vendorName),
+    [vendors, lockedProcess, machines, sortedRows],
+  );
+
   const searchedRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sortedRows;
@@ -872,6 +891,7 @@ const SpmDataEntry = () => {
             <CardBody className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
               <ProductionEntriesTable
                 rows={searchedRows}
+                showVendor={showVendorColumn}
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}
                 columns={SPM_COLUMNS}
@@ -925,6 +945,7 @@ const SpmDataEntry = () => {
               machines={formMachines}
               items={scopedItems}
               operators={operators}
+              vendors={vendors}
               isEdit={modalMode === "edit"}
               booked={bookedList}
               plannedLocks={plannedLocks}

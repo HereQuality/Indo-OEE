@@ -6,6 +6,7 @@ const Machine = require("../models/Machine");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
 const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
@@ -100,7 +101,7 @@ const buildFields = (body) => {
 
 // This sheet's key in the audit log, and the fields whose old → new values it records.
 const SHEET = "contact";
-const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "machineStatus", "workingMode"])];
+const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode"])];
 
 const isRowEmpty = (doc) =>
   doc.workingMode !== "Non Working" &&
@@ -291,7 +292,7 @@ exports.saveRow = async (req, res) => {
     // A status-only entry never keeps production figures, whatever the
     // request carried — blanking them here unsets anything saved before.
     if (isStatusOnly(req.body)) {
-      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), item: null };
+      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), item: null, vendor: null };
     }
     const { date, machine, slot, _id } = req.body;
     const day = parseDay(date);
@@ -409,6 +410,10 @@ exports.saveRow = async (req, res) => {
     }
 
     const { set, unset } = buildFields(req.body);
+    // Vendor Name — only a vendor ticked for this machine's process (utils/entryVendor.js).
+    const vendorUpdate = await vendorFields(req.body, existing, () => machineProcess(machine));
+    Object.assign(set, vendorUpdate.set);
+    Object.assign(unset, vendorUpdate.unset);
     // Availability / Performance / Quality, and whether this save needs Admin
     // review — written in the same update as the entry (utils/entryAudit.js).
     const review = reviewFor(SHEET, existing, set, unset);

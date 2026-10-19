@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect } from "react";
 
 const toastStyles = {
     success: {
@@ -39,7 +39,57 @@ const toastStyles = {
     },
 };
 
+// The one-button notice (AlertContext's `notice`): the reason, the figures
+// behind it, and OK — which has focus, so Enter or Esc closes it straight away.
+const NoticeDialog = ({ state, onClose }) => {
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [onClose]);
+
+    return (
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="notice-title">
+            <div className="fixed inset-0 bg-slate-900/50" onClick={onClose} />
+            <div className="relative w-full max-w-sm max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-200 p-5 sm:p-6 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15">
+                    {toastStyles.warning.icon}
+                </div>
+                <h4 id="notice-title" className="text-base font-semibold text-slate-900 mb-1">
+                    {state.title}
+                </h4>
+                <p className="text-sm text-slate-600 mb-4">{state.message}</p>
+                {state.details.length > 0 && (
+                    <dl className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-left">
+                        {state.details.map(({ label, value, highlight }) => (
+                            <div key={label} className="flex items-baseline justify-between gap-3 py-1">
+                                <dt className="text-slate-500">{label}</dt>
+                                <dd className={`mb-0 text-right font-semibold tabular-nums ${highlight ? "text-red-500" : "text-slate-900"}`}>{value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                )}
+                {state.hint && <p className="text-xs text-slate-500 mb-4">{state.hint}</p>}
+                <button
+                    type="button"
+                    autoFocus
+                    onClick={onClose}
+                    className="w-full sm:w-auto rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-6 py-2.5 shadow-sm transition-colors"
+                >
+                    {state.confirmText}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const AlertContainer = ({ toasts, onDismiss, confirmState, onConfirmResult }) => {
+    const closeNotice = useCallback(() => onConfirmResult(true), [onConfirmResult]);
     return (
         <>
             {/* Toast stack. Above everything else on the page — Bootstrap modals sit
@@ -71,9 +121,11 @@ const AlertContainer = ({ toasts, onDismiss, confirmState, onConfirmResult }) =>
                 })}
             </div>
 
+            {confirmState?.kind === "notice" && <NoticeDialog state={confirmState} onClose={closeNotice} />}
+
             {/* Confirm dialog (replaces window.confirm) — above the toasts, and above
                 any modal it is asked from */}
-            {confirmState && (
+            {confirmState && confirmState.kind !== "notice" && (
                 <div className="fixed inset-0 z-[10010] flex items-center justify-center p-4">
                     <div
                         className="fixed inset-0 bg-slate-900/50"

@@ -374,6 +374,10 @@ export const APQ_COLUMNS = [
 // The review state sits after the OEE columns.
 export const REVIEW_COLUMN = { key: "review", label: "OEE Review", get: (r) => <ReviewBadge review={r.review} />, align: "text-center", headStyle: { minWidth: 120 } };
 
+// Vendor Name — right after Part Name on every sheet, but shown only on a
+// process that uses vendors (the page's `showVendor`; see utils/vendorsFor.js).
+export const VENDOR_COLUMN = { key: "vendorName", label: "Vendor Name", get: (r) => dash(r.vendorName), headStyle: { minWidth: 140 } };
+
 const COLUMNS = [
   { key: "date", label: "Date", get: (r) => displayDay(r.date), merge: "date", frozen: "date", tone: "date" },
   {
@@ -387,6 +391,7 @@ const COLUMNS = [
   { key: "operator", label: "Operator", get: (r) => dash(r.operator), tone: "operator" },
   MACHINE_STATUS_COLUMN,
   { key: "itemName", label: "Part Name", get: (r) => dash(r.itemName), headStyle: { minWidth: 160 } },
+  VENDOR_COLUMN,
   { key: "drawingNo", label: "Drawing No.", get: (r) => dash(r.drawingNo), headStyle: { minWidth: 130 } },
   {
     key: "cycle",
@@ -587,6 +592,8 @@ const ProductionEntriesTable = ({
   columns = COLUMNS,
   formulas = FORMULAS,
   calcRow = rowCalc,
+  // Whether the Vendor Name column shows — only on a process that uses vendors.
+  showVendor = false,
 }) => {
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
@@ -680,6 +687,7 @@ const ProductionEntriesTable = ({
   const visible = useMemo(() => {
     const out = [];
     for (const col of columns) {
+      if (col.key === VENDOR_COLUMN.key && !showVendor) continue;
       if (!col.expandable) {
         out.push(col);
         continue;
@@ -694,7 +702,7 @@ const ProductionEntriesTable = ({
       }
     }
     return out;
-  }, [open, columns]);
+  }, [open, columns, showVendor]);
   const totalCols = visible.length + 1; // + Actions
 
   const Chevron = ({ expand }) => (
