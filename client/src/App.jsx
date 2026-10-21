@@ -25,7 +25,7 @@ import "./index.css";
 // instead of its real content while blocked — see the `blocked` check
 // below and middlewares/maintenance.middleware.js for the server-side
 // enforcement this UI gate is paired with.
-const MAINTENANCE_BYPASS_PATHS = ["/", "/login", "/landing"];
+const MAINTENANCE_BYPASS_PATHS = ["/", "/login", "/landing", "/privacy-policy"];
 
 function App() {
   const { data: companyDetails } = useCompany();
