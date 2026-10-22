@@ -29,6 +29,7 @@ class ProcessInfo {
     this.machines = const [],
     this.stats,
     this.charts,
+    this.dataEntryMenu = '',
   });
 
   final String id;
@@ -42,6 +43,10 @@ class ProcessInfo {
   /// Saved graph keys, or null when this process was never customised.
   final List<String>? charts;
 
+  /// The menu URL of this process's own data-entry page ('' = not linked).
+  /// Who may see the process's dashboard follows access to that page.
+  final String dataEntryMenu;
+
   factory ProcessInfo.fromJson(Map<String, dynamic> j) {
     final rawMachines = j['machines'];
     return ProcessInfo(
@@ -53,8 +58,19 @@ class ProcessInfo {
           : const [],
       stats: _keys(j['stats']),
       charts: _keys(j['charts']),
+      dataEntryMenu: _str(j['dataEntryMenu']),
     );
   }
+
+  ProcessInfo withWidgets(List<String> stats, List<String> charts) => ProcessInfo(
+        id: id,
+        name: name,
+        description: description,
+        machines: machines,
+        stats: stats,
+        charts: charts,
+        dataEntryMenu: dataEntryMenu,
+      );
 
   /// The document as the engine / widgets expect it (`_id`, `processName`, ...).
   Map<String, dynamic> toJson() => {
@@ -62,6 +78,7 @@ class ProcessInfo {
         'processName': name,
         'description': description,
         'machines': machines,
+        if (dataEntryMenu.isNotEmpty) 'dataEntryMenu': dataEntryMenu,
         if (stats != null) 'stats': stats,
         if (charts != null) 'charts': charts,
       };
@@ -77,6 +94,14 @@ bool machineUnassigned(Map<String, dynamic> m) {
   return p == null || (p is String && p.isEmpty);
 }
 
+/// The id of the process a machine belongs to ('' when unassigned). The API
+/// sends either the bare id or a populated `{_id: ...}` object.
+String machineProcessId(Map<String, dynamic> m) {
+  final p = m['process'];
+  if (p is Map) return _str(p['_id']);
+  return _str(p);
+}
+
 /// `GET /processes/entries` -> the rows a dashboard computes from, the first /
 /// last date the process has any entry on, and names for the machines used.
 class DashboardEntries {
@@ -89,6 +114,28 @@ class DashboardEntries {
 
   /// machine id -> name, including machines deactivated since they made entries.
   final Map<String, String> machineNames;
+
+  /// Several processes' entries as one (a person who may see only some processes
+  /// gets "All machines" as the union of exactly those).
+  factory DashboardEntries.merge(Iterable<DashboardEntries> parts) {
+    final rows = <Map<String, dynamic>>[];
+    final names = <String, String>{};
+    String? from, to;
+    for (final p in parts) {
+      rows.addAll(p.rows);
+      names.addAll(p.machineNames);
+      final e = p.extent;
+      if (e == null) continue;
+      final f = _str(e['from']), t = _str(e['to']);
+      if (f.isNotEmpty && (from == null || f.compareTo(from) < 0)) from = f;
+      if (t.isNotEmpty && (to == null || t.compareTo(to) > 0)) to = t;
+    }
+    return DashboardEntries(
+      rows: rows,
+      extent: from != null && to != null ? {'from': from, 'to': to} : null,
+      machineNames: names,
+    );
+  }
 
   factory DashboardEntries.fromResponse(Map<String, dynamic> res) {
     final data = res['data'];

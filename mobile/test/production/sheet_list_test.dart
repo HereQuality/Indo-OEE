@@ -75,6 +75,7 @@ FakeApi install({Map<int, List<Map<String, dynamic>>>? pages, int totalPages = 1
     {'_id': 'o2', 'name': 'Asha'},
   ]);
   api.list(Endpoints.processes, []);
+  api.list(Endpoints.vendors, []); // CNC loads Vendor Master (the Vendor Name column / box)
   api.list(Endpoints.companyHolidays, []);
   api.on('GET', Endpoints.weeklyOff, (_) => {'isOk': true, 'data': {'weeklyOffDays': [0]}});
   api.on('GET', Endpoints.productionSheetExtent, (_) => {'isOk': true, 'data': {'from': '2025-01-01', 'to': today}});

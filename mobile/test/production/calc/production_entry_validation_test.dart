@@ -193,29 +193,32 @@ void main() {
       expect(validateEntry(_valid({'lunchMin': 'x'}))['lunchMin'], '0–1440');
     });
 
-    // _valid: 8 h run, planned 8.30 -> 30 min of stoppage (Lunch / Rest included).
-    test('less stoppage than allowed saves; only Planned Operator Shift − Machine Shift is allowed', () {
-      expect(validateEntry(_valid({'lunchMin': '20', 'setupMin': '5'})), isEmpty); // 25 of 30
-      expect(validateEntry(_valid({'lunchMin': '20', 'setupMin': '10'})), isEmpty); // exactly 30
+    // _valid: 8 h run, planned 8.30. The web's stoppage cap is the Machine Shift itself
+    // (entryValidation.js stoppageLimitMin: spanMinutes(ON, OFF)) = 480 min; the old
+    // "Planned Operator Shift − Machine Shift" rule (30 min here) is gone from the web.
+    test('stoppage is capped at the whole Machine Shift, whatever the Planned Operator Shift is', () {
+      expect(validateEntry(_valid({'lunchMin': '20', 'setupMin': '11'})), isEmpty); // 31 min: fine now (cap 480)
+      expect(validateEntry(_valid({'lunchMin': '100', 'setupMin': '380'})), isEmpty); // exactly 480
       expect(
-        validateEntry(_valid({'lunchMin': '20', 'setupMin': '11'}))['stoppageTotal'],
-        'Total stoppage is 31 min but only 30 min is allowed (Planned Operator Shift − Machine Shift)',
+        validateEntry(_valid({'lunchMin': '100', 'setupMin': '381'}))['stoppageTotal'],
+        'Total stoppage is 481 min but the Machine Shift is only 480 min',
       );
-      // 13 h planned on a 12 h run -> 60 min allowed
-      final long = _valid({'machineOnTime': '08:00', 'machineOffTime': '20:00', 'plannedOperatorShiftHours': '13', 'totalCycleSec': '57', 'actualQty': '600', 'okQty': '590', 'lunchMin': '30', 'setupMin': '30'});
-      expect(validateEntry(long).containsKey('stoppageTotal'), isFalse);
+      // a planned shift equal to the machine shift no longer forbids stoppage
+      expect(validateEntry(_valid({'plannedOperatorShiftHours': '8', 'lunchMin': '0', 'setupMin': '60'})), isEmpty);
     });
 
-    test('stoppage: each downtime box 0-1440 and the total capped by planned - shift', () {
+    test('Non Working returns right after date and machine', () {
+      expect(validateEntry({'workingMode': 'Non Working'}), {'date': 'Date is required', 'machine': 'Machine No. is required'});
+      expect(validateEntry(_valid({'workingMode': 'Non Working', 'operator': '', 'itemName': '', 'okQty': 'x'})), isEmpty);
+      expect(validateEntry(_valid({'workingMode': 'Working', 'operator': ''}))['operator'], 'Operator is required');
+    });
+
+    test('stoppage: each downtime box 0-1440 and the total capped by the machine shift', () {
       expect(validateEntry(_valid({'setupMin': '1441', 'lunchMin': '0'}))['setupMin'], '0–1440');
       expect(validateEntry(_valid({'noPowerMin': '-1'}))['noPowerMin'], '0–1440');
-      // no allowance at all -> any stoppage is over the cap
-      expect(
-        validateEntry(_valid({'plannedOperatorShiftHours': '8.00', 'lunchMin': '0', 'setupMin': '1'}))['stoppageTotal'],
-        'Total stoppage is 1 min but only 0 min is allowed (Planned Operator Shift − Machine Shift)',
-      );
       // Planned Down Time is part of the total too
-      expect(validateEntry(_valid({'plannedDownMin': '50'}))['stoppageTotal'], isNotNull);
+      expect(validateEntry(_valid({'plannedDownMin': '481', 'lunchMin': '0'}))['stoppageTotal'], isNotNull);
+      expect(validateEntry(_valid({'plannedDownMin': '480', 'lunchMin': '0'})).containsKey('stoppageTotal'), isFalse);
       // A new entry can't run through midnight any more (one entry per date)…
       final overnight = _valid({'machineOnTime': '22:00', 'machineOffTime': '06:00', 'plannedOperatorShiftHours': '9', 'lunchMin': '20'});
       expect(validateEntry(overnight)['machineOffTime'], 'Machine OFF Time must be after Machine ON Time');
@@ -238,16 +241,15 @@ void main() {
   });
 
   group('helpers', () {
-    test('stoppageLimitMin = round(planned*60 - shift), never below 0, null until both exist', () {
-      // (the sheet's stored rows hold decimal hours; the form's H.MM goes through withDecimalPlanned)
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.5'})), 30);
-      expect(stoppageLimitMin(withDecimalPlanned(_valid())), 30);
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '7'})), 0);
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.004'})), 0); // 0.24 rounds to 0
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '8.0084'})), 1);
+    test('stoppageLimitMin = the Machine Shift in minutes, null until ON and OFF exist', () {
+      // (web: spanMinutes(ON, OFF); the Planned Operator Shift no longer enters into it)
+      expect(stoppageLimitMin(_valid()), 480);
+      expect(stoppageLimitMin(withDecimalPlanned(_valid())), 480);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': '7'})), 480);
+      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': ''})), 480);
+      expect(stoppageLimitMin(_valid({'machineOnTime': '22:00', 'machineOffTime': '06:00'})), 480);
       expect(stoppageLimitMin(_valid({'machineOffTime': ''})), isNull);
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': ''})), isNull);
-      expect(stoppageLimitMin(_valid({'plannedOperatorShiftHours': 'abc'})), isNull);
+      expect(stoppageLimitMin(_valid({'machineOnTime': 'abc'})), isNull);
     });
 
     test('cleanSplit keeps only positive numbers', () {
@@ -298,7 +300,7 @@ void operatorTests() {
 
     test('a clash is flagged live, on the box that runs into it, naming the machine and time', () {
       final e = operatorOverlapErrors([mine], saved).single;
-      expect(e['machineOnTime'], "Operator Asha is already on machine 7A from 8:00 AM – 12:00 PM on this date — an operator can't run two machines at the same time");
+      expect(e['machineOnTime'], "Operator Asha is already on machine 7A from 08:00 – 12:00 on this date — an operator can't run two machines at the same time");
       expect(isTimeRuleMessage(e['machineOnTime']), isTrue);
       expect(operatorOverlapErrors([{...mine, 'machineOnTime': '06:00', 'machineOffTime': '09:00'}], saved).single.keys, ['machineOffTime']);
     });

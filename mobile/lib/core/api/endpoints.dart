@@ -53,6 +53,12 @@ class Endpoints {
   static const processSearch = '$v1/processes/search';
   static const processEntries = '$v1/processes/entries';
 
+  // Vendor Master (GET → { data: [...] }) — the Vendor Name picker / column.
+  static const vendors = '$v1/vendors';
+
+  // Admin review of entries over 100% (GET /access → { canReview }).
+  static const oeeReviewAccess = '$v1/oee-review/access';
+
   // Items
   static const items = '$v1/items';
   static String itemById(String id) => '$v1/items/$id';

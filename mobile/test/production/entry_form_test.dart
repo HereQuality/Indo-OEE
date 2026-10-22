@@ -41,7 +41,14 @@ void main() {
 
     await typeIn(tester, 0, 'actualQty', '481'); // Ideal is 480
     expect(textOf(tester, 0, 'actualQty'), '400');
-    expect(toasts.any((t) => t.contains('Ideal Quantity')), isTrue);
+    // CNC raises the web's popup (with the figures) instead of a toast.
+    await tester.pump();
+    expect(find.byKey(const ValueKey('entry-notice')), findsOneWidget);
+    expect(find.textContaining('at most 480 pieces'), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry-notice/value/Actual Quantity')), findsOneWidget);
+    expect(toasts.any((t) => t.contains('Ideal Quantity')), isFalse);
+    await tester.tap(find.byKey(const ValueKey('entry-notice/ok')));
+    await tester.pumpAndSettle();
 
     await typeIn(tester, 0, 'actualQty', '40'); // shortening is never blocked
     expect(textOf(tester, 0, 'actualQty'), '40');
@@ -68,8 +75,9 @@ void main() {
     await typeIn(tester, 0, 'otherMin', '5');
     expect(find.byKey(const ValueKey('entry0/otherMinRemark'), skipOffstage: false), findsOneWidget);
 
-    // Planned shift equal to the run -> no allowance -> the stoppage boxes say so.
-    await typeIn(tester, 0, 'plannedOperatorShiftHours', '8');
+    // The whole Machine Shift used up (web stoppageLimitMin = ON -> OFF = 480 min) -> the stoppage boxes say so.
+    expect(find.textContaining('No stoppage time left'), findsNothing);
+    await typeIn(tester, 0, 'lunchMin', '475'); // + the 5 min of Other typed above = 480
     expect(find.textContaining('No stoppage time left'), findsWidgets);
   });
 

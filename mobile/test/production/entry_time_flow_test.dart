@@ -34,8 +34,8 @@ void main() {
     await openBlock0(tester);
 
     // No Save pressed, and it is already there, naming the clash.
-    expect(find.textContaining('Machine OFF Time overlaps another entry for this machine on this date (3:00 PM – 6:00 PM)'), findsOneWidget);
-    expect(find.textContaining('Already booked for this machine on this date: 3:00 PM – 6:00 PM'), findsOneWidget);
+    expect(find.textContaining('Machine OFF Time overlaps another entry for this machine on this date (15:00 – 18:00)'), findsOneWidget);
+    expect(find.textContaining('Already booked for this machine on this date: 15:00 – 18:00'), findsOneWidget);
     expect(bar(tester).canSave, isFalse);
 
     await tapSave(tester);
@@ -94,7 +94,7 @@ void main() {
       expect(toasts, isEmpty);
       f.onChange(0, 'machineOffTime', '16:00'); // …and this end runs into 3 – 6 PM
       await settle(tester);
-      expect(toasts.single, contains('Machine OFF Time overlaps another entry for this machine on this date (3:00 PM – 6:00 PM)'));
+      expect(toasts.single, contains('Machine OFF Time overlaps another entry for this machine on this date (15:00 – 18:00)'));
     });
 
     editorTest('times picked before the bookings arrived warn as soon as they do', (tester) async {
@@ -104,7 +104,7 @@ void main() {
           ]));
       await fillValid(tester); // machine and times set in one go; the lookup lands afterwards
       await settle(tester);
-      expect(toasts.single, contains('overlaps another entry for this machine on this date (3:00 PM – 6:00 PM)'));
+      expect(toasts.single, contains('overlaps another entry for this machine on this date (15:00 – 18:00)'));
     });
   });
 
@@ -206,11 +206,11 @@ void main() {
     expect(find.textContaining('overlaps another entry'), findsNothing, reason: 'its times are untouched');
     expect(bar(tester).canSave, isTrue);
     // Only the neighbour is listed — its own slot (8:00 AM – 4:00 PM) is not "another" entry.
-    expect(find.text('Already booked for this machine on this date: 8:00 AM – 12:00 PM — pick a time outside it.'), findsOneWidget);
+    expect(find.text('Already booked for this machine on this date: 08:00 – 12:00 — pick a time outside it.'), findsOneWidget);
 
     form(tester).onChange(0, 'machineOffTime', '15:00');
     await settle(tester);
-    expect(find.textContaining('overlaps another entry for this machine on this date (8:00 AM – 12:00 PM)'), findsOneWidget);
+    expect(find.textContaining('overlaps another entry for this machine on this date (08:00 – 12:00)'), findsOneWidget);
     expect(bar(tester).canSave, isFalse);
     expect(h.puts, isEmpty);
   });

@@ -2,17 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../app/routes.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/endpoints.dart';
 import '../../../core/utils/alerts.dart';
-import '../shared/production_sheet_calc.dart';
+import '../process/process_spec.dart';
+import '../processes/cnc/cnc_spec.dart' show cncSpec;
+import '../shared/production_sheet_calc.dart' show isoDay, jsTruthy, sortByMachineOn;
+import '../shared/vendors.dart' show anyVendorFor;
+import 'table/sheet_columns.dart' show SheetColumns, SheetEnv;
 import 'sheet_model.dart';
 import 'sheet_period.dart';
 import 'working_days.dart';
 
-/// The route this page is mounted at; a process whose Data Entry Page resolves
-/// to it scopes the machine picker (see [SheetController.lockedProcess]).
+/// The CNC page's route. A process whose Data Entry Page resolves to a spec's
+/// route scopes the machine picker (see [SheetController.lockedProcess]).
 const String sheetPagePath = '/production/cnc-data-entry';
 
 const int _reloadBatch = 4;
@@ -26,10 +29,19 @@ const int _reloadBatch = 4;
 /// Rows are kept exactly as the server sends them (the editor and the calc
 /// functions read the same JS keys); only `date` / `machine` / `_id` are
 /// normalised so a bad row can never crash the list.
+///
+/// Which process this is — its endpoints, formulas and the page that scopes its
+/// machines — comes from [spec] (CNC by default).
 class SheetController extends ChangeNotifier {
-  SheetController({List<String>? initialRange}) : range = initialRange ?? defaultEntryRange() {
+  SheetController({List<String>? initialRange, this.spec = cncSpec}) : range = initialRange ?? defaultEntryRange() {
     baseRange = range;
   }
+
+  /// The process whose Data Entry list this is.
+  final ProcessSpec spec;
+
+  /// The spec's `extraReference` lists by name, loaded once with the rest.
+  Map<String, List<Json>> extra = const {};
 
   // ── reference data (loaded once) ─────────────────────────────────────────
   List<Json> machines = const [];
@@ -43,10 +55,34 @@ class SheetController extends ChangeNotifier {
 
   Map<String, String> _machineName = const {};
   Map<String, int> _machineRank = const {};
-  Map<String, String> get machineName => _machineName;
+
+  // "Machines" the spec offers that the machine list does not hold (Powder
+  // Coating's workers) — named and ranked after the real ones.
+  Map<String, String> _extraName = const {};
+  Map<String, int> _extraRank = const {};
+  List<Json> _extraMachines = const [];
+
+  // Names the API itself sends for the machines (workers) its rows mention
+  // (`machineNames`) — a worker deactivated since still has one.
+  Map<String, String> _serverNames = const {};
+
+  Map<String, String> get machineName =>
+      (_extraName.isEmpty && _serverNames.isEmpty) ? _machineName : {..._serverNames, ..._extraName, ..._machineName};
+
+  void _absorbNames(Object? res) {
+    final names = res is Map ? res['machineNames'] : null;
+    if (names is! Map || names.isEmpty) return;
+    final next = {for (final e in names.entries) '${e.key}': '${e.value}'};
+    if (next.entries.every((e) => _serverNames[e.key] == e.value)) return;
+    _serverNames = {..._serverNames, ...next};
+    _days = null;
+  }
 
   Json? machineOf(String id) {
     for (final m in machines) {
+      if ('${m['_id']}' == id) return m;
+    }
+    for (final m in _extraMachines) {
       if ('${m['_id']}' == id) return m;
     }
     return null;
@@ -54,7 +90,17 @@ class SheetController extends ChangeNotifier {
 
   /// Where a machine sits in the sheet order the API returns (a machine that
   /// has since been deactivated ranks after every listed one).
-  int rankOf(String machineId) => _machineRank[machineId] ?? 1 << 30;
+  int rankOf(String machineId) => _machineRank[machineId] ?? _extraRank[machineId] ?? 1 << 30;
+
+  void _refreshExtraMachines() {
+    final extras = [
+      for (final m in scopedMachines)
+        if (!_machineName.containsKey('${m['_id']}')) m,
+    ];
+    _extraMachines = extras;
+    _extraName = {for (final m in extras) '${m['_id']}': '${m['machineName'] ?? '—'}'};
+    _extraRank = {for (var i = 0; i < extras.length; i++) '${extras[i]['_id']}': _machineRank.length + i};
+  }
 
   /// Machine ids the entries of the loaded range use (for the picker options).
   Map<String, List<String>> rangeOptions = const {'machine': [], 'operator': [], 'item': []};
@@ -107,27 +153,56 @@ class SheetController extends ChangeNotifier {
   /// The process whose Data Entry Page is this page, when exactly one is —
   /// then only its machines can be picked (two, or none, means every machine).
   Json? get lockedProcess {
-    final owners = processes.where((p) {
-      final url = p['dataEntryMenu'];
-      return url is String && url.isNotEmpty && AppRoutes.match(url)?.path == sheetPagePath;
-    }).toList();
+    final owners = processes.where(spec.ownsProcess).toList();
     return owners.length == 1 ? owners.first : null;
   }
 
-  List<Json> get scopedMachines {
+  List<Json> get scopedMachines =>
+      spec.scopeMachines(machines: machines, operators: operators, lockedProcess: lockedProcess);
+
+  /// The parts the Part picker offers: with this page linked to a process, its
+  /// parts plus any not given a process yet (like the web) — or every part when
+  /// the spec keeps the unscoped behaviour.
+  List<Json> get scopedItems {
     final p = lockedProcess;
-    if (p == null) return machines;
+    if (p == null || !spec.scopeItemsToProcess) return items;
     final pid = '${p['_id']}';
-    return machines.where((m) => _idOf(m['process']) == pid).toList();
+    return items.where((it) {
+      final owner = it['process'];
+      return owner == null || owner == '' || _idOf(owner) == pid;
+    }).toList();
   }
+
+  // ── vendors (specs with `usesVendors`) ────────────────────────────────────
+
+  /// Vendor Master, loaded with the other reference lists when the spec uses
+  /// vendors (empty otherwise).
+  List<Json> get vendors => extra['vendors'] ?? const [];
+
+  /// The web's `showVendorColumn`: the page's process (or, unlinked, any of the
+  /// machines' processes) has vendors, or a loaded entry already names one.
+  bool get showVendorColumn {
+    if (!spec.usesVendors) return false;
+    final p = lockedProcess;
+    final ids = p != null ? [p['_id']] : [for (final m in machines) m['process']];
+    return anyVendorFor(vendors, ids) || _rows.any((r) => jsTruthy(r['vendorName']));
+  }
+
+  /// The page's facts a column may depend on (see [SheetCol.shownWhen]).
+  SheetEnv get env => SheetEnv(showVendor: showVendorColumn);
+
+  /// The spec's table columns for the open breakdowns [open], minus the optional
+  /// ones this page hides. A spec without optional columns gets its own object.
+  SheetColumns columnsFor(Set<String> open) => spec.columns(open).where(env);
 
   /// The date/machine groups the list draws (filters and search applied).
   List<SheetDay> get days => _days ??= buildSheetDays(
         rows: _rows,
         filters: filters,
         search: search,
-        machineName: _machineName,
+        machineName: machineName,
         rankOf: rankOf,
+        searchKeys: spec.searchKeys,
       );
 
   /// dayCalc figures of an entry (Unutilized, Unreported, the three OEEs, gap).
@@ -136,7 +211,7 @@ class SheetController extends ChangeNotifier {
   Json dayOf(Json row) => _dayResults['${row['_id']}'] ?? const {};
 
   /// rowCalc figures of an entry, cached per row.
-  Json calcOf(Json row) => _calcCache.putIfAbsent('${row['_id']}', () => rowCalc(row));
+  Json calcOf(Json row) => _calcCache.putIfAbsent('${row['_id']}', () => spec.rowCalc(row));
 
   /// Picker options: the values present in the period plus anything already
   /// picked, so a pick never vanishes from its own list.
@@ -162,7 +237,7 @@ class SheetController extends ChangeNotifier {
   }
 
   String optionLabel(String dim, String value) => switch (dim) {
-        'machine' => _machineName[value] ?? '—',
+        'machine' => machineName[value] ?? '—',
         'operator' => value.isEmpty ? '(no operator)' : value,
         _ => value.isEmpty ? '(no part)' : value,
       };
@@ -222,7 +297,8 @@ class SheetController extends ChangeNotifier {
       soft(() => list(Endpoints.processes)),
       soft(() => list(Endpoints.companyHolidays)),
       soft(() async => asMap(await Api.get(Endpoints.weeklyOff))),
-      soft(() async => asMap(await Api.get(Endpoints.productionSheetExtent))),
+      soft(() async => asMap(await Api.get(spec.api.extent))),
+      for (final path in spec.referenceLists.values) soft(() => list(path)),
     ]);
     if (_disposed) return;
 
@@ -244,8 +320,13 @@ class SheetController extends ChangeNotifier {
       holidays: holidays,
     );
     final ext = results[6] as Json?;
+    final extraNames = spec.referenceLists.keys.toList();
+    extra = {
+      for (var i = 0; i < extraNames.length; i++) extraNames[i]: (results[7 + i] as List<Json>?) ?? extra[extraNames[i]] ?? const <Json>[],
+    };
     extent = (ext != null && ext['from'] != null && ext['to'] != null) ? ext : null;
 
+    _refreshExtraMachines();
     referenceLoaded = !failed;
     referenceFailed = failed;
     _days = null;
@@ -269,7 +350,8 @@ class SheetController extends ChangeNotifier {
 
   /// The distinct machines / operators / parts present in [from]..[to].
   Future<Map<String, List<String>>> fetchFilterOptions(String from, String to) async {
-    final res = await Api.get(Endpoints.productionSheetFilterOptions, query: {'from': from, 'to': to});
+    final res = await Api.get(spec.api.filterOptions, query: {'from': from, 'to': to});
+    _absorbNames(res);
     final data = asMap(res);
     List<String> strings(Object? v) => v is List ? [for (final e in v) if (e != null) '$e'] : <String>[];
     return {'machine': strings(data['machine']), 'operator': strings(data['operator']), 'item': strings(data['item'])};
@@ -288,14 +370,18 @@ class SheetController extends ChangeNotifier {
     }
   }
 
-  Future<Json> _fetchPage(int p) => Api.get(Endpoints.productionSheet, query: {
-        'from': range[0],
-        'to': range[1],
-        'page': p,
-        if (filters.machine.isNotEmpty) 'machine': filters.machine.join(','),
-        if (filters.operator.isNotEmpty) 'operator': filters.operator.join(','),
-        if (filters.item.isNotEmpty) 'item': filters.item.join(','),
-      });
+  Future<Json> _fetchPage(int p) async {
+    final res = await Api.get(spec.api.list, query: {
+      'from': range[0],
+      'to': range[1],
+      'page': p,
+      if (filters.machine.isNotEmpty) spec.api.machineParam: filters.machine.join(','),
+      if (filters.operator.isNotEmpty) 'operator': filters.operator.join(','),
+      if (filters.item.isNotEmpty) 'item': filters.item.join(','),
+    });
+    _absorbNames(res);
+    return res;
+  }
 
   List<Json> _normalize(Json res) {
     final out = <Json>[];
@@ -336,7 +422,7 @@ class SheetController extends ChangeNotifier {
       // dayCalc sorts by Machine ON time internally; sorting the same way here
       // (the same helper) keeps result i lined up with sorted[i].
       final sorted = sortByMachineOn(group);
-      final results = dayCalc(sorted);
+      final results = spec.dayCalc(sorted);
       for (var i = 0; i < sorted.length; i++) {
         out['${sorted[i]['_id']}'] = results[i];
       }
@@ -531,14 +617,14 @@ class SheetController extends ChangeNotifier {
 
   // ── mutations ────────────────────────────────────────────────────────────
 
-  /// DELETE /production-sheet/row/:id. True when the entry is gone.
+  /// DELETE {sheet}/row/:id. True when the entry is gone.
   Future<bool> deleteRow(Json row) async {
     if (deletingId != null) return false;
     deletingId = '${row['_id']}';
     notifyListeners();
     var ok = false;
     try {
-      final res = await Api.delete('${Endpoints.productionSheetRow}/${row['_id']}');
+      final res = await Api.delete('${spec.api.row}/${row['_id']}');
       final msg = res['message'];
       Alerts.success(msg is String && msg.isNotEmpty ? msg : 'Entry deleted successfully!');
       ok = true;
@@ -553,7 +639,7 @@ class SheetController extends ChangeNotifier {
     return ok;
   }
 
-  /// PUT /production-sheet/row/:id/unlock (Super Admin) — 24 hours of edit /
+  /// PUT {sheet}/row/:id/unlock (Super Admin) — 24 hours of edit /
   /// delete access on this one entry. True when it worked.
   Future<bool> unlockRow(Json row) async {
     if (unlockingId != null) return false;
@@ -561,7 +647,7 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
     var ok = false;
     try {
-      final res = await Api.put('${Endpoints.productionSheetRow}/${row['_id']}/unlock');
+      final res = await Api.put('${spec.api.row}/${row['_id']}/unlock');
       final msg = res['message'];
       Alerts.success(msg is String && msg.isNotEmpty ? msg : 'Unlocked for 24 hours');
       final data = res['data'];

@@ -35,23 +35,128 @@ class CardIconButton extends StatelessWidget {
   }
 }
 
-/// The chart <-> table switch icon (the table is the accessible twin of the chart).
+/// The chart | table switch (WidgetCard.jsx `ViewToggle`): both choices are
+/// always visible with the current one highlighted, so there is never a doubt
+/// how to get the graph back. [labels] adds the words next to the icons (cards
+/// wide enough to carry them); the table is the accessible twin of the chart.
 class ViewToggleButton extends StatelessWidget {
-  const ViewToggleButton({super.key, required this.view, required this.onChanged});
+  const ViewToggleButton({super.key, required this.view, required this.onChanged, this.labels = false});
 
   final ChartView view;
   final ValueChanged<ChartView> onChanged;
+  final bool labels;
 
   @override
-  Widget build(BuildContext context) => CardIconButton(
-        icon: view == ChartView.chart ? Icons.table_rows_outlined : Icons.bar_chart_rounded,
-        tooltip: view == ChartView.chart ? 'Show as table' : 'Show as chart',
-        active: view == ChartView.table,
-        onPressed: () {
-          HapticFeedback.selectionClick();
-          onChanged(view == ChartView.chart ? ChartView.table : ChartView.chart);
-        },
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget segment(ChartView v, IconData icon, String text, String tooltip) {
+      final on = view == v;
+      return Tooltip(
+        message: tooltip,
+        child: Semantics(
+          button: true,
+          selected: on,
+          label: tooltip,
+          excludeSemantics: true,
+          onTap: () => onChanged(v),
+          child: InkWell(
+            onTap: () {
+              if (on) return;
+              HapticFeedback.selectionClick();
+              onChanged(v);
+            },
+            child: Container(
+              constraints: BoxConstraints(minWidth: labels ? 0 : 36, minHeight: 34),
+              padding: EdgeInsets.symmetric(horizontal: labels ? 10 : 8),
+              color: on ? cs.primary.withValues(alpha: 0.12) : Colors.transparent,
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: on ? cs.primary : cs.onSurfaceVariant),
+                  if (labels) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      text,
+                      style: TextStyle(fontSize: 12, fontWeight: on ? FontWeight.w600 : FontWeight.w500, color: on ? cs.primary : cs.onSurfaceVariant),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
       );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: cs.outlineVariant),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(7),
+          child: Material(
+            type: MaterialType.transparency,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                segment(ChartView.chart, Icons.bar_chart_rounded, 'Chart', 'Show as chart'),
+                Container(width: 1, height: 34, color: cs.outlineVariant),
+                segment(ChartView.table, Icons.table_rows_outlined, 'Table', 'Show as table'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small icon a graph kind wears in its card header (WidgetCard.jsx
+/// `KIND_ICON`), keyed by the catalog `preview`.
+IconData kindIcon(String? preview) => switch (preview) {
+      'lines' => Icons.show_chart_rounded,
+      'hbars' => Icons.align_horizontal_left_rounded,
+      'vbars' => Icons.bar_chart_rounded,
+      'stacked' || 'stackedTime' => Icons.layers_outlined,
+      'treemap' || 'nestedTreemap' => Icons.grid_view_rounded,
+      'multiples' => Icons.stacked_line_chart_rounded,
+      'table' => Icons.table_chart_outlined,
+      'radial' => Icons.speed_rounded,
+      'radar' => Icons.radar_rounded,
+      'area' => Icons.area_chart_outlined,
+      'donut' => Icons.donut_large_rounded,
+      _ => Icons.bar_chart_rounded,
+    };
+
+/// The tinted square holding a [kindIcon]; the tint follows the catalog `tone`
+/// (reject = orange, downtime = aqua, anything else the accent).
+class KindBadge extends StatelessWidget {
+  const KindBadge({super.key, required this.preview, this.tone});
+  final String? preview;
+  final String? tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DashboardColors.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final fg = switch (tone) {
+      'reject' => c.reject,
+      'downtime' => c.downtime,
+      _ => cs.primary,
+    };
+    return ExcludeSemantics(
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(color: fg.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(9)),
+        child: Icon(kindIcon(preview), size: 17, color: fg),
+      ),
+    );
+  }
 }
 
 /// Opens the breakdown for the card's measure.
@@ -88,6 +193,8 @@ class WidgetCard extends StatelessWidget {
     required this.builder,
     this.height = 264,
     this.fixedHeader = false,
+    this.preview,
+    this.tone,
   });
 
   static const double _denseBelow = 340;
@@ -104,6 +211,10 @@ class WidgetCard extends StatelessWidget {
   final ChartBodyBuilder builder;
   final double height;
   final bool fixedHeader;
+
+  /// Catalog `preview` / `tone` of the graph: the kind icon in the header.
+  final String? preview;
+  final String? tone;
 
   @override
   Widget build(BuildContext context) {
@@ -128,10 +239,10 @@ class WidgetCard extends StatelessWidget {
       onMaximize();
     }
 
-    final fullActions = Row(
+    Widget fullActions(bool labelled) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!tableOnly) ViewToggleButton(view: view, onChanged: onViewChanged),
+        if (!tableOnly) ViewToggleButton(view: view, onChanged: onViewChanged, labels: labelled),
         if (onDrill != null) DrillButton(onPressed: drill),
         CardIconButton(icon: Icons.open_in_full_rounded, tooltip: 'Maximize', onPressed: maximize),
       ],
@@ -208,11 +319,23 @@ class WidgetCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, box) {
         final dense = box.maxWidth < _denseBelow || (fixedHeader && !roomy);
+        // Cards wide enough say "Chart" / "Table" in words, narrower ones keep the icons.
+        final labelled = box.maxWidth >= 440;
+        Widget titled(bool reserve, {double right = 0}) => Padding(
+              padding: EdgeInsets.only(top: 4, right: right),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(padding: const EdgeInsets.only(top: 1, right: 8), child: KindBadge(preview: preview, tone: tone)),
+                  Expanded(child: heading(reserve)),
+                ],
+              ),
+            );
         final top = dense
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: Padding(padding: const EdgeInsets.only(top: 4), child: heading(fixedHeader))),
+                  Expanded(child: titled(fixedHeader)),
                   menuActions,
                 ],
               )
@@ -220,22 +343,31 @@ class WidgetCard extends StatelessWidget {
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: Padding(padding: const EdgeInsets.only(top: 4), child: heading(fixedHeader))),
-                      fullActions,
+                      Expanded(child: titled(fixedHeader)),
+                      fullActions(labelled),
                     ],
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(padding: const EdgeInsets.only(top: 4, right: 8), child: heading(false)),
-                      Align(alignment: Alignment.centerRight, child: fullActions),
+                      titled(false, right: 8),
+                      Align(alignment: Alignment.centerRight, child: fullActions(labelled)),
                     ],
                   );
         return DashCard(
-          padding: const EdgeInsets.fromLTRB(12, 6, 4, 8),
+          padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [top, const SizedBox(height: 2), stage()],
+            children: [
+              const AccentEdge(gradient: true),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 4, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [top, const SizedBox(height: 2), stage()],
+                ),
+              ),
+            ],
           ),
         );
       },

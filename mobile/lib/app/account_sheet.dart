@@ -218,29 +218,52 @@ class _AppearanceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
     final s = Theme.of(context).colorScheme;
+    final picker = SegmentedButton<bool>(
+      showSelectedIcon: false,
+      style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact, textStyle: const TextStyle(fontSize: 13)),
+      segments: const [
+        ButtonSegment(value: false, label: Text('Light')),
+        ButtonSegment(value: true, label: Text('Dark')),
+      ],
+      selected: {theme.isDark},
+      onSelectionChanged: (v) {
+        if (v.first == theme.isDark) return;
+        HapticFeedback.selectionClick();
+        theme.setDark(v.first);
+      },
+    );
+    final label = Row(
+      children: [
+        Icon(theme.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, color: s.onSurfaceVariant, size: 22),
+        const SizedBox(width: 12),
+        const Expanded(child: Text('Appearance', style: TextStyle(fontWeight: FontWeight.w600))),
+      ],
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
-        child: Row(
-          children: [
-            Icon(theme.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded, color: s.onSurfaceVariant, size: 22),
-            const SizedBox(width: 12),
-            const Expanded(child: Text('Appearance', style: TextStyle(fontWeight: FontWeight.w600))),
-            SegmentedButton<bool>(
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact, textStyle: const TextStyle(fontSize: 13)),
-              segments: const [
-                ButtonSegment(value: false, label: Text('Light')),
-                ButtonSegment(value: true, label: Text('Dark')),
+        // Label and Light/Dark switch share a row while they fit; a narrow phone or
+        // a large text size puts the switch under the label instead of overflowing.
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final stacked = c.maxWidth < 300 || MediaQuery.textScalerOf(context).scale(14) > 20;
+            if (!stacked) {
+              return Row(
+                children: [
+                  Expanded(child: label),
+                  picker,
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                label,
+                const SizedBox(height: 6),
+                Padding(padding: const EdgeInsets.only(right: 6), child: picker),
               ],
-              selected: {theme.isDark},
-              onSelectionChanged: (v) {
-                if (v.first == theme.isDark) return;
-                HapticFeedback.selectionClick();
-                theme.setDark(v.first);
-              },
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

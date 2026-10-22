@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../charts/chart_props.dart';
@@ -130,6 +132,14 @@ class SketchPainter extends CustomPainter {
         _nestedTreemap(canvas);
       case 'funnel':
         _funnel(canvas, color);
+      case 'radial':
+        _radial(canvas);
+      case 'radar':
+        _radar(canvas);
+      case 'area':
+        _area(canvas);
+      case 'donut':
+        _donut(canvas);
       case 'multiples':
         _multiples(canvas);
       case 'table':
@@ -251,6 +261,70 @@ class SketchPainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(x, y, w, h), _stroke(grid, 1.5));
       _rect(canvas, x + 2, y + 2, w - 4, h * 0.6, _s(0));
       _rect(canvas, x + 2, y + 2 + h * 0.62, w - 4, h * 0.36, _s(2));
+    }
+  }
+
+  // Three concentric rings, each part-filled.
+  void _radial(Canvas canvas) {
+    const radii = [34.0, 25.0, 16.0];
+    for (var i = 0; i < radii.length; i++) {
+      final r = radii[i];
+      final rect = Rect.fromCircle(center: const Offset(100, 42), radius: r);
+      canvas.drawCircle(const Offset(100, 42), r, _stroke(grid, 6));
+      canvas.drawArc(
+        rect,
+        -math.pi / 2,
+        2 * math.pi * (0.86 - i * 0.12),
+        false,
+        _stroke(_s(i), 6)..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  // A hexagonal radar with one filled shape.
+  void _radar(Canvas canvas) {
+    void polygon(List<double> pts, Paint paint) {
+      final path = Path()..moveTo(pts[0], pts[1]);
+      for (var i = 2; i < pts.length; i += 2) {
+        path.lineTo(pts[i], pts[i + 1]);
+      }
+      canvas.drawPath(path..close(), paint);
+    }
+
+    polygon([100, 8, 138, 26, 134, 62, 100, 76, 66, 62, 62, 26], _stroke(grid, 1.5));
+    polygon([100, 22, 124, 32, 122, 56, 100, 64, 78, 56, 76, 34], _stroke(grid, 1));
+    const shape = <double>[100, 14, 132, 30, 120, 60, 100, 70, 82, 52, 70, 30];
+    polygon(shape, _fill(_s(2).withValues(alpha: 0.3)));
+    polygon(shape, _stroke(_s(2), 2.5));
+  }
+
+  // One filled area under a line.
+  void _area(Canvas canvas) {
+    _baseline(canvas);
+    const pts = <double>[14, 52, 44, 40, 74, 46, 104, 26, 134, 34, 164, 22, 192, 30];
+    final fill = Path()..moveTo(14, 74);
+    for (var i = 0; i < pts.length; i += 2) {
+      fill.lineTo(pts[i], pts[i + 1]);
+    }
+    fill
+      ..lineTo(192, 74)
+      ..close();
+    canvas.drawPath(fill, _fill(_s(2).withValues(alpha: 0.28)));
+    _poly(canvas, pts, _s(2));
+  }
+
+  // A ring cut into four slices.
+  void _donut(Canvas canvas) {
+    const shares = [0.38, 0.27, 0.2, 0.15];
+    const c = Offset(100, 42);
+    const r = 26.0;
+    var at = -math.pi / 2;
+    for (var i = 0; i < shares.length; i++) {
+      final sweep = 2 * math.pi * shares[i];
+      // The web trims 2 px of arc length off each slice to open a gap.
+      final trimmed = sweep - 2 / r;
+      canvas.drawArc(Rect.fromCircle(center: c, radius: r), at, trimmed, false, _stroke(_s(i), 14));
+      at += sweep;
     }
   }
 

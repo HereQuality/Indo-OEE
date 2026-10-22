@@ -387,10 +387,11 @@ class _SplitRow extends StatelessWidget {
   }
 }
 
+/// JS `a || b || "—"`: the first truthy candidate (so "  " counts, 0 does not).
 String _firstText(List<Object?> candidates) {
   for (final c in candidates) {
-    final s = c == null ? '' : '$c'.trim();
-    if (s.isNotEmpty) return s;
+    final truthy = c != null && c != false && c != '' && !(c is num && (c == 0 || c.isNaN));
+    if (truthy) return '$c';
   }
   return '—';
 }
@@ -443,7 +444,8 @@ class _EntryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _Metric(label: 'Actual', value: q(calc['actualQty'])),
-              _Metric(label: 'OK', value: q(jsToNumber(row['okQty'])), dot: colors.ok),
+              // `Number(r.okQty)`: a missing field is NaN (shown as a dash), a blank one is 0.
+              _Metric(label: 'OK', value: q(row.containsKey('okQty') ? jsToNumber(row['okQty']) : double.nan), dot: colors.ok),
               _Metric(label: 'Rejected', value: q(calc['rejectedQty']), dot: colors.reject),
             ],
           ),

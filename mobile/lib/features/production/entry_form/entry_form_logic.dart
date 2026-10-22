@@ -34,8 +34,11 @@ String entryFmt(Object? v) => fmtNum(v is num ? v.toDouble() : entryNum(v));
 
 /// Everything a machine block derives from its values (rowCalc plus the caps).
 class EntryMetrics {
-  EntryMetrics(this.values)
-      : calc = rowCalc(values),
+  /// [calcFn] is the process's `rowCalc` (CNC's by default) — a spec passes its
+  /// own so every box the form derives follows that process's formulas.
+  EntryMetrics(this.values, {Map<String, dynamic> Function(Map<String, dynamic>)? calcFn})
+      : _calcFn = calcFn ?? rowCalc,
+        calc = (calcFn ?? rowCalc)(values),
         splitTotal = cleanSplit(values['rejectBreakdown']).values.fold<double>(0, (s, n) => s + n),
         stoppageLimit = stoppageLimitMin(withDecimalPlanned(values)),
         plannedHours = parseHm(values['plannedOperatorShiftHours']).hours {
@@ -47,11 +50,21 @@ class EntryMetrics {
 
   final Map<String, dynamic> values;
   final Map<String, dynamic> calc;
+  final Map<String, dynamic> Function(Map<String, dynamic>) _calcFn;
+
+  /// The row calc as Save will work it out (the planned shift converted from its
+  /// typed H.MM to decimal hours first) — what the OEE check reads.
+  late final Map<String, dynamic> oeeCalc = _calcFn(withDecimalPlanned(values));
+
+  /// Availability / Performance / Quality (keys, in that order) above 100% as
+  /// Save will work them out — any of them sends the entry to Admin review.
+  late final List<String> oeeOver100 = metricsOver100(oeeCalc);
 
   /// Sum of the Rejection Master boxes (blanks and zeros dropped).
   final double splitTotal;
 
-  /// Minutes of the planned shift the machine did not run (null until known).
+  /// The most stoppage the entry can account for — the Machine Shift itself, in
+  /// minutes (null until Machine ON/OFF are both picked).
   final double? stoppageLimit;
 
   /// Planned Operator Shift as decimal hours (null while it isn't a usable H.MM).
@@ -87,7 +100,7 @@ class EntryMetrics {
   double rejectRoom(String reason) => math.max(0, rejected - (splitTotal - _splitBox(reason)));
 
   /// The ceiling of a downtime box (Lunch / Rest included) and the toast for
-  /// typing past it. Until Planned Operator Shift and the machine times are in
+  /// typing past it. Until the machine times are in
   /// the allowance is unknown, so only the day's 1440 minutes apply.
   ({double max, String message}) minutesLimit(String key) {
     final limit = stoppageLimit;
@@ -98,7 +111,7 @@ class EntryMetrics {
       max: room,
       message: limit == null
           ? "Downtime can't be more than 1440 minutes (a day)."
-          : "Total stoppage can't be more than ${jsNumStr(limit)} min (Planned Operator Shift − Machine Shift) — only ${jsNumStr(room)} min left for this box.",
+          : "Stoppage happens within the Machine Shift, so all of it together can't be more than ${jsNumStr(limit)} min.",
     );
   }
 
@@ -119,8 +132,8 @@ class EntryMetrics {
   /// Why the downtime boxes cannot take a figure.
   String get downtimeLockReason {
     final limit = stoppageLimit;
-    if (limit == null || limit <= 0) return 'No stoppage time left — the machine ran the whole planned shift.';
-    return 'No stoppage time left — all ${jsNumStr(limit)} min allowed are used.';
+    if (limit == null || limit <= 0) return 'No stoppage time left — the Machine Shift is 0 min.';
+    return 'No stoppage time left — all ${jsNumStr(limit)} min of the Machine Shift are used.';
   }
 
   /// Ceiling for OK Quantity: the typed Actual when it is a number, else Ideal.
@@ -154,6 +167,10 @@ final List<String> _dataKeys = [
 ];
 
 bool entryHasData(Map<String, dynamic> v) {
+  // A Non Working day (or a ticked Status) is typed work too.
+  if (isNonWorking(v)) return true;
+  final status = v['machineStatus'];
+  if (status is List && status.isNotEmpty) return true;
   if (_dataKeys.any((k) => !isBlankValue(v[k]))) return true;
   final split = v['rejectBreakdown'];
   return split is Map && split.values.any((n) => !isBlankValue(n));

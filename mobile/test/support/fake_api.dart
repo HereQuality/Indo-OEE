@@ -138,6 +138,7 @@ Future<void> pumpScreen(
   double textScale = 1.0,
   bool settle = true,
   List<MenuGroup> menus = const [],
+  List<Map<String, dynamic>> roles = const [],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -146,7 +147,7 @@ Future<void> pumpScreen(
   final auth = AuthProvider()
     ..status = AuthStatus.authenticated
     ..user = user ?? testUser();
-  final menu = MenuProvider()..setForTest(isAdmin: auth.user!.isSuperAdmin, groups: menus);
+  final menu = MenuProvider()..setForTest(isAdmin: auth.user!.isSuperAdmin, groups: menus, roles: roles);
   final theme = ThemeProvider();
 
   await tester.pumpWidget(

@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/features/production/dashboard/charts/chart_kit.dart' show ChartEmpty;
 import 'package:indo/features/production/dashboard/charts/chart_props.dart';
 import 'package:indo/features/production/dashboard/charts/charts_registry.dart';
-import 'package:indo/features/production/dashboard/charts/run_time_treemap.dart';
+import 'package:indo/features/production/dashboard/charts/stoppage_treemap.dart';
+import 'package:indo/features/production/dashboard/dashboard_engine.dart' as eng;
 import 'package:indo/features/production/dashboard/charts/treemap_layout.dart';
 import 'package:indo/features/production/dashboard/charts/unreported_chart.dart';
 
@@ -129,11 +130,9 @@ Future<void> _pump(
 }
 
 void main() {
-  test('registry exposes the 11 charts and the table-only set', () {
-    expect(dashboardCharts.keys.toSet(), {
-      'oeeTrend', 'runTimeByOperator', 'downtimeByMachine', 'runTimeByMachine', 'unreportedByMachine',
-      'okRejectedTrend', 'oeeByMachine', 'rejectByReason', 'okPctByOperator', 'outputByItem', 'machineSummary',
-    });
+  test('registry exposes every catalog chart and the table-only set', () {
+    expect(dashboardCharts.keys.toSet(), {for (final c in eng.chartCatalog) c['key'] as String});
+    expect(dashboardCharts.keys, containsAll(['apqTrend', 'unutilizedTrend', 'runTimeByMachineBars']));
     expect(tableOnlyCharts, {'machineSummary'});
   });
 
@@ -160,8 +159,8 @@ void main() {
     expect(find.text('MACHINE'), findsOneWidget);
     expect(find.text('% REJECTED'), findsOneWidget);
     expect(find.text('OEE · LUNCH + SETUP TIME'), findsOneWidget);
-    await _pump(t, 'downtimeByMachine');
-    expect(find.text('Breakdown (Mech + Ele)'), findsOneWidget);
+    await _pump(t, 'downtimeByMachine', view: ChartView.table);
+    expect(find.text('BREAKDOWN (MECH + ELE) (MIN)'), findsOneWidget);
     await _pump(t, 'oeeTrend');
     expect(find.text('Considering losses'), findsOneWidget);
     // A hidden series is struck through, not removed: tapping twice restores it.
@@ -175,7 +174,10 @@ void main() {
       'oeeTrend': 'Needs machine ON/OFF times and OK quantity.',
       'runTimeByOperator': 'Needs cycle time and OK quantity.',
       'downtimeByMachine': 'No downtime recorded.',
-      'runTimeByMachine': 'Needs cycle time and OK quantity.',
+      'runTimeByMachine': 'No stoppage recorded.',
+      'apqTrend': "Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities.",
+      'unutilizedTrend': 'Needs machine ON/OFF times.',
+      'runTimeByMachineBars': 'Needs cycle time and OK quantity.',
       'unreportedByMachine': 'Needs machine ON/OFF times.',
       'okRejectedTrend': 'No quantities entered for this period.',
       'oeeByMachine': 'Needs machine ON/OFF times and OK quantity.',
@@ -203,8 +205,8 @@ void main() {
     await t.tap(find.text('P1'));
     await _pump(t, 'unreportedByMachine', calls: calls);
     await t.tap(find.textContaining('7A').first);
-    await _pump(t, 'runTimeByMachine', calls: calls);
-    await t.tapAt(t.getTopLeft(find.byType(TreemapView)) + const Offset(4, 4));
+    await _pump(t, 'downtimeByMachine', calls: calls);
+    await t.tapAt(t.getTopLeft(find.byType(StoppageTreemapView)) + const Offset(4, 4));
     expect(calls.toggles.take(5).toList(), [
       ('operator', 'Asha'),
       ('item', 'Flange'),

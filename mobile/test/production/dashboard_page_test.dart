@@ -142,7 +142,7 @@ void main() {
             'machineNames': <String, String>{},
           });
       await pumpDashboard(tester);
-      expect(find.text('No entries for VMC in September 2026.'), findsOneWidget);
+      expect(find.text('No entries for VMC in september 2026.'), findsOneWidget);
       expect(find.textContaining(eng.describeRange(['2026-01-05', '2026-01-05'])), findsOneWidget);
       expect(find.textContaining(eng.describeRange(['2026-08-14', '2026-08-14'])), findsOneWidget);
       await tester.tap(find.text('Change period'));

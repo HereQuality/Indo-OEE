@@ -25,6 +25,7 @@ class DashboardController extends ChangeNotifier {
     this.repo = const DashboardRepository(),
     this.processId,
     this.machines = const [],
+    this.scopeProcessIds,
   }) : range = eng.defaultRange() {
     baseRange = range;
   }
@@ -33,6 +34,10 @@ class DashboardController extends ChangeNotifier {
 
   /// Null = "All machines".
   final String? processId;
+
+  /// For "All machines" only: the processes this person may see. Null = every
+  /// machine (an admin); a list = just those processes' entries.
+  final List<String>? scopeProcessIds;
 
   // ── State ────────────────────────────────────────────────────────────────
   /// ['YYYY-MM-DD', 'YYYY-MM-DD'] being shown.
@@ -80,7 +85,10 @@ class DashboardController extends ChangeNotifier {
     error = null;
     _notify();
     try {
-      final res = await repo.entries(from: from, to: to, processId: processId);
+      final scope = scopeProcessIds;
+      final res = processId == null && scope != null
+          ? await repo.entriesForProcesses(from: from, to: to, processIds: scope)
+          : await repo.entries(from: from, to: to, processId: processId);
       if (token != _token || _disposed) return;
       // A date/month clicked on the old (dimmed) view while this was loading
       // belongs to the old period — drop it together with the swap.
@@ -216,6 +224,7 @@ class DashboardController extends ChangeNotifier {
   /// Tap on a bar / slice / chip: toggles one value of a dimension.
   void toggle(String dim, String value) {
     filters = eng.toggleFilter(filters, dim, value);
+    chartViews.clear(); // a changed filter puts every card back on its chart
     _invalidate();
     _notify();
   }
@@ -223,6 +232,7 @@ class DashboardController extends ChangeNotifier {
   /// Sets a dimension to exactly [values] (the Filters sheet, a drill-down row).
   void setFilter(String dim, List<String> values) {
     filters = {...filters, dim: List<String>.of(values)};
+    chartViews.clear();
     _invalidate();
     _notify();
   }
@@ -261,6 +271,7 @@ class DashboardController extends ChangeNotifier {
 
   void clearAll() {
     filters = eng.newEmptyFilters();
+    chartViews.clear();
     _invalidate();
     resetRange();
     _notify();

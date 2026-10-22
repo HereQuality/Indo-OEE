@@ -28,7 +28,7 @@ Map<String, dynamic> validBlock({Map<String, dynamic> extra = const {}}) => {
 /// The exact key set the web's toPayload sends (client/src/pages/ProductionSheet.jsx),
 /// written out independently of the port.
 const webPayloadKeys = {
-  'date', 'machine', 'slot', 'item', 'excludedOps', 'rejectBreakdown', 'rejectReason',
+  'date', 'machine', 'machineStatus', 'workingMode', 'slot', 'item', 'vendor', 'excludedOps', 'rejectBreakdown', 'rejectReason',
   'operator', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark',
   'machineOnTime', 'machineOffTime',
   'actualQty', 'okQty', 'plannedOperatorShiftHours', 'totalCycleSec',

@@ -64,6 +64,9 @@ void main() {
     expect(byKey('trow-r2'), findsOneWidget);
     expect(byKey('sheet-view-toggle'), findsOneWidget);
     expect(byKey('sheet-add'), findsOneWidget);
+    // The Add button has no hero: it comes and goes with the keyboard while the editor route pushes / pops, and
+    // two default-tag FABs in one transition throw "multiple heroes that share the same tag" (found by e2e).
+    expect(tester.widget<FloatingActionButton>(find.byType(FloatingActionButton)).heroTag, isNull);
     expect(api.misses, isEmpty);
     expect(tester.takeException(), isNull);
   });

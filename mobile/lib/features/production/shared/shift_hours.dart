@@ -6,13 +6,13 @@
 // 50 min) — and sees it as "3:30". These helpers are the only place the two
 // meet.
 
-import 'production_sheet_calc.dart' show isNum, jsNumber;
+import 'production_sheet_calc.dart' show isNum, jsNumber, jsRound, jsString;
 
 /// Decimal hours -> "H:MM" (3.5 -> "3:30", 8 -> "8:00"). '' when not a number.
 String hoursToHm(Object? hours) {
   final h = hours is num ? hours.toDouble() : jsNumber(hours);
   if (h == null || !isNum(h)) return '';
-  final total = (h * 60).round();
+  final total = jsRound(h * 60).toInt();
   final sign = total < 0 ? '-' : '';
   final abs = total.abs();
   return '$sign${abs ~/ 60}:${(abs % 60).toString().padLeft(2, '0')}';
@@ -22,7 +22,7 @@ String hoursToHm(Object? hours) {
 String hoursToHmInput(Object? hours) {
   final h = hours is num ? hours.toDouble() : jsNumber(hours);
   if (h == null || !isNum(h)) return '';
-  final total = (h * 60).round().abs();
+  final total = jsRound(h * 60).abs().toInt();
   return '${total ~/ 60}.${(total % 60).toString().padLeft(2, '0')}';
 }
 
@@ -32,7 +32,7 @@ typedef HmParse = ({double? hours, bool minutesTooBig});
 
 /// "3.30" -> 3.5 hours, "3.5" -> 3 h 50 min, "3" -> 3, "" -> null.
 HmParse parseHm(Object? text) {
-  final t = (text == null ? '' : '$text').trim().replaceAll(',', '.');
+  final t = (text == null ? '' : jsString(text)).trim().replaceAll(',', '.');
   final m = RegExp(r'^(\d{1,3})(?:\.(\d{0,2}))?$').firstMatch(t);
   if (m == null) return (hours: null, minutesTooBig: false);
   final h = int.parse(m.group(1)!);

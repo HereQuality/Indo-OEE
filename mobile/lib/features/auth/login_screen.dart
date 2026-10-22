@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         children: [
                           Checkbox(value: _remember, onChanged: (v) => setState(() => _remember = v ?? false)),
-                          const Text('Remember me'),
+                          const Flexible(child: Text('Remember me')),
                         ],
                       ),
                     ),

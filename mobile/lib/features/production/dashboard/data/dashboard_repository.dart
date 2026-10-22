@@ -40,6 +40,17 @@ class DashboardRepository {
     return DashboardEntries.fromResponse(res);
   }
 
+  /// [entries] for each of [processIds], merged — "All machines" for a person
+  /// who may see only those processes.
+  Future<DashboardEntries> entriesForProcesses({
+    required String from,
+    required String to,
+    required List<String> processIds,
+  }) async {
+    final parts = await Future.wait([for (final id in processIds) entries(from: from, to: to, processId: id)]);
+    return DashboardEntries.merge(parts);
+  }
+
   /// PUT /processes/:id with the same `{stats, charts}` payload the web sends.
   Future<void> saveProcessWidgets(String processId, {required List<String> stats, required List<String> charts}) async {
     await Api.put(Endpoints.processById(processId), body: {'stats': stats, 'charts': charts});

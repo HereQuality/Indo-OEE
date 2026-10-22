@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:indo/features/production/dashboard/charts/chart_props.dart' show ChartView;
 import 'package:indo/features/production/dashboard/dashboard_engine.dart' as eng;
 import 'package:indo/features/production/dashboard/shell/dashboard_controller.dart';
 
@@ -15,6 +16,24 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(pinDashboardClock);
   tearDown(unpinDashboardClock);
+
+  test('a changed filter puts every card back on its chart (the web resetKey)', () async {
+    final api = FakeApi.install();
+    installDashboardApi(api);
+    final c = make();
+    await c.load();
+    c.chartViews['oeeTrend'] = ChartView.table;
+    c.chartViews['rejectByReason'] = ChartView.table;
+    c.toggle('machine', 'm1');
+    expect(c.chartViews, isEmpty);
+    c.chartViews['oeeTrend'] = ChartView.table;
+    c.setFilter('operator', ['Asha']);
+    expect(c.chartViews, isEmpty);
+    c.chartViews['oeeTrend'] = ChartView.table;
+    c.clearAll();
+    expect(c.chartViews, isEmpty);
+    c.dispose();
+  });
 
   group('loading', () {
     test('requests the default period for the process and fills the derived state', () async {

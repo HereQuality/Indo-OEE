@@ -60,10 +60,10 @@ class MachineDayCard extends StatelessWidget {
     var actual = 0.0;
     var anyOk = false;
     for (final e in group.entries) {
-      final c = controller.calcOf(e);
-      final a = c['actualQty'];
+      final f = controller.spec.figures(e, controller.calcOf(e));
+      final a = f.actual;
       if (isNum(a)) actual += (a as num).toDouble();
-      final o = jsNumber(e['okQty']);
+      final o = jsNumber(f.ok);
       if (isNum(o)) {
         ok += o!;
         anyOk = true;
@@ -226,15 +226,16 @@ class EntryRow extends StatelessWidget {
                 ? DismissDirection.endToStart
                 : DismissDirection.none;
 
-    final remarks = remarkParts(row);
+    final remarks = controller.spec.remarkParts(row);
     final slot = slotOf(row['slot']);
     final operator = '${row['operator'] ?? ''}'.trim();
     final part = '${row['itemName'] ?? ''}'.trim();
     final drawing = '${row['drawingNo'] ?? ''}'.trim();
     final on = '${row['machineOnTime'] ?? ''}';
     final off = '${row['machineOffTime'] ?? ''}';
-    final okText = minStr(row['okQty']);
-    final actualText = nStr(calc['actualQty']);
+    final figures = controller.spec.figures(row, calc);
+    final okText = minStr(figures.ok);
+    final actualText = nStr(figures.actual);
 
     Widget header = InkWell(
       key: ValueKey('toggle-$id'),
@@ -284,7 +285,7 @@ class EntryRow extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (on.isNotEmpty || off.isNotEmpty) _Pill(icon: Icons.schedule_rounded, text: '${textStr(on)} – ${textStr(off)}'),
-                      if (isNum(calc['shiftHours'])) _Pill(text: '${hmStr(calc['shiftHours'])} hr'),
+                      if (isNum(figures.shiftHours)) _Pill(text: '${hmStr(figures.shiftHours)} hr'),
                       if (locked) _Pill(icon: Icons.lock_outline_rounded, text: 'Locked', tone: SheetTones.lock, key: ValueKey('locked-$id')),
                       if (!locked && unlockedUntil != null)
                         _Pill(icon: Icons.lock_open_rounded, text: 'Unlocked', tone: AppColors.ok, key: ValueKey('unlockedpill-$id')),
@@ -315,7 +316,7 @@ class EntryRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 1),
                   Text(
-                    isNum(calc['pctOk']) ? '${fmtPct(calc['pctOk'])} OK' : 'OK / Actual',
+                    isNum(figures.pctOk) ? '${fmtPct(figures.pctOk)} OK' : 'OK / Actual',
                     style: TextStyle(fontSize: 11, color: s.onSurfaceVariant),
                   ),
                 ],
@@ -376,6 +377,7 @@ class EntryRow extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: expanded
               ? EntryDetail(
+                  spec: controller.spec,
                   row: row,
                   calc: calc,
                   day: day,
@@ -442,7 +444,7 @@ class EntryRow extends StatelessWidget {
       case 'delete':
         unawaited(onDelete(row));
       case 'remarks':
-        unawaited(showRemarkSheet(context, remarkParts(row)));
+        unawaited(showRemarkSheet(context, controller.spec.remarkParts(row)));
     }
   }
 }

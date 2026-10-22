@@ -1,3 +1,6 @@
+import 'package:flutter/painting.dart' show Color;
+
+import '../../shared/production_sheet_calc.dart' show stoppageFields;
 import '../dashboard_engine.dart' as eng;
 import 'chart_props.dart';
 import 'hbars.dart' show BarDatum;
@@ -72,12 +75,24 @@ List<BarDatum> rejectReasons(Rows rows) {
 // ── OEE over time ──────────────────────────────────────────────────────────
 
 class OeeSeries {
-  const OeeSeries(this.key, this.label, this.shortLabel);
+  const OeeSeries(this.key, this.label, this.shortLabel, {this.tone});
   final String key;
   final String label;
 
   /// Compact wording for the phone legend (the full one is in tooltips + table).
   final String shortLabel;
+
+  /// 'ok' | 'reject' | 'downtime': draws the series in that entity colour
+  /// instead of the next `series` slot (the web's `s.tone`).
+  final String? tone;
+
+  /// The line / area colour of series number [index].
+  Color colorIn(DashboardColors c, int index) => switch (tone) {
+        'ok' => c.ok,
+        'reject' => c.reject,
+        'downtime' => c.downtime,
+        _ => c.series[index % c.series.length],
+      };
 }
 
 const List<OeeSeries> oeeSeries = [
@@ -96,11 +111,24 @@ class TimePoint {
   final List<double?> values;
 }
 
-List<TimePoint> oeeTrend(Rows rows, String dim, DashboardCtx ctx) {
+/// The three OEE components — each the entries' minutes and pieces added up
+/// and divided once (summarize's oeeAvailability / ...), not averaged percentages.
+const List<OeeSeries> apqSeries = [
+  OeeSeries('oeeAvailability', 'Availability', 'Availability'),
+  OeeSeries('oeePerformance', 'Performance', 'Performance'),
+  OeeSeries('oeeQuality', 'Quality', 'Quality'),
+];
+
+/// Unutilized Machine Time over time: one filled area in the downtime colour.
+const List<OeeSeries> utilSeries = [
+  OeeSeries('unutilized', 'Unutilized machine time', 'Unutilized machine time', tone: 'downtime'),
+];
+
+List<TimePoint> oeeTrend(Rows rows, String dim, DashboardCtx ctx, [List<OeeSeries> series = oeeSeries]) {
   final out = <TimePoint>[];
   for (final g in eng.summarizeBy(rows, dim, ctx)) {
     final s = g['summary'] as Map<String, dynamic>;
-    final values = [for (final ser in oeeSeries) pct100(s[ser.key])];
+    final values = [for (final ser in series) pct100(s[ser.key])];
     if (values.every((v) => v == null)) continue;
     out.add(TimePoint('${g['key']}', '${g['label']}', values));
   }
@@ -120,27 +148,81 @@ List<TimePoint> okRejectedTrend(Rows rows, String dim, DashboardCtx ctx) {
   return sortedStable(out, (a, b) => a.key.compareTo(b.key));
 }
 
-/// DowntimeByMachine: minutes per stoppage group per machine (sheet order).
-/// Values follow [eng.stoppageGroups].
-List<TimePoint> downtimeByMachine(Rows rows, DashboardCtx ctx) {
+// ── Stoppages by cause (radar) and by machine (nested treemap) ─────────────
+
+/// charts.jsx `shortCause`: the cause label with the long lunch wording folded.
+String shortCause(String key) => eng.causeLabel(key).replaceFirst(RegExp(r'Lunch/Tea/Wash room etc\.'), 'Lunch / Tea');
+
+/// RunTimeByMachine (radar): minutes lost per stoppage cause over [rows], all
+/// ten causes (none folded into "Other"), largest first, zero causes dropped.
+List<BarDatum> stoppageCauses(Rows rows) {
+  final total = eng.summarize(rows)['downtimeByCause'];
+  final out = <BarDatum>[];
+  for (final f in stoppageFields) {
+    final key = f['key'] as String;
+    final v = total is Map ? (_num(total[key]) ?? 0.0) : 0.0;
+    if (v > 0) out.add(BarDatum(key, shortCause(key), v));
+  }
+  return sortedStable(out, (a, b) => b.value.compareTo(a.value));
+}
+
+/// One machine of the B.D. Backup treemap: its causes, largest first.
+class StoppageMachine {
+  const StoppageMachine(this.key, this.label, this.summary, this.causes);
+  final String key;
+  final String label;
+  final Map<String, dynamic> summary;
+
+  /// (cause key, short label, minutes), minutes > 0, largest first.
+  final List<(String, String, double)> causes;
+
+  double get total => causes.fold<double>(0, (s, c) => s + c.$3);
+
+  /// Minutes in one of [eng.stoppageGroups] (the table view's columns).
+  double groupTotal(Map<String, dynamic> group) {
+    final by = summary['downtimeByCause'];
+    var sum = 0.0;
+    for (final f in group['fields'] as List) {
+      if (by is Map) sum += _num(by[f]) ?? 0;
+    }
+    return sum;
+  }
+}
+
+/// DowntimeByMachine: machines with downtime, in sheet order.
+List<StoppageMachine> stoppageMachines(Rows rows, DashboardCtx ctx) {
   final items = <Map<String, dynamic>>[];
   for (final g in eng.summarizeBy(rows, 'machine', ctx)) {
     final s = g['summary'] as Map<String, dynamic>;
-    final byCause = s['downtimeByCause'];
-    final values = <double?>[
-      for (final grp in eng.stoppageGroups)
-        [
-          for (final f in grp['fields'] as List) if (byCause is Map) _num(byCause[f]) ?? 0,
-        ].fold<double>(0, (a, b) => a + b),
-    ];
-    if (!values.any((v) => (v ?? 0) > 0)) continue;
-    items.add({'key': g['key'], 'label': g['label'], 'values': values});
+    if (!((_num(s['downtimeMin']) ?? 0) > 0)) continue;
+    items.add({'key': g['key'], 'label': g['label'], 'summary': s});
   }
   return [
     for (final m in sortedStable(items, eng.compareMachines(ctx)))
-      TimePoint('${m['key']}', '${m['label']}', (m['values'] as List).cast<double?>()),
+      () {
+        final s = m['summary'] as Map<String, dynamic>;
+        final by = s['downtimeByCause'];
+        final causes = <(String, String, double)>[
+          for (final f in stoppageFields)
+            if (by is Map && (_num(by[f['key']]) ?? 0) > 0) (f['key'] as String, shortCause(f['key'] as String), _num(by[f['key']])!),
+        ];
+        return StoppageMachine('${m['key']}', '${m['label']}', s, sortedStable(causes, (a, b) => b.$3.compareTo(a.$3)));
+      }(),
   ];
 }
+
+/// One hue per machine (white text sits on all of them); a machine keeps its
+/// colour by its place in the sheet order, so filtering never repaints it.
+const List<Color> machineHues = [
+  Color(0xFF2F6FE0),
+  Color(0xFF1E2A8A),
+  Color(0xFFD4682F),
+  Color(0xFF5B1A7A),
+  Color(0xFF17855F),
+  Color(0xFFA8700A),
+  Color(0xFFB02A5B),
+  Color(0xFF3A7F8C),
+];
 
 // ── Unreported time, one small chart per machine ───────────────────────────
 

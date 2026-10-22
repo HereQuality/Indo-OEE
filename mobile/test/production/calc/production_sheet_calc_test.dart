@@ -161,7 +161,8 @@ void main() {
       expect(out[1]['gapMin'], isNull);
       expect(out[0]['oeeLosses'], out[1]['oeeLosses']);
       expect(out[0]['unreportedMin'], out[1]['unreportedMin']);
-      expect(out[0]['unutilized'], isNot(out[1]['unutilized']));
+      // Unutilized Machine Time is combined across the whole date now (web dayCalc), so both rows agree
+      expect(out[0]['unutilized'], out[1]['unutilized']);
     });
 
     test('overlapping shifts read as no gap (0), never negative', () {

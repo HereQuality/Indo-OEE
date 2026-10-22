@@ -158,59 +158,161 @@ class EntryHintText extends StatelessWidget {
 
 /// One line of the entry sheet as a card with a header. Turns red-bordered and
 /// gets a "Check this line" badge when a field inside it needs attention.
-class EntryLineCard extends StatelessWidget {
+///
+/// An [optional] line is the web's `FormLine optional`: it starts folded to its
+/// header ("Optional — tap to add"), and opens by itself when it already holds
+/// something ([hasValue]), has an error after Save, or [openByDefault] says it
+/// needs typing. Its fields stay mounted while folded (so a failed Save can
+/// still find them). [summary] replaces "Optional — tap to add" while folded.
+/// [revealKey] lets [EntryLineCard.reveal] open it from outside (the Machine
+/// Status "Remarks" tick).
+class EntryLineCard extends StatefulWidget {
   const EntryLineCard({
     super.key,
     required this.title,
     required this.icon,
     this.hasError = false,
     required this.children,
+    this.optional = false,
+    this.openByDefault = false,
+    this.hasValue = false,
+    this.summary = '',
+    this.revealKey,
   });
 
   final String title;
   final IconData icon;
   final bool hasError;
   final List<Widget> children;
+  final bool optional;
+  final bool openByDefault;
+  final bool hasValue;
+  final String summary;
+  final String? revealKey;
+
+  /// Tests that are about something else switch folding off (test/flutter_test_config.dart)
+  /// so every optional card is open; the folding tests switch it back on.
+  @visibleForTesting
+  static bool foldOptional = true;
+
+  static final Set<_EntryLineCardState> _live = {};
+
+  /// Opens the optional card registered under [key] (no-op otherwise).
+  static bool reveal(String key) {
+    var any = false;
+    for (final st in _live) {
+      if (st.widget.revealKey == key) {
+        st._reveal();
+        any = true;
+      }
+    }
+    return any;
+  }
+
+  @override
+  State<EntryLineCard> createState() => _EntryLineCardState();
+}
+
+class _EntryLineCardState extends State<EntryLineCard> {
+  late bool _open = !EntryLineCard.foldOptional || !widget.optional || widget.hasValue || widget.openByDefault;
+
+  @override
+  void initState() {
+    super.initState();
+    EntryLineCard._live.add(this);
+  }
+
+  @override
+  void dispose() {
+    EntryLineCard._live.remove(this);
+    super.dispose();
+  }
+
+  void _reveal() {
+    if (!_open) setState(() => _open = true);
+  }
+
+  @override
+  void didUpdateWidget(EntryLineCard old) {
+    super.didUpdateWidget(old);
+    if (widget.hasValue || widget.openByDefault || widget.hasError) _open = true;
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     final dark = s.brightness == Brightness.dark;
+    final w = widget;
+    final shown = !w.optional || !EntryLineCard.foldOptional || _open || w.hasError;
+    final hint = shown
+        ? (w.hasValue ? 'Filled in' : '')
+        : (w.summary.isNotEmpty ? w.summary : (w.hasValue ? 'Filled in' : 'Optional \u2014 tap to add'));
+    Widget header = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: s.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(w.icon, size: 15, color: AppColors.readable(context, s.primary)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: Text(w.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.25)),
+          ),
+        ),
+        if (w.optional && !w.hasError) ...[
+          if (hint.isNotEmpty)
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  hint,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 12, color: EntryStyle.hint(context)),
+                ),
+              ),
+            ),
+          AnimatedRotation(
+            turns: shown ? 0.5 : 0,
+            duration: const Duration(milliseconds: 150),
+            child: Icon(Icons.expand_more_rounded, size: 20, color: EntryStyle.hint(context)),
+          ),
+        ],
+      ],
+    );
+    if (w.optional) {
+      header = Semantics(
+        button: true,
+        expanded: shown,
+        child: InkWell(
+          key: ValueKey('line-toggle/${w.title}'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _open = !shown),
+          child: header,
+        ),
+      );
+    }
     return Card(
       elevation: dark ? 0 : 1,
       shadowColor: s.shadow.withValues(alpha: 0.12),
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: hasError ? s.error : s.outlineVariant, width: hasError ? 1.4 : 1),
+        side: BorderSide(color: w.hasError ? s.error : s.outlineVariant, width: w.hasError ? 1.4 : 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(EntryStyle.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: s.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, size: 15, color: AppColors.readable(context, s.primary)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Semantics(
-                    header: true,
-                    child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.25)),
-                  ),
-                ),
-              ],
-            ),
-            if (hasError)
+            header,
+            if (w.hasError)
               Padding(
                 padding: const EdgeInsets.only(top: 6, left: 34),
                 child: Align(
@@ -218,15 +320,20 @@ class EntryLineCard extends StatelessWidget {
                   child: const EntryBadge('Check this line'),
                 ),
               ),
-            const SizedBox(height: 10),
-            ...children,
+            Visibility(
+              visible: shown,
+              maintainState: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [const SizedBox(height: 10), ...w.children],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 }
-
 
 /// The red "needs attention" pill. Unlike the shared StatusChip its text wraps,
 /// so a long label never overflows on a 360 px phone at large text sizes.

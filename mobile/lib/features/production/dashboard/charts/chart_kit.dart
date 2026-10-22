@@ -154,7 +154,7 @@ class ChartEmpty extends StatelessWidget {
       builder: (context, box) {
         final showIcon = !box.hasBoundedHeight || box.maxHeight >= 96;
         return Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,

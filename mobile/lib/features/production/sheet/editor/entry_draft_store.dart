@@ -15,10 +15,10 @@ class EntryDraftStore {
 
   /// The saved blocks, or null when there is no draft, it is older than [ttl],
   /// or it cannot be read (an expired / broken draft is removed).
-  static Future<List<Map<String, dynamic>>?> load({DateTime? now}) async {
+  static Future<List<Map<String, dynamic>>?> load({DateTime? now, String draftKey = key}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(key);
+      final raw = prefs.getString(draftKey);
       if (raw == null || raw.isEmpty) return null;
       final parsed = jsonDecode(raw);
       final entries = parsed is Map ? parsed['entries'] : null;
@@ -30,7 +30,7 @@ class EntryDraftStore {
           entries.isEmpty ||
           age == null ||
           age > ttl.inMilliseconds) {
-        await prefs.remove(key);
+        await prefs.remove(draftKey);
         return null;
       }
       return [
@@ -45,11 +45,12 @@ class EntryDraftStore {
   static Future<void> save(
     List<Map<String, dynamic>> entries, {
     DateTime? now,
+    String draftKey = key,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-        key,
+        draftKey,
         jsonEncode({
           'entries': entries,
           'savedAt': (now ?? DateTime.now()).millisecondsSinceEpoch,
@@ -60,10 +61,10 @@ class EntryDraftStore {
     }
   }
 
-  static Future<void> clear() async {
+  static Future<void> clear({String draftKey = key}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(key);
+      await prefs.remove(draftKey);
     } catch (_) {
       // ignore
     }

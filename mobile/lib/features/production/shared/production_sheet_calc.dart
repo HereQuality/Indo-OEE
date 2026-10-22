@@ -9,9 +9,11 @@
 //
 // Per row (rowCalc), see the web file for the derivation of each formula:
 //   shiftHours, idealQty, idealQtyPerHour, pctOk, totalStoppageMin,
-//   effectiveHours, setupEfficiency, actualQty, rejectedQty, totalCycleSec.
-// Per machine/date (dayCalc): unutilized (own row), unreportedMin, oeeLosses,
-// oeeLunch, oeeLunchCot (day totals shared by every entry of the day), gapMin.
+//   effectiveHours, setupEfficiency, actualQty, rejectedQty, totalCycleSec,
+//   availability, performance, quality, plannedProdMin, operatingMin, idealRunSec.
+// Per machine/date (dayCalc): unutilized (clamped 0..1) + unutilizedRaw,
+// unreportedMin, oeeLosses, oeeLunch, oeeLunchCot, productivity,
+// productivityLunch (day totals shared by every entry of the day), gapMin.
 
 import 'dart:typed_data';
 
@@ -53,10 +55,25 @@ const List<String> rejectReasons = [
   'Other',
 ];
 
+/// Machine Working Status: Working (normal entry) or Non Working (the machine did
+/// not run — only the day, machine, operator, reason and remarks are recorded).
+const List<String> workingModes = ['Working', 'Non Working'];
+
+/// Web `isNonWorking`.
+bool isNonWorking(Map<String, dynamic>? v) => v?['workingMode'] == 'Non Working';
+
+const List<String> machineStatuses = ['Machine Breakdown', 'No Manpower', 'No Planning'];
+
+/// Every value the real Contact sheet uses (its typos folded in).
 const List<String> workingStatuses = [
-  'M/C OFF',
+  'PRESENT',
   'ABSENT',
+  'LEAVE',
+  'M/C OFF',
+  'M/C STOP',
+  'UNDER MAINT.',
   'SUNDAY',
+  'W/OFF',
   'HOLIDAY',
   'STOCK COUNTING',
   'REPORT NOT FILLUP',
@@ -74,6 +91,17 @@ const List<Map<String, dynamic>> stoppageFields = [
   {'key': 'lunchMin', 'label': 'Lunch/Tea/Wash room etc. (min)'},
   {'key': 'otherMin', 'label': 'Other (min)'},
 ];
+
+/// Lunch / Tea and Planned Downtime are the planned stops — taken out of the
+/// time the machine was meant to produce, so they never lower Availability.
+const List<String> plannedStopKeys = ['lunchMin', 'plannedDownMin'];
+
+/// Which of Availability / Performance / Quality a row's calc may be above 100% on.
+const Map<String, String> oeeMetricLabels = {
+  'availability': 'Availability',
+  'performance': 'Performance',
+  'quality': 'Quality',
+};
 
 // ── JavaScript number semantics ─────────────────────────────────────────────
 
@@ -371,8 +399,25 @@ Map<String, dynamic> rowCalc(Map<String, dynamic>? row) {
   // 7) Total Stoppage = sum of the ten stoppage columns, whatever is typed.
   final totalStoppageMin = _sumOrZero([for (final f in stoppageFields) jsNumber(row[f['key']])]);
 
-  // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600.
-  final double? effectiveHours = isNum(cycle) ? (_or0(ok) * cycle!) / 3600 : null;
+  // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600. A sheet
+  // whose own rule counts every piece run (SPRING FOR PINS: OK + Rejected) marks
+  // its rows runQtyBasis: "total".
+  final double runQty = row['runQtyBasis'] == 'total' ? totalProduced : _or0(ok);
+  final double? effectiveHours = isNum(cycle) ? (runQty * cycle!) / 3600 : null;
+
+  // 14–16) Availability / Performance / Quality — this entry alone, standard OEE
+  // over this sheet's own fields (see [_oeeParts]). Never capped at 100%.
+  final double? totalQty = isNum(actual)
+      ? actual
+      : ((isNum(ok) || isNum(rej)) ? _or0(ok) + _or0(rej) : null);
+  final parts = _oeeParts(
+    shiftMin: shiftMin,
+    totalStoppageMin: totalStoppageMin,
+    row: row,
+    cycle: cycle,
+    ok: ok,
+    totalQty: totalQty,
+  );
 
   return <String, dynamic>{
     'totalCycleSec': cycle,
@@ -388,8 +433,57 @@ Map<String, dynamic> rowCalc(Map<String, dynamic>? row) {
     'effectiveHours': effectiveHours,
     // 10) Setup Efficiency = Effective Run Time ÷ Machine Shift Time.
     'setupEfficiency': _ratio(effectiveHours, shiftHours),
+    ...parts,
   };
 }
+
+/// Availability, Performance and Quality for one entry, plus the sums they are
+/// made of (web `oeeParts`):
+///   Planned Production Time = Planned Operator Shift − Lunch − Planned Downtime
+///   Operating Time          = Machine Shift (ON→OFF) − every stoppage
+///                             (− Other Activity, After Powder Coating only)
+///   Availability = Operating ÷ Planned Production; Performance = Cycle ×
+///   (OK + Rejected) ÷ Operating; Quality = OK ÷ (OK + Rejected).
+/// A row with no Planned Operator Shift uses its Machine Shift there.
+Map<String, dynamic> _oeeParts({
+  required double? shiftMin,
+  required double totalStoppageMin,
+  required Map<String, dynamic> row,
+  required double? cycle,
+  required double? ok,
+  required double? totalQty,
+}) {
+  if (shiftMin == null) {
+    return <String, dynamic>{
+      'availability': null,
+      'performance': null,
+      'quality': null,
+      'plannedProdMin': null,
+      'operatingMin': null,
+      'idealRunSec': null,
+    };
+  }
+  final plannedH = jsNumber(row['plannedOperatorShiftHours']);
+  final plannedProdMin =
+      (isNum(plannedH) ? plannedH! * 60 : shiftMin) - _sumOrZero([for (final k in plannedStopKeys) jsNumber(row[k])]);
+  final operatingMin = shiftMin - _or0(totalStoppageMin) - _or0(jsNumber(row['otherActivityMin']));
+  final double? idealRunSec = (isNum(cycle) && cycle! > 0 && isNum(totalQty)) ? cycle * totalQty! : null;
+  return <String, dynamic>{
+    'availability': plannedProdMin > 0 ? operatingMin / plannedProdMin : null,
+    'performance': (operatingMin > 0 && isNum(idealRunSec)) ? idealRunSec! / 60 / operatingMin : null,
+    'quality': (isNum(totalQty) && totalQty! > 0 && isNum(ok)) ? ok! / totalQty : null,
+    'plannedProdMin': plannedProdMin,
+    'operatingMin': operatingMin,
+    'idealRunSec': idealRunSec,
+  };
+}
+
+/// Whichever of Availability / Performance / Quality is above 100% on a row's
+/// calc — [] when none (a tiny tolerance keeps floating-point dust out).
+List<String> metricsOver100(Map<String, dynamic>? calc) => [
+      for (final k in oeeMetricLabels.keys)
+        if (isNum(calc?[k]) && (calc![k] as num) > 1 + 1e-9) k,
+    ];
 
 /// `Math.max(0, x)` for a finite x.
 double _max0(double x) => x > 0 ? x : 0.0;
@@ -425,18 +519,17 @@ class _SortRow {
 }
 
 /// The figures that depend on a machine's whole date, one map per row in
-/// [sortByMachineOn] order. Keys: unutilized (this row's own shift/lunch),
-/// unreportedMin, oeeLosses, oeeLunch, oeeLunchCot (combined across the day, so
-/// every entry of that machine/date shows the same number) and gapMin (clock
-/// gap to the next row's Machine ON, never below 0; null for the last row).
+/// [sortByMachineOn] order. Keys: unutilized (day-combined, shown within 0–100%)
+/// + unutilizedRaw, unreportedMin, oeeLosses, oeeLunch, oeeLunchCot,
+/// productivity, productivityLunch (all combined across the day, so every entry
+/// of that machine/date shows the same number) and gapMin (clock gap to the next
+/// row's Machine ON, never below 0; null for the last row).
 List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   final list = sortByMachineOn(rows);
   final calcs = list.map(rowCalc).toList();
 
-  // Time available for the machine: the operator's Planned Operator Shift, which
-  // is where stoppage happens (the form allows Planned − Machine Shift of it).
-  // A row with no usable Planned (or one shorter than its Machine Shift, an old
-  // row) counts its Machine Shift, so nothing is ever less than the run itself.
+  // Time available for the machine: the operator's Planned Operator Shift (or its
+  // Machine Shift, whichever is bigger).
   final dayAvailH = _sumOrZero([
     for (var i = 0; i < list.length; i++)
       () {
@@ -450,27 +543,25 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   final dayEffectiveH = _sumOrZero(calcs.map((c) => c['effectiveHours'] as double?));
   final dayLunchMin = _sumOrZero(list.map((r) => jsNumber(r['lunchMin'])));
   final daySetupMin = _sumOrZero(list.map((r) => jsNumber(r['setupMin'])));
+  // Minutes on other work — only After Powder Coating's rows carry any.
+  final dayOtherActivityMin = _sumOrZero(list.map((r) => jsNumber(r['otherActivityMin'])));
   // Blank only when nothing on this machine/date has a Machine Shift Time.
   final dayHasShift = calcs.any((c) => isNum(c['shiftHours']));
 
-  // Unreported Time = Planned Operator Shift − Machine Shift − Stoppage, all in
-  // whole minutes: the part of the planned window that is neither machine run
-  // nor a logged stoppage. (A row saved without a Planned shift — only the oldest
-  // ones — falls back to Shift − Effective Run Time − Stoppage.)
+  // Unreported Time = Planned Operator Shift − Effective Run Time − Stoppage, in
+  // minutes at full precision. A row saved without a Planned shift falls back to
+  // its Machine Shift in Planned's place.
   final double? dayUnreportedMin = dayHasShift
       ? _sumOrZero([
           for (var i = 0; i < list.length; i++)
             () {
-              final stop = calcs[i]['totalStoppageMin'] as double? ?? 0.0;
-              final shiftH = calcs[i]['shiftHours'] as double?;
-              if (!isNum(shiftH)) return -stop;
+              final c = calcs[i];
+              final stop = _or0(c['totalStoppageMin'] as double?) + _or0(jsNumber(list[i]['otherActivityMin']));
+              final effectiveMin = _or0(c['effectiveHours'] as double?) * 60;
               final planned = jsNumber(list[i]['plannedOperatorShiftHours']);
-              if (!isNum(planned)) {
-                return shiftH! * 60 - ((calcs[i]['effectiveHours'] as double?) ?? 0.0) * 60 - stop;
-              }
-              final shiftMin = (shiftH! * 60).roundToDouble();
-              final plannedMin = (planned! * 60).roundToDouble();
-              return (plannedMin > shiftMin ? plannedMin : shiftMin) - shiftMin - stop;
+              final shiftH = c['shiftHours'] as double?;
+              final double? basisMin = isNum(planned) ? planned! * 60 : (isNum(shiftH) ? shiftH! * 60 : null);
+              return basisMin == null ? -stop : basisMin - effectiveMin - stop;
             }(),
         ])
       : null;
@@ -479,6 +570,19 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   // Named …Cot — the key saved dashboards use — though the column reads "Setup Time".
   final double? dayOeeLunchCot =
       dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null;
+  // After Powder Coating's two Productivity figures (Other Activity is out of both).
+  final dayAvailForWorkH = dayAvailH - dayOtherActivityMin / 60;
+  final double? dayProductivity = dayHasShift ? _ratio(dayEffectiveH, dayAvailForWorkH) : null;
+  final double? dayProductivityLunch =
+      dayHasShift ? _ratio(dayEffectiveH, dayAvailForWorkH - dayLunchMin / 60) : null;
+
+  // 6) Unutilized Machine Time = (12 − (Day Shift − Day Lunch/60)) ÷ 11, combined
+  // across every entry of this machine's date; shown within 0–100%.
+  final dayShiftH = _sumOrZero(calcs.map((c) => c['shiftHours'] as double?));
+  final double? dayUnutilized = dayHasShift ? (12 - (dayShiftH - dayLunchMin / 60)) / 11 : null;
+  final double? unutilizedShown = dayUnutilized == null
+      ? null
+      : (dayUnutilized.isNaN ? dayUnutilized : (dayUnutilized < 0 ? 0.0 : (dayUnutilized > 1 ? 1.0 : dayUnutilized)));
 
   final out = <Map<String, dynamic>>[];
   for (var i = 0; i < list.length; i++) {
@@ -491,15 +595,15 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
     final rawGapMin = (thisOff != null && nextOn != null) ? nextOn - thisOff : null;
     final double? gapMin = rawGapMin == null ? null : _max0(rawGapMin);
 
-    final shiftHi = calcs[i]['shiftHours'] as double?;
-    final lunchMinI = jsNumber(row['lunchMin']);
     out.add(<String, dynamic>{
-      // 6) Unutilized Machine Time = (12 − (Shift h − Lunch min ÷ 60)) ÷ 11.
-      'unutilized': isNum(shiftHi) ? (12 - (shiftHi! - (lunchMinI ?? 0) / 60)) / 11 : null,
+      'unutilized': unutilizedShown,
+      'unutilizedRaw': dayUnutilized,
       'unreportedMin': dayUnreportedMin,
       'oeeLosses': dayOeeLosses,
       'oeeLunch': dayOeeLunch,
       'oeeLunchCot': dayOeeLunchCot,
+      'productivity': dayProductivity,
+      'productivityLunch': dayProductivityLunch,
       'gapMin': gapMin,
     });
   }

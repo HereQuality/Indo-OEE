@@ -16,7 +16,8 @@
 //  * summarize() -> Map with the JS keys (totalQty, okQty, rejectedQty, idealQty,
 //    shiftHours, effectiveHours, plannedShiftHours, downtimeMin, unreportedMin,
 //    unutilizedDays, entries, okPct, rejectionPct, performance, setupEfficiency,
-//    oeeLosses, oeeLunch, oeeLunchCot, machineDays,
+//    unutilized, oeeLosses, oeeLunch, oeeLunchCot, oeeAvailability,
+//    oeePerformance, oeeQuality, machineDays,
 //    downtimeByCause: Map<String,double>, rejectByReason: Map<String,double>).
 //  * Measures (statMeasure/causeMeasure/reasonMeasure) are maps
 //    {'key','label','format','get'} where 'get' is a [MeasureGetter]:
@@ -313,6 +314,11 @@ const List<Map<String, dynamic>> statCatalog = [
   {'key': 'rejectionPct', 'label': 'Rejection %', 'hint': 'Rejected ÷ Actual', 'format': 'pct', 'tone': 'reject', 'example': '0.66%'},
   {'key': 'idealQty', 'label': 'Ideal QTY', 'hint': 'Shift time ÷ cycle time', 'format': 'qty', 'example': '1.51M'},
   {'key': 'performance', 'label': 'Actual vs Ideal', 'hint': 'Actual ÷ Ideal quantity', 'format': 'pct', 'example': '94.70%'},
+  // The three OEE components (same formulas as each sheet's own columns) —
+  // minutes and pieces added up over the entries, then divided once.
+  {'key': 'oeeAvailability', 'label': 'Availability', 'hint': 'Operating Time ÷ Planned Production Time', 'format': 'pct', 'example': '86.96%'},
+  {'key': 'oeePerformance', 'label': 'Performance', 'hint': 'Cycle time × pieces ÷ Operating Time', 'format': 'pct', 'example': '83.33%'},
+  {'key': 'oeeQuality', 'label': 'Quality', 'hint': 'OK ÷ (OK + Rejected)', 'format': 'pct', 'tone': 'ok', 'example': '98.00%'},
   {'key': 'oeeLosses', 'label': 'OEE Considering Losses', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '96.42%'},
   {'key': 'oeeLunch', 'label': 'OEE NOT Considering Losses, But Lunch', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '91.10%'},
   // Key kept as oeeLunchCot: it is what a process's saved dashboard stores, so renaming it would drop the tile.
@@ -320,6 +326,7 @@ const List<Map<String, dynamic>> statCatalog = [
   {'key': 'effectiveHours', 'label': 'Effective Machine Run Time', 'hint': 'OK × cycle time', 'format': 'hours', 'example': '7,281 hr'},
   {'key': 'shiftHours', 'label': 'Machine Shift Time', 'hint': 'Machine OFF − ON', 'format': 'hours', 'example': '8,120 hr'},
   {'key': 'downtimeMin', 'label': 'Total Downtime', 'hint': 'All stoppage causes', 'format': 'minutes', 'tone': 'downtime', 'example': '5,160 min'},
+  {'key': 'unutilized', 'label': 'Unutilized Machine Time', 'hint': '(12 − (Shift − Lunch)) ÷ 11 — averaged per entry', 'format': 'pct', 'tone': 'downtime', 'example': '8.33%'},
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -328,20 +335,42 @@ const List<Map<String, dynamic>> statCatalog = [
 /// 'preview', 'tone'?}.
 const List<Map<String, dynamic>> chartCatalog = [
   {'key': 'oeeTrend', 'measure': 'oeeLosses', 'label': 'OEE (over time)', 'hint': 'The three OEE figures by date — by month on long ranges.', 'size': 'lg', 'preview': 'lines'},
+  {
+    'key': 'apqTrend',
+    'measure': 'oeeAvailability',
+    'label': 'Availability · Performance · Quality',
+    'hint': 'The three OEE components for the period, as rings. Table view: by date. Over 100% means an entry is held for Admin review.',
+    'size': 'md',
+    'preview': 'radial',
+  },
   {'key': 'runTimeByOperator', 'measure': 'effectiveHours', 'label': 'Effective Machine Run Time (Hour) by Operator', 'hint': 'Hours of effective run time each operator produced.', 'size': 'sm', 'preview': 'hbars', 'tone': 'ok'},
-  {'key': 'downtimeByMachine', 'measure': 'downtimeMin', 'label': 'B.D. Backup — Stoppage by MC No.', 'hint': 'Minutes lost per machine: breakdown, setup, lunch/tea, other.', 'size': 'md', 'preview': 'stacked'},
-  {'key': 'runTimeByMachine', 'measure': 'effectiveHours', 'label': 'Effective Machine Run Time (Hour) by MC No.', 'hint': "Each machine's share of effective run time.", 'size': 'md', 'preview': 'treemap'},
+  {'key': 'downtimeByMachine', 'measure': 'downtimeMin', 'label': 'B.D. Backup — Stoppage by MC No.', 'hint': 'Minutes lost per machine: breakdown, setup, lunch/tea, other.', 'size': 'md', 'preview': 'nestedTreemap'},
+  {'key': 'runTimeByMachine', 'measure': 'effectiveHours', 'label': 'Stoppages by Cause (Min)', 'hint': 'Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.', 'size': 'md', 'preview': 'radar', 'tone': 'downtime'},
+  {'key': 'runTimeByMachineBars', 'measure': 'effectiveHours', 'label': 'Effective Machine Run Time (Hour) by MC No.', 'hint': 'Hours of effective run time on each machine.', 'size': 'md', 'preview': 'vbars', 'tone': 'ok'},
+  {'key': 'unutilizedTrend', 'measure': 'unutilized', 'label': 'Unutilized Machine Time (over time)', 'hint': 'Unutilized share of the 12-hour day by date — by month on long ranges.', 'size': 'md', 'preview': 'area'},
   {'key': 'unreportedByMachine', 'measure': 'unreportedMin', 'label': 'Unreported Time (Min) by MC No.', 'hint': 'Minutes not accounted for — one small chart per machine.', 'size': 'md', 'preview': 'multiples'},
   {'key': 'okRejectedTrend', 'measure': 'okQty', 'label': 'OK vs Rejected QTY (over time)', 'hint': 'Stacked — the full bar is the actual quantity.', 'size': 'md', 'preview': 'stackedTime'},
   {'key': 'oeeByMachine', 'measure': 'oeeLosses', 'label': 'OEE by MC No.', 'hint': "Considering losses — average of that machine's days.", 'size': 'md', 'preview': 'vbars', 'tone': 'ok'},
-  {'key': 'rejectByReason', 'measure': 'rejectedQty', 'label': 'Rejected QTY by Reason', 'hint': 'Rejected quantity grouped by reject reason.', 'size': 'md', 'preview': 'hbars', 'tone': 'reject'},
+  {'key': 'rejectByReason', 'measure': 'rejectedQty', 'label': 'Rejected QTY by Reason', 'hint': 'Rejected quantity grouped by reject reason.', 'size': 'md', 'preview': 'donut', 'tone': 'reject'},
   {'key': 'okPctByOperator', 'measure': 'okPct', 'label': 'Operator v/s OK QTY %', 'hint': 'OK ÷ Actual for each operator.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
   {'key': 'outputByItem', 'measure': 'okQty', 'label': 'OK QTY by Part', 'hint': 'Parts ranked by OK quantity.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
   {'key': 'machineSummary', 'label': 'MC No. Summary (table)', 'hint': 'One row per machine — quantities, run time, downtime and OEE.', 'size': 'full', 'preview': 'table'},
 ];
 
-const List<String> defaultStats = ['totalQty', 'okQty', 'rejectedQty', 'okPct', 'oeeLosses', 'oeeLunch', 'effectiveHours', 'downtimeMin'];
-const List<String> defaultCharts = ['runTimeByOperator', 'oeeTrend', 'downtimeByMachine', 'runTimeByMachine', 'unreportedByMachine', 'okRejectedTrend', 'rejectByReason', 'machineSummary'];
+const List<String> defaultStats = ['totalQty', 'okQty', 'rejectedQty', 'okPct', 'oeeLosses', 'oeeLunch', 'effectiveHours', 'downtimeMin', 'unutilized'];
+const List<String> defaultCharts = [
+  'runTimeByOperator',
+  'oeeTrend',
+  'apqTrend',
+  'downtimeByMachine',
+  'runTimeByMachine',
+  'runTimeByMachineBars',
+  'unutilizedTrend',
+  'unreportedByMachine',
+  'okRejectedTrend',
+  'rejectByReason',
+  'machineSummary',
+];
 
 Map<String, Map<String, dynamic>> _byKey(List<Map<String, dynamic>> catalog) => {for (final w in catalog) w['key'] as String: w};
 
@@ -694,9 +723,27 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
   final downtimeByCause = <String, double>{for (final f in stoppageFields) f['key'] as String: 0.0};
   final rejectByReason = <String, double>{};
   final byMachineDay = <String, List<Map<String, dynamic>>>{};
+  // Availability / Performance / Quality: the minutes and pieces behind each
+  // row's own figure (oeeParts in productionSheet.js) are added up, and the
+  // ratio taken once over the totals — never an average of percentages. A row
+  // only joins a sum when its own figure exists, so the total can't disagree
+  // with the rows it's made of.
+  var apqPlannedMin = 0.0, apqOperatingMin = 0.0, apqIdealRunMin = 0.0, apqRunOperatingMin = 0.0, apqOkQty = 0.0, apqTotalQty = 0.0;
 
   for (final row in rows) {
     final c = calcOf(row);
+    if (_isFin(c['availability'])) {
+      apqPlannedMin += _n(c['plannedProdMin']);
+      apqOperatingMin += _n(c['operatingMin']);
+    }
+    if (_isFin(c['performance'])) {
+      apqIdealRunMin += _n(c['idealRunSec']) / 60;
+      apqRunOperatingMin += _n(c['operatingMin']);
+    }
+    if (_isFin(c['quality'])) {
+      apqOkQty += _n(_toNumber(row['okQty']));
+      apqTotalQty += _n(c['actualQty']);
+    }
     totalQty += _n(c['actualQty']);
     okQty += _n(_toNumber(row['okQty']));
     rejectedQty += _n(c['rejectedQty']);
@@ -724,12 +771,16 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
   // starting at that row), not one shared value for the whole day — so every
   // row's own figure is added in here, not the day's counted once.
   final oee = <String, List<double>>{'oeeLosses': [], 'oeeLunch': [], 'oeeLunchCot': []};
+  final unutilizedList = <double>[];
   for (final group in byMachineDay.values) {
     for (final d in dayCalc(group)) {
       final ur = d['unreportedMin'];
       if (_isFin(ur)) unreportedMin += (ur as num).toDouble();
       final un = d['unutilized'];
-      if (_isFin(un)) unutilizedDays += (un as num).toDouble();
+      if (_isFin(un)) {
+        unutilizedDays += (un as num).toDouble();
+        unutilizedList.add(un.toDouble());
+      }
       for (final e in oee.entries) {
         final v = d[e.key];
         if (_isFin(v)) e.value.add((v as num).toDouble());
@@ -753,9 +804,13 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
     'rejectionPct': totalQty > 0 ? rejectedQty / totalQty : null,
     'performance': idealQty > 0 ? totalQty / idealQty : null,
     'setupEfficiency': _mean(setupEff),
+    'unutilized': _mean(unutilizedList),
     'oeeLosses': _mean(oee['oeeLosses']!),
     'oeeLunch': _mean(oee['oeeLunch']!),
     'oeeLunchCot': _mean(oee['oeeLunchCot']!),
+    'oeeAvailability': apqPlannedMin > 0 ? apqOperatingMin / apqPlannedMin : null,
+    'oeePerformance': apqRunOperatingMin > 0 ? apqIdealRunMin / apqRunOperatingMin : null,
+    'oeeQuality': apqTotalQty > 0 ? apqOkQty / apqTotalQty : null,
     'machineDays': byMachineDay.length.toDouble(),
     'downtimeByCause': downtimeByCause,
     'rejectByReason': {for (final k in _jsKeyOrder(rejectByReason.keys)) k: rejectByReason[k]!},

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../app/app_scaffold.dart';
+import '../../app/page_access.dart';
 import '../../core/utils/alerts.dart';
 import '../../core/widgets/states.dart';
 import '../../providers/menu_provider.dart';
@@ -46,6 +47,12 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
   /// Nothing to show at all: no process with machines and no machines.
   bool _none = false;
 
+  /// Which processes were on offer when the cached dashboards were built, so a
+  /// change of access (the role was edited in Manage Role) rebuilds them.
+  String? _accessKey;
+
+  late final MenuProvider _menu = context.read<MenuProvider>();
+
   @override
   bool get wantKeepAlive => true;
 
@@ -53,11 +60,13 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
   void initState() {
     super.initState();
     _processes.addListener(_onProcesses);
+    _menu.addListener(_onMenu);
     unawaited(_boot());
   }
 
   @override
   void dispose() {
+    _menu.removeListener(_onMenu);
     _processes.removeListener(_onProcesses);
     for (final c in _ctls.values) {
       c.dispose();
@@ -66,12 +75,44 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
     super.dispose();
   }
 
+  /// The person's menu has arrived (their access can now be worked out).
+  bool get _menuReady => !_menu.loading && (_menu.isAdmin || _menu.groups.isNotEmpty || _menu.error != null);
+
+  /// Narrows the processes and machines to what this person may see: an admin
+  /// sees all; anyone else sees a process (and its machines) only when they can
+  /// open that process's data-entry page.
+  void _applyAccess() {
+    _processes.setAccess(_menu.isAdmin ? null : (p) => PageAccess.canViewMenuUrl(_menu, p.dataEntryMenu));
+  }
+
+  String get _currentAccessKey => _menu.isAdmin ? 'admin' : (_processes.scopeProcessIds ?? const []).join(',');
+
   Future<void> _boot() async {
     final ok = await _processes.load();
     if (!mounted || !ok) return;
-    final saved = await _repo.loadLastProcess();
+    if (_menuReady) await _reapply();
+  }
+
+  /// Applies the access rule and (re)chooses the chip — on open, and whenever
+  /// the menu reloads with a different set of processes.
+  Future<void> _reapply() async {
+    _applyAccess();
+    final key = _currentAccessKey;
+    if (_accessKey == key && (_chosen || _none)) return;
+    final first = _accessKey == null;
+    _accessKey = key;
+    // Cached dashboards were built for the old scope.
+    for (final c in _ctls.values) {
+      c.dispose();
+    }
+    _ctls.clear();
+    final saved = first ? await _repo.loadLastProcess() : (_selected ?? DashboardRepository.allMachinesChoice);
     if (!mounted) return;
     _apply(_processes.initialChoice(saved));
+  }
+
+  void _onMenu() {
+    if (_processes.loaded && _menuReady) unawaited(_reapply());
   }
 
   void _apply(({String? id, bool none}) choice) {
@@ -92,7 +133,12 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
 
   DashboardController _ctlFor(String? id) => _ctls.putIfAbsent(
         id,
-        () => DashboardController(repo: _repo, processId: id, machines: _processes.machines)..load(),
+        () => DashboardController(
+          repo: _repo,
+          processId: id,
+          machines: _processes.machines,
+          scopeProcessIds: id == null ? _processes.scopeProcessIds : null,
+        )..load(),
       );
 
   /// Keeps every cached dashboard's machine order current, and moves off a
@@ -154,16 +200,18 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
     if (_processes.error != null && !_processes.loaded) {
       return ErrorView(message: _processes.error!, onRetry: _boot);
     }
-    if (!_processes.loaded || (!_chosen && !_none)) return const _TabSkeleton();
+    if (!_processes.loaded || !_menuReady || (!_chosen && !_none)) return const _TabSkeleton();
     if (_none) {
       return RefreshIndicator(
         onRefresh: _refreshEmpty,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
-            SizedBox(height: 48),
+          children: [
+            const SizedBox(height: 48),
             EmptyView(
-              message: 'No processes yet. Add them in Production › Processes — name each one, assign its machines and choose its graphs.',
+              message: _menu.isAdmin
+                  ? 'No processes yet. Add them in Production › Processes — name each one, assign its machines and choose its graphs.'
+                  : 'No dashboards for you yet. You see a process here when you have access to its data-entry page — ask your administrator.',
               icon: Icons.layers_outlined,
             ),
           ],

@@ -47,6 +47,14 @@ Map<String, dynamic> emptyEntry({DateTime? now}) => <String, dynamic>{
   // the values only because an edited record has to save back to its own slot.
   'slot': 1,
   'item': '',
+  // Machine Working Status — any of Machine Breakdown / No Manpower / No Planning,
+  // kept for a Non Working entry only.
+  'machineStatus': <dynamic>[],
+  // Working (default) or Non Working — see shared/production_sheet_calc.dart.
+  'workingMode': 'Working',
+  // Vendor Name — offered only when the machine's process has vendors.
+  'vendor': '',
+  'vendorName': '',
   'rejectBreakdown': <String, dynamic>{},
   // Operations this entry has unticked out of what its Part carries.
   'excludedOps': <dynamic>[],
@@ -90,6 +98,18 @@ Map<String, dynamic> toFormValues(Map<String, dynamic> row, {DateTime? now}) {
       : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
+  out['machineStatus'] = row['machineStatus'] is List
+      ? List<dynamic>.from(row['machineStatus'] as List)
+      : <dynamic>[];
+  out['workingMode'] = row['workingMode'] == 'Non Working' ? 'Non Working' : 'Working';
+  // The vendor id (a populated vendor keeps its _id) and the name saved with it.
+  final vendor = row['vendor'];
+  out['vendor'] = vendor is Map
+      ? '${vendor['_id'] ?? ''}'
+      : jsTruthy(vendor)
+      ? '$vendor'
+      : '';
+  out['vendorName'] = '${row['vendorName'] ?? ''}';
   out['excludedOps'] = row['excludedOps'] is List
       ? List<dynamic>.from(row['excludedOps'] as List)
       : <dynamic>[];
@@ -136,11 +156,17 @@ Map<String, dynamic> toPayload(Map<String, dynamic> v, {required bool isEdit}) {
   return <String, dynamic>{
     'date': v['date'],
     'machine': v['machine'],
+    // Status belongs to a Non Working day only; a Working entry carries none.
+    'machineStatus': isNonWorking(v) && v['machineStatus'] is List
+        ? List<dynamic>.from(v['machineStatus'] as List)
+        : <dynamic>[],
+    'workingMode': jsTruthy(v['workingMode']) ? v['workingMode'] : 'Working',
     // An edited record saves back to its own slot; a new one asks the server for
     // the machine's next free slot on that date, since only the server can see
     // every entry.
     'slot': isEdit ? _wire(jsToNumber(v['slot'])) : 'auto',
     'item': jsTruthy(v['item']) ? v['item'] : null,
+    'vendor': jsTruthy(v['vendor']) ? v['vendor'] : null,
     'excludedOps': v['excludedOps'] is List
         ? List<dynamic>.from(v['excludedOps'] as List)
         : <dynamic>[],
@@ -263,5 +289,7 @@ Map<String, dynamic> mergeDraftEntry(
       : <String, dynamic>{};
   final ops = draft['excludedOps'];
   out['excludedOps'] = ops is List ? List<dynamic>.from(ops) : <dynamic>[];
+  final status = draft['machineStatus'];
+  out['machineStatus'] = status is List ? List<dynamic>.from(status) : <dynamic>[];
   return out;
 }

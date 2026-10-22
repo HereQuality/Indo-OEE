@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/alerts.dart';
-import '../../shared/production_sheet_calc.dart';
+import '../../process/process_spec.dart';
 import '../sheet_controller.dart';
 import '../sheet_model.dart';
 import '../widgets/machine_day_card.dart' show SheetAccess, EntryAction;
@@ -168,13 +168,6 @@ class _SheetTableState extends State<SheetTable> {
   // opened / closed breakdown sits without measuring widgets.
   double _k = 1, _visible = 0;
 
-  /// The total each breakdown belongs to.
-  static const _summaryKey = {
-    'cycle': 'cycle',
-    'rejectedQty': 'rejectedQty',
-    'downtime': 'totalStoppage',
-  };
-
   void _toggle(String id) {
     final wasOpen = _open.contains(id);
     setState(() => wasOpen ? _open.remove(id) : _open.add(id));
@@ -189,9 +182,9 @@ class _SheetTableState extends State<SheetTable> {
         m.jumpTo(m.maxScrollExtent);
         return;
       }
-      final summary = _summaryKey[id];
+      final cols = widget.controller.columnsFor(_open);
+      final summary = cols.expandSummary[id];
       if (wasOpen || summary == null || _visible <= 0) return;
-      final cols = buildSheetColumns(_open);
       final start = cols.middleLeftOf(summary, _k);
       var end = start;
       var inGroup = false;
@@ -224,7 +217,7 @@ class _SheetTableState extends State<SheetTable> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final tablet = widget.tablet;
     final metrics = TableMetrics(context, tablet: tablet);
-    final cols = buildSheetColumns(_open);
+    final cols = widget.controller.columnsFor(_open);
     final k = metrics.k;
     // The frozen columns keep close to their design width however large the
     // text is (their text ellipsises instead), or they would eat the screen.
@@ -293,6 +286,7 @@ class _SheetTableState extends State<SheetTable> {
                           metrics: metrics,
                           palette: palette,
                           onToggle: _toggle,
+                          spec: widget.controller.spec,
                         ),
                     ],
                   ),
@@ -314,6 +308,7 @@ class _SheetTableState extends State<SheetTable> {
                             metrics: metrics,
                             palette: palette,
                             onToggle: _toggle,
+                            spec: widget.controller.spec,
                           ),
                       ],
                     ),
@@ -372,6 +367,7 @@ class _SheetTableState extends State<SheetTable> {
             width: widths[c.key]!,
             item: it,
             data: d,
+            spec: widget.controller.spec,
             metrics: metrics,
             palette: palette,
             machineTone: c.key == 'machine'
@@ -641,6 +637,7 @@ class _HeadCell extends StatelessWidget {
     required this.metrics,
     required this.palette,
     required this.onToggle,
+    required ProcessSpec this.spec,
   }) : _actions = false;
 
   const _HeadCell.actions({
@@ -649,6 +646,7 @@ class _HeadCell extends StatelessWidget {
     required this.palette,
   }) : col = null,
        onToggle = null,
+       spec = null,
        _actions = true;
 
   final SheetCol? col;
@@ -656,6 +654,7 @@ class _HeadCell extends StatelessWidget {
   final TableMetrics metrics;
   final _Palette palette;
   final void Function(String id)? onToggle;
+  final ProcessSpec? spec;
   final bool _actions;
 
   @override
@@ -711,8 +710,12 @@ class _HeadCell extends StatelessWidget {
         label: 'How $label is calculated',
         child: InkWell(
           key: ValueKey('formula-${c!.key}'),
-          onTap: () =>
-              showFormulaSheet(context, title: label, formulaKey: formulaKey),
+          onTap: () => showFormulaSheet(
+            context,
+            title: label,
+            formulaKey: formulaKey,
+            formulas: spec?.formulas ?? sheetFormulas,
+          ),
           child: content,
         ),
       );
@@ -837,9 +840,12 @@ class _BodyCell extends StatelessWidget {
     required this.data,
     required this.metrics,
     required this.palette,
+    required this.spec,
     this.machineTone,
     this.liftClip,
   });
+
+  final ProcessSpec spec;
 
   final SheetCol col;
   final double width;
@@ -889,13 +895,21 @@ class _BodyCell extends StatelessWidget {
     Widget? child;
     if (show) {
       final txt = col.remarkKind == 'general' ? '' : col.text(data);
-      final fw = col.tone == ColTone.oee
+      // A spec may emphasise one value (red over 100%, a review badge).
+      final emph = txt.isEmpty ? null : col.style?.call(data);
+      final mark = emph?.mark ?? CellMark.none;
+      final markColor = mark == CellMark.none
+          ? null
+          : SheetTones.text(context, cellMarkColor(mark));
+      final fw = emph?.bold != null
+          ? (emph!.bold! ? FontWeight.w700 : FontWeight.w500)
+          : col.tone == ColTone.oee
           ? FontWeight.w800
           : (col.bold || col.tone != ColTone.none
                 ? FontWeight.w700
                 : FontWeight.w500);
-      final faint = txt == '—';
-      final textWidget = txt.isEmpty
+      final faint = txt == '—' && markColor == null;
+      Widget? textWidget = txt.isEmpty
           ? null
           : Text(
               txt,
@@ -908,13 +922,26 @@ class _BodyCell extends StatelessWidget {
                 fontWeight: fw,
                 color: faint
                     ? s.onSurfaceVariant.withValues(alpha: 0.7)
-                    : palette.text(col.tone),
+                    : (markColor ?? palette.text(col.tone)),
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             );
+      if (textWidget != null && emph != null && emph.pill && markColor != null) {
+        textWidget = DecoratedBox(
+          key: ValueKey('pill-${col.key}-${item.id}'),
+          decoration: BoxDecoration(
+            color: SheetTones.wash(context, cellMarkColor(mark)),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: textWidget,
+          ),
+        );
+      }
       if (col.remarkKind != null) {
         final parts = [
-          for (final p in remarkParts(item.row))
+          for (final p in spec.remarkParts(item.row))
             if (p['key'] == col.remarkKind) p,
         ];
         final eye = parts.isEmpty
@@ -1191,6 +1218,23 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton>
         borderRadius: BorderRadius.circular(6),
       ),
     );
+    // The last bone is dropped when the row would not fit (a 320 px phone).
+    Widget boneRow(List<double> w, double h) => LayoutBuilder(
+      builder: (context, c) {
+        final needed = w.take(3).fold<double>(0, (a, b) => a + b) + 48 + w.last;
+        final fits = needed <= c.maxWidth - 24;
+        return Row(
+          children: [
+            bone(w[0], h),
+            const SizedBox(width: 24),
+            bone(w[1], h),
+            const SizedBox(width: 24),
+            bone(w[2], h),
+            if (fits) ...[const Spacer(), bone(w.last, h)],
+          ],
+        );
+      },
+    );
     return Semantics(
       label: 'Loading entries',
       child: ExcludeSemantics(
@@ -1211,17 +1255,7 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton>
                     bottom: BorderSide(color: s.outline, width: 2),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    bone(64, 14),
-                    const SizedBox(width: 24),
-                    bone(54, 14),
-                    const SizedBox(width: 24),
-                    bone(90, 14),
-                    const Spacer(),
-                    bone(70, 14),
-                  ],
-                ),
+                child: boneRow(const [64, 54, 90, 70], 14),
               ),
               for (var i = 0; i < 14; i++)
                 Container(
@@ -1230,17 +1264,7 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton>
                   decoration: BoxDecoration(
                     border: Border(bottom: BorderSide(color: s.outlineVariant)),
                   ),
-                  child: Row(
-                    children: [
-                      bone(70, 12),
-                      const SizedBox(width: 24),
-                      bone(44, 12),
-                      const SizedBox(width: 24),
-                      bone(100, 12),
-                      const Spacer(),
-                      bone(56, 12),
-                    ],
-                  ),
+                  child: boneRow(const [70, 44, 100, 56], 12),
                 ),
             ],
           ),

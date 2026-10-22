@@ -18,11 +18,15 @@ import 'entry_style.dart';
 /// selection inside its text, so a blocked or cleaned edit can never trip the
 /// text input's range assertions.
 class EntryNumberFormatter extends TextInputFormatter {
-  const EntryNumberFormatter({this.decimals = true, this.max, this.onExceedMax});
+  const EntryNumberFormatter({this.decimals = true, this.max, this.onExceedMax, this.onExceedTyped});
 
   final bool decimals;
   final double? max;
   final void Function(double max)? onExceedMax;
+
+  /// Like [onExceedMax] but also hands over the figure that was typed (the web's
+  /// `onExceedMax(max, typed)`), so a limit popup can show it.
+  final void Function(double max, double typed)? onExceedTyped;
 
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
@@ -57,6 +61,7 @@ class EntryNumberFormatter extends TextInputFormatter {
       final falling = n != null && old != null && n < old;
       if (n != null && n > ceiling && !falling) {
         onExceedMax?.call(ceiling);
+        onExceedTyped?.call(ceiling, n);
         return _safe(oldValue);
       }
     }
@@ -104,6 +109,7 @@ class EntryTextField extends StatefulWidget {
     this.maxLength = 7,
     this.max,
     this.onExceedMax,
+    this.onExceedTyped,
     this.invalid = false,
     this.focusNode,
     this.hint,
@@ -111,7 +117,12 @@ class EntryTextField extends StatefulWidget {
     this.maxLines = 1,
     this.semanticsLabel,
     this.textInputAction,
+    this.enabled = true,
   });
+
+  /// False = read-only (greyed, no keyboard) — a value fixed elsewhere, e.g. the
+  /// Planned Operator Shift Process Master locks.
+  final bool enabled;
 
   final String value;
   final ValueChanged<String> onChanged;
@@ -120,6 +131,9 @@ class EntryTextField extends StatefulWidget {
   final int maxLength;
   final double? max;
   final void Function(double max)? onExceedMax;
+
+  /// [onExceedMax] with the typed figure too (for a limit popup).
+  final void Function(double max, double typed)? onExceedTyped;
 
   final bool invalid;
   final FocusNode? focusNode;
@@ -208,6 +222,7 @@ class _EntryTextFieldState extends State<EntryTextField> {
       child: TextField(
         controller: _controller,
         focusNode: _node,
+        enabled: widget.enabled,
         keyboardType: widget.numeric
             ? TextInputType.numberWithOptions(decimal: widget.decimals)
             : TextInputType.multiline,
@@ -223,7 +238,12 @@ class _EntryTextFieldState extends State<EntryTextField> {
         inputFormatters: [
           LengthLimitingTextInputFormatter(widget.maxLength),
           if (widget.numeric)
-            EntryNumberFormatter(decimals: widget.decimals, max: widget.max, onExceedMax: widget.onExceedMax),
+            EntryNumberFormatter(
+              decimals: widget.decimals,
+              max: widget.max,
+              onExceedMax: widget.onExceedMax,
+              onExceedTyped: widget.onExceedTyped,
+            ),
         ],
         onChanged: widget.onChanged,
         decoration: InputDecoration(

@@ -224,7 +224,7 @@ void main() {
       expect(h.puts, hasLength(1));
       final b = h.body(0);
       expect(b.keys.toSet(), {
-        'date', 'machine', 'slot', 'item', 'excludedOps', 'rejectBreakdown', 'rejectReason',
+        'date', 'machine', 'machineStatus', 'workingMode', 'slot', 'item', 'vendor', 'excludedOps', 'rejectBreakdown', 'rejectReason',
         'operator', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark',
         'machineOnTime', 'machineOffTime',
         'actualQty', 'okQty', 'plannedOperatorShiftHours', 'totalCycleSec',
@@ -459,9 +459,9 @@ void main() {
     editorTest('total stoppage above the allowance blocks the save', (tester) async {
       await open(tester);
       await fillValid(tester);
-      form(tester).onChange(0, 'noPowerMin', '30');
+      form(tester).onChange(0, 'noPowerMin', '441'); // 30 lunch + 10 setup + 441 = 481 > the 480 min Machine Shift
       await tester.pump();
-      expect(form(tester).errors[0]['stoppageTotal'], contains('only 60 min is allowed'));
+      expect(form(tester).errors[0]['stoppageTotal'], 'Total stoppage is 481 min but the Machine Shift is only 480 min');
       expect(bar(tester).canSave, isFalse);
     });
   });

@@ -115,17 +115,17 @@ class _OkRejectedTrendChartState extends State<OkRejectedTrendChart> {
   }
 }
 
-/// B.D. Backup - Stoppage by MC No.: minutes lost per machine in the four
-/// stoppage groups, stacked.
-class DowntimeByMachineChart extends StatefulWidget {
-  const DowntimeByMachineChart({super.key, required this.props});
+/// Effective Machine Run Time (Hour) by MC No. (charts.jsx `RunTimeByMachineBars`):
+/// one bar per machine in sheet order, hours above each bar.
+class RunTimeByMachineBarsChart extends StatefulWidget {
+  const RunTimeByMachineBarsChart({super.key, required this.props});
   final DashboardChartProps props;
 
   @override
-  State<DowntimeByMachineChart> createState() => _DowntimeByMachineChartState();
+  State<RunTimeByMachineBarsChart> createState() => _RunTimeByMachineBarsChartState();
 }
 
-class _DowntimeByMachineChartState extends State<DowntimeByMachineChart> {
+class _RunTimeByMachineBarsChartState extends State<RunTimeByMachineBarsChart> {
   final _memo = DataMemo<List<TimePoint>>();
 
   @override
@@ -133,42 +133,36 @@ class _DowntimeByMachineChartState extends State<DowntimeByMachineChart> {
     final p = widget.props;
     final c = p.colors;
     final rows = p.rowsFor('machine');
-    final data = _memo.get(rows, p.ctx, 'machine', () => downtimeByMachine(rows, p.ctx));
-    if (data.isEmpty) return const ChartEmpty('No downtime recorded.');
+    final data = _memo.get(rows, p.ctx, 'machine', () => [
+          for (final d in dimBars(rows, 'machine', p.ctx, (s) => pick(s, 'effectiveHours'), sort: 'machine'))
+            TimePoint(d.key, d.label, [d.value]),
+        ]);
+    if (data.isEmpty) return const ChartEmpty('Needs cycle time and OK quantity.');
     final selected = p.filters['machine'] ?? const <String>[];
-    final names = [for (final g in eng.stoppageGroups) g['label'] as String];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: ['Machine', for (final n in names) '$n (min)'],
-        rows: [for (final d in data) MiniRow(d.key, [d.label, for (final v in d.values) eng.formatExact('qty', v)])],
+        columns: const ['Machine', 'Effective run time'],
+        rows: [for (final d in data) MiniRow(d.key, [d.label, eng.formatExact('hours', d.values.first)])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),
         colors: c,
       );
     }
-    final colorsBySeries = [for (var i = 0; i < names.length; i++) c.series[i % c.series.length]];
-    return ChartTextScope(
-      child: Column(
-        children: [
-          Expanded(
-            child: BarSeriesChart(
-              points: data,
-              colors: c,
-              seriesColors: colorsBySeries,
-              seriesNames: names,
-              title: (d) => d.label,
-              xTick: (d) => truncateLabel(d.label, 10),
-              yText: (v) => eng.formats['qty']!(v),
-              valueText: (v) => eng.formatExact('minutes', v),
-              opacityOf: (d) => markOpacity(selected, d.key),
-              onTap: (d) => p.onToggle('machine', d.key),
-              maxBar: 42,
-              semanticLabel: 'Stoppage minutes by machine, ${data.length} machines',
-            ),
-          ),
-          ChartLegend(colors: c, items: [for (var i = 0; i < names.length; i++) LegendItem(names[i], colorsBySeries[i])]),
-        ],
-      ),
+    return BarSeriesChart(
+      points: data,
+      colors: c,
+      seriesColors: [c.ok],
+      seriesNames: const ['Effective run time'],
+      title: (d) => d.label,
+      xTick: (d) => truncateLabel(d.label, 10),
+      yText: (v) => '${tickText(v)} hr',
+      valueText: (v) => eng.formatExact('hours', v),
+      topLabel: (v) => v.toStringAsFixed(1),
+      opacityOf: (d) => markOpacity(selected, d.key),
+      onTap: (d) => p.onToggle('machine', d.key),
+      maxBar: 38,
+      topPad: 4,
+      semanticLabel: 'Effective run time by machine, ${data.length} machines',
     );
   }
 }

@@ -5,15 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/api/api_client.dart';
-import '../../../../core/api/endpoints.dart';
 import '../../../../core/utils/alerts.dart';
 import '../../../../core/widgets/states.dart';
 import '../../entry_form/entry_form_toast.dart';
+import '../../entry_form/entry_notice_dialog.dart';
 import '../../entry_form/production_entry_form.dart';
+import '../../process/process_spec.dart';
+import '../../processes/cnc/cnc_spec.dart' show cncSpec;
+import '../../shared/limit_notice.dart' show OverLimit, adminReviewNotice;
+import '../../shared/planned_shift.dart';
 import '../../shared/production_entry_validation.dart';
+import '../../shared/production_sheet_calc.dart' show oeeMetricLabels;
 import 'entry_action_bar.dart';
 import 'entry_draft_store.dart';
-import 'entry_editor_logic.dart';
 
 /// Full-screen add / edit route of a Production Data Entry (port of the entry
 /// modal in client/src/pages/ProductionSheet.jsx). It hosts the
@@ -32,7 +36,26 @@ class EntryEditorScreen extends StatefulWidget {
     required this.machines,
     required this.items,
     required this.operators,
+    this.spec = cncSpec,
+    this.extra = const {},
+    this.lockedProcess,
+    this.processes = const [],
   });
+
+  /// Every Process document (Process Master) — what a spec with
+  /// `usesPlannedShiftSetting` reads each machine's Planned Operator Shift from.
+  final List<Map<String, dynamic>> processes;
+
+  /// The process whose entry this is: its endpoints, rules, values and form.
+  final ProcessSpec spec;
+
+  /// The Process document this page is linked to (Data Entry Page), when
+  /// exactly one is — what a spec's `finishPayload` / `unlinkedProcessMessage`
+  /// read (Powder Coating sends it as the entry's `process`).
+  final Map<String, dynamic>? lockedProcess;
+
+  /// The spec's `extraReference` lists by name (work orders, …).
+  final Map<String, List<Map<String, dynamic>>> extra;
 
   /// The saved record to edit; null = add a new entry.
   final Map<String, dynamic>? row;
@@ -99,14 +122,15 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     super.initState();
     _machinesForForm = _machinesWithSaved();
     if (_isEdit) {
-      _entries = [toFormValues(widget.row!)];
+      _entries = [widget.spec.toFormValues(widget.row!)];
     } else {
       _entries = [_freshEntry()];
       _ready = false;
       unawaited(_restoreDraft());
     }
-    _baseline = List.of(_entries);
     _recompute();
+    // After the planned-shift defaults a fresh form already holds.
+    _baseline = List.of(_entries);
   }
 
   @override
@@ -123,14 +147,18 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     final id = '${widget.row!['machine'] ?? ''}';
     if (id.isEmpty || widget.machines.any((m) => '${m['_id']}' == id))
       return widget.machines;
+    final noun = widget.spec.machineNoun;
     return [
       ...widget.machines,
-      {'_id': id, 'machineName': 'Machine (no longer active)'},
+      {
+        '_id': id,
+        'machineName': widget.spec.savedMachineName(widget.row!) ?? '${noun[0].toUpperCase()}${noun.substring(1)} (no longer active)',
+      },
     ];
   }
 
   Map<String, dynamic> _freshEntry() {
-    final e = emptyEntry();
+    final e = widget.spec.emptyEntry();
     final id = widget.initialMachineId;
     if (id != null &&
         id.isNotEmpty &&
@@ -140,14 +168,14 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   }
 
   Future<void> _restoreDraft() async {
-    final draft = await EntryDraftStore.load();
+    final draft = await EntryDraftStore.load(draftKey: widget.spec.draftKey);
     if (!mounted) return;
     setState(() {
       if (draft != null) {
-        _entries = [for (final d in draft) mergeDraftEntry(d)];
-        _baseline = List.of(_entries);
+        _entries = [for (final d in draft) widget.spec.mergeDraftEntry(d)];
         _draftRestored = true;
         _recompute();
+        _baseline = List.of(_entries);
       }
       _ready = true;
     });
@@ -158,6 +186,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   // them once Save has been pressed, and Save itself only looks inactive until
   // there are none.
   void _recompute() {
+    _applyPlannedShifts();
     // An edited row keeps its slot and the times it was loaded with: the row is
     // not "another entry", and an old row that already breaks the time rules
     // stays editable until its times are changed.
@@ -168,7 +197,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       editSlot: _editSlot,
       saved: saved,
     );
-    final operatorClash = operatorOverlapErrors(
+    final operatorClash = !widget.spec.checksOperatorClash
+        ? [for (final _ in _entries) const <String, String>{}]
+        : operatorOverlapErrors(
       _entries,
       _operatorOccupied,
       editing: _isEdit
@@ -189,10 +220,48 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         {
           ...operatorClash[i],
           ...overlap[i],
-          ...validateEntry(_entries[i], saved: saved),
+          ...widget.spec.validateEntry(_entries[i], saved: saved),
         },
     ];
     _askOccupied();
+  }
+
+  // ── Planned Operator Shift from Process Master ───────────────────────────
+  // (specs with `usesPlannedShiftSetting`; web `plannedLocks` + its effect)
+
+  /// Per block: the setting its machine's process gives (null = typed by hand).
+  List<ShiftSetting?> _plannedShifts = const [];
+
+  /// A new entry takes its machine's process's hours — filled into the box here
+  /// whenever the machine (or the process list) changes; an edited entry keeps
+  /// the shift it was saved with. Either way the box is then read-only
+  /// (`shiftLine` shows why) and the server enforces the same on Save.
+  void _applyPlannedShifts() {
+    if (!widget.spec.usesPlannedShiftSetting) {
+      _plannedShifts = const [];
+      return;
+    }
+    _plannedShifts = [
+      for (final v in _entries)
+        plannedShiftFor(
+          machineId: v['machine'],
+          machines: widget.machines,
+          processes: widget.processes,
+          isEdit: _isEdit,
+          savedPlanned: _isEdit ? widget.row!['plannedOperatorShiftHours'] : null,
+        ),
+    ];
+    var changed = false;
+    final next = [
+      for (var i = 0; i < _entries.length; i++)
+        () {
+          final want = plannedShiftDefault(_plannedShifts[i]);
+          if (want == null || _entries[i]['plannedOperatorShiftHours'] == want) return _entries[i];
+          changed = true;
+          return <String, dynamic>{..._entries[i], 'plannedOperatorShiftHours': want};
+        }(),
+    ];
+    if (changed) _entries = next;
   }
 
   /// Block [i]'s time-rule problem (OFF not after ON, or an overlap), or null.
@@ -250,6 +319,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       unawaited(_loadOccupied(key, machine, date));
     }
     for (final v in _entries) {
+      if (!widget.spec.checksOperatorClash) break;
       final op = '${v['operator'] ?? ''}'.trim();
       final date = '${v['date'] ?? ''}';
       if (op.isEmpty || !_isoDay.hasMatch(date)) continue;
@@ -272,7 +342,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   ) async {
     try {
       final res = await Api.get(
-        Endpoints.productionSheetOccupied,
+        widget.spec.api.occupied,
         query: {'date': date, 'operator': operator},
       );
       if (!mounted) return;
@@ -291,8 +361,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   Future<void> _loadOccupied(String key, String machine, String date) async {
     try {
       final res = await Api.get(
-        Endpoints.productionSheetOccupied,
-        query: {'date': date, 'machine': machine},
+        widget.spec.api.occupied,
+        query: {'date': date, widget.spec.api.machineParam: machine},
       );
       if (!mounted) return;
       final before = _timeProblems();
@@ -341,18 +411,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
 
   void _onRejectChange(int index, String reason, dynamic value) {
     if (_saving || index < 0 || index >= _entries.length) return;
-    final current = _entries[index]['rejectBreakdown'];
     _apply([
       for (var i = 0; i < _entries.length; i++)
-        i == index
-            ? {
-                ..._entries[i],
-                'rejectBreakdown': <String, dynamic>{
-                  if (current is Map) ...Map<String, dynamic>.from(current),
-                  reason: value,
-                },
-              }
-            : _entries[i],
+        i == index ? widget.spec.applyRejectChange(_entries[i], reason, value) : _entries[i],
     ]);
   }
 
@@ -361,14 +422,14 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     _apply([
       for (var i = 0; i < _entries.length; i++)
         i == index
-            ? applyItemSelection(_entries[i], itemId, widget.items)
+            ? widget.spec.applyItemSelection(_entries[i], itemId, widget.items)
             : _entries[i],
     ]);
   }
 
   void _onAdd() {
     if (_saving) return;
-    _apply([..._entries, newBlockAfter(_entries)]);
+    _apply([..._entries, widget.spec.newBlockAfter(_entries)]);
   }
 
   void _onRemove(int index) {
@@ -391,17 +452,52 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     // Nothing is saved while any block is incomplete — the button only looks
     // inactive so it can still be pressed, and pressing it scrolls to the first
     // incomplete block's first missing field.
-    final first = firstError(_errors);
+    final first = widget.spec.firstError(_errors);
     if (first != null) {
       _haptic(HapticFeedback.selectionClick);
+      // A quantity or stoppage past what the shift allows pops up why, with the
+      // figures, before Save takes the operator to it (web `firstOverLimit`).
+      OverLimit? over;
+      if (widget.spec.showLimitPopups) {
+        over = widget.spec.firstOverLimit(
+          _entries,
+          _errors,
+          machineNames: {
+            for (final m in _machinesForForm) '${m['_id']}': '${m['machineName'] ?? ''}',
+          },
+        );
+        if (over != null && mounted) await EntryNotices.show(context, over.notice);
+        if (!mounted) return;
+      }
       setState(
         () => _focusTarget = {
-          'index': first['index'],
-          'field': first['field'],
+          'index': over?.index ?? first['index'],
+          'field': over?.field ?? first['field'],
           'nonce': ++_nonce,
         },
       );
       return;
+    }
+
+    // A new entry belongs to the process this page is linked to; with none (or
+    // two) linked in Process Master there's nowhere to save it.
+    final unlinked = widget.spec.unlinkedProcessMessage;
+    if (unlinked != null && widget.lockedProcess == null) {
+      Alerts.error(unlinked);
+      return;
+    }
+
+    // Optional extra reminder that an entry above 100% goes to Admin review (the
+    // web only shows the banner in the form, so a spec has to ask for this).
+    if (widget.spec.noticeOnSaveForReview) {
+      final labels = <String>{
+        for (final e in _entries)
+          for (final k in widget.spec.metrics(e).oeeOver100) oeeMetricLabels[k] ?? k,
+      };
+      if (labels.isNotEmpty && mounted) {
+        await EntryNotices.show(context, adminReviewNotice(labels));
+        if (!mounted) return;
+      }
     }
 
     FocusManager.instance.primaryFocus?.unfocus();
@@ -425,8 +521,11 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         // The form ignores touches while a save is out, so a stalled connection
         // must give up soon rather than leave it dead for the network's own minute.
         await Api.put(
-          Endpoints.productionSheetRow,
-          body: toPayload(blocks[i], isEdit: _isEdit),
+          widget.spec.api.row,
+          body: widget.spec.finishPayload(
+            widget.spec.toPayload(blocks[i], isEdit: _isEdit),
+            process: widget.lockedProcess,
+          ),
         ).timeout(
           _saveTimeout,
           onTimeout: () => throw ApiException(
@@ -437,7 +536,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       }
       if (!mounted) return;
       _anySaved = true;
-      if (!_isEdit) await EntryDraftStore.clear();
+      if (!_isEdit) await EntryDraftStore.clear(draftKey: widget.spec.draftKey);
       Alerts.success(
         _isEdit
             ? 'Entry updated successfully!'
@@ -490,7 +589,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
 
   // ── Leaving ──────────────────────────────────────────────────────────────
   bool get _needsConfirm {
-    if (!_isEdit && !hasAnyEntryData(_entries)) return false;
+    if (!_isEdit && !widget.spec.hasAnyEntryData(_entries)) return false;
     return _forceDirty || !_equality.equals(_entries, _baseline);
   }
 
@@ -521,10 +620,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       // Typing survives an accidental close for a minute (see EntryDraftStore).
       // A restored draft is re-saved even if untouched (as on the web), so it
       // gets a fresh minute instead of expiring on its old clock.
-      if (!hasAnyEntryData(_entries)) {
-        await EntryDraftStore.clear();
+      if (!widget.spec.hasAnyEntryData(_entries)) {
+        await EntryDraftStore.clear(draftKey: widget.spec.draftKey);
       } else if (_needsConfirm || _draftRestored) {
-        await EntryDraftStore.save(_entries);
+        await EntryDraftStore.save(_entries, draftKey: widget.spec.draftKey);
       }
     }
     if (!mounted) return;
@@ -544,10 +643,10 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     );
     _dialogOpen = false;
     if (!ok || !mounted) return;
-    await EntryDraftStore.clear();
+    await EntryDraftStore.clear(draftKey: widget.spec.draftKey);
     if (!mounted) return;
     setState(() {
-      _entries = [emptyEntry()];
+      _entries = [widget.spec.emptyEntry()];
       _forceDirty = false;
       _draftRestored = false;
       _focusTarget = null;
@@ -574,7 +673,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     // context sits above the Scaffold, so it still sees the keyboard's height.
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final barFactor = (1 - keyboard / 100).clamp(0.0, 1.0);
-    final showClear = !_isEdit && _ready && hasAnyEntryData(_entries);
+    final showClear = !_isEdit && _ready && widget.spec.hasAnyEntryData(_entries);
 
     return PopScope<Object?>(
       canPop: !_saving && !_anySaved && !_needsConfirm,
@@ -589,9 +688,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
             icon: const Icon(Icons.close_rounded),
             onPressed: _saving ? null : () => unawaited(_attemptClose()),
           ),
-          title: Text(
-            _isEdit ? 'Update Production Entry' : 'Add Production Entry',
-          ),
+          title: Text(_isEdit ? widget.spec.editTitle : widget.spec.addTitle),
           actions: [
             if (showClear)
               IconButton(
@@ -653,6 +750,8 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                   absorbing: _saving,
                   child: ProductionEntryForm(
                     key: ValueKey(_formGeneration),
+                    spec: widget.spec,
+                    extra: widget.extra,
                     entries: _entries,
                     errors: _errors,
                     isSubmit: _isSubmit,
@@ -660,6 +759,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                     machines: _machinesForForm,
                     items: widget.items,
                     operators: widget.operators,
+                    plannedShifts: _plannedShifts,
                     isEdit: _isEdit,
                     booked: [
                       for (final e in _entries)

@@ -1,6 +1,12 @@
 // Golden generator: runs the REAL client/src/utils/processDashboard.js (bundled
 // by esbuild, never written into client/) over a deterministic input set and
 // prints one JSON document. NaN / +-Infinity are encoded as "__NaN__" etc.
+//
+// Regenerate (from mobile/; <T> = any scratch dir):
+//   ../client/node_modules/.bin/esbuild test/production/engine/tool/golden_entry.js \
+//        --bundle --platform=node --format=esm --outfile=<T>/gen.mjs
+//   LANG=en_US.UTF-8 TZ=Asia/Kolkata node <T>/gen.mjs > test/production/engine/fixtures/engine_golden_en_US.json
+// (engine_golden_en_IN_formats.json is the same run under LANG=en_IN.UTF-8; only its `formats` is read.)
 import * as PD from "/Users/hqepldev/HQEPL/Indo-OEE/client/src/utils/processDashboard.js";
 import * as PS from "/Users/hqepldev/HQEPL/Indo-OEE/client/src/utils/productionSheet.js";
 

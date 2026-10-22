@@ -127,6 +127,7 @@ List<SheetDay> buildSheetDays({
   required String search,
   required Map<String, String> machineName,
   required int Function(String machineId) rankOf,
+  List<String> searchKeys = const ['itemName', 'operator', 'drawingNo'],
 }) {
   String nameOf(String id) => machineName[id] ?? '—';
 
@@ -158,7 +159,7 @@ List<SheetDay> buildSheetDays({
     if (ops.isNotEmpty && !ops.contains(_text(r['operator']))) return false;
     if (items.isNotEmpty && !items.contains(_text(r['itemName']))) return false;
     if (q.isNotEmpty) {
-      final hit = [r['itemName'], r['operator'], r['drawingNo']].any((v) => _text(v).toLowerCase().contains(q));
+      final hit = [for (final k in searchKeys) r[k]].any((v) => _text(v).toLowerCase().contains(q));
       if (!hit) return false;
     }
     return true;

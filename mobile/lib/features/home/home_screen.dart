@@ -21,7 +21,7 @@ import '../../providers/unread_provider.dart';
 import 'home_widgets.dart';
 
 const _dashboardPath = '/production/dashboard';
-const _entryPath = '/production/cnc-data-entry';
+const _entryPath = dataEntryHubPath;
 
 /// Landing page after sign-in: greeting, the two main workflows as big
 /// launcher cards, then every other page the role may open, grouped like the

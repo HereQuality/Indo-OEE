@@ -8,16 +8,22 @@ import 'chart_props.dart';
 import 'hbars.dart';
 import 'mini_table.dart';
 import 'oee_trend_chart.dart';
-import 'run_time_treemap.dart';
+import 'apq_rings.dart';
+import 'reject_donut.dart';
+import 'stoppage_radar.dart';
+import 'stoppage_treemap.dart';
 import 'unreported_chart.dart';
 
 /// Port of charts.jsx CHART_COMPONENTS: every dashboard visual keyed by its
 /// chartCatalog key. The shell looks a card's builder up here.
 final Map<String, DashboardChartBuilder> dashboardCharts = {
   'oeeTrend': (p) => OeeTrendChart(props: p),
+  'apqTrend': (p) => ApqRingsChart(props: p),
   'runTimeByOperator': (p) => RunTimeByOperatorChart(props: p),
   'downtimeByMachine': (p) => DowntimeByMachineChart(props: p),
-  'runTimeByMachine': (p) => RunTimeTreemapChart(props: p),
+  'runTimeByMachine': (p) => StoppageRadarChart(props: p),
+  'runTimeByMachineBars': (p) => RunTimeByMachineBarsChart(props: p),
+  'unutilizedTrend': (p) => UnutilizedTrendChart(props: p),
   'unreportedByMachine': (p) => UnreportedByMachineChart(props: p),
   'okRejectedTrend': (p) => OkRejectedTrendChart(props: p),
   'oeeByMachine': (p) => OeeByMachineChart(props: p),
@@ -136,40 +142,6 @@ class OutputByItemChart extends StatelessWidget {
         valueLabel: 'OK quantity',
         emptyText: 'No OK quantity entered.',
       );
-}
-
-/// Rejected QTY by Reason: tapping a bar opens the reason's drill-down (it is
-/// not a dashboard dimension, so it cannot cross-filter).
-class RejectByReasonChart extends StatefulWidget {
-  const RejectByReasonChart({super.key, required this.props});
-  final DashboardChartProps props;
-
-  @override
-  State<RejectByReasonChart> createState() => _RejectByReasonChartState();
-}
-
-class _RejectByReasonChartState extends State<RejectByReasonChart> {
-  final _memo = DataMemo<List<BarDatum>>();
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.props;
-    final rows = p.rowsFor(null);
-    final data = _memo.get(rows, p.ctx, null, () => rejectReasons(rows));
-    return HBars(
-      data: data,
-      colors: p.colors,
-      color: p.colors.reject,
-      format: 'qty',
-      selected: const [],
-      onSelect: (k) => p.onDrill(eng.reasonMeasure(k)),
-      expanded: p.expanded,
-      view: p.view,
-      dimLabel: 'Reason',
-      valueLabel: 'Rejected',
-      emptyText: 'Nothing rejected in this period.',
-    );
-  }
 }
 
 /// MC No. Summary: one row per machine, always a table.

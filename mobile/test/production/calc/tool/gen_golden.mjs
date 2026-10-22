@@ -19,6 +19,12 @@ import {
   REJECT_REASONS,
   STOPPAGE_FIELDS,
   WORKING_STATUSES,
+  WORKING_MODES,
+  MACHINE_STATUSES,
+  PLANNED_STOP_KEYS,
+  OEE_METRIC_LABELS,
+  metricsOver100,
+  isNonWorking,
   SLOTS_PER_DAY,
   CYCLE_OPS,
   cycleOpLabel,
@@ -50,6 +56,8 @@ import {
   timeInterval,
   validateEntry,
 } from "../../../../../client/src/utils/entryValidation.js";
+import { FORMULAS } from "../../../../../client/src/utils/sheetFormulas.js";
+import { hoursToHm, hoursToHmInput, parseHm, hmToWireHours } from "../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -67,6 +75,13 @@ function mulberry32(a) {
 }
 const rnd = mulberry32(Number(process.env.SEED || 20260925));
 const SCALE = Number(process.env.SCALE || 1); // bigger sets for one-off soak runs; the committed fixtures use 1
+// A second, independent stream for the cases added when the web's figures grew
+// (Availability / Performance / Quality, Non Working, …) so the first stream's
+// fixtures (formatting, remarks, …) stay byte-identical when regenerated.
+const rnd2 = mulberry32(Number(process.env.SEED2 || 20261022));
+const pick2 = (arr) => arr[Math.floor(rnd2() * arr.length)];
+const chance2 = (p) => rnd2() < p;
+const int2 = (lo, hi) => lo + Math.floor(rnd2() * (hi - lo + 1));
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chance = (p) => rnd() < p;
 const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
@@ -146,6 +161,37 @@ function junkRow(id) {
   return row;
 }
 
+// Realistic AND hostile rows over the current web fields: Planned Operator Shift
+// (decimal hours on a saved row), every stoppage, Other Activity (After Powder
+// Coating), runQtyBasis "total" (Spring), working mode, odd cycle times.
+const PLANNED = ["8", "8.5", "9", "12", "4", "24", 8, 11, 0, "0", "", null, undefined, "abc", "-2", "7.999", 7.5, "3.5"];
+const STOP_VALS = ["", "0", "5", "10", "15", "30", "45", "60", "90", "120", "480", "600", "abc", "-5", 20, 7.5, null];
+function richRow(id) {
+  const shifts = [["06:00", "14:00"], ["14:00", "22:00"], ["22:00", "06:00"], ["08:00", "16:00"], ["07:30", "15:45"], ["9", "17"], ["0930", "1330"], ["9:30", "18.15"], ["08:00", "08:30"], ["00:00", "23:59"], ["10:00", "10:00"], ["", "12:00"], ["09:15", ""], ["abc", "12:00"]];
+  const [on, off] = pick2(shifts);
+  const row = {
+    _id: id,
+    date: "2026-10-05",
+    machine: "m" + int2(1, 4),
+    operator: "op" + int2(1, 5),
+    itemName: pick2(["Part A", "Bracket 7B", "", " ", "Flange", null]),
+    machineOnTime: on,
+    machineOffTime: off,
+    totalCycleSec: pick2(["45", "60", "36", "90", 45, "12.5", "3600", "0", "", "abc", "-4", undefined]),
+    actualQty: pick2(["", "0", "100", "250", "480", "600", "700", 320, "abc", undefined, null]),
+    okQty: pick2(["", "0", "90", "240", "470", "590", "699", 310, "abc", undefined, null]),
+    plannedOperatorShiftHours: pick2(PLANNED),
+  };
+  if (chance2(0.15)) row.rejectedQty = pick2(["", "0", "5", "20", "abc"]);
+  if (chance2(0.2)) row.runQtyBasis = pick2(["total", "ok", "", "TOTAL", null]);
+  if (chance2(0.25)) row.otherActivityMin = pick2(STOP_VALS);
+  if (chance2(0.1)) row.workingMode = pick2(["Working", "Non Working"]);
+  for (const f of STOPPAGE_FIELDS) if (chance2(0.4)) row[f.key] = pick2(STOP_VALS);
+  if (chance2(0.15)) row.drillingSec = pick2(NUMS);
+  for (const k of Object.keys(row)) if (row[k] === undefined && chance2(0.5)) delete row[k];
+  return row;
+}
+
 // ── rowCalc ─────────────────────────────────────────────────────────────────
 const curated = [
   // plain sane
@@ -200,6 +246,41 @@ const curated = [
 const rowCases = [];
 for (const row of curated) rowCases.push(row);
 for (let i = 0; i < 600 * SCALE; i += 1) rowCases.push(chance(0.45) ? saneRow("r" + i) : junkRow("r" + i));
+// Availability / Performance / Quality and the sums behind them (hand-picked)
+const apq = (o) => ({ itemName: "P", machineOnTime: "08:00", machineOffTime: "16:00", totalCycleSec: "45", ...o });
+for (const row of [
+  apq({ plannedOperatorShiftHours: "8", actualQty: "600", okQty: "590", lunchMin: "30", plannedDownMin: "10", setupMin: "20" }),
+  apq({ plannedOperatorShiftHours: 12, actualQty: "640", okQty: "640" }),
+  apq({ plannedOperatorShiftHours: "", actualQty: "100", okQty: "90" }),
+  apq({ actualQty: "100", okQty: "90", lunchMin: "480" }),
+  apq({ plannedOperatorShiftHours: "8", lunchMin: "300", plannedDownMin: "200", actualQty: "10", okQty: "10" }),
+  apq({ plannedOperatorShiftHours: "8", bdMechMin: "480", actualQty: "0", okQty: "0" }),
+  apq({ plannedOperatorShiftHours: "8", bdMechMin: "500", actualQty: "10", okQty: "10" }),
+  apq({ plannedOperatorShiftHours: "8", actualQty: "0", okQty: "0" }),
+  apq({ plannedOperatorShiftHours: "8", okQty: "50" }),
+  apq({ plannedOperatorShiftHours: "8", okQty: "50", rejectedQty: "7" }),
+  apq({ plannedOperatorShiftHours: "8", rejectedQty: "7" }),
+  apq({ plannedOperatorShiftHours: "8", otherActivityMin: "60", actualQty: "300", okQty: "280" }),
+  apq({ plannedOperatorShiftHours: "8", otherActivityMin: "abc", actualQty: "300", okQty: "280" }),
+  apq({ plannedOperatorShiftHours: "8", otherActivityMin: "600", actualQty: "300", okQty: "280" }),
+  apq({ runQtyBasis: "total", actualQty: "300", okQty: "280" }),
+  apq({ runQtyBasis: "total", okQty: "280", rejectedQty: "20" }),
+  apq({ runQtyBasis: "total", okQty: "280" }),
+  apq({ runQtyBasis: "ok", actualQty: "300", okQty: "280" }),
+  apq({ runQtyBasis: "total", itemName: "", actualQty: "300", okQty: "280" }),
+  apq({ totalCycleSec: "0", actualQty: "300", okQty: "280" }),
+  apq({ totalCycleSec: "-5", actualQty: "300", okQty: "280" }),
+  apq({ actualQty: "300", okQty: "abc" }),
+  apq({ actualQty: "abc", okQty: "280" }),
+  apq({ actualQty: "1e400", okQty: "280" }),
+  apq({ machineOnTime: "", actualQty: "300", okQty: "280" }),
+  apq({ machineOnTime: "22:00", machineOffTime: "06:00", plannedOperatorShiftHours: 9, actualQty: "700", okQty: "700" }),
+  apq({ machineOnTime: "08:00", machineOffTime: "08:00", plannedOperatorShiftHours: 9, actualQty: "7", okQty: "7" }),
+  apq({ workingMode: "Non Working" }),
+  apq({ workingMode: "Non Working", actualQty: "5", okQty: "5" }),
+  apq({ plannedOperatorShiftHours: "8", actualQty: "600", okQty: "590", setupMin: "10", noManPowerMin: "1", materialShiftingMin: "2", noMaterialMin: "3", bdMechMin: "4", bdEleMin: "5", noPowerMin: "6", otherMin: "7" }),
+]) rowCases.push(row);
+for (let i = 0; i < 700 * SCALE; i += 1) rowCases.push(richRow("x" + i));
 // hostile shapes rowCalc must survive
 const rowCalcOut = rowCases.map((row) => ({ row: encIn(row), out: enc(rowCalc(row)) }));
 rowCalcOut.push({ row: null, out: enc(rowCalc(null)) });
@@ -241,6 +322,35 @@ for (let i = 0; i < 260 * SCALE; i += 1) {
     if (chance(0.5)) r.machineOffTime = pick(TIMES_OK);
     if (chance(0.4)) r.lunchMin = pick(["", "0", "20", "30", 30, "abc"]);
     if (chance(0.4)) r.setupMin = pick(["", "5", "15", "x"]);
+    rows.push(r);
+  }
+  addDay(rows);
+}
+// New figures: Unutilized clamped (+ raw), Unreported at full precision, Productivity,
+// Other Activity, a Planned shift above / below / missing next to the Machine Shift.
+const mkp = (id, on, off, extra = {}) => mk(id, on, off, { plannedOperatorShiftHours: "8", ...extra });
+addDay([mkp("a", "08:00", "16:00", { lunchMin: "30", okQty: "600", actualQty: "620" })]);
+addDay([mkp("a", "08:00", "16:00", { plannedOperatorShiftHours: "11" })]);
+addDay([mkp("a", "08:00", "16:00", { plannedOperatorShiftHours: "" })]);
+addDay([mkp("a", "08:00", "16:00", { plannedOperatorShiftHours: "6" })]); // shorter than the shift (old row)
+addDay([mkp("a", "08:00", "16:00", { plannedOperatorShiftHours: 11, okQty: "753", totalCycleSec: "57", bdMechMin: "90" })]); // the 07/10 machine 7D check
+addDay([mkp("a", "06:00", "14:00", { lunchMin: "30" }), mkp("b", "14:00", "22:00", { lunchMin: "30" }), mkp("c", "22:00", "23:59", { lunchMin: "0" })]); // unutilized below 0
+addDay([mkp("a", "08:00", "08:30")]); // unutilized above 1
+addDay([mkp("a", "08:00", "09:00", { lunchMin: "abc" })]);
+addDay([mkp("a", "06:00", "12:00", { otherActivityMin: "60" }), mkp("b", "12:00", "18:00", { otherActivityMin: "30", lunchMin: "30" })]);
+addDay([mkp("a", "06:00", "12:00", { otherActivityMin: "abc" }), mkp("b", "", "", { otherActivityMin: "30" })]);
+addDay([mkp("a", "06:00", "12:00", { otherActivityMin: "480", okQty: "0" })]);
+addDay([mkp("a", "06:00", "12:00", { runQtyBasis: "total", actualQty: "300", okQty: "200" })]);
+addDay([mkp("a", "06:00", "12:00", { plannedOperatorShiftHours: "" }), mkp("b", "12:00", "18:00", { plannedOperatorShiftHours: "9" }), mkp("c", "", "", { plannedOperatorShiftHours: "4" })]);
+addDay([mkp("a", "", "", { bdMechMin: "30" }), mkp("b", "", "", { setupMin: "10" })]); // no shift anywhere
+addDay([mkp("a", "06:00", "12:00", { itemName: "" }), mkp("b", "12:00", "18:00", { workingMode: "Non Working" })]);
+for (let i = 0; i < 400 * SCALE; i += 1) {
+  const n = int2(1, 4);
+  const rows = [];
+  for (let j = 0; j < n; j += 1) {
+    const r = richRow(`y${i}_${j}`);
+    if (chance2(0.5)) r.lunchMin = pick2(["", "0", "20", "30", 30, "abc"]);
+    if (chance2(0.4)) r.setupMin = pick2(["", "5", "15", "x"]);
     rows.push(r);
   }
   addDay(rows);
@@ -317,6 +427,39 @@ const valMutations = [
   { machineOnTime: "6:00", machineOffTime: "14:00", plannedOperatorShiftHours: "7.9", lunchMin: "" }, // negative allowance
   { machineOnTime: "6:00", machineOffTime: "14:00", plannedOperatorShiftHours: "7.9", lunchMin: "0", setupMin: "1" },
 ];
+// The Machine Shift (ON–OFF) is the stoppage cap now, whatever the Planned Operator Shift is.
+valMutations.push(
+  { workingMode: "Non Working" },
+  { workingMode: "Non Working", operator: "", itemName: "", machineOnTime: "", machineOffTime: "", actualQty: "", okQty: "", plannedOperatorShiftHours: "" },
+  { workingMode: "Non Working", date: "", machine: "" },
+  { workingMode: "Working", operator: "" },
+  { workingMode: "non working", operator: "" },
+  { workingMode: "Non Working", setupMin: "9999", otherMin: "9", rejectBreakdown: { Other: "99" } },
+  { plannedOperatorShiftHours: "9", lunchMin: "480" }, // exactly the Machine Shift
+  { plannedOperatorShiftHours: "9", lunchMin: "481" },
+  { plannedOperatorShiftHours: "8.5", lunchMin: "100", setupMin: "380" },
+  { plannedOperatorShiftHours: "8.5", lunchMin: "100", setupMin: "381" },
+  { plannedOperatorShiftHours: "24", lunchMin: "480", setupMin: "1" },
+  { plannedOperatorShiftHours: "", lunchMin: "480" },
+  { plannedOperatorShiftHours: "", lunchMin: "481" },
+  { plannedOperatorShiftHours: "abc", lunchMin: "481" },
+  { plannedOperatorShiftHours: "7", lunchMin: "100" },
+  { machineOnTime: "9", machineOffTime: "9:45", plannedOperatorShiftHours: "1", lunchMin: "45" },
+  { machineOnTime: "9", machineOffTime: "9:45", plannedOperatorShiftHours: "1", lunchMin: "46" },
+  { machineOnTime: "9", machineOffTime: "9:45", plannedOperatorShiftHours: "1", lunchMin: "30", setupMin: "15" },
+  { machineOnTime: "9", machineOffTime: "9:45", plannedOperatorShiftHours: "1", lunchMin: "30", setupMin: "16" },
+  { machineOnTime: "00:00", machineOffTime: "23:59", plannedOperatorShiftHours: "24", lunchMin: "1440" },
+  { machineOnTime: "00:00", machineOffTime: "23:59", plannedOperatorShiftHours: "24", lunchMin: "1439", setupMin: "1" },
+  { machineOnTime: "00:00", machineOffTime: "23:59", plannedOperatorShiftHours: "24", lunchMin: "1439", setupMin: "2" },
+  { plannedDownMin: "480", lunchMin: "0" },
+  { plannedDownMin: "481", lunchMin: "0" },
+  { plannedDownMin: "300", lunchMin: "100", setupMin: "81" },
+  { plannedOperatorShiftHours: "8.3", lunchMin: "0" },
+  { plannedOperatorShiftHours: "8.60", lunchMin: "0" },
+  { plannedOperatorShiftHours: "08.30", lunchMin: "0" },
+  { plannedOperatorShiftHours: "8.3", machineOffTime: "16:30", lunchMin: "0" },
+  { plannedOperatorShiftHours: "8.3", machineOffTime: "16:31", lunchMin: "0" },
+);
 const valInputs = valMutations.map((m) => {
   const v = { ...baseValid(), ...m };
   for (const k of Object.keys(v)) if (v[k] === undefined) delete v[k];
@@ -326,6 +469,14 @@ const valInputs = valMutations.map((m) => {
 for (let i = 0; i < 260 * SCALE; i += 1) {
   const a = pick(valMutations);
   const b = pick(valMutations);
+  const v = { ...baseValid(), ...a, ...b };
+  for (const k of Object.keys(v)) if (v[k] === undefined) delete v[k];
+  valInputs.push(v);
+}
+// extra pairs from the second stream (so the first stream's picks above don't move)
+for (let i = 0; i < 400 * SCALE; i += 1) {
+  const a = pick2(valMutations);
+  const b = pick2(valMutations);
   const v = { ...baseValid(), ...a, ...b };
   for (const k of Object.keys(v)) if (v[k] === undefined) delete v[k];
   valInputs.push(v);
@@ -351,6 +502,29 @@ for (let i = 0; i < 260 * SCALE; i += 1) {
   };
   for (const f of STOPPAGE_FIELDS) if (f.key !== "lunchMin" && chance(0.3)) v[f.key] = pick(["", "0", "5", "10", "40", "1441", "-2", "z"]);
   for (const f of CYCLE_OP_FIELDS) if (chance(0.1)) v[f.key] = pick(NUMS);
+  for (const k of Object.keys(v)) if (v[k] === undefined) delete v[k];
+  valInputs.push(v);
+}
+// fully random blocks, second stream: every field hostile, some Non Working
+for (let i = 0; i < 300 * SCALE; i += 1) {
+  const v = {
+    date: pick2(["2026-04-06", "", null]),
+    machine: pick2(["m1", "", undefined]),
+    operator: pick2(["o1", "", undefined]),
+    itemName: pick2(["P", "", " "]),
+    machineOnTime: pick2([...TIMES_OK, ...TIMES_BAD]),
+    machineOffTime: pick2([...TIMES_OK, ...TIMES_BAD]),
+    totalCycleSec: pick2(NUMS),
+    actualQty: pick2(QTY),
+    okQty: pick2(QTY),
+    rejectBreakdown: pick2(SPLIT_POOL),
+    rejectOtherRemark: pick2(["", "why", undefined]),
+    plannedOperatorShiftHours: pick2(["", "8", "8.5", "9", "24", "25", "0", "abc", 8, "12", "4.30"]),
+    lunchMin: pick2(["", "0", "30", "60", "300", "480", "1441", "x", 15]),
+    otherMinRemark: pick2(["", "r", undefined]),
+  };
+  if (chance2(0.2)) v.workingMode = pick2(["Non Working", "Working", "", null]);
+  for (const f of STOPPAGE_FIELDS) if (f.key !== "lunchMin" && chance2(0.3)) v[f.key] = pick2(["", "0", "5", "10", "40", "100", "300", "1441", "-2", "z"]);
   for (const k of Object.keys(v)) if (v[k] === undefined) delete v[k];
   valInputs.push(v);
 }
@@ -454,8 +628,29 @@ write("time_and_dates.json", {
     CYCLE_OP_FIELDS,
     REJECT_REASONS,
     WORKING_STATUSES,
+    WORKING_MODES,
+    MACHINE_STATUSES,
+    PLANNED_STOP_KEYS,
+    OEE_METRIC_LABELS,
     STOPPAGE_FIELDS,
   },
+});
+
+// ── formula texts, Non Working, metricsOver100, H.MM helpers ────────────────
+write("formulas.json", FORMULAS);
+const calcSamples = rowCases.slice(0, 400).map((r) => rowCalc(r));
+const mo = [{}, null, undefined, { availability: 1 }, { availability: 1.0000000001 }, { availability: 1.000000002, quality: 1.5 }, { performance: "1.2" }, { performance: NaN, quality: Infinity }, { availability: 2, performance: 3, quality: 4 }, { quality: 1 + 1e-9 }, { quality: 1 + 1.1e-9 }];
+write("metrics_over_100.json", {
+  cases: [...mo, ...calcSamples].map((c) => ({ calc: enc(c ?? null), out: metricsOver100(c) })),
+  nonWorking: [{}, null, undefined, { workingMode: "Non Working" }, { workingMode: "Working" }, { workingMode: "non working" }, { workingMode: "" }, { workingMode: "Non Working " }].map((v) => ({ v: v === undefined ? null : v, out: isNonWorking(v) })),
+});
+const hmInputs = [0, 1, 3.5, 7.5, 8, 8.25, 8.999, 11.99999, 0.5, 0.008, 0.0083, 0.0084, 0.00833, 24, 25.5, 100, -1, -0.5, -2.5, -0.008, -0.0083, 1 / 3, 2 / 3, 59.99, 1e9, "3.5", "abc", "", null, undefined, NaN, Infinity, true, " 8 ", "8.30", 3.3333333333];
+const hmTexts = ["", " ", "3", "3.", "3.3", "3.30", "3.5", "3.05", "3.59", "3.60", "3.99", "3.123", "3,30", "03.30", "123.30", "1234.30", "0.00", "0.1", ".30", "abc", "3.3x", "24", "24.00", "24.01", "-3", "3 .30", null, undefined, 3, 3.5, 8.3, 8.0, 0, NaN, true];
+write("shift_hours.json", {
+  hoursToHm: hmInputs.map((h) => ({ h: enc(h), out: hoursToHm(h) })),
+  hoursToHmInput: hmInputs.map((h) => ({ h: enc(h), out: hoursToHmInput(h) })),
+  parseHm: hmTexts.map((t) => ({ t: enc(t), out: parseHm(t) })),
+  hmToWireHours: [0, 3.5, 3 + 50 / 60, 8.3333333333, 1 / 3, 24, 0.1 + 0.2, 1e-7].map((h) => ({ h, out: hmToWireHours(h) })),
 });
 
 // ── formatting / JS number semantics ────────────────────────────────────────
@@ -577,18 +772,21 @@ addOv([blk("08:00", "12:00"), blk("09:00", "10:00"), blk("11:00", "13:00")], { o
 addOv([blk("12:00", "14:00"), blk("13:00", "15:00")]);
 addOv([blk("", ""), blk("09:00", "10:00")], { occupied: NONE });
 
-const fmtMinutes = [0, 1, 5, 59, 60, 61, 300, 479, 480, 719, 720, 721, 780, 959, 960, 1319, 1320, 1439, 1440, 1441, 1500, 1800, 2879];
+const fmtMinutes = [0, 1, 5, 59, 60, 61, 300, 479, 480, 719, 720, 721, 780, 959, 960, 1319, 1320, 1439, 1440, 1441, 1500, 1800, 2879, -1, -60, -1441];
 write("overlap.json", {
   cases: overlapCases,
   fmt12: fmtMinutes.map((m) => ({ m, out: fmt12(m) })),
   intervals: OV_TIMES.flatMap((on) => OV_TIMES.map((off) => ({ on, off, out: timeInterval(on, off) }))),
   ruleMessages: [
     "Machine OFF Time must be after Machine ON Time",
-    "Machine ON Time overlaps another entry for this machine on this date (8:00 AM – 12:00 PM)",
-    "Machine OFF Time overlaps another entry for this machine on this date (2:00 PM – 6:00 PM)",
+    "Machine ON Time overlaps another entry for this machine on this date (08:00 – 12:00)",
+    "Machine OFF Time overlaps another entry for this machine on this date (14:00 – 18:00)",
     "Machine ON Time is required",
     "Enter a valid time",
     "Total stoppage is 5 min",
+    "Planned Operator Shift can't be less than the Machine Shift (8:00)",
+    "Operator op1 is already on machine M1 from 08:00 – 12:00 on this date — an operator can't run two machines at the same time",
+    "Total stoppage is 31 min but the Machine Shift is only 30 min",
     "",
   ].map((m) => ({ m, out: isTimeRuleMessage(m) })),
 });

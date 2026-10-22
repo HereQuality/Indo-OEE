@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:indo/features/production/entry_form/entry_fields.dart';
+import 'package:indo/core/widgets/web_time_field.dart' show kTimeRowHeight;
 import 'package:indo/features/production/entry_form/entry_number_input.dart';
 import 'package:indo/features/production/sheet/editor/entry_editor_logic.dart';
 
@@ -208,26 +208,23 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('downtime boxes take the number pad; with no room they say why and refuse digits, and open up once the planned shift is longer', (tester) async {
+    // Web stoppageLimitMin: the whole Machine Shift (ON -> OFF) is the cap, 480 min on 08:00-16:00,
+    // whatever the Planned Operator Shift is.
+    testWidgets('downtime boxes take the number pad; with no room they say why and refuse digits, and open up when room is given back', (tester) async {
       captureToasts();
       await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
       expect(boxOf(tester, 'setupMin').readOnly, isFalse);
       expect(boxOf(tester, 'lunchMin').readOnly, isFalse);
-      expect(find.textContaining('No stoppage time left'), findsWidgets);
-      await typeKeys(tester, 'setupMin', '5');
-      expect(textOf(tester, 0, 'setupMin'), '', reason: 'no room: the digit is refused');
-
-      await typeKeys(tester, 'plannedOperatorShiftHours', '9');
-      expect(textOf(tester, 0, 'plannedOperatorShiftHours'), '9');
-      await typeKeys(tester, 'setupMin', '61');
-      expect(textOf(tester, 0, 'setupMin'), '6', reason: '60 min are allowed: 6 fits, the 1 after it would make 61');
-      await typeKeys(tester, 'setupMin', '60');
-      expect(textOf(tester, 0, 'setupMin'), '60');
+      expect(find.textContaining('No stoppage time left'), findsNothing, reason: 'the whole 480 min are free');
+      await typeKeys(tester, 'setupMin', '481');
+      expect(textOf(tester, 0, 'setupMin'), '48', reason: '480 min are allowed: 48 fits, the 1 after it would make 481');
+      await typeKeys(tester, 'setupMin', '480');
+      expect(textOf(tester, 0, 'setupMin'), '480');
       await typeKeys(tester, 'noPowerMin', '5');
-      expect(textOf(tester, 0, 'noPowerMin'), '', reason: 'all 60 min are used');
-      expect(find.textContaining('all 60 min allowed are used'), findsOneWidget);
+      expect(textOf(tester, 0, 'noPowerMin'), '', reason: 'all 480 min are used');
+      expect(find.textContaining('all 480 min of the Machine Shift are used'), findsOneWidget);
       // Lowering the used box gives the room back.
       await typeKeys(tester, 'setupMin', '\b');
       await typeKeys(tester, 'noPowerMin', '5');
@@ -242,9 +239,17 @@ void main() {
       await typeKeys(tester, 'actualQty', '481');
       expect(textOf(tester, 0, 'actualQty'), '48');
       await tester.pump(const Duration(milliseconds: 10));
-      expect(toasts, hasLength(1));
+      // The Ideal Quantity hit is the web's popup now (one dialog, however many keys).
+      expect(toasts, isEmpty);
+      expect(find.byKey(const ValueKey('entry-notice')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('entry-notice/ok')));
+      await tester.pumpAndSettle();
+      toasts.clear();
+      await tester.pump(const Duration(seconds: 3));
       await typeKeys(tester, 'plannedOperatorShiftHours', '25');
       expect(textOf(tester, 0, 'plannedOperatorShiftHours'), '2');
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(toasts, hasLength(1));
       expect(tester.takeException(), isNull);
     });
   });
@@ -421,64 +426,109 @@ void main() {
     }
   });
 
-  group('clock dial time picker', () {
-    Finder dial() => find.byWidgetPredicate((w) => w.runtimeType.toString() == '_Dial');
+  group('web time field (24-hour box + inline Hour / Minute panel)', () {
+    Finder item(int block, String name, String col, int n) =>
+        find.descendant(of: field(block, name), matching: find.byKey(ValueKey('time-$col-${n.toString().padLeft(2, '0')}')));
+    Future<Finder> show(WidgetTester tester, int block, String name, String col, int n) async {
+      final list = find.descendant(of: field(block, name), matching: find.byKey(ValueKey('time-list-$col')));
+      final it = item(block, name, col, n);
+      final pos = tester.state<ScrollableState>(find.descendant(of: list, matching: find.byType(Scrollable))).position;
+      pos.jumpTo(((col == 'hour' ? n : n ~/ 5) * kTimeRowHeight - kTimeRowHeight).clamp(0, pos.maxScrollExtent).toDouble());
+      await tester.pumpAndSettle();
+      return it;
+    }
 
-    testWidgets('opens a clock dial (12-hour), picks in fives, cancel keeps the old time', (tester) async {
+    Finder toggle(int block, String name) => find.descendant(of: field(block, name), matching: find.byKey(const ValueKey('time-toggle')));
+
+    testWidgets('shows the stored time as 24-hour text, types HH:mm, picks inline in fives, no dialog', (tester) async {
       final key = await pumpForm(tester, [_withPart(extra: {'machineOnTime': '08:00'})]);
       await openBlock(tester, 0);
       final on = field(0, 'machineOnTime');
       await tester.ensureVisible(on);
-      expect(find.text('08:00 AM'), findsOneWidget);
+      expect(textOf(tester, 0, 'machineOnTime'), '08:00');
+      expect(find.text('AM'), findsNothing);
+      expect(find.byType(TimePickerDialog), findsNothing);
 
-      // Cancel changes nothing.
-      await tester.tap(on);
+      // Typing commits on blur.
+      await typeIn(tester, 0, 'machineOnTime', '930');
+      FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
-      expect(find.byType(TimePickerDialog), findsOneWidget);
-      expect(dial(), findsOneWidget);
-      expect(find.text('MACHINE ON TIME'), findsOneWidget);
-      expect(find.text('AM'), findsWidgets);
-      expect(find.text('PM'), findsWidgets);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(key.currentState!.entries.first['machineOnTime'], '08:00');
+      expect(key.currentState!.entries.first['machineOnTime'], '09:30');
+      expect(textOf(tester, 0, 'machineOnTime'), '09:30');
 
-      // Pick 3 o'clock on the dial, then 15 minutes, then PM, then OK.
-      await tester.tap(on);
+      // Invalid text keeps the old value.
+      await typeIn(tester, 0, 'machineOnTime', '2575');
+      FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
-      final c = tester.getCenter(dial());
-      final r = tester.getSize(dial()).width / 2;
-      await tester.tapAt(Offset(c.dx + r * 0.8, c.dy)); // 3
+      expect(key.currentState!.entries.first['machineOnTime'], '09:30');
+      expect(textOf(tester, 0, 'machineOnTime'), '09:30');
+
+      // The clock button opens the panel inside the form; pick 15:15.
+      // (Typing opened the panel, like the web; the button closes it and opens it again.)
+      await tester.ensureVisible(toggle(0, 'machineOnTime'));
+      if (find.byKey(const ValueKey('time-panel')).evaluate().isNotEmpty) {
+        await tester.tap(toggle(0, 'machineOnTime'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('time-panel')), findsNothing);
+      }
+      await tester.tap(toggle(0, 'machineOnTime'));
       await tester.pumpAndSettle();
-      await tester.tapAt(Offset(c.dx + r * 0.8, c.dy)); // 15 minutes
+      expect(find.byKey(const ValueKey('time-panel')), findsOneWidget);
+      expect(find.byType(TimePickerDialog), findsNothing);
+      final h15 = await show(tester, 0, 'machineOnTime', 'hour', 15);
+      await tester.tap(h15);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('PM').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(await show(tester, 0, 'machineOnTime', 'minute', 15));
       await tester.pumpAndSettle();
       expect(key.currentState!.entries.first['machineOnTime'], '15:15');
-      expect(find.text('03:15 PM'), findsOneWidget);
+      expect(textOf(tester, 0, 'machineOnTime'), '15:15');
       expect(tester.takeException(), isNull);
     });
 
-    test('the chosen minute snaps to the nearest five, 58 rolls into the next hour', () {
-      expect(snapToFiveMinutes(const TimeOfDay(hour: 8, minute: 2)), '08:00');
-      expect(snapToFiveMinutes(const TimeOfDay(hour: 8, minute: 3)), '08:05');
-      expect(snapToFiveMinutes(const TimeOfDay(hour: 8, minute: 58)), '09:00');
-      expect(snapToFiveMinutes(const TimeOfDay(hour: 23, minute: 58)), '00:00');
-      expect(snapToFiveMinutes(const TimeOfDay(hour: 12, minute: 30)), '12:30');
+    testWidgets('the OFF box blocks everything up to the ON time: hours before it are greyed, ON+1 minute is the first pick', (tester) async {
+      final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '08:00', 'machineOffTime': ''})]);
+      await openBlock(tester, 0);
+      await tester.ensureVisible(toggle(0, 'machineOffTime'));
+      await tester.tap(toggle(0, 'machineOffTime'));
+      await tester.pumpAndSettle();
+      final h7 = await show(tester, 0, 'machineOffTime', 'hour', 7);
+      expect(tester.widget<InkWell>(find.descendant(of: h7, matching: find.byType(InkWell))).onTap, isNull);
+      await tester.tap(h7);
+      await tester.pumpAndSettle();
+      expect(key.currentState!.entries.first['machineOffTime'], '');
+      await tester.tap(await show(tester, 0, 'machineOffTime', 'hour', 8));
+      await tester.pumpAndSettle();
+      expect(key.currentState!.entries.first['machineOffTime'], '08:01', reason: 'ON 08:00 -> nothing at or before it');
+      await tester.tap(await show(tester, 0, 'machineOffTime', 'hour', 10));
+      await tester.pumpAndSettle();
+      expect(key.currentState!.entries.first['machineOffTime'], '10:01');
+      await tester.tap(await show(tester, 0, 'machineOffTime', 'minute', 30));
+      await tester.pumpAndSettle();
+      expect(key.currentState!.entries.first['machineOffTime'], '10:30');
     });
 
-    testWidgets('dark mode on an iPad shows a dialog, not a full-screen sheet', (tester) async {
+    testWidgets('dark mode on an iPad opens the panel inline, no overflow', (tester) async {
       await pumpForm(tester, [_withPart(extra: {'machineOnTime': '', 'machineOffTime': ''})], size: const Size(820, 1180), dark: true);
       await openBlock(tester, 0);
-      await tester.tap(field(0, 'machineOffTime'));
+      await tester.ensureVisible(toggle(0, 'machineOffTime'));
+      await tester.tap(toggle(0, 'machineOffTime'));
       await tester.pumpAndSettle();
-      expect(find.byType(TimePickerDialog), findsOneWidget);
-      expect(dial(), findsOneWidget);
-      expect(tester.getSize(dial()).width, lessThan(400), reason: 'a dialog with a dial, not a stretched full-screen sheet');
-      await tester.tap(find.text('Cancel'));
+      expect(find.byKey(const ValueKey('time-panel')), findsOneWidget);
+      expect(find.byType(TimePickerDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('320 px wide, text 1.3: the panel pushes the next field down and nothing overflows', (tester) async {
+      await pumpForm(tester, [_withPart(extra: {'machineOnTime': '09:30', 'machineOffTime': '17:00'})], size: const Size(320, 640), textScale: 1.3);
+      await openBlock(tester, 0);
+      await tester.ensureVisible(toggle(0, 'machineOnTime'));
+      final offTop = tester.getTopLeft(field(0, 'machineOffTime')).dy;
+      await tester.tap(toggle(0, 'machineOnTime'));
       await tester.pumpAndSettle();
+      final panel = tester.getRect(find.byKey(const ValueKey('time-panel')));
+      final offAfter = tester.getTopLeft(field(0, 'machineOffTime')).dy;
+      expect(offAfter, greaterThanOrEqualTo(panel.bottom));
+      expect(offAfter, greaterThan(offTop));
       expect(tester.takeException(), isNull);
     });
   });
@@ -520,8 +570,7 @@ void main() {
     testWidgets('Lunch / Rest, with no room left, still opens the pad and accepts "0"', (tester) async {
       final form = await pumpForm(tester, [_withPart()]);
       await openBlock(tester, 0);
-      await typeKeys(tester, 'plannedOperatorShiftHours', '9'); // 60 min of stoppage allowed
-      await typeKeys(tester, 'setupMin', '60'); // ...all of it used by Setup
+      await typeKeys(tester, 'setupMin', '480'); // the whole 480 min Machine Shift used by Setup
       expect(boxOf(tester, 'lunchMin').readOnly, isFalse, reason: 'a shut box must still open the pad');
       expect(find.textContaining('Lunch / Rest can only be 0'), findsOneWidget);
 
@@ -534,7 +583,7 @@ void main() {
 
     testWidgets('optional boxes with no room still open the number pad, and say why they take nothing', (tester) async {
       captureToasts();
-      await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8'})]);
+      await pumpForm(tester, [_withPart(extra: {'plannedOperatorShiftHours': '8', 'lunchMin': '480'})]);
       await openBlock(tester, 0);
       await tester.ensureVisible(textIn(0, 'setupMin'));
       for (final name in ['setupMin', 'lunchMin', 'reject/Tool Mark']) {

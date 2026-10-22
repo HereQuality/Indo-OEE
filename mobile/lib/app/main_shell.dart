@@ -22,7 +22,7 @@ class _ShellTab {
 /// The phone / iPad app's two main sections, in bottom-bar order.
 const _allTabs = [
   _ShellTab('/production/dashboard', 'Dashboard', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded),
-  _ShellTab('/production/cnc-data-entry', 'Data entry', Icons.edit_note_outlined, Icons.edit_note_rounded),
+  _ShellTab(dataEntryHubPath, 'Data entry', Icons.edit_note_outlined, Icons.edit_note_rounded),
 ];
 
 /// The signed-in root: the bottom navigation bar with the Dashboard and Data
@@ -109,16 +109,27 @@ class _MainShellState extends State<MainShell> {
           ? null
           : DecoratedBox(
               decoration: BoxDecoration(border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
-              child: NavigationBar(
-                selectedIndex: selected,
-                onDestinationSelected: (i) {
-                  if (i == selected) return;
-                  _controller.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
-                },
-                destinations: [
-                  for (final t in visible)
-                    NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
-                ],
+              // Two or three destinations spread over a 1280 px tablet bar are far
+              // apart: keep the bar a phone-width strip, centred, on a wide screen.
+              child: ColoredBox(
+                color: Theme.of(context).navigationBarTheme.backgroundColor ?? Theme.of(context).colorScheme.surface,
+                child: Center(
+                  heightFactor: 1,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: NavigationBar(
+                      selectedIndex: selected,
+                      onDestinationSelected: (i) {
+                        if (i == selected) return;
+                        _controller.animateToPage(i, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+                      },
+                      destinations: [
+                        for (final t in visible)
+                          NavigationDestination(icon: Icon(t.icon), selectedIcon: Icon(t.selectedIcon), label: t.label),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
     );

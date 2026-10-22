@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../process/process_spec.dart';
+import '../shared/planned_shift.dart' show ShiftSetting;
+import '../processes/cnc/cnc_spec.dart' show cncSpec;
 import 'entry_block.dart';
 
 /// The Production Data Entry form (port of ProductionEntryForm.jsx): one block
@@ -41,7 +44,21 @@ class ProductionEntryForm extends StatefulWidget {
     required this.onRejectChange,
     required this.onAdd,
     required this.onRemove,
+    this.spec = cncSpec,
+    this.extra = const {},
+    this.plannedShifts = const [],
   });
+
+  /// Per block: the Planned Operator Shift Process Master sets for its machine
+  /// (null / missing = typed by hand). Only a spec with `usesPlannedShiftSetting`
+  /// gets any (the editor works them out).
+  final List<ShiftSetting?> plannedShifts;
+
+  /// The process the form is for (its lines, rules and metrics).
+  final ProcessSpec spec;
+
+  /// The spec's `extraReference` lists by name.
+  final Map<String, List<Map<String, dynamic>>> extra;
 
   final List<Map<String, dynamic>> entries;
   final List<Map<String, String>> errors;
@@ -266,6 +283,17 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                   onItemSelect: (index, itemId) => widget.onItemSelect(index, itemId),
                   onRejectChange: (index, reason, value) => widget.onRejectChange(index, reason, value),
                   onRemove: _remove,
+                  spec: widget.spec,
+                  extra: widget.extra,
+                  plannedShift: i < widget.plannedShifts.length ? widget.plannedShifts[i] : null,
+                  // Workers another block of this form already has on the same date can't be picked again.
+                  takenMachines: widget.spec.uniqueMachinePerDate
+                      ? [
+                          for (var j = 0; j < entries.length; j++)
+                            if (j != i && '${entries[j]['machine'] ?? ''}'.isNotEmpty && entries[j]['date'] == entries[i]['date'])
+                              '${entries[j]['machine']}',
+                        ]
+                      : const [],
                 ),
               ],
               if (!widget.isEdit) ...[
@@ -275,7 +303,7 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                   onPressed: _add,
                   style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
                   icon: const Icon(Icons.add_rounded, size: 20),
-                  label: const Text('Add another machine'),
+                  label: Text('Add another ${widget.spec.machineNoun}'),
                 ),
               ],
             ],

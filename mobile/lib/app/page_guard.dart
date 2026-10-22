@@ -37,6 +37,12 @@ class PageGuard extends StatelessWidget {
     if (menu.loading && menu.groups.isEmpty) {
       return const Scaffold(body: LoadingView(label: 'Loading your workspace…'));
     }
+    final fronts = route.menuAccess;
+    if (fronts != null) {
+      return fronts(user, menu)
+          ? PagePermissions(perms: const PagePerms(view: true), child: Builder(builder: route.builder))
+          : const NoAccessScreen();
+    }
     final menuId = menu.menuIdForPath(route.path) ??
         route.aliases.map(menu.menuIdForPath).firstWhere((e) => e != null, orElse: () => null);
     if (menuId == null) return const NoAccessScreen();

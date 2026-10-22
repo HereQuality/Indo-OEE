@@ -58,14 +58,27 @@ class DashboardControlBar extends StatelessWidget {
           if (leading != null) Padding(padding: const EdgeInsets.only(top: 4), child: leading),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: PeriodChip(label: periodLabel, resettable: !isDefaultRange, onTap: onPickRange, onReset: onResetRange),
-                ),
-                const SizedBox(width: 6),
-                FiltersButton(count: filterCount, onPressed: onOpenFilters),
-              ],
+            // Period and Filters share a row; on a narrow phone at a very large text
+            // size they don't both fit, so Filters drops under the period.
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final period = PeriodChip(label: periodLabel, resettable: !isDefaultRange, onTap: onPickRange, onReset: onResetRange);
+                final filters = FiltersButton(count: filterCount, onPressed: onOpenFilters);
+                final stacked = c.maxWidth < 400 && MediaQuery.textScalerOf(context).scale(14) >= 22;
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [period, const SizedBox(height: 6), Align(alignment: Alignment.centerLeft, child: filters)],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: period),
+                    const SizedBox(width: 6),
+                    filters,
+                  ],
+                );
+              },
             ),
           ),
           AnimatedSize(
@@ -212,7 +225,9 @@ class FiltersButton extends StatelessWidget {
                     child: Icon(Icons.tune_rounded, size: 18, color: cs.onSurface),
                   ),
                   const SizedBox(width: 6),
-                  Text('Filters', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: cs.onSurface)),
+                  Flexible(
+                    child: Text('Filters', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: cs.onSurface)),
+                  ),
                 ],
               ),
             ),

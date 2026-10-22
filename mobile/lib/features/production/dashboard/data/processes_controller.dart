@@ -18,9 +18,42 @@ class ProcessesController extends ChangeNotifier {
 
   final DashboardRepository repo;
 
+  /// What the server returned, before [canSee] narrows it down.
+  List<ProcessInfo> _allProcesses = const [];
+  List<Map<String, dynamic>> _allMachines = const [];
+
+  /// What this person's dashboard offers: the processes they may see and only
+  /// those processes' machines.
   List<ProcessInfo> processes = const [];
   List<Map<String, dynamic>> machines = const [];
   bool loading = true;
+
+  /// Whether a process is visible to this person; null = everything (an admin).
+  /// Non-admins see a process only when they may open its data-entry page, so a
+  /// process with no page linked is hidden from them.
+  bool Function(ProcessInfo)? canSee;
+
+  /// The visible process ids when access is narrowed, null when it is not.
+  List<String>? get scopeProcessIds => canSee == null ? null : [for (final p in processes) p.id];
+
+  /// Installs the access rule and re-narrows what is already loaded.
+  void setAccess(bool Function(ProcessInfo)? rule) {
+    canSee = rule;
+    _applyAccess();
+    _notify();
+  }
+
+  void _applyAccess() {
+    final rule = canSee;
+    if (rule == null) {
+      processes = _allProcesses;
+      machines = _allMachines;
+      return;
+    }
+    processes = [for (final p in _allProcesses) if (rule(p)) p];
+    final ids = {for (final p in processes) p.id};
+    machines = [for (final m in _allMachines) if (ids.contains(machineProcessId(m))) m];
+  }
 
   /// Set only while nothing has ever loaded (drives the full-page error view).
   String? error;
@@ -48,8 +81,10 @@ class ProcessesController extends ChangeNotifier {
   /// The processes the selector offers: those with machines.
   List<ProcessInfo> get selectable => [for (final p in processes) if (p.machines.isNotEmpty) p];
 
-  /// Whether the "All machines" chip is offered.
-  bool get hasAllMachines => machines.isNotEmpty || selectable.isNotEmpty;
+  /// Whether the "All machines" chip is offered. A person limited to some
+  /// processes gets it only when more than one remains (with one it would just
+  /// repeat that process's chip).
+  bool get hasAllMachines => canSee == null ? (machines.isNotEmpty || selectable.isNotEmpty) : selectable.length > 1;
 
   /// The KPI tiles / graphs a dashboard shows for [processId] (null = All machines).
   List<Map<String, dynamic>> statsFor(String? processId) {
@@ -79,10 +114,8 @@ class ProcessesController extends ChangeNotifier {
 
   /// Shows a just-saved Customize right away, before the refetch lands.
   void patchWidgets(String id, List<String> stats, List<String> charts) {
-    processes = [
-      for (final p in processes)
-        p.id == id ? ProcessInfo(id: p.id, name: p.name, description: p.description, machines: p.machines, stats: stats, charts: charts) : p,
-    ];
+    _allProcesses = [for (final p in _allProcesses) p.id == id ? p.withWidgets(stats, charts) : p];
+    _applyAccess();
     _notify();
   }
 
@@ -115,8 +148,9 @@ class ProcessesController extends ChangeNotifier {
     try {
       final results = await Future.wait([repo.processes(), repo.machines()]);
       if (token != _token || _disposed) return false;
-      processes = results[0] as List<ProcessInfo>;
-      machines = results[1] as List<Map<String, dynamic>>;
+      _allProcesses = results[0] as List<ProcessInfo>;
+      _allMachines = results[1] as List<Map<String, dynamic>>;
+      _applyAccess();
       allMachinesWidgets ??= await repo.loadAllMachinesWidgets();
       if (token != _token || _disposed) return false;
       loaded = true;

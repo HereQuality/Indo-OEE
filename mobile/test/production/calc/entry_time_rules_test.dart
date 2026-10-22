@@ -109,13 +109,13 @@ void main() {
     test('starting inside a saved entry flags the ON box and names the clash', () {
       final e = overlapErrors([_entry({'machineOnTime': '10:00', 'machineOffTime': '13:00'})], _saved).single;
       expect(e.keys, ['machineOnTime']);
-      expect(e['machineOnTime'], contains('overlaps another entry for this machine on this date (8:00 AM – 12:00 PM)'));
+      expect(e['machineOnTime'], contains('overlaps another entry for this machine on this date (08:00 – 12:00)'));
     });
 
     test('running into the next one flags the OFF box', () {
       final e = overlapErrors([_entry({'machineOnTime': '12:00', 'machineOffTime': '15:00'})], _saved).single;
       expect(e.keys, ['machineOffTime']);
-      expect(e['machineOffTime'], contains('2:00 PM – 6:00 PM'));
+      expect(e['machineOffTime'], contains('14:00 – 18:00'));
     });
 
     test('touching entries are fine; other machines, dates and unfinished times never clash', () {
@@ -139,7 +139,7 @@ void main() {
     test('editing: the row itself is not "another", its neighbours still are', () {
       expect(overlapErrors([_entry({'machineOnTime': '09:00', 'machineOffTime': '11:00'})], _saved, editSlot: 1), [<String, String>{}]);
       final grown = overlapErrors([_entry({'machineOnTime': '09:00', 'machineOffTime': '15:00'})], _saved, editSlot: 1).single;
-      expect(grown['machineOffTime'], contains('2:00 PM – 6:00 PM'));
+      expect(grown['machineOffTime'], contains('14:00 – 18:00'));
     });
 
     test('an older overlapping row is left alone while its times are untouched', () {
@@ -153,8 +153,8 @@ void main() {
     });
 
     test('bookedRanges lists what the machine has, minus the row being edited', () {
-      expect(bookedRanges(_entry(), _saved), ['8:00 AM – 12:00 PM', '2:00 PM – 6:00 PM']);
-      expect(bookedRanges(_entry(), _saved, editSlot: 1), ['2:00 PM – 6:00 PM']);
+      expect(bookedRanges(_entry(), _saved), ['08:00 – 12:00', '14:00 – 18:00']);
+      expect(bookedRanges(_entry(), _saved, editSlot: 1), ['14:00 – 18:00']);
       expect(bookedRanges(_entry({'machine': 'm9'}), _saved), isEmpty);
     });
   });

@@ -38,7 +38,7 @@ class KpiTile extends StatelessWidget {
       label: semanticsLabel,
       onTap: onTap,
       child: DashCard(
-        padding: EdgeInsets.fromLTRB(12, web ? 10 : 9, 12, web ? 10 : 9),
+        padding: EdgeInsets.zero,
         tint: tone,
         radius: 12,
         onTap: onTap,
@@ -46,55 +46,65 @@ class KpiTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
+            const AccentEdge(),
+            Padding(
+              padding: EdgeInsets.fromLTRB(12, web ? 8 : 7, 12, web ? 10 : 9),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (tone != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, right: 5),
-                    child: Container(width: 7, height: 7, decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
-                  ),
-                Expanded(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (tone != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, right: 5),
+                        child: Container(width: 7, height: 7, decoration: BoxDecoration(color: tone, shape: BoxShape.circle)),
+                      ),
+                    Expanded(
+                      child: Text(
+                        web ? label.toUpperCase() : label,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: web ? 10.5 : 12,
+                          height: 1.2,
+                          letterSpacing: web ? 0.3 : 0,
+                          fontWeight: web ? FontWeight.w700 : FontWeight.w600,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
                   child: Text(
-                    web ? label.toUpperCase() : label,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    value,
+                    maxLines: 1,
                     style: TextStyle(
-                      fontSize: web ? 10.5 : 12,
-                      height: 1.2,
-                      letterSpacing: web ? 0.3 : 0,
-                      fontWeight: web ? FontWeight.w700 : FontWeight.w600,
-                      color: cs.onSurfaceVariant,
+                      fontSize: 22,
+                      height: 1.15,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
+                if (hint != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    hint!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, height: 1.2, color: AppColors.readable(context, cs.onSurfaceVariant).withValues(alpha: 0.85)),
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 22,
-                  height: 1.15,
-                  fontWeight: FontWeight.w700,
-                  color: cs.onSurface,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
             ),
-            if (hint != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                hint!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, height: 1.2, color: AppColors.readable(context, cs.onSurfaceVariant).withValues(alpha: 0.85)),
-              ),
-            ],
           ],
         ),
       ),

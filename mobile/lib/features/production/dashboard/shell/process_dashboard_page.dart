@@ -388,6 +388,8 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
       title: title,
       hint: hint,
       fixedHeader: fixedHeader,
+      preview: w['preview'] as String?,
+      tone: w['tone'] as String?,
       view: _ctl.chartViews[key] ?? ChartView.chart,
       onViewChanged: (v) => setState(() => _ctl.chartViews[key] = v),
       tableOnly: tableOnly,
@@ -535,7 +537,7 @@ class _NoEntries extends StatelessWidget {
           Icon(Icons.insights_outlined, size: 32, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
           const SizedBox(height: 8),
           Text(
-            'No entries for ${name ?? 'any machine'} in $period.',
+            'No entries for ${name ?? 'any machine'} in ${period.toLowerCase()}.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface),
           ),

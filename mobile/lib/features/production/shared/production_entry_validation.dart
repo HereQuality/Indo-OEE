@@ -13,8 +13,8 @@
 //   Times      Machine OFF Time must be after Machine ON Time, and one machine's
 //              entries on a date can't overlap in time (see [overlapErrors]).
 //   Downtime   Optional, but whatever is typed must be 0–1440, and the total
-//              (Lunch / Rest included) can't exceed Planned Operator Shift −
-//              Machine Shift, in minutes.
+//              (Lunch / Rest included) can't exceed the Machine Shift itself, in
+//              minutes — stoppage happens inside the machine's own ON–OFF span.
 //   "Other"    Rejecting pieces as "Other", or logging Other downtime, needs its
 //              own remark.
 
@@ -69,17 +69,11 @@ const List<String> fieldOrder = [
 /// JS `blank`: null, "" or whitespace-only text (numbers are never blank).
 bool isBlank(Object? v) => v == null || jsTrim(jsString(v)).isEmpty;
 
-/// Minutes of the operator's planned shift the machine wasn't running — the
-/// most stoppage the entry can account for (Planned Operator Shift − Machine
-/// Shift). null until both numbers exist. Works on DECIMAL planned hours (a saved
-/// row); the form's typed H.MM goes through [withDecimalPlanned] first.
-double? stoppageLimitMin(Map<String, dynamic> v) {
-  final planned = jsNumber(v['plannedOperatorShiftHours']);
-  final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
-  if (!isNum(planned) || shiftMin == null) return null;
-  final rounded = jsRound(planned! * 60 - shiftMin);
-  return rounded > 0 ? rounded : 0.0;
-}
+/// The most stoppage (Lunch / Rest included) an entry can account for — the
+/// Machine Shift itself, since stoppage happens inside the machine's own ON–OFF
+/// span, not in some separate block of time beyond it. null until Machine
+/// ON/OFF are both usable.
+double? stoppageLimitMin(Map<String, dynamic> v) => spanMinutes(v['machineOnTime'], v['machineOffTime']);
 
 /// The form keeps Planned Operator Shift as typed H.MM text ("3.30" = 3 h
 /// 30 min); the rules work in decimal hours. [v] with that one value converted
@@ -116,12 +110,11 @@ int? _clock(Object? t) {
       : int.parse(n.substring(0, 2)) * 60 + int.parse(n.substring(3, 5));
 }
 
-/// 0..1439 (or a next-day stretch beyond it) → "8:05 AM".
+/// 0..1439 (or a next-day stretch beyond it) → "08:05" — 24-hour, so there is
+/// no AM/PM to mix up (web `fmt12`, still named for its callers).
 String fmt12Minutes(int minutes) {
   final m = ((minutes % 1440) + 1440) % 1440;
-  final h = m ~/ 60;
-  final h12 = h % 12 == 0 ? 12 : h % 12;
-  return '$h12:${(m % 60).toString().padLeft(2, '0')} ${h >= 12 ? 'PM' : 'AM'}';
+  return '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
 }
 
 /// The two time rules speak up as soon as the times are picked, not only after
@@ -144,7 +137,7 @@ class TimeSpan {
   bool overlaps(TimeSpan o) => start < o.end && o.start < end;
   bool containsStart(TimeSpan o) => o.start >= start && o.start < end;
 
-  /// "8:00 AM – 12:00 PM"
+  /// "08:00 – 12:00"
   String get text => '${fmt12Minutes(start)} – ${fmt12Minutes(end)}';
 }
 
@@ -323,6 +316,8 @@ Map<String, String> validateEntry(
 
   if (isBlank(v['date'])) errors['date'] = 'Date is required';
   if (isBlank(v['machine'])) errors['machine'] = 'Machine No. is required';
+  // Non Working: the machine did not run, so nothing else is asked for.
+  if (isNonWorking(v)) return errors;
   if (isBlank(v['operator'])) errors['operator'] = 'Operator is required';
   if (isBlank(v['itemName'])) errors['itemName'] = 'Part Name is required';
 
@@ -443,7 +438,7 @@ Map<String, String> validateEntry(
   final totalStoppage = calc['totalStoppageMin'] as double;
   if (limit != null && totalStoppage > limit) {
     errors['stoppageTotal'] =
-        'Total stoppage is ${jsNumStr(totalStoppage)} min but only ${jsNumStr(limit)} min is allowed (Planned Operator Shift − Machine Shift)';
+        'Total stoppage is ${jsNumStr(totalStoppage)} min but the Machine Shift is only ${jsNumStr(limit)} min';
   }
   if ((jsNumber(v['otherMin']) ?? 0) > 0 && isBlank(v['otherMinRemark'])) {
     errors['otherMinRemark'] =
@@ -454,12 +449,13 @@ Map<String, String> validateEntry(
 }
 
 /// The first field with an error, in form order — `{'index': int, 'field':
-/// String}` — or null when every block is valid.
-Map<String, dynamic>? firstError(List<Map<String, String>?> errorsList) {
+/// String}` — or null when every block is valid. [order] is the process's
+/// form order (CNC's [fieldOrder] by default).
+Map<String, dynamic>? firstError(List<Map<String, String>?> errorsList, {List<String> order = fieldOrder}) {
   for (var index = 0; index < errorsList.length; index++) {
     final errors = errorsList[index] ?? const <String, String>{};
     String? field;
-    for (final k in fieldOrder) {
+    for (final k in order) {
       if ((errors[k] ?? '').isNotEmpty) {
         field = k;
         break;

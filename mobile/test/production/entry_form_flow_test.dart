@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:indo/core/widgets/web_time_field.dart' show kTimeRowHeight;
 
 import 'entry_form_harness.dart';
 
 // How the form opens its blocks: choosing a machine opens the block (no "+"
-// press), "Add another machine" asks for the machine first, and the OFF dial
-// starts a sensible hour after ON.
+// press), "Add another machine" asks for the machine first, and the OFF box
+// offers nothing at or before ON.
 void main() {
   Finder collapsed(int i) => find.byKey(ValueKey('entry$i/collapsed'), skipOffstage: false);
   Finder header(int i) => find.byKey(ValueKey('entry$i/header'), skipOffstage: false);
@@ -91,37 +92,56 @@ void main() {
     expect(find.byKey(const ValueKey('entry-add')), findsNothing);
   });
 
-  group('the OFF dial', () {
-    Future<void> pickOff(WidgetTester tester) async {
+  group('the OFF box', () {
+    Future<void> pick(WidgetTester tester, String col, int n) async {
       final off = field(0, 'machineOffTime');
-      await tester.ensureVisible(off);
-      await tester.tap(off);
+      final it = find.descendant(of: off, matching: find.byKey(ValueKey('time-$col-${n.toString().padLeft(2, '0')}')));
+      final list = find.descendant(of: off, matching: find.byKey(ValueKey('time-list-$col')));
+      final pos = tester.state<ScrollableState>(find.descendant(of: list, matching: find.byType(Scrollable))).position;
+      pos.jumpTo(((col == 'hour' ? n : n ~/ 5) * kTimeRowHeight - kTimeRowHeight).clamp(0, pos.maxScrollExtent).toDouble());
       await tester.pumpAndSettle();
-      expect(find.byType(TimePickerDialog), findsOneWidget);
-      await tester.tap(find.text('OK'));
+      await tester.tap(it);
       await tester.pumpAndSettle();
     }
 
-    testWidgets('starts an hour after ON, so the first pick is already a sensible one', (tester) async {
+    Future<void> openOff(WidgetTester tester) async {
+      final t = find.descendant(of: field(0, 'machineOffTime'), matching: find.byKey(const ValueKey('time-toggle')));
+      await tester.ensureVisible(t);
+      await tester.tap(t);
+      await tester.pumpAndSettle();
+      expect(find.byType(TimePickerDialog), findsNothing, reason: 'the panel is inline');
+    }
+
+    testWidgets('offers nothing at or before ON: the first hour picked is ON + 1 minute', (tester) async {
       final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '08:00', 'machineOffTime': ''})]);
       await openBlock(tester, 0);
-      await pickOff(tester);
+      await openOff(tester);
+      await pick(tester, 'hour', 8);
+      expect(key.currentState!.entries.first['machineOffTime'], '08:01');
+    });
+
+    testWidgets('a later hour starts at :00', (tester) async {
+      final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '08:00', 'machineOffTime': ''})]);
+      await openBlock(tester, 0);
+      await openOff(tester);
+      await pick(tester, 'hour', 9);
       expect(key.currentState!.entries.first['machineOffTime'], '09:00');
     });
 
-    testWidgets('near midnight it never starts past 23:55', (tester) async {
-      final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '23:30', 'machineOffTime': ''})]);
+    testWidgets('with ON at 23:59 nothing can follow it in the day, so the box has no lower limit', (tester) async {
+      final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '23:59', 'machineOffTime': ''})]);
       await openBlock(tester, 0);
-      await pickOff(tester);
-      expect(key.currentState!.entries.first['machineOffTime'], '23:55');
+      await openOff(tester);
+      await pick(tester, 'hour', 5);
+      expect(key.currentState!.entries.first['machineOffTime'], '05:00');
     });
 
-    testWidgets('with no ON time yet it starts on now, as before (and OFF is not offered a guess)', (tester) async {
+    testWidgets('with no ON time yet any hour can be picked', (tester) async {
       final key = await pumpForm(tester, [validEntry(overrides: {'machineOnTime': '', 'machineOffTime': ''})]);
       await openBlock(tester, 0);
-      await pickOff(tester);
-      final v = key.currentState!.entries.first['machineOffTime'] as String;
-      expect(RegExp(r'^\d\d:\d[05]$').hasMatch(v), isTrue, reason: v);
+      await openOff(tester);
+      await pick(tester, 'hour', 3);
+      expect(key.currentState!.entries.first['machineOffTime'], '03:00');
     });
   });
 }

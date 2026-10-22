@@ -10,6 +10,8 @@ import '../../core/utils/alerts.dart';
 import '../../core/widgets/page_permissions.dart';
 import '../../core/widgets/states.dart';
 import '../../providers/auth_provider.dart';
+import 'process/process_spec.dart';
+import 'processes/cnc/cnc_spec.dart' show cncSpec;
 import 'shared/production_sheet_calc.dart' show jsNumber;
 import 'sheet/editor/entry_editor_screen.dart';
 import 'sheet/sheet_controller.dart';
@@ -34,15 +36,21 @@ const String _viewPref = 'sheet_view_mode';
 /// Phone (shortest side < 600): one compact column, the table scrolls sideways
 /// under frozen Date + Machine columns. iPad / wide: the full width, the
 /// toolbar on one row like the web, the editor as a centred dialog.
+///
+/// One screen for every process: [spec] says which one (CNC by default) — its
+/// endpoints, columns, form and rules. The route table mounts it once per
+/// registered spec (see `AppRoutes`).
 class ProductionSheetScreen extends StatefulWidget {
-  const ProductionSheetScreen({super.key});
+  const ProductionSheetScreen({super.key, this.spec = cncSpec});
+
+  final ProcessSpec spec;
 
   @override
   State<ProductionSheetScreen> createState() => _ProductionSheetScreenState();
 }
 
 class _ProductionSheetScreenState extends State<ProductionSheetScreen> with AutomaticKeepAliveClientMixin {
-  late final SheetController _c = SheetController();
+  late final SheetController _c = SheetController(spec: widget.spec);
   final TextEditingController _search = TextEditingController();
   final ScrollController _scroll = ScrollController(); // cards
   final ScrollController _tableV = ScrollController();
@@ -135,6 +143,9 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
         return _c.optionsFor(present, selected);
       },
       onApply: (range, filters) => unawaited(_c.applyQuery(range, filters)),
+      machineTitle: widget.spec.machineFilterTitle,
+      machinePlaceholder: widget.spec.machineFilterPlaceholder,
+      showOperator: widget.spec.showOperatorFilter,
     );
   }
 
@@ -195,8 +206,12 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
           row: row,
           initialMachineId: row == null ? _initialMachine() : null,
           machines: _c.scopedMachines,
-          items: _c.items,
+          items: _c.scopedItems,
           operators: _c.operators,
+          spec: widget.spec,
+          extra: _c.extra,
+          lockedProcess: _c.lockedProcess,
+          processes: _c.processes,
         ),
       );
       if (!mounted) return;
@@ -216,7 +231,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
   }
 
   String _describe(Json row) {
-    final name = _c.machineName['${row['machine']}'] ?? 'machine';
+    final name = _c.machineName['${row['machine']}'] ?? widget.spec.machineNoun;
     final n = jsNumber(row['slot']);
     final slot = (n == null || !n.isFinite) ? 0 : n.truncate();
     return '$name, entry #$slot on ${dmy('${row['date']}')}';
@@ -353,11 +368,14 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     // top of the list, right above the keys).
     final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
     return AppScaffold(
-      title: 'Data entry',
+      title: widget.spec.pageTitle,
       // Wide screens carry an Add Entry button in the toolbar instead.
       floatingActionButton: perms.create && !wide && !keyboardUp
           ? FloatingActionButton.extended(
               key: const ValueKey('sheet-add'),
+              // No hero: the button toggles with the keyboard while routes (the editor) push and pop, and two
+              // default-tag FABs alive in one transition assert ("multiple heroes share the same tag").
+              heroTag: null,
               onPressed: () => _openEditor(null),
               icon: const Icon(Icons.add_rounded),
               label: const Text('Add entry'),
@@ -382,7 +400,9 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
       return v.length == 1 ? '$prefix: ${_c.optionLabel(dim, v.first)}' : '$plural: ${v.length} selected';
     }
 
-    if (_c.filters.machine.isNotEmpty) add('machine', summary('MC', 'MC No.', 'machine'), () => unawaited(_c.clearDim('machine')));
+    if (_c.filters.machine.isNotEmpty) {
+      add('machine', summary(widget.spec.machineChipPrefix, widget.spec.machineFilterTitle, 'machine'), () => unawaited(_c.clearDim('machine')));
+    }
     if (_c.filters.operator.isNotEmpty) add('operator', summary('Operator', 'Operators', 'operator'), () => unawaited(_c.clearDim('operator')));
     if (_c.filters.item.isNotEmpty) add('item', summary('Part', 'Parts', 'item'), () => unawaited(_c.clearDim('item')));
     return out;
@@ -433,6 +453,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
           onClearAll: _clearAll,
           wide: wide,
           extras: extras,
+          searchHint: widget.spec.searchHint,
         ),
         Expanded(
           child: Stack(

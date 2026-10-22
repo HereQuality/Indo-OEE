@@ -1,0 +1,1 @@
+{"stats":["totalQty","okQty","rejectedQty","okPct","oeeLosses","oeeLunch","effectiveHours","downtimeMin","unutilized"],"charts":["runTimeByOperator","oeeTrend","apqTrend","downtimeByMachine","runTimeByMachine","runTimeByMachineBars","unutilizedTrend","unreportedByMachine","okRejectedTrend","rejectByReason","machineSummary"]}

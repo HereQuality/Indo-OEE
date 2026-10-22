@@ -2,18 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../shared/production_sheet_calc.dart';
+import '../../process/process_spec.dart';
+import '../../processes/cnc/cnc_spec.dart' show cncSpec;
 import '../sheet_model.dart';
-import 'sheet_format.dart';
+import '../table/sheet_columns.dart' show CellMark, CellStyle, cellMarkColor;
 import 'sheet_popovers.dart';
 import 'sheet_style.dart';
 
-/// Everything one saved entry holds, grouped: the three OEE percentages up
-/// top, then Quantities, Time, Stoppage, Efficiency and the entry's own text —
-/// every calculated column of the web sheet's table, with the "Other" reject /
-/// downtime remarks behind an eye beside their figure and the general remark
-/// on its own row, exactly as the web sheet places them. The action bar at the
-/// bottom is Edit / Delete, or the lock notice (with Unlock for a Super Admin).
+/// Everything one saved entry holds, grouped: the OEE percentages up top, then
+/// the process's own groups (CNC: Quantities, Time, Stoppage, Efficiency and
+/// the entry's own text — every calculated column of the web sheet's table,
+/// with the "Other" reject / downtime remarks behind an eye beside their
+/// figure). What goes in them is the spec's [ProcessSpec.detail] — this widget
+/// only draws that model. The action bar at the bottom is Edit / Delete, or the
+/// lock notice (with Unlock for a Super Admin).
 class EntryDetail extends StatelessWidget {
   const EntryDetail({
     super.key,
@@ -30,8 +32,11 @@ class EntryDetail extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onUnlock,
+    this.spec = cncSpec,
   });
 
+  /// The process the entry belongs to (what to show, and its formula texts).
+  final ProcessSpec spec;
   final Json row;
   final Json calc;
   final Json day;
@@ -46,56 +51,11 @@ class EntryDetail extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onUnlock;
 
-  Object? _v(String key) => row[key];
-
-  List<Json> _remarks(String kind) => [
-        for (final p in remarkParts(row))
-          if (p['key'] == kind) p,
-      ];
-
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
-    final breakdown = row['rejectBreakdown'] is Map ? Map<String, dynamic>.from(row['rejectBreakdown'] as Map) : <String, dynamic>{};
-    final excluded = row['excludedOps'] is List ? (row['excludedOps'] as List).map((e) => '$e').toSet() : <String>{};
-
-    final rejectRows = <Widget>[
-      for (final reason in rejectReasons)
-        if (hasValue(breakdown[reason]) || (reason == 'Other' && _remarks('reject').isNotEmpty))
-          _SubRow(
-            label: reason,
-            value: minStr(breakdown[reason]),
-            remarks: reason == 'Other' ? _remarks('reject') : const [],
-            remarkTone: SheetTones.reject,
-            remarkLabel: 'View reject remark',
-          ),
-    ];
-    final opRows = <Widget>[
-      for (final f in cycleOpFields)
-        if (hasValue(row[f['key']]))
-          _SubRow(
-            label: cycleOpLabel(f),
-            value: minStr(row[f['key']]),
-            struck: excluded.contains(f['key']),
-            note: excluded.contains(f['key']) ? 'skipped' : null,
-          ),
-    ];
-    const downtimeOrder = ['lunchMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'otherMin', 'plannedDownMin'];
-    final stopRows = <Widget>[
-      for (final key in downtimeOrder)
-        if (positive(row[key]))
-          _SubRow(
-            label: downtimeLabels[key] ?? key,
-            value: zeroIfBlank(row[key]),
-            unit: 'min',
-            remarks: key == 'otherMin' ? _remarks('downtime') : const [],
-            remarkTone: SheetTones.downtime,
-            remarkLabel: 'View downtime remark',
-          ),
-    ];
-
-    final general = _remarks('general');
-    final generalText = general.isEmpty ? '' : '${general.first['text']}';
+    final model = spec.detail(row, calc, day);
+    final formulas = spec.formulas;
 
     return Container(
       key: ValueKey('detail-${row['_id']}'),
@@ -108,66 +68,42 @@ class EntryDetail extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _OeeStrip(day: day),
-          const SizedBox(height: 10),
-          _Group(
-            title: 'Quantities',
-            icon: Icons.inventory_2_outlined,
-            children: [
-              _Metric(label: 'Total Cycle Time (sec)', value: nStr(calc['totalCycleSec']), tone: SheetTones.calc, formulaKey: 'cycle'),
-              ...opRows,
-              _Metric(label: 'Ideal Quantity', value: nStr(calc['idealQty']), tone: SheetTones.calc, formulaKey: 'idealQty'),
-              _Metric(label: 'Actual Quantity', value: nStr(calc['actualQty'])),
-              _Metric(label: 'Actual OK Quantity', value: minStr(_v('okQty')), strong: true),
-              _Metric(label: 'Rejected Quantity', value: nStr(calc['rejectedQty']), tone: SheetTones.calc, formulaKey: 'rejectedQty'),
-              ...rejectRows,
-              _Metric(label: '% OK Quantity', value: pctStr(calc['pctOk']), tone: SheetTones.calc, formulaKey: 'pctOk'),
-            ],
-          ),
-          _Group(
-            title: 'Time',
-            icon: Icons.schedule_rounded,
-            children: [
-              _Metric(label: 'Machine ON Time', value: textStr(_v('machineOnTime'))),
-              _Metric(label: 'Machine OFF Time', value: textStr(_v('machineOffTime'))),
-              _Metric(label: 'Machine Shift Time (hr:min)', value: hmStr(calc['shiftHours']), tone: SheetTones.calc, formulaKey: 'shift'),
-              _Metric(label: 'Planned Operator Shift Time (hr:min)', value: hmStr(_v('plannedOperatorShiftHours'))),
-              _Metric(label: 'Unutilized Machine Time (%)', value: pctStr(day['unutilized']), tone: SheetTones.day, formulaKey: 'unutilized'),
-            ],
-          ),
-          _Group(
-            title: 'Stoppage',
-            icon: Icons.pause_circle_outline_rounded,
-            children: [
-              _Metric(label: 'Total Stoppage (min)', value: nStr(calc['totalStoppageMin']), tone: SheetTones.calc, formulaKey: 'totalStoppage'),
-              ...stopRows,
-            ],
-          ),
-          _Group(
-            title: 'Efficiency',
-            icon: Icons.speed_rounded,
-            children: [
-              _Metric(label: 'Effective Machine Run Time (hr:min)', value: hmStr(calc['effectiveHours']), tone: SheetTones.calc, formulaKey: 'effective'),
-              _Metric(label: 'Setup Efficiency (%)', value: pctStr(calc['setupEfficiency']), tone: SheetTones.calc, formulaKey: 'setupEff'),
-              _Metric(label: 'Unreported Time (min)', value: nStr(day['unreportedMin']), tone: SheetTones.day, formulaKey: 'unreported'),
-            ],
-          ),
-          _Group(
-            title: 'Entry',
-            icon: Icons.assignment_outlined,
-            children: [
-              _Metric(label: 'Operator', value: textStr(_v('operator'))),
-              _Metric(label: 'Part Name', value: textStr(_v('itemName'))),
-              _Metric(label: 'Drawing No.', value: textStr(_v('drawingNo'))),
-              _Metric(
-                label: 'Remarks',
-                value: generalText.isEmpty ? '—' : generalText,
-                maxLines: 3,
-                remarks: general,
-                remarkTone: s.onSurfaceVariant,
-              ),
-            ],
-          ),
+          if (model.oee.isNotEmpty) ...[
+            _OeeStrip(tiles: model.oee, formulas: formulas),
+            const SizedBox(height: 10),
+          ],
+          for (final g in model.groups)
+            _Group(
+              title: g.title,
+              icon: g.icon,
+              children: [
+                for (final r in g.rows)
+                  switch (r) {
+                    DetailMetric() => _Metric(
+                        label: r.label,
+                        value: r.value,
+                        tone: r.tone,
+                        formulaKey: r.formulaKey,
+                        formulas: formulas,
+                        strong: r.strong,
+                        maxLines: r.maxLines,
+                        remarks: r.remarks,
+                        remarkTone: r.remarkTone,
+                        style: r.style,
+                      ),
+                    DetailSubRow() => _SubRow(
+                        label: r.label,
+                        value: r.value,
+                        unit: r.unit,
+                        struck: r.struck,
+                        note: r.note,
+                        remarks: r.remarks,
+                        remarkTone: r.remarkTone,
+                        remarkLabel: r.remarkLabel,
+                      ),
+                  },
+              ],
+            ),
           const SizedBox(height: 4),
           _ActionBar(
             row: row,
@@ -188,25 +124,22 @@ class EntryDetail extends StatelessWidget {
   }
 }
 
-/// The three OEE percentages — the sheet's headline numbers. Combined across
-/// every entry of the machine's date, so every entry of that day shows the same.
+/// The headline OEE percentages. Combined across every entry of the machine's
+/// date, so every entry of that day shows the same.
 class _OeeStrip extends StatelessWidget {
-  const _OeeStrip({required this.day});
-  final Json day;
+  const _OeeStrip({required this.tiles, required this.formulas});
+  final List<DetailOee> tiles;
+  final Map<String, String> formulas;
 
   @override
   Widget build(BuildContext context) {
-    final tiles = [
-      ('oeeLosses', 'OEE considering losses', 'Considering losses'),
-      ('oeeLunch', 'OEE not considering losses but lunch', 'Lunch only'),
-      ('oeeLunchCot', 'OEE not considering losses but lunch and setup time', 'Lunch + Setup Time'),
-    ];
     final big = MediaQuery.textScalerOf(context).scale(14) > 19;
-    Widget tile((String, String, String) t) => _OeeTile(
-          formulaKey: t.$1,
-          title: t.$2,
-          label: t.$3,
-          value: pctStr(day[t.$1]),
+    Widget tile(DetailOee t) => _OeeTile(
+          formulaKey: t.formulaKey,
+          formulas: formulas,
+          title: t.title,
+          label: t.label,
+          value: t.value,
           wide: big,
         );
     if (big) {
@@ -230,8 +163,9 @@ class _OeeStrip extends StatelessWidget {
 }
 
 class _OeeTile extends StatelessWidget {
-  const _OeeTile({required this.formulaKey, required this.title, required this.label, required this.value, required this.wide});
+  const _OeeTile({required this.formulaKey, required this.formulas, required this.title, required this.label, required this.value, required this.wide});
   final String formulaKey;
+  final Map<String, String> formulas;
   final String title;
   final String label;
   final String value;
@@ -257,7 +191,7 @@ class _OeeTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => showFormulaSheet(context, title: title, formulaKey: formulaKey),
+          onTap: () => showFormulaSheet(context, title: title, formulaKey: formulaKey, formulas: formulas),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
             child: wide
@@ -336,26 +270,48 @@ class _Metric extends StatelessWidget {
     required this.value,
     this.tone,
     this.formulaKey,
+    this.formulas = sheetFormulas,
     this.strong = false,
     this.maxLines = 2,
     this.remarks = const [],
     this.remarkTone,
+    this.style,
   });
 
+  final CellStyle? style;
   final String label;
   final String value;
   final Color? tone;
   final String? formulaKey;
+  final Map<String, String> formulas;
   final bool strong;
   final int maxLines;
   final List<Json> remarks;
   final Color? remarkTone;
 
+  // The web's `badge rounded-pill` for a review state.
+  Widget _pill(BuildContext context, CellMark mark, Widget child) {
+    if (style?.pill != true || mark == CellMark.none) return child;
+    return DecoratedBox(
+      key: ValueKey('detail-pill/$label'),
+      decoration: BoxDecoration(
+        color: SheetTones.wash(context, cellMarkColor(mark)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), child: child),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
-    final color = tone == null ? s.onSurface : SheetTones.text(context, tone!);
-    final calculated = tone != null;
+    final mark = style?.mark ?? CellMark.none;
+    final color = mark != CellMark.none
+        ? SheetTones.text(context, cellMarkColor(mark))
+        : tone == null
+        ? s.onSurface
+        : SheetTones.text(context, tone!);
+    final calculated = tone != null || (style?.bold ?? false);
     final content = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 38),
       child: Padding(
@@ -385,16 +341,23 @@ class _Metric extends StatelessWidget {
             const SizedBox(width: 12),
             Flexible(
               flex: 4,
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                maxLines: maxLines,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: calculated || strong ? FontWeight.w700 : FontWeight.w500,
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _pill(
+                  context,
+                  mark,
+                  Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    maxLines: maxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: calculated || strong ? FontWeight.w700 : FontWeight.w500,
+                      color: color,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -405,7 +368,7 @@ class _Metric extends StatelessWidget {
     );
     if (formulaKey == null) return content;
     return InkWell(
-      onTap: () => showFormulaSheet(context, title: label, formulaKey: formulaKey!),
+      onTap: () => showFormulaSheet(context, title: label, formulaKey: formulaKey!, formulas: formulas),
       child: content,
     );
   }

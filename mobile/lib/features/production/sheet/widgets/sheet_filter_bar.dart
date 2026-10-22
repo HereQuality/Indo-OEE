@@ -25,7 +25,11 @@ class SheetFilterBar extends StatelessWidget {
     this.wide = false,
     this.extras = const [],
     this.below,
+    this.searchHint = 'Search part, operator, drawing no…',
   });
+
+  /// The search box's placeholder (a process may search other fields).
+  final String searchHint;
 
   /// iPad / wide: a labelled Filters button and roomier spacing.
   final bool wide;
@@ -75,7 +79,7 @@ class SheetFilterBar extends StatelessWidget {
                     onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     style: const TextStyle(fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'Search part, operator, drawing…',
+                      hintText: searchHint,
                       prefixIcon: const Icon(Icons.search, size: 20),
                       prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 40),
                       isDense: true,

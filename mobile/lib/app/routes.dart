@@ -11,11 +11,13 @@ import '../features/employee_management/role_master_screen.dart';
 import '../features/employee_management/team_members_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/notifications/notifications_screen.dart';
+import '../features/production/data_entry_hub/data_entry_hub_screen.dart';
 import '../features/production/item_master_screen.dart';
 import '../features/production/machine_master_screen.dart';
 import '../features/production/operator_master_screen.dart';
 import '../features/production/process_master_screen.dart';
 import '../features/production/production_dashboard_screen.dart';
+import '../features/production/process/process_registry.dart';
 import '../features/production/production_sheet_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -23,6 +25,8 @@ import '../features/shortcuts/shortcuts_screen.dart';
 import '../features/support/support_screen.dart';
 import '../features/teams/teams_board_screen.dart';
 import '../core/utils/role_slug.dart';
+import '../models/app_user.dart';
+import '../providers/menu_provider.dart';
 
 /// One page of the app. [path] is the menu URL WITHOUT the role slug
 /// ("/production/machines") — menus stored in the DB start with a role
@@ -35,6 +39,7 @@ class AppRoute {
     this.aliases = const [],
     this.roles,
     this.exempt = false,
+    this.menuAccess,
   });
 
   final String path;
@@ -50,7 +55,17 @@ class AppRoute {
   /// Account pages every signed-in user may open regardless of Manage Role
   /// (home, profile, settings, shortcuts, notifications).
   final bool exempt;
+
+  /// For a page that is not ONE menu of its own (the Data Entry hub fronts many
+  /// process pages): decides "may this non-admin open it" from the whole menu
+  /// instead of from the Manage Role "view" flag of a single menu. Admins and
+  /// [exempt] pages never reach it. Used by both PageGuard and PageAccess, so
+  /// the tab, the launchers and the page itself always agree.
+  final bool Function(AppUser user, MenuProvider menu)? menuAccess;
 }
+
+/// Path of the Data Entry hub (the bottom bar's "Data entry" tab).
+const String dataEntryHubPath = '/production/data-entry-hub';
 
 /// Every page, defined ONCE (mirrors client/src/Routes/allRoutes.jsx).
 class AppRoutes {
@@ -83,18 +98,37 @@ class AppRoutes {
     AppRoute(path: '/production/machines', title: 'Machines', builder: (_) => const MachineMasterScreen()),
     AppRoute(path: '/production/processes', title: 'Processes', builder: (_) => const ProcessMasterScreen()),
     AppRoute(path: '/production/operators', title: 'Operators', builder: (_) => const OperatorMasterScreen()),
+    // The hub listing every process the person may enter data for; it opens
+    // the per-process pages below. Open to anyone who can open at least one.
     AppRoute(
-      path: '/production/cnc-data-entry',
-      aliases: ['/production/data-entry'],
+      path: dataEntryHubPath,
       title: 'Data entry',
-      builder: (_) => const ProductionSheetScreen(),
+      builder: (_) => const DataEntryHubScreen(),
+      menuAccess: _canOpenAnyDataEntryPage,
     ),
+    // One Data Entry page per registered process (CNC, and each port as it lands).
+    for (final spec in ProcessRegistry.all)
+      AppRoute(
+        path: spec.routePath,
+        aliases: spec.routeAliases,
+        title: spec.pageTitle,
+        builder: (_) => ProductionSheetScreen(key: ValueKey('data-entry-${spec.key}'), spec: spec),
+      ),
     AppRoute(path: '/production/dashboard', title: 'Production dashboard', builder: (_) => const ProductionDashboardScreen()),
 
     // Other.
     AppRoute(path: '/teams', title: 'Teams', builder: (_) => const TeamsBoardScreen()),
     AppRoute(path: '/support', title: 'Support', builder: (_) => const SupportScreen()),
   ];
+
+  static bool _canOpenAnyDataEntryPage(AppUser user, MenuProvider menu) {
+    for (final spec in ProcessRegistry.all) {
+      final id = menu.menuIdForPath(spec.routePath) ??
+          spec.routeAliases.map(menu.menuIdForPath).firstWhere((e) => e != null, orElse: () => null);
+      if (id != null && menu.permissionsForMenu(id).view) return true;
+    }
+    return false;
+  }
 
   static AppRoute get home => all.first;
 

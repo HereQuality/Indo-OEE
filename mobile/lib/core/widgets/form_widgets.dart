@@ -121,10 +121,21 @@ class FieldLabel extends StatelessWidget {
 
 /// A picker option.
 class PickOption<T> {
-  const PickOption(this.value, this.label, {this.subtitle});
+  const PickOption(this.value, this.label, {this.subtitle, this.detail, this.group, this.searchTerms});
   final T value;
   final String label;
   final String? subtitle;
+
+  /// A smaller muted line under the subtitle (the web's "Drawing No.: x").
+  final String? detail;
+
+  /// A header shown above the first option of each run with this group (null =
+  /// no header). Options keep the order given; the caller sorts them.
+  final String? group;
+
+  /// What a search matches, when it is not the label + subtitle (the web's part
+  /// picker matches only the part name and Drawing No.).
+  final List<String>? searchTerms;
 }
 
 /// Searchable single-select bottom sheet. Returns the chosen option's value,
@@ -138,6 +149,7 @@ Future<PickResult<T>?> showPicker<T>(
   T? selected,
   bool allowClear = false,
   bool searchable = true,
+  bool alwaysSearch = false,
 }) {
   return showModalBottomSheet<PickResult<T>>(
     context: context,
@@ -149,6 +161,7 @@ Future<PickResult<T>?> showPicker<T>(
       selected: selected,
       allowClear: allowClear,
       searchable: searchable,
+      alwaysSearch: alwaysSearch,
     ),
   );
 }
@@ -165,7 +178,9 @@ class _PickerSheet<T> extends StatefulWidget {
     required this.selected,
     required this.allowClear,
     required this.searchable,
+    this.alwaysSearch = false,
   });
+  final bool alwaysSearch;
   final String title;
   final List<PickOption<T>> options;
   final T? selected;
@@ -181,7 +196,7 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
   late final ScrollController _scroll;
   String _q = '';
 
-  bool get _showSearch => widget.searchable && widget.options.length > 6;
+  bool get _showSearch => widget.searchable && (widget.alwaysSearch || widget.options.length > 6);
 
   @override
   void initState() {
@@ -207,9 +222,15 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
     final list = q.isEmpty
         ? widget.options
         : widget.options
-            .where((o) => o.label.toLowerCase().contains(q) || (o.subtitle ?? '').toLowerCase().contains(q))
+            .where((o) => o.searchTerms != null
+                ? o.searchTerms!.any((t) => t.toLowerCase().contains(q))
+                : o.label.toLowerCase().contains(q) || (o.subtitle ?? '').toLowerCase().contains(q))
             .toList();
-    final maxH = MediaQuery.sizeOf(context).height * 0.85;
+    final media = MediaQuery.of(context);
+    final maxH = (media.size.height - media.viewInsets.bottom - media.padding.top) * 0.85;
+    // Landscape with the keyboard up (or a huge text size): tighten the chrome so
+    // the header and the search box still leave room for a row or two.
+    final compact = maxH < 260;
     final selectedTint = s.primary.withValues(alpha: s.brightness == Brightness.dark ? 0.22 : 0.10);
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -219,10 +240,10 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 8, 8),
+              padding: EdgeInsets.fromLTRB(20, 0, 8, compact ? 0 : 8),
               child: Row(
                 children: [
-                  Expanded(child: Text(widget.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
                   if (widget.allowClear && widget.selected != null)
                     TextButton(onPressed: () => Navigator.pop(context, PickResult<T>(null)), child: const Text('Clear')),
                   IconButton(
@@ -235,13 +256,14 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
             ),
             if (_showSearch)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: EdgeInsets.fromLTRB(16, 0, 16, compact ? 4 : 8),
                 child: TextField(
                   controller: _search,
                   autofocus: false,
                   textInputAction: TextInputAction.search,
                   onChanged: (v) => setState(() => _q = v),
                   decoration: InputDecoration(
+                    isDense: compact,
                     prefixIcon: const Icon(Icons.search),
                     hintText: 'Search ${widget.title.toLowerCase()}',
                     suffixIcon: _q.isEmpty
@@ -284,21 +306,47 @@ class _PickerSheetState<T> extends State<_PickerSheet<T>> {
                       itemBuilder: (_, i) {
                         final o = list[i];
                         final sel = o.value == widget.selected;
-                        return Semantics(
+                        final header = o.group != null && (i == 0 || list[i - 1].group != o.group);
+                        final tile = Semantics(
                           selected: sel,
                           child: ListTile(
                             minTileHeight: 52,
                             tileColor: sel ? selectedTint : null,
                             title: Text(o.label, style: TextStyle(fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
-                            subtitle: o.subtitle == null ? null : Text(o.subtitle!),
+                            subtitle: (o.subtitle == null && o.detail == null)
+                                ? null
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (o.subtitle != null) Text(o.subtitle!),
+                                      if (o.detail != null)
+                                        Text(o.detail!, style: TextStyle(fontSize: 12.5, color: s.onSurfaceVariant)),
+                                    ],
+                                  ),
                             trailing: sel ? Icon(Icons.check_circle, color: s.primary) : null,
                             onTap: () => Navigator.pop(context, PickResult<T>(o.value)),
                           ),
                         );
+                        if (!header) return tile;
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(
+                              color: s.surfaceContainerHighest.withValues(alpha: 0.6),
+                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                              child: Text(
+                                o.group!,
+                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: s.onSurfaceVariant),
+                              ),
+                            ),
+                            tile,
+                          ],
+                        );
                       },
                     ),
             ),
-            SizedBox(height: widget.options.isEmpty ? 8 : 4),
+            SizedBox(height: widget.options.isEmpty ? 8 : (compact ? 0 : 4)),
           ],
         ),
       ),

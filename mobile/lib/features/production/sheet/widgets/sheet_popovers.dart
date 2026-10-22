@@ -97,8 +97,13 @@ Future<void> showRemarkSheet(BuildContext context, List<Map<String, dynamic>> pa
 
 /// How a calculated figure is worked out — the phone's version of the eye beside
 /// a calculated column header on the web.
-Future<void> showFormulaSheet(BuildContext context, {required String title, required String formulaKey}) {
-  final text = sheetFormulas[formulaKey];
+Future<void> showFormulaSheet(
+  BuildContext context, {
+  required String title,
+  required String formulaKey,
+  Map<String, String> formulas = sheetFormulas,
+}) {
+  final text = formulas[formulaKey];
   if (text == null) return Future.value();
   HapticFeedback.selectionClick();
   return showModalBottomSheet<void>(

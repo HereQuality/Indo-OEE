@@ -5,10 +5,11 @@ import 'dart:io';
 /// from the REAL client JS) and turns the NaN/Infinity/undefined markers back
 /// into Dart values: {"$n": "NaN"|"Inf"|"-Inf"} -> double, {"$u": 1} -> null.
 ///
+/// [dir] points at another process's fixtures (test/production/{x}/fixtures).
 /// For one-off soak runs, point CALC_FIXTURE_DIR at a folder of freshly
 /// generated fixtures (see tool/gen_golden.mjs: SEED=.. SCALE=..).
-dynamic loadFixture(String name) {
-  final rel = Platform.environment['CALC_FIXTURE_DIR'] ?? 'test/production/calc/fixtures';
+dynamic loadFixture(String name, {String? dir}) {
+  final rel = dir ?? Platform.environment['CALC_FIXTURE_DIR'] ?? 'test/production/calc/fixtures';
   var file = File('$rel/$name');
   if (!file.existsSync()) file = File('mobile/$rel/$name');
   return _decode(jsonDecode(file.readAsStringSync()));

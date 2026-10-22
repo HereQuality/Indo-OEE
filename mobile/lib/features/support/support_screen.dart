@@ -232,6 +232,7 @@ class _SupportScreenState extends State<SupportScreen> {
       ],
       floatingActionButton: showNew && !split && !keyboardOpen
           ? FloatingActionButton.extended(
+              heroTag: null, // see production_sheet_screen.dart: the FAB comes and goes while routes push / pop
               onPressed: () => _create(tablet: tablet, split: split),
               icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('New ticket'),

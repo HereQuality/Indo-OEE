@@ -1,7 +1,8 @@
-import '../../shared/production_sheet_calc.dart';
+import 'package:flutter/painting.dart' show Color;
+
+import '../../../../core/theme/app_colors.dart';
+import '../../processes/cnc/cnc_columns.dart';
 import '../sheet_model.dart';
-import '../widgets/sheet_format.dart';
-import '../widgets/sheet_style.dart';
 
 /// How a column is coloured — the web sheet's tones (see TONE / OEE_TINT in
 /// ProductionEntriesTable.jsx): none = a typed value, calc = indigo wash,
@@ -45,6 +46,53 @@ class ColExpand {
 
 typedef CellText = String Function(CellData d);
 
+/// How a cell is emphasised beyond its [ColTone] — a spec marks a value (an
+/// over-100% figure in red, a review badge…) without touching the text:
+/// [danger] red, [warn] amber, [ok] green (all theme-readable on both modes).
+enum CellMark { none, danger, warn, ok }
+
+/// Per-cell emphasis returned by [SheetCol.style]; null = the column's plain look.
+class CellStyle {
+  const CellStyle({this.mark = CellMark.none, this.pill = false, this.bold});
+
+  /// The colour family of the text (and of the pill's wash).
+  final CellMark mark;
+
+  /// Draw the text as a rounded badge (the web's `badge rounded-pill`).
+  final bool pill;
+
+  /// Force the weight (null = the column's own).
+  final bool? bold;
+
+  static const CellStyle danger = CellStyle(mark: CellMark.danger, bold: true);
+
+  @override
+  bool operator ==(Object other) =>
+      other is CellStyle && other.mark == mark && other.pill == pill && other.bold == bold;
+  @override
+  int get hashCode => Object.hash(mark, pill, bold);
+}
+
+/// The theme colour behind a [CellMark] (lift it with `SheetTones.text`).
+Color cellMarkColor(CellMark m) => switch (m) {
+  CellMark.danger => AppColors.critical,
+  CellMark.warn => AppColors.warn,
+  CellMark.ok => AppColors.ok,
+  CellMark.none => AppColors.brand600,
+};
+
+typedef CellStyleFn = CellStyle? Function(CellData d);
+
+/// What decides whether an optional column is shown (see [SheetCol.shownWhen]):
+/// the page's facts, worked out by the list controller.
+class SheetEnv {
+  const SheetEnv({this.showVendor = true});
+
+  /// The page's process uses vendors (Vendor Master), or a loaded entry names
+  /// one — the web's `showVendorColumn`.
+  final bool showVendor;
+}
+
 class SheetCol {
   const SheetCol({
     required this.key,
@@ -59,6 +107,8 @@ class SheetCol {
     this.remarkKind,
     this.bold = false,
     this.sub = false,
+    this.style,
+    this.shownWhen,
   });
 
   final String key;
@@ -82,6 +132,14 @@ class SheetCol {
   /// A breakdown column shown after an opened total.
   final bool sub;
 
+  /// Optional per-cell emphasis (red over-100% figures, review badges…). Null,
+  /// or a null result, keeps the plain look — existing columns are unaffected.
+  final CellStyleFn? style;
+
+  /// Optional visibility rule (the Vendor Name column): hidden when it returns
+  /// false for the page's [SheetEnv]. Null = always shown.
+  final bool Function(SheetEnv env)? shownWhen;
+
   SheetCol withExpand(ColExpand e) => _copy(expand: e);
 
   SheetCol withWidth(double w) => _copy(width: w);
@@ -99,15 +157,37 @@ class SheetCol {
     remarkKind: remarkKind,
     bold: bold,
     sub: sub,
+    style: style,
+    shownWhen: shownWhen,
   );
 }
 
 /// The Date / Machine pair frozen at the left, the middle that scrolls, and
 /// the Actions column frozen at the right (which is not a [SheetCol]).
 class SheetColumns {
-  const SheetColumns({required this.left, required this.middle});
+  const SheetColumns({
+    required this.left,
+    required this.middle,
+    this.expandSummary = const {'cycle': 'cycle', 'rejectedQty': 'rejectedQty', 'downtime': 'totalStoppage'},
+  });
   final List<SheetCol> left;
   final List<SheetCol> middle;
+
+  /// For each expandable breakdown id, the key of the total column it belongs
+  /// to (the table keeps that total in view when the breakdown opens).
+  final Map<String, String> expandSummary;
+
+  /// These columns without the ones [SheetCol.shownWhen] hides for [env].
+  /// Returns this very object when nothing is hidden.
+  SheetColumns where(SheetEnv env) {
+    bool shown(SheetCol c) => c.shownWhen == null || c.shownWhen!(env);
+    if (left.every(shown) && middle.every(shown)) return this;
+    return SheetColumns(
+      left: left.where(shown).toList(),
+      middle: middle.where(shown).toList(),
+      expandSummary: expandSummary,
+    );
+  }
 
   double leftWidth(double k) => left.fold(0.0, (s, c) => s + c.width * k);
   double middleWidth(double k) => middle.fold(0.0, (s, c) => s + c.width * k);
@@ -132,9 +212,8 @@ const List<String> expandIds = ['cycle', 'rejectedQty', 'downtime'];
 const double actionsWidth = 104;
 const double actionsWidthPhone = 76;
 
-String _text(Object? v) => textStr(v);
-
-SheetCol _sub(
+/// A breakdown column shown after an opened total (see [addExpandable]).
+SheetCol sheetSubCol(
   String key,
   String label,
   CellText text, {
@@ -153,300 +232,31 @@ SheetCol _sub(
   sub: true,
 );
 
-/// The columns of the web table in sheet order, with the four breakdowns
-/// opened as [open] says.
-SheetColumns buildSheetColumns(Set<String> open) {
-  final left = <SheetCol>[
-    SheetCol(
-      key: 'date',
-      label: 'Date',
-      width: 84,
-      merge: ColMerge.date,
-      bold: true,
-      start: true,
-      text: (d) => displayDay('${d.row['date']}'),
-    ),
-    SheetCol(
-      key: 'machine',
-      label: 'Machine',
-      width: 70,
-      merge: ColMerge.machineDay,
-      bold: true,
-      start: true,
-      text: (d) => d.machineName.isEmpty ? '—' : d.machineName,
-    ),
-  ];
+/// The CNC table's columns — kept here under its old name for callers and tests
+/// that build them directly; a [ProcessSpec] supplies its own via `columns()`.
+SheetColumns buildSheetColumns(Set<String> open) => cncColumns(open);
 
-  void expandable(
-    SheetCol summary,
-    String id,
-    String label,
-    List<SheetCol> subs,
-    List<SheetCol> out,
-  ) {
-    final isOpen = open.contains(id);
-    out.add(
-      summary.withExpand(ColExpand(id: id, isOpen: isOpen, label: label)),
-    );
-    if (isOpen) {
-      for (var i = 0; i < subs.length; i++) {
-        out.add(
-          i == subs.length - 1
-              ? subs[i].withExpand(
-                  ColExpand(id: id, isOpen: true, label: label, end: true),
-                )
-              : subs[i],
-        );
-      }
+/// Adds [summary] to [out] with its expand chevron and, while [id] is open, the
+/// [subs] after it (the last one carries the collapse chevron).
+void addExpandable(
+  Set<String> open,
+  SheetCol summary,
+  String id,
+  String label,
+  List<SheetCol> subs,
+  List<SheetCol> out,
+) {
+  final isOpen = open.contains(id);
+  out.add(summary.withExpand(ColExpand(id: id, isOpen: isOpen, label: label)));
+  if (isOpen) {
+    for (var i = 0; i < subs.length; i++) {
+      out.add(
+        i == subs.length - 1
+            ? subs[i].withExpand(ColExpand(id: id, isOpen: true, label: label, end: true))
+            : subs[i],
+      );
     }
   }
-
-  final mid = <SheetCol>[
-    SheetCol(
-      key: 'operator',
-      label: 'Operator',
-      width: 124,
-      start: true,
-      text: (d) => _text(d.row['operator']),
-    ),
-    SheetCol(
-      key: 'itemName',
-      label: 'Part Name',
-      width: 164,
-      start: true,
-      text: (d) => _text(d.row['itemName']),
-    ),
-    SheetCol(
-      key: 'drawingNo',
-      label: 'Drawing No.',
-      width: 124,
-      start: true,
-      text: (d) => _text(d.row['drawingNo']),
-    ),
-  ];
-
-  expandable(
-    SheetCol(
-      key: 'cycle',
-      label: 'Total Cycle Time (sec)',
-      width: 150,
-      tone: ColTone.calc,
-      formulaKey: 'cycle',
-      text: (d) => nStr(d.calc['totalCycleSec']),
-    ),
-    'cycle',
-    'Total Cycle Time',
-    [
-      for (final f in cycleOpFields)
-        _sub(
-          '${f['key']}',
-          cycleOpLabel(f),
-          (d) => _text(d.row[f['key']]),
-          width: 96,
-        ),
-    ],
-    mid,
-  );
-
-  mid.addAll([
-    SheetCol(
-      key: 'on',
-      label: 'Machine ON Time',
-      width: 92,
-      text: (d) => _text(d.row['machineOnTime']),
-    ),
-    SheetCol(
-      key: 'off',
-      label: 'Machine OFF Time',
-      width: 92,
-      text: (d) => _text(d.row['machineOffTime']),
-    ),
-    SheetCol(
-      key: 'shift',
-      label: 'Machine Shift Time (hr:min)',
-      width: 104,
-      tone: ColTone.calc,
-      formulaKey: 'shift',
-      text: (d) => hmStr(d.calc['shiftHours']),
-    ),
-    SheetCol(
-      key: 'idealQty',
-      label: 'Ideal Quantity',
-      width: 88,
-      tone: ColTone.calc,
-      formulaKey: 'idealQty',
-      text: (d) => nStr(d.calc['idealQty']),
-    ),
-    SheetCol(
-      key: 'actualQty',
-      label: 'Actual Quantity',
-      width: 92,
-      text: (d) => nStr(d.calc['actualQty']),
-    ),
-    SheetCol(
-      key: 'okQty',
-      label: 'Actual OK Quantity',
-      width: 100,
-      text: (d) => minStr(d.row['okQty']),
-    ),
-  ]);
-
-  expandable(
-    SheetCol(
-      key: 'rejectedQty',
-      label: 'Rejected Quantity',
-      width: 148,
-      tone: ColTone.calc,
-      formulaKey: 'rejectedQty',
-      text: (d) => nStr(d.calc['rejectedQty']),
-    ),
-    'rejectedQty',
-    'Rejected Quantity',
-    [
-      for (final reason in rejectReasons)
-        _sub(
-          reason,
-          reason,
-          (d) {
-            final b = d.row['rejectBreakdown'];
-            return minStr(b is Map ? b[reason] : null);
-          },
-          width: reason == 'Other' ? 124 : 100,
-          remarkKind: reason == 'Other' ? 'reject' : null,
-        ),
-    ],
-    mid,
-  );
-
-  mid.add(
-    SheetCol(
-      key: 'pctOk',
-      label: '% OK Quantity',
-      width: 88,
-      tone: ColTone.calc,
-      formulaKey: 'pctOk',
-      text: (d) => pctStr(d.calc['pctOk']),
-    ),
-  );
-
-  mid.add(
-    SheetCol(
-      key: 'plannedShift',
-      label: 'Planned Operator Shift Time (hr:min)',
-      width: 160,
-      text: (d) => hmStr(d.row['plannedOperatorShiftHours']),
-    ),
-  );
-
-  mid.add(
-    SheetCol(
-      key: 'unutilized',
-      label: 'Unutilized Machine Time (%)',
-      width: 112,
-      tone: ColTone.day,
-      formulaKey: 'unutilized',
-      text: (d) => pctStr(d.day['unutilized']),
-    ),
-  );
-
-  expandable(
-    SheetCol(
-      key: 'totalStoppage',
-      label: 'Total Stoppage (min)',
-      width: 150,
-      tone: ColTone.calc,
-      formulaKey: 'totalStoppage',
-      text: (d) => nStr(d.calc['totalStoppageMin']),
-    ),
-    'downtime',
-    'Total Stoppage',
-    [
-      // Lunch / Rest is stoppage time, so it sits with the other stoppage boxes.
-      _sub(
-        'lunchMin',
-        'Lunch / Rest (min)',
-        (d) => zeroIfBlank(d.row['lunchMin']),
-        width: 100,
-      ),
-      for (final f in stoppageFields)
-        if (f['key'] != 'plannedDownMin' && f['key'] != 'lunchMin')
-          _sub(
-            '${f['key']}',
-            downtimeLabels['${f['key']}'] ?? '${f['label']}',
-            (d) => zeroIfBlank(d.row[f['key']]),
-            width: f['key'] == 'otherMin' ? 124 : 104,
-            remarkKind: f['key'] == 'otherMin' ? 'downtime' : null,
-          ),
-    ],
-    mid,
-  );
-
-  mid.addAll([
-    SheetCol(
-      key: 'effective',
-      label: 'Effective Machine Run Time (hr:min)',
-      width: 116,
-      tone: ColTone.calc,
-      formulaKey: 'effective',
-      text: (d) => hmStr(d.calc['effectiveHours']),
-    ),
-    SheetCol(
-      key: 'unreported',
-      label: 'Unreported Time (min)',
-      width: 104,
-      tone: ColTone.day,
-      formulaKey: 'unreported',
-      merge: ColMerge.machineDay,
-      text: (d) => nStr(d.day['unreportedMin']),
-    ),
-    SheetCol(
-      key: 'setupEff',
-      label: 'Setup Efficiency (%)',
-      width: 104,
-      tone: ColTone.calc,
-      formulaKey: 'setupEff',
-      text: (d) => pctStr(d.calc['setupEfficiency']),
-    ),
-    SheetCol(
-      key: 'oeeLosses',
-      label: 'OEE considering losses (%)',
-      width: 124,
-      tone: ColTone.oee,
-      formulaKey: 'oeeLosses',
-      merge: ColMerge.machineDay,
-      text: (d) => pctStr(d.day['oeeLosses']),
-    ),
-    SheetCol(
-      key: 'oeeLunch',
-      label: 'OEE not considering losses but lunch (%)',
-      width: 164,
-      tone: ColTone.oee,
-      formulaKey: 'oeeLunch',
-      merge: ColMerge.machineDay,
-      text: (d) => pctStr(d.day['oeeLunch']),
-    ),
-    SheetCol(
-      key: 'oeeLunchCot',
-      label: 'OEE not considering losses but lunch and setup time (%)',
-      width: 204,
-      tone: ColTone.oee,
-      formulaKey: 'oeeLunchCot',
-      merge: ColMerge.machineDay,
-      text: (d) => pctStr(d.day['oeeLunchCot']),
-    ),
-    SheetCol(
-      key: 'remarks',
-      label: 'Remarks',
-      width: 84,
-      remarkKind: 'general',
-      text: (d) => '',
-    ),
-  ]);
-
-  return SheetColumns(
-    left: [for (final c in left) _fitted(c)],
-    middle: [for (final c in mid) _fitted(c)],
-  );
 }
 
 // ── Header fit ──────────────────────────────────────────────────────────────
@@ -477,7 +287,8 @@ int _linesFor(String label, int chars) {
   return lines;
 }
 
-SheetCol _fitted(SheetCol c) {
+/// [c] widened to fit its whole label on two header lines.
+SheetCol fitSheetColumn(SheetCol c) {
   final extras =
       _headPad +
       (c.formulaKey != null ? _formulaIcon : 0) +

@@ -459,15 +459,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> with WidgetsB
             Expanded(
               child: Text(
                 unreadCount > 0 ? '$unreadCount unread' : 'All read',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ),
+            // Flexible + ellipsis: a very large text size on a narrow phone shortens
+            // the button's label instead of overflowing the row.
             if (unreadCount > 0)
-              TextButton.icon(
-                onPressed: _markAllRead,
-                icon: const Icon(Icons.done_all_rounded, size: 16),
-                label: const Text('Mark all read', style: TextStyle(fontSize: 13)),
-                style: TextButton.styleFrom(minimumSize: const Size(40, 40), visualDensity: VisualDensity.compact),
+              Flexible(
+                child: TextButton.icon(
+                  onPressed: _markAllRead,
+                  icon: const Icon(Icons.done_all_rounded, size: 16),
+                  label: const Text('Mark all read', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13)),
+                  style: TextButton.styleFrom(minimumSize: const Size(40, 40), visualDensity: VisualDensity.compact),
+                ),
               ),
           ],
         ),

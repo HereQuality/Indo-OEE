@@ -11,7 +11,10 @@ import '../providers/auth_provider.dart';
 import '../providers/menu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/unread_provider.dart';
+import '../features/production/process/process_registry.dart';
 import 'navigation.dart';
+import 'page_access.dart';
+import 'routes.dart';
 
 /// The role's sidebar as a drawer, built from the server's menu tree
 /// (Menu Master / Menu Group / Manage Role) — nothing is hard-coded.
@@ -133,10 +136,33 @@ class AppDrawer extends StatelessWidget {
           shape: const Border(),
           collapsedShape: const Border(),
           childrenPadding: EdgeInsets.zero,
-          children: [for (final m in g.menus) _menu(context, m, 1)],
+          children: [
+            // The group fronting the per-process Data Entry pages gets a first
+            // row that opens the hub listing them all.
+            if (_hasProcessPages(g.menus) &&
+                PageAccess.canOpen(context.read<AuthProvider>().user, context.read<MenuProvider>(), dataEntryHubPath))
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 30, right: 16),
+                dense: true,
+                leading: const Icon(Icons.apps_rounded, size: 18),
+                minLeadingWidth: 24,
+                title: const Text('All data entry'),
+                onTap: () => AppNav.go(context, dataEntryHubPath),
+              ),
+            for (final m in g.menus) _menu(context, m, 1),
+          ],
         ),
       ),
     ];
+  }
+
+  static bool _hasProcessPages(List<MenuItem> items) {
+    for (final m in items) {
+      final r = AppRoutes.match(m.url);
+      if (r != null && ProcessRegistry.byPath(r.path) != null) return true;
+      if (_hasProcessPages(m.children)) return true;
+    }
+    return false;
   }
 
   Widget _menu(BuildContext context, MenuItem m, int depth) {

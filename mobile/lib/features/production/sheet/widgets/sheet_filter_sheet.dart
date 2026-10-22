@@ -27,6 +27,9 @@ Future<void> showSheetFilters(
   required FilterOptions options,
   required FilterOptionsLoader loadOptions,
   required void Function(List<String> range, SheetFilters filters) onApply,
+  String machineTitle = 'MC No.',
+  String machinePlaceholder = 'All machines',
+  bool showOperator = true,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -40,6 +43,9 @@ Future<void> showSheetFilters(
       options: options,
       loadOptions: loadOptions,
       onApply: onApply,
+      machineTitle: machineTitle,
+      machinePlaceholder: machinePlaceholder,
+      showOperator: showOperator,
     ),
   );
 }
@@ -61,8 +67,14 @@ class _FilterSheet extends StatefulWidget {
     required this.options,
     required this.loadOptions,
     required this.onApply,
+    this.machineTitle = 'MC No.',
+    this.machinePlaceholder = 'All machines',
+    this.showOperator = true,
   });
 
+  final String machineTitle;
+  final String machinePlaceholder;
+  final bool showOperator;
   final List<String> range;
   final Map<String, dynamic>? extent;
   final SheetFilters filters;
@@ -312,20 +324,21 @@ class _FilterSheetState extends State<_FilterSheet> {
                     ),
                     _PickRow(
                       key: const ValueKey('pick-machine'),
-                      label: 'MC No.',
-                      placeholder: 'All machines',
+                      label: widget.machineTitle,
+                      placeholder: widget.machinePlaceholder,
                       selected: [for (final v in _filters.machine) _labelOf('machine', v)],
-                      onTap: () => _pickMulti('machine', 'MC No.'),
+                      onTap: () => _pickMulti('machine', widget.machineTitle),
                       onRemove: (i) => setState(() => _filters = _filters.withDim('machine', [..._filters.machine]..removeAt(i))),
                     ),
-                    _PickRow(
-                      key: const ValueKey('pick-operator'),
-                      label: 'Operator',
-                      placeholder: 'All operators',
-                      selected: [for (final v in _filters.operator) _labelOf('operator', v)],
-                      onTap: () => _pickMulti('operator', 'Operator'),
-                      onRemove: (i) => setState(() => _filters = _filters.withDim('operator', [..._filters.operator]..removeAt(i))),
-                    ),
+                    if (widget.showOperator)
+                      _PickRow(
+                        key: const ValueKey('pick-operator'),
+                        label: 'Operator',
+                        placeholder: 'All operators',
+                        selected: [for (final v in _filters.operator) _labelOf('operator', v)],
+                        onTap: () => _pickMulti('operator', 'Operator'),
+                        onRemove: (i) => setState(() => _filters = _filters.withDim('operator', [..._filters.operator]..removeAt(i))),
+                      ),
                     _PickRow(
                       key: const ValueKey('pick-item'),
                       label: 'Part',
