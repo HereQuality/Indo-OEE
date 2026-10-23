@@ -57,15 +57,15 @@ void main() {
       final size = t.view.physicalSize / t.view.devicePixelRatio;
       // ignore: avoid_print
       print('WINDOW dp ${size.width.round()}x${size.height.round()}');
-      expect(
-        size.shortestSide,
-        greaterThanOrEqualTo(600),
-        reason: 'the window is tablet sized (run via run_tablet.sh)',
-      );
+      if (size.shortestSide < 600) {
+        // The plain phone run (run_e2e.sh): nothing tablet-specific to check; run_tablet.sh covers it.
+        // ignore: avoid_print
+        print('SKIP tablet layout: window is ${size.width.round()}x${size.height.round()} dp (a phone)');
+        return;
+      }
 
       // dashboard
       await pumpFor(t, const Duration(seconds: 3));
-      final landscape = size.width > size.height;
       final wide =
           size.width >=
           700; // the dashboard's tablet breakpoint (tabletMinWidth)

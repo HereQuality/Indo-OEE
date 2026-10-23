@@ -17,10 +17,17 @@ Future<void> openRemarks(WidgetTester t, ProcCfg p) async {
   if (p.hasMachineOperator) return;
   final fold = find.byKey(const ValueKey<String>('entry0/fold/remarks'));
   await ensureBuilt(t, fold);
-  if (boxField('remarks').evaluate().isEmpty) await tapKey(t, 'entry0/fold/remarks');
+  if (boxField('remarks').evaluate().isEmpty)
+    await tapKey(t, 'entry0/fold/remarks');
 }
 
-Future<void> fillWorking(WidgetTester t, ProcCfg p, String tag, {String lunch = '30', String setup = '10'}) async {
+Future<void> fillWorking(
+  WidgetTester t,
+  ProcCfg p,
+  String tag, {
+  String lunch = '30',
+  String setup = '10',
+}) async {
   await pickOption(t, 'machine', p.machine);
   if (p.hasMachineOperator) await pickOption(t, 'operator', p.operator);
   await pickOption(t, 'itemName', p.item);
@@ -47,7 +54,11 @@ void main() {
       final admin = await E2eApi.login('e2e_admin');
       final tag = p.tag('crud');
       await admin.deleteTagged(p.sheet, tag);
-      await launchAndSignIn(t, username: 'e2e_admin', password: e2ePasswords['e2e_admin']!);
+      await launchAndSignIn(
+        t,
+        username: 'e2e_admin',
+        password: e2ePasswords['e2e_admin']!,
+      );
       await openProcess(t, p.label);
       await tapKey(t, 'sheet-add');
       await fillWorking(t, p, tag);
@@ -55,7 +66,9 @@ void main() {
       await tapSave(t);
       await shot(t, 'crud_${p.label.split(' ').first}_saved');
       // ignore: avoid_print
-      print('AFTER SAVE texts=${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).toList()}');
+      print(
+        'AFTER SAVE texts=${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).toList()}',
+      );
       await expectToast(t, 'Entry added successfully!');
 
       // DB / API row
@@ -64,7 +77,8 @@ void main() {
       final row = rows.single;
       expect('${row['remarks']}', contains(tag));
       expect(_n(row['okQty']), _n(p.ok), reason: 'okQty');
-      if (p.rejected != null) expect(_n(row['rejectedQty']), _n(p.rejected), reason: 'rejectedQty');
+      if (p.rejected != null)
+        expect(_n(row['rejectedQty']), _n(p.rejected), reason: 'rejectedQty');
       expect('${row['machineOnTime']}', p.on);
       expect('${row['machineOffTime']}', p.off);
       if (p.hasMachineOperator) {
@@ -72,18 +86,32 @@ void main() {
         expect(_n(row['lunchMin']), 30);
         expect(_n(row['setupMin']), 10);
       }
-      expect(_n(row['plannedOperatorShiftHours']), 12, reason: 'locked planned shift');
+      expect(
+        _n(row['plannedOperatorShiftHours']),
+        12,
+        reason: 'locked planned shift',
+      );
       p.expectField?.forEach((k, v) => expect('${row[k]}', v, reason: k));
       final id = '${row['_id']}';
 
       // the list shows it
       await pumpFor(t, const Duration(seconds: 2));
       await shot(t, 'crud_${p.label.split(' ').first}_list');
-      expect(find.textContaining(p.item), findsWidgets, reason: 'the new row is listed (part name)');
+      expect(
+        find.textContaining(p.item),
+        findsWidgets,
+        reason: 'the new row is listed (part name)',
+      );
 
       // edit: change remarks + one number
       await tapKey(t, 'edit-$id');
-      await pumpUntilFound(t, find.text('Update Production Entry').evaluate().isEmpty ? find.widgetWithText(FilledButton, 'Update') : find.text('Update Production Entry'), reason: 'edit form');
+      await pumpUntilFound(
+        t,
+        find.text('Update Production Entry').evaluate().isEmpty
+            ? find.widgetWithText(FilledButton, 'Update')
+            : find.text('Update Production Entry'),
+        reason: 'edit form',
+      );
       await openRemarks(t, p);
       await typeBox(t, 'remarks', '$tag edited');
       if (p.hasMachineOperator) await typeBox(t, 'setupMin', '15');
@@ -99,7 +127,11 @@ void main() {
       await tapKey(t, 'delete-$id');
       await tapText(t, 'Delete', within: find.byType(AlertDialog));
       await expectToast(t, 'deleted');
-      expect(await admin.rowsTagged(p.sheet, tag), isEmpty, reason: 'row gone from the API');
+      expect(
+        await admin.rowsTagged(p.sheet, tag),
+        isEmpty,
+        reason: 'row gone from the API',
+      );
     });
   }
 }

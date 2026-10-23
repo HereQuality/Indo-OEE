@@ -13,17 +13,47 @@ void main() {
     await launchAndSignIn(tester);
 
     // The signed-in root: bottom navigation with the two sections this role may open.
-    await pumpUntilFound(tester, find.byType(NavigationBar), reason: 'the bottom navigation bar');
-    expect(find.descendant(of: find.byType(NavigationBar), matching: find.text('Dashboard')), findsOneWidget);
-    expect(find.descendant(of: find.byType(NavigationBar), matching: find.text('Data entry')), findsOneWidget);
+    await pumpUntilFound(
+      tester,
+      find.byType(NavigationBar),
+      reason: 'the bottom navigation bar',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Dashboard'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Data entry'),
+      ),
+      findsOneWidget,
+    );
 
     // Dashboard is the first tab: it has loaded the seeded processes from the backend.
-    await pumpUntilFound(tester, find.text('VMC'), reason: 'the VMC process card on the Dashboard');
+    await pumpUntilFound(
+      tester,
+      find.text('VMC'),
+      reason: 'the VMC process card on the Dashboard',
+    );
 
     // Switch to Data entry and back, as a person would.
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Data entry')));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Data entry'),
+      ),
+    );
     await tester.pump(const Duration(seconds: 1));
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Dashboard')));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Dashboard'),
+      ),
+    );
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('VMC'), findsWidgets);
   });

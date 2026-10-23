@@ -16,12 +16,18 @@ import 'package:indo/core/storage/auth_storage.dart';
 import 'package:indo/main.dart' as app;
 
 const e2eUser = String.fromEnvironment('E2E_USER', defaultValue: 'e2e_vmc');
+
 /// JSON {user: {token, roleType}} minted by mobile/e2e/mint_tokens.js (so tests need not log in each time).
 const e2eTokensJson = String.fromEnvironment('E2E_TOKENS', defaultValue: '');
 
-Map<String, dynamic> e2eTokens() => e2eTokensJson.isEmpty ? <String, dynamic>{} : jsonDecode(e2eTokensJson) as Map<String, dynamic>;
+Map<String, dynamic> e2eTokens() => e2eTokensJson.isEmpty
+    ? <String, dynamic>{}
+    : jsonDecode(e2eTokensJson) as Map<String, dynamic>;
 
-const e2ePassword = String.fromEnvironment('E2E_PASSWORD', defaultValue: 'E2e#Pass123');
+const e2ePassword = String.fromEnvironment(
+  'E2E_PASSWORD',
+  defaultValue: 'E2e#Pass123',
+);
 
 /// Refuses to run against anything but a local test server, so a test can
 /// never be pointed at production by a stray default.
@@ -49,7 +55,9 @@ Future<void> pumpUntilFound(
     await tester.pump(const Duration(milliseconds: 200));
     if (finder.evaluate().isNotEmpty) return;
   }
-  throw TestFailure('Timed out after ${timeout.inSeconds}s waiting for ${reason ?? finder.description}');
+  throw TestFailure(
+    'Timed out after ${timeout.inSeconds}s waiting for ${reason ?? finder.description}',
+  );
 }
 
 /// Launches the real app signed out (any token left on the device is cleared).
@@ -59,7 +67,11 @@ Future<void> launchApp(WidgetTester tester) async {
   await AuthStorage.instance.clear();
   // A form left half-typed keeps a one-minute draft that the next form would restore: start clean.
   final prefs = await SharedPreferences.getInstance();
-  for (final k in prefs.getKeys().where((k) => k.toLowerCase().contains('draft')).toList()) {
+  for (final k
+      in prefs
+          .getKeys()
+          .where((k) => k.toLowerCase().contains('draft'))
+          .toList()) {
     await prefs.remove(k);
   }
   // lib/main.dart installs app-wide error handlers; the test binding insists its
@@ -73,12 +85,20 @@ Future<void> launchApp(WidgetTester tester) async {
   FlutterError.onError = onError;
   PlatformDispatcher.instance.onError = platformOnError;
   ErrorWidget.builder = errorWidgetBuilder;
-  await pumpUntilFound(tester, find.text('Sign in to your workspace'), reason: 'the login screen');
+  await pumpUntilFound(
+    tester,
+    find.text('Sign in to your workspace'),
+    reason: 'the login screen',
+  );
 }
 
 /// Types the credentials on the login screen (field 0 = Username, field 1 = Password) and submits. Waits until the
 /// login screen is gone (signed in), failing fast on the on-screen error.
-Future<void> signIn(WidgetTester tester, {String username = e2eUser, String password = e2ePassword}) async {
+Future<void> signIn(
+  WidgetTester tester, {
+  String username = e2eUser,
+  String password = e2ePassword,
+}) async {
   await tester.enterText(find.byType(TextFormField).at(0), username);
   await tester.enterText(find.byType(TextFormField).at(1), password);
   await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -96,7 +116,12 @@ Future<void> signIn(WidgetTester tester, {String username = e2eUser, String pass
 /// starting the app, like a remembered session; the real login form is exercised by auth_shell_test.dart.
 /// (The server allows only 20 logins per 15 minutes per IP, so every test going through the form would hit 429.)
 /// Pass [viaForm] to force the login form.
-Future<void> launchAndSignIn(WidgetTester tester, {String username = e2eUser, String password = e2ePassword, bool viaForm = false}) async {
+Future<void> launchAndSignIn(
+  WidgetTester tester, {
+  String username = e2eUser,
+  String password = e2ePassword,
+  bool viaForm = false,
+}) async {
   final minted = e2eTokens()[username];
   if (viaForm || minted == null) {
     await launchApp(tester);
@@ -107,12 +132,24 @@ Future<void> launchAndSignIn(WidgetTester tester, {String username = e2eUser, St
   await AuthStorage.instance.init();
   await AuthStorage.instance.clear();
   final prefs = await SharedPreferences.getInstance();
-  for (final k in prefs.getKeys().where((k) => k.toLowerCase().contains('draft')).toList()) {
+  for (final k
+      in prefs
+          .getKeys()
+          .where((k) => k.toLowerCase().contains('draft'))
+          .toList()) {
     await prefs.remove(k);
   }
-  await AuthStorage.instance.save(token: '${minted['token']}', role: '${minted['roleType']}', remember: true);
+  await AuthStorage.instance.save(
+    token: '${minted['token']}',
+    role: '${minted['roleType']}',
+    remember: true,
+  );
   await relaunchApp(tester);
-  await pumpUntilFound(tester, find.byType(NavigationBar), reason: 'the signed-in shell for $username');
+  await pumpUntilFound(
+    tester,
+    find.byType(NavigationBar),
+    reason: 'the signed-in shell for $username',
+  );
 }
 
 /// Call first in every e2e `main()`: real-time frames (so adb screenshots show what the

@@ -20,7 +20,9 @@ class ApiResult {
   ApiResult(this.status, this.json);
   final int status;
   final dynamic json;
-  Map<String, dynamic> get map => (json is Map ? Map<String, dynamic>.from(json as Map) : <String, dynamic>{});
+  Map<String, dynamic> get map => (json is Map
+      ? Map<String, dynamic>.from(json as Map)
+      : <String, dynamic>{});
   dynamic get data => map['data'];
   String get message => '${map['message'] ?? ''}';
 }
@@ -35,21 +37,38 @@ class E2eApi {
     final hit = _cache[username];
     if (hit != null) return hit;
     final minted = e2eTokens()[username];
-    if (minted != null) return _cache[username] = E2eApi._('${minted['token']}');
-    final r = await _call('POST', '/auth/login', null, {'username': username, 'password': e2ePasswords[username]});
-    if (r.status != 200 || r.map['token'] == null) throw StateError('API login failed for $username: ${r.status}');
+    if (minted != null)
+      return _cache[username] = E2eApi._('${minted['token']}');
+    final r = await _call('POST', '/auth/login', null, {
+      'username': username,
+      'password': e2ePasswords[username],
+    });
+    if (r.status != 200 || r.map['token'] == null)
+      throw StateError('API login failed for $username: ${r.status}');
     return _cache[username] = E2eApi._('${r.map['token']}');
   }
 
   /// A raw login attempt (any password), for checking what the server says.
-  static Future<ApiResult> rawLogin(String username, String password) =>
-      _call('POST', '/auth/login', null, {'username': username, 'password': password});
+  static Future<ApiResult> rawLogin(String username, String password) => _call(
+    'POST',
+    '/auth/login',
+    null,
+    {'username': username, 'password': password},
+  );
 
-  static Future<ApiResult> _call(String method, String path, String? token, [Object? body]) async {
+  static Future<ApiResult> _call(
+    String method,
+    String path,
+    String? token, [
+    Object? body,
+  ]) async {
     assertLocalBackend();
     final client = HttpClient();
     try {
-      final req = await client.openUrl(method, Uri.parse('${AppConfig.apiBaseUrl}/api/v1$path'));
+      final req = await client.openUrl(
+        method,
+        Uri.parse('${AppConfig.apiBaseUrl}/api/v1$path'),
+      );
       req.headers.contentType = ContentType.json;
       if (token != null) req.headers.set('authorization', 'Bearer $token');
       if (body != null) req.add(utf8.encode(jsonEncode(body)));
@@ -66,21 +85,31 @@ class E2eApi {
   }
 
   Future<ApiResult> get(String path) => _call('GET', path, token);
-  Future<ApiResult> put(String path, Object body) => _call('PUT', path, token, body);
+  Future<ApiResult> put(String path, Object body) =>
+      _call('PUT', path, token, body);
   Future<ApiResult> delete(String path) => _call('DELETE', path, token);
 
   /// Every saved row of a sheet (`/production-sheet`, `/vmc-sheet`…) whose remarks contain [tag].
-  Future<List<Map<String, dynamic>>> rowsTagged(String sheetBase, String tag) async {
+  Future<List<Map<String, dynamic>>> rowsTagged(
+    String sheetBase,
+    String tag,
+  ) async {
     final out = <Map<String, dynamic>>[];
     for (var page = 1; page < 30; page++) {
-      final r = await get('$sheetBase?from=2025-01-01&to=2028-12-31&page=$page');
+      final r = await get(
+        '$sheetBase?from=2025-01-01&to=2028-12-31&page=$page',
+      );
       final list = (r.data is List) ? (r.data as List) : const [];
       for (final x in list) {
         final m = Map<String, dynamic>.from(x as Map);
-        if ('${m['remarks'] ?? ''}'.contains(tag) || '${m['otherMinRemark'] ?? ''}'.contains(tag)) out.add(m);
+        if ('${m['remarks'] ?? ''}'.contains(tag) ||
+            '${m['otherMinRemark'] ?? ''}'.contains(tag))
+          out.add(m);
       }
       final meta = r.map['meta'];
-      final pages = meta is Map ? (meta['totalPages'] ?? meta['pages'] ?? 1) : 1;
+      final pages = meta is Map
+          ? (meta['totalPages'] ?? meta['pages'] ?? 1)
+          : 1;
       if (list.isEmpty || page >= (pages as num)) break;
     }
     return out;
@@ -95,7 +124,9 @@ class E2eApi {
   Future<List<Map<String, dynamic>>> list(String path) async {
     final r = await get(path);
     final d = r.data;
-    return d is List ? [for (final x in d) Map<String, dynamic>.from(x as Map)] : const [];
+    return d is List
+        ? [for (final x in d) Map<String, dynamic>.from(x as Map)]
+        : const [];
   }
 }
 
@@ -129,6 +160,7 @@ Future<Map<String, dynamic>> seedVmcRow(
     'rejectedQty': 2,
     'remarks': tag,
   });
-  if (r.status != 200) throw StateError('seedVmcRow failed: ${r.status} ${r.message}');
+  if (r.status != 200)
+    throw StateError('seedVmcRow failed: ${r.status} ${r.message}');
   return Map<String, dynamic>.from(r.data as Map);
 }
