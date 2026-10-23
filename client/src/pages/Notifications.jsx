@@ -1,12 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Container, Card, Input, Button, Spinner } from "reactstrap";
 import { Search, CheckCheck, Bell } from "lucide-react";
 import { useSocket } from "../context/SocketContext";
+import { ThemeContext } from "../context/ThemeContext";
 import {
     getNotifications,
     markNotificationRead,
     markAllNotificationsRead,
 } from "../api/notifications.api";
+import { NOTIFICATIONS_CHANGED, announceNotificationsRead, useNotificationLink } from "../utils/notifications";
 
 const formatDateTime = (value) => {
     if (!value) return "";
@@ -26,9 +29,15 @@ const formatDateTime = (value) => {
  * ─────────────────────────
  * "View all" destination from the bell dropdown. Open to anyone who's
  * logged in — everyone gets their own notifications regardless of role.
+ * Clicking one marks it read and opens the page it's about, like the bell.
  */
 const Notifications = () => {
+    document.title = `Notifications | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+
     const { socket, connected } = useSocket();
+    const { isDarkMode } = useContext(ThemeContext) || {};
+    const navigate = useNavigate();
+    const linkOf = useNotificationLink();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -58,10 +67,22 @@ const Notifications = () => {
         return () => socket.off("new_notification", onNew);
     }, [socket, connected]);
 
+    // Whatever the bell marks read while this page is open shows here too.
+    useEffect(() => {
+        const onChanged = (e) => {
+            const { id, all } = e.detail || {};
+            if (!id && !all) return;
+            setNotifications((prev) => prev.map((n) => (all || String(n._id) === id ? { ...n, isRead: true } : n)));
+        };
+        window.addEventListener(NOTIFICATIONS_CHANGED, onChanged);
+        return () => window.removeEventListener(NOTIFICATIONS_CHANGED, onChanged);
+    }, []);
+
     const handleMarkRead = async (id) => {
         try {
             await markNotificationRead(id);
             setNotifications((prev) => prev.map((n) => (String(n._id) === String(id) ? { ...n, isRead: true } : n)));
+            announceNotificationsRead({ id: String(id) });
         } catch {
             /* ignore */
         }
@@ -71,10 +92,22 @@ const Notifications = () => {
         try {
             await markAllNotificationsRead();
             setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+            announceNotificationsRead({ all: true });
         } catch {
             /* ignore */
         }
     };
+
+    const handleOpen = (n) => {
+        if (!n.isRead) handleMarkRead(n._id);
+        const link = linkOf(n);
+        if (link) navigate(link);
+    };
+
+    // Theme-aware: under dark mode the card's text turns light (index.css),
+    // so a fixed light-blue unread background left it white on pale blue.
+    const rowBorder = isDarkMode ? "#272727" : "#f1f5f9";
+    const unreadBg = isDarkMode ? "rgba(99,102,241,0.14)" : "#eff6ff";
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -134,38 +167,49 @@ const Notifications = () => {
                 ) : filtered.length === 0 ? (
                     <Card className="p-5 text-center text-muted mb-0">No notifications found.</Card>
                 ) : (
-                    <Card className="mb-0" style={{ borderRadius: 12, overflow: "hidden", border: "1px solid #eef0f4" }}>
-                        {filtered.map((n) => (
-                            <div
-                                key={n._id}
-                                onClick={() => !n.isRead && handleMarkRead(n._id)}
-                                className="d-flex align-items-start gap-3 px-3 py-3"
-                                style={{
-                                    borderBottom: "1px solid #f1f5f9",
-                                    cursor: n.isRead ? "default" : "pointer",
-                                    background: n.isRead ? "transparent" : "#eff6ff",
-                                }}
-                            >
-                                <span
+                    <Card className="mb-0" style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${isDarkMode ? "#272727" : "#eef0f4"}` }}>
+                        {filtered.map((n) => {
+                            const clickable = !n.isRead || !!linkOf(n);
+                            return (
+                                <div
+                                    key={n._id}
+                                    onClick={clickable ? () => handleOpen(n) : undefined}
+                                    onKeyDown={clickable ? (e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            handleOpen(n);
+                                        }
+                                    } : undefined}
+                                    role={clickable ? "button" : undefined}
+                                    tabIndex={clickable ? 0 : undefined}
+                                    className="d-flex align-items-start gap-3 px-3 py-3"
                                     style={{
-                                        width: 8, height: 8, borderRadius: "50%", marginTop: 6, flexShrink: 0,
-                                        background: n.isRead ? "transparent" : "#6366f1",
+                                        borderBottom: `1px solid ${rowBorder}`,
+                                        cursor: clickable ? "pointer" : "default",
+                                        background: n.isRead ? "transparent" : unreadBg,
                                     }}
-                                />
-                                <div className="flex-grow-1">
-                                    <div className="fw-semibold" style={{ fontSize: "0.9rem" }}>{n.title}</div>
-                                    <div className="text-muted" style={{ fontSize: "0.85rem" }}>{n.message}</div>
-                                    <div className="text-muted mt-1" style={{ fontSize: "0.72rem" }}>{formatDateTime(n.createdAt)}</div>
-                                </div>
-                                {!n.isRead && (
+                                >
                                     <span
-                                        style={{ fontSize: "0.72rem", fontWeight: 700, color: "#6366f1", whiteSpace: "nowrap" }}
-                                    >
-                                        Unread
-                                    </span>
-                                )}
-                            </div>
-                        ))}
+                                        style={{
+                                            width: 8, height: 8, borderRadius: "50%", marginTop: 6, flexShrink: 0,
+                                            background: n.isRead ? "transparent" : "#6366f1",
+                                        }}
+                                    />
+                                    <div className="flex-grow-1" style={{ minWidth: 0 }}>
+                                        <div className="fw-semibold text-break" style={{ fontSize: "0.9rem" }}>{n.title}</div>
+                                        <div className="text-muted text-break" style={{ fontSize: "0.85rem" }}>{n.message}</div>
+                                        <div className="text-muted mt-1" style={{ fontSize: "0.72rem" }}>{formatDateTime(n.createdAt)}</div>
+                                    </div>
+                                    {!n.isRead && (
+                                        <span
+                                            style={{ fontSize: "0.72rem", fontWeight: 700, color: isDarkMode ? "#a5b4fc" : "#6366f1", whiteSpace: "nowrap" }}
+                                        >
+                                            Unread
+                                        </span>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </Card>
                 )}
             </Container>

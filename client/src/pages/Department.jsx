@@ -208,8 +208,9 @@ const Department = () => {
             });
     };
 
+    // Escape closes the dialog without an event, so there may be none to cancel.
     const handleDeleteClose = (e) => {
-        e.preventDefault();
+        e?.preventDefault?.();
         setmodal_delete(false);
     };
 
@@ -252,7 +253,8 @@ const Department = () => {
     const validate = (values) => {
         const errors = {};
 
-        if (!values.departmentName) {
+        // Spaces alone aren't a name.
+        if (!values.departmentName.trim()) {
             errors.departmentName = "Department Name is required!";
         } else if (values.departmentName.length > 15) {
             errors.departmentName = "Department Name must not exceed 15 characters";
@@ -300,7 +302,8 @@ const Department = () => {
                 sorton: column,
                 sortdir: sortDirection,
                 match: query,
-                isActive: filter ? true : false,
+                // "Active only" off lists every department, active or not.
+                ...(filter ? { isActive: true } : {}),
             });
 
             if (response.data.data.length > 0) {
@@ -331,9 +334,9 @@ const Department = () => {
     };
     const col = [
         {
+            // Numbered on from the previous page rather than starting at 1 again.
             name: "Sr No",
-            selector: (row, index) => index + 1,
-            sortable: true,
+            selector: (row, index) => (pageNo - 1) * perPage + index + 1,
             maxWidth: "20px",
         },
         {
@@ -468,7 +471,7 @@ const Department = () => {
                 >
                     Add Department
                 </ModalHeader>
-                <form noValidate>
+                <form noValidate onSubmit={handleClick}>
                     <ModalBody>
                         <Row>
                             <Col md={6}>
@@ -571,7 +574,7 @@ const Department = () => {
                 >
                     Update Department
                 </ModalHeader>
-                <form noValidate>
+                <form noValidate onSubmit={handleUpdate}>
                     <ModalBody>
                         <Row>
                             <Col md={6}>
@@ -663,6 +666,7 @@ const Department = () => {
                 toggle={handleDeleteClose}
                 setmodal_delete={setmodal_delete}
                 disabled={isDeleteLoading}
+                deactivates={!!departments.find((r) => r._id === remove_id)?.isActive}
             />
 
             {referenceModal && (

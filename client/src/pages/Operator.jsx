@@ -37,6 +37,7 @@ import { createRole } from "../api/roles.api";
 import { createDepartment } from "../api/departments.api";
 import { createTeam } from "../api/teams.api";
 import { useInvalidateRoles } from "../hooks/useRoles";
+import { guardEscape } from "../utils/modalEscape";
 import { useInvalidateDepartments } from "../hooks/useDepartments";
 
 const Operator = () => {
@@ -144,9 +145,9 @@ const Operator = () => {
 
     const columns = [
         {
+            // Numbered on from the previous page rather than starting at 1 again.
             name: "Sr No",
-            selector: (row, index) => index + 1,
-            sortable: true,
+            selector: (row, index) => (pageNo - 1) * perPage + index + 1,
             maxWidth: "20px",
         },
         {
@@ -195,6 +196,12 @@ const Operator = () => {
             ),
             sortable: false,
             maxWidth: "180px",
+        },
+        // "Active only" off lists both, so each row says which it is.
+        {
+            name: "Status",
+            selector: (row) => (row.isActive ? "Active" : "Inactive"),
+            maxWidth: "110px",
         },
         {
             name: "Action",
@@ -268,7 +275,8 @@ const Operator = () => {
                 sorton: column,
                 sortdir: sortDirection,
                 match: query,
-                isActive: filter ? true : false,
+                // "Active only" off lists every employee, active or not.
+                ...(filter ? { isActive: true } : {}),
                 branchId: adminData?.branchId ? adminData.branchId._id : null,
             });
             if (response && response.data && response.data.data && response.data.data.length > 0) {
@@ -453,8 +461,9 @@ const Operator = () => {
             .finally(() => setIsDeleteLoading(false));
     };
 
+    // Escape closes the dialog without an event, so there may be none to cancel.
     const handleDeleteClose = (e) => {
-        e.preventDefault();
+        e?.preventDefault?.();
         setmodal_delete(false);
     };
 
@@ -1275,6 +1284,7 @@ const Operator = () => {
                 toggle={handleDeleteClose}
                 setmodal_delete={setmodal_delete}
                 disabled={isDeleteLoading}
+                deactivates={!!data.find((r) => r._id === remove_id)?.isActive}
             />
 
             {/* Quick-Add Role Modal */}
@@ -1340,8 +1350,9 @@ const Operator = () => {
                 </form>
             </Modal>
 
-            {/* Quick-Add Department Modal */}
-            <Modal isOpen={showAddDeptModal} toggle={() => { setShowAddDeptModal(false); setNewDeptData({ departmentName: "", departmentCode: "", remark: "", isActive: true, hodIds: [] }); }} centered>
+            {/* Quick-Add Department Modal — guardEscape: Escape that only closes
+                the HOD picker's open list leaves the form open. */}
+            <Modal isOpen={showAddDeptModal} toggle={guardEscape(() => { setShowAddDeptModal(false); setNewDeptData({ departmentName: "", departmentCode: "", remark: "", isActive: true, hodIds: [] }); })} centered>
                 <ModalHeader className="p-3 border-bottom" toggle={() => { setShowAddDeptModal(false); setNewDeptData({ departmentName: "", departmentCode: "", remark: "", isActive: true, hodIds: [] }); }}>
                     Add Department
                 </ModalHeader>

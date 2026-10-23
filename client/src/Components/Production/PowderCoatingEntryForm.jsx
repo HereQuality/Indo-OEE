@@ -11,8 +11,8 @@ import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
 import { WORKER_WORDS, stoppageNotice } from "../../utils/limitNotice";
-import { fmtNum, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
-import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
+import { MACHINE_STATUSES, fmtNum, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
+import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { DEFECT_FIELDS, isStatusOnly, powderRowCalc } from "../../utils/powderCoatingSheet";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
 
@@ -38,6 +38,10 @@ import { hoursToHm, parseHm } from "../../utils/shiftHours";
  */
 
 const labelClass = "form-label small text-muted mb-1";
+
+// Reasons For Not Working: a worker has no machine to break down, so a new
+// entry isn't offered "Machine Breakdown" (one saved with it still shows it).
+const WORKER_STATUSES = MACHINE_STATUSES.filter((s) => s !== "Machine Breakdown");
 
 // Column widths keyed to the modal's own width, not just the viewport's:
 // Bootstrap's modal is only 500px wide until 992px, so `md` (768px) columns
@@ -144,7 +148,9 @@ const EntryBlock = ({
   // Idle Time and Other Activity together have to fit in the working hours.
   const awayLimit = useMemo(() => stoppageLimitMin(values), [values]);
   const workingMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
-  const plannedBelowWorking = planned !== null && workingMin !== null && Math.round(planned * 60) < workingMin;
+  // Not while End isn't after Start — that "shift" wraps past midnight, and
+  // the End box already says what's wrong.
+  const plannedBelowWorking = !isEndBeforeStartMessage(errors.machineOffTime) && planned !== null && workingMin !== null && Math.round(planned * 60) < workingMin;
   const awayMin = (calc.totalStoppageMin || 0) + (Number(values.otherActivityMin) || 0);
   const overAway = awayLimit !== null && awayMin > awayLimit;
   const otherIdleUsed = Number(values.otherMin) > 0;
@@ -169,8 +175,10 @@ const EntryBlock = ({
   const defectRoom = (key) => Math.max(0, total - (defectsTyped - (Number(values[key]) || 0)));
 
   // The time rules (End after Start, no overlap) show as soon as the times are
-  // picked; everything else waits until Save has been pressed.
-  const err = (key) => (isSubmit || isTimeRuleMessage(errors[key]) ? errors[key] : undefined);
+  // picked (and a typed time that isn't one, or a worker already full
+  // for the date, as soon as it's there); everything else waits until Save
+  // has been pressed.
+  const err = (key) => (isSubmit || isLiveMessage(errors[key]) ? errors[key] : undefined);
 
   // An End picker offers nothing at or before its Start time.
   const after = (on) => {
@@ -273,6 +281,7 @@ const EntryBlock = ({
     <div
       ref={registerRef}
       data-entry-index={index}
+      data-expanded="true"
       className={`entry-block-in border rounded mb-2 transition-colors ${isSubmit && errorCount > 0 ? "border-danger" : "border-primary"}`}
     >
       <div className="d-flex align-items-center gap-2 px-2 py-1 bg-light border-bottom rounded-top">
@@ -318,7 +327,12 @@ const EntryBlock = ({
             </Field>
             {nonWorking && (
               <Field label="Reasons For Not Working" error={err("machineStatus")} fieldKey="machineStatus">
-                <MachineStatusSelect value={values.machineStatus} onChange={(list) => onChange(index, "machineStatus", list)} remark={values.remarks} />
+                <MachineStatusSelect
+                  value={values.machineStatus}
+                  onChange={(list) => onChange(index, "machineStatus", list)}
+                  remark={values.remarks}
+                  statuses={WORKER_STATUSES}
+                />
               </Field>
             )}
           </Row>
@@ -461,7 +475,7 @@ const EntryBlock = ({
               optional
               openByDefault={!plannedLock}
               countFields={["lunchMin"]}
-              summary={plannedLock ? "Fixed — nothing to enter" : ""}
+              summary={plannedLock ? "Shift fixed — Lunch / Tea optional" : ""}
             >
               <Row className="g-1">
                 <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} cols={THIRD} fieldKey="plannedOperatorShiftHours">
@@ -614,20 +628,32 @@ const PowderCoatingEntryForm = ({
     let tries = 0;
     let frame;
     const go = () => {
-      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"] [data-field="${field}"]`);
+      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"][data-expanded] [data-field="${field}"]`);
       if (!el) {
         tries += 1;
         if (tries < 20) frame = requestAnimationFrame(go);
         return;
       }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.querySelector("input, select, textarea")?.focus({ preventScroll: true });
+      el.querySelector("input, select, textarea, button")?.focus({ preventScroll: true });
     };
     frame = requestAnimationFrame(go);
     return () => cancelAnimationFrame(frame);
     // Only a new request (its nonce) should steer the scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTarget?.nonce]);
+
+  // Removing a block moves every block after it up one; the open one moves
+  // with them rather than closing (and removing the open one closes it).
+  const removeBlock = (i) => {
+    setExpandedIndex((open) => (open === null || open < i ? open : open === i ? null : open - 1));
+    onRemove(i);
+  };
+
+  // A new block takes the last block's date; once every worker is already on
+  // that date in this form, it would have none left to pick.
+  const lastDate = entries[entries.length - 1]?.date;
+  const allTaken = workers.length > 0 && workers.every((w) => entries.some((v) => v.date === lastDate && String(v.machine) === String(w._id)));
 
   // "Add another worker": once the new block is on screen, scroll to it and
   // put the cursor in its worker box.
@@ -666,7 +692,7 @@ const PowderCoatingEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
-          onRemove={onRemove}
+          onRemove={removeBlock}
           registerRef={(el) => {
             blockRefs.current[i] = el;
           }}
@@ -674,17 +700,21 @@ const PowderCoatingEntryForm = ({
       ))}
 
       {!isEdit && (
-        <button
-          type="button"
-          className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
-          onClick={() => {
-            // The new block stays closed and asks for its worker first.
-            askWorkerFor.current = entries.length;
-            onAdd();
-          }}
-        >
-          <Plus size={16} /> Add another worker
-        </button>
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
+            disabled={allTaken}
+            onClick={() => {
+              // The new block stays closed and asks for its worker first.
+              askWorkerFor.current = entries.length;
+              onAdd();
+            }}
+          >
+            <Plus size={16} /> Add another worker
+          </button>
+          {allTaken && <span className="text-muted small">Every worker is already in this form for this date.</span>}
+        </div>
       )}
     </div>
   );

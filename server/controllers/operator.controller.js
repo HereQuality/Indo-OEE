@@ -1,4 +1,5 @@
 const Operator = require("../models/Operator");
+const Team = require("../models/Team");
 const jwt = require("jsonwebtoken");
 const { getDefaultRedirectUrl } = require("./auth.controller");
 
@@ -40,6 +41,38 @@ const getVisibleEmployeeIds = async (requesterId) => {
   return visible;
 };
 
+// The fields an employee save may write: the Employee form's, the Teams
+// board's manager change and the block toggle. Everything else on the record
+// (password, login attempts, lock, last login, preferences) has its own route
+// or is the server's to set, so a crafted request can't slip it in.
+const EMPLOYEE_FIELDS = [
+  "firstName", "lastName", "employeeCode", "employeeName", "username",
+  "departmentIds", "roleId", "skills", "teamIds", "reportingManagerIds",
+  "joiningDate", "emailOffice", "mobileNumber", "country", "state", "city",
+  "address", "remark", "isActive", "isBlocked",
+];
+
+// Array fields come as JSON strings when the form is sent as FormData.
+const parseList = (v) => {
+  if (typeof v !== "string") return v;
+  try { return JSON.parse(v); } catch (e) { return [v]; }
+};
+
+// Team.memberIds is what the Teams page and Org Chart read, so it has to follow
+// the employee's own teamIds — the same sync team.controller.js does the other
+// way round. Every team they're in now gets them (which also mends a team
+// saved before this sync existed); the teams they left lose them.
+const syncTeams = async (employeeId, beforeTeamIds = [], afterTeamIds = []) => {
+  const after = afterTeamIds.map(String);
+  const removed = beforeTeamIds.map(String).filter((id) => !after.includes(id));
+  if (after.length) {
+    await Team.updateMany({ _id: { $in: after } }, { $addToSet: { memberIds: employeeId } });
+  }
+  if (removed.length) {
+    await Team.updateMany({ _id: { $in: removed } }, { $pull: { memberIds: employeeId } });
+  }
+};
+
 // Sanitise a string for use as part of a username
 const slugifyName = (str = '') =>
   str.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
@@ -70,15 +103,9 @@ exports.createEmployee = async (req, res) => {
     } = req.body;
 
     // Parse array fields if they come as JSON strings from FormData
-    if (typeof departmentIds === 'string') {
-      try { departmentIds = JSON.parse(departmentIds); } catch (e) { departmentIds = [departmentIds]; }
-    }
-    if (typeof teamIds === 'string') {
-      try { teamIds = JSON.parse(teamIds); } catch (e) { teamIds = [teamIds]; }
-    }
-    if (typeof skills === 'string') {
-      try { skills = JSON.parse(skills); } catch (e) { skills = [skills]; }
-    }
+    departmentIds = parseList(departmentIds);
+    teamIds = parseList(teamIds);
+    skills = parseList(skills);
 
     const displayName = employeeName || 'Operator';
 
@@ -117,10 +144,12 @@ exports.createEmployee = async (req, res) => {
 
     newEmployee.password = undefined;
 
+    await syncTeams(newEmployee._id, [], newEmployee.teamIds || []);
+
     res.status(201).json({
       isOk: true,
       data: newEmployee,
-      message: "Operator created successfully"
+      message: "Employee created successfully"
     });
   } catch (error) {
     console.error("Error creating employee:", error);
@@ -133,21 +162,31 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
 
-    const updateData = { ...req.body };
-    delete updateData.password;
-    if (updateData.isBlocked !== undefined) {
-      updateData.isBlocked = updateData.isBlocked;
-    }
+    const updateData = {};
+    EMPLOYEE_FIELDS.forEach((key) => {
+      if (req.body[key] !== undefined) updateData[key] = req.body[key];
+    });
 
     // Parse array fields if they come as JSON strings from FormData
-    if (typeof updateData.departmentIds === 'string') {
-      try { updateData.departmentIds = JSON.parse(updateData.departmentIds); } catch (e) { updateData.departmentIds = [updateData.departmentIds]; }
+    ["departmentIds", "teamIds", "skills", "reportingManagerIds"].forEach((key) => {
+      if (updateData[key] !== undefined) updateData[key] = parseList(updateData[key]);
+    });
+
+    const existing = await Operator.findById(employeeId).select("roleId teamIds").lean();
+    if (!existing) {
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
     }
-    if (typeof updateData.teamIds === 'string') {
-      try { updateData.teamIds = JSON.parse(updateData.teamIds); } catch (e) { updateData.teamIds = [updateData.teamIds]; }
-    }
-    if (typeof updateData.skills === 'string') {
-      try { updateData.skills = JSON.parse(updateData.skills); } catch (e) { updateData.skills = [updateData.skills]; }
+
+    // Only Super Admin may move someone onto another role when it's their own
+    // record — otherwise anyone who can edit employees could promote themselves.
+    const isSelf = String(employeeId) === String(req.user?._id);
+    if (
+      isSelf &&
+      req.user.roleType !== "SuperAdmin" &&
+      updateData.roleId !== undefined &&
+      String(updateData.roleId) !== String(existing.roleId)
+    ) {
+      return res.status(403).json({ isOk: false, message: "You can't change your own role." });
     }
 
     if (req.file && req.file.path) {
@@ -172,13 +211,17 @@ exports.updateEmployee = async (req, res) => {
     );
 
     if (!employee) {
-      return res.status(404).json({ isOk: false, message: "Operator not found" });
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
+    }
+
+    if (updateData.teamIds !== undefined) {
+      await syncTeams(employee._id, existing.teamIds || [], employee.teamIds || []);
     }
 
     res.status(200).json({
       isOk: true,
       data: employee,
-      message: "Operator updated successfully"
+      message: "Employee updated successfully"
     });
   } catch (error) {
     console.error("Error updating employee:", error);
@@ -192,7 +235,7 @@ exports.deleteEmployee = async (req, res) => {
 
     const employee = await Operator.findById(employeeId);
     if (!employee) {
-      return res.status(404).json({ isOk: false, message: "Operator not found" });
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
     }
 
     if (employee.isActive) {
@@ -201,14 +244,16 @@ exports.deleteEmployee = async (req, res) => {
       await employee.save({ validateBeforeSave: false });
       return res.status(200).json({
         isOk: true,
-        message: "Operator deactivated successfully"
+        message: "Employee deactivated successfully"
       });
     } else {
-      // Hard Delete
+      // Hard Delete — and off every team, so the Teams page doesn't list
+      // someone who no longer exists.
       await Operator.findByIdAndDelete(employeeId);
+      await syncTeams(employee._id, employee.teamIds || [], []);
       return res.status(200).json({
         isOk: true,
-        message: "Operator deleted successfully"
+        message: "Employee deleted successfully"
       });
     }
   } catch (error) {
@@ -229,7 +274,7 @@ exports.getEmployeeById = async (req, res) => {
       .populate('reportingManagerIds', 'employeeName employeeCode');
 
     if (!employee) {
-      return res.status(404).json({ isOk: false, message: "Operator not found" });
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
     }
 
     res.status(200).json({
@@ -306,18 +351,20 @@ exports.listEmployeesByParams = async (req, res) => {
 
     let query = {};
     if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       // Build base text-match conditions
       const baseOr = [
-        { employeeName: { $regex: match, $options: "i" } },
-        { emailOffice:  { $regex: match, $options: "i" } },
-        { username:     { $regex: match, $options: "i" } },
-        { firstName:    { $regex: match, $options: "i" } },
-        { lastName:     { $regex: match, $options: "i" } },
+        { employeeName: { $regex: escaped, $options: "i" } },
+        { emailOffice:  { $regex: escaped, $options: "i" } },
+        { username:     { $regex: escaped, $options: "i" } },
+        { firstName:    { $regex: escaped, $options: "i" } },
+        { lastName:     { $regex: escaped, $options: "i" } },
       ];
 
       // Also search by department name
       const matchingDepts = await Department.find(
-        { departmentName: { $regex: match, $options: "i" } },
+        { departmentName: { $regex: escaped, $options: "i" } },
         { _id: 1 }
       ).lean();
       if (matchingDepts.length > 0) {
@@ -326,7 +373,7 @@ exports.listEmployeesByParams = async (req, res) => {
 
       // Also search by team name
       const matchingTeams = await Team.find(
-        { teamName: { $regex: match, $options: "i" } },
+        { teamName: { $regex: escaped, $options: "i" } },
         { _id: 1 }
       ).lean();
       if (matchingTeams.length > 0) {
@@ -335,7 +382,7 @@ exports.listEmployeesByParams = async (req, res) => {
 
       // Also search by role name
       const matchingRoles = await RoleMaster.find(
-        { roleName: { $regex: match, $options: "i" } },
+        { roleName: { $regex: escaped, $options: "i" } },
         { _id: 1 }
       ).lean();
       if (matchingRoles.length > 0) {
@@ -427,7 +474,7 @@ exports.resetPassword = async (req, res) => {
 
     const employee = await Operator.findOne({ _id: employeeId });
     if (!employee) {
-      return res.status(404).json({ isOk: false, message: "Operator not found" });
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
     }
 
     employee.password = password; // Will be hashed by pre-save hook
@@ -466,6 +513,12 @@ exports.loginEmployee = async (req, res) => {
 
     if (employee.isBlocked) {
       return res.status(403).json({ isOk: false, message: 'Account blocked by admin', isBlocked: true });
+    }
+
+    // Deleting an employee only deactivates them, so the record and its
+    // password are still here and have to be refused.
+    if (employee.isActive === false) {
+      return res.status(403).json({ isOk: false, message: 'Your account is inactive. Please contact your administrator.' });
     }
 
     if (employee.isLocked) {
@@ -557,11 +610,17 @@ exports.impersonateEmployee = async (req, res) => {
       "roleName roleSlug"
     );
     if (!target) {
-      return res.status(404).json({ isOk: false, message: "Operator not found" });
+      return res.status(404).json({ isOk: false, message: "Employee not found" });
     }
 
     if (String(target._id) === String(req.user._id)) {
       return res.status(400).json({ isOk: false, message: "You're already viewing your own panel." });
+    }
+
+    // A deleted (deactivated) employee can't log in, so their panel can't be
+    // opened either — the token would only be turned away on the next request.
+    if (target.isActive === false) {
+      return res.status(400).json({ isOk: false, message: `${target.employeeName} has been deleted, so their panel can't be opened.` });
     }
 
     const isAdmin = req.user.roleType === "SuperAdmin";

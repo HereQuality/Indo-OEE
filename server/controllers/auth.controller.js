@@ -112,6 +112,15 @@ exports.login = async (req, res) => {
       });
     }
 
+    // Deleting an employee only deactivates them (isActive false), so the
+    // record — and its password — is still here and has to be refused.
+    if (account.isActive === false) {
+      return res.status(403).json({
+        status: 'fail',
+        message: 'Your account is inactive. Please contact your administrator.'
+      });
+    }
+
     // 4. Check if account is locked
     if (account.isLocked) {
       const remainingMs = account.lockUntil - Date.now();

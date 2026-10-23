@@ -152,7 +152,32 @@ exports.listMenuMasterByParams = async (req, res) => {
       matchCondition.isActive = isActive;
     }
 
-    let query = [
+    // The search and the sort run after the group is looked up, so the Menu
+    // Group column (its name, which only exists from here on) can be searched
+    // and sorted like the others.
+    let searchStage = [];
+    if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      searchStage = [
+        {
+          $match: {
+            $or: [
+              { menuName: { $regex: escaped, $options: "i" } },
+              { "menuGroup.menuGroupName": { $regex: escaped, $options: "i" } },
+              { menuUrl: { $regex: escaped, $options: "i" } },
+            ],
+          },
+        },
+      ];
+    }
+
+    let sort = { createdAt: -1 };
+    if (sorton && sortdir) {
+      sort = { [sorton === "menuGroup" ? "menuGroup.menuGroupName" : sorton]: sortdir === "desc" ? -1 : 1 };
+    }
+
+    const query = [
       { $match: matchCondition },
       {
         $lookup: {
@@ -168,6 +193,8 @@ exports.listMenuMasterByParams = async (req, res) => {
           preserveNullAndEmptyArrays: true,
         },
       },
+      ...searchStage,
+      { $sort: sort },
       {
         $project: {
           menuName: 1,
@@ -192,28 +219,6 @@ exports.listMenuMasterByParams = async (req, res) => {
         },
       },
     ];
-
-    if (match) {
-      query = [
-        {
-          $match: {
-            $or: [
-              { menuName: { $regex: match, $options: "i" } },
-              { menuGroup: { $regex: match, $options: "i" } },
-              { menuUrl: { $regex: match, $options: "i" } },
-            ],
-          },
-        },
-      ].concat(query);
-    }
-
-    if (sorton && sortdir) {
-      let sort = {};
-      sort[sorton] = sortdir === "desc" ? -1 : 1;
-      query = [{ $sort: sort }].concat(query);
-    } else {
-      query = [{ $sort: { createdAt: -1 } }].concat(query);
-    }
 
     const list = await MenuMaster.aggregate(query);
 

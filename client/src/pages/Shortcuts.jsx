@@ -149,24 +149,27 @@ export default function Shortcuts() {
     return groups;
   }, [unpinnedMenus]);
 
-  document.title = "My Shortcuts";
+  document.title = `My Shortcuts | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-5xl mx-auto p-4 sm:p-6 pb-12">
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
+        {/* ── Header ── the title side gives way (its subtitle wraps) so the
+            Save button always keeps its full width — on a phone it was
+            pushed past the right edge. */}
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
               onClick={() => navigate(`/${roleSlug}/home`)}
-              className="h-9 w-9 rounded-xl flex items-center justify-center border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all shadow-sm"
+              className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all shadow-sm"
               title="Back to Home"
+              aria-label="Back to Home"
             >
               <IconBack />
             </button>
-            <div>
-              <h1 className="text-xl font-extrabold text-slate-900">My Shortcuts</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-extrabold text-slate-900">My Shortcuts</h1>
               <p className="text-xs text-slate-500 mt-0.5">
                 {pinnedMenus.length} pinned · select pages to pin, reorder, then Save
               </p>
@@ -175,14 +178,19 @@ export default function Shortcuts() {
 
           <button
             onClick={handleSave}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm ${
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm ${
               hasUnsaved
                 ? "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}
           >
             <IconSave />
-            {hasUnsaved ? "Save Changes" : "Saved"}
+            {hasUnsaved ? (
+              <>
+                <span className="sm:hidden">Save</span>
+                <span className="hidden sm:inline">Save Changes</span>
+              </>
+            ) : "Saved"}
           </button>
         </div>
 

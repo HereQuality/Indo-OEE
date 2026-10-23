@@ -11,6 +11,7 @@ const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
 const PowderCoatingEntry = require("../models/PowderCoatingEntry");
+const RubberEntry = require("../models/RubberEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 const { isAdminUser, actorOf } = require("../utils/adminAccess");
@@ -48,7 +49,9 @@ const pickShiftSetting = (body) => {
   if (body.plannedShiftLocked !== undefined) out.plannedShiftLocked = body.plannedShiftLocked !== false && body.plannedShiftLocked !== "false";
   if (body.plannedShiftHours !== undefined && body.plannedShiftHours !== "" && body.plannedShiftHours !== null) {
     const hours = Number(body.plannedShiftHours);
-    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return { error: "Planned shift hours must be more than 0 and at most 24" };
+    // 0.25 is the model's own minimum (models/Process.js) — checked here so the
+    // message says so, rather than the model's validation error.
+    if (!Number.isFinite(hours) || hours < 0.25 || hours > 24) return { error: "Planned shift hours must be at least 0.25 and at most 24" };
     out.plannedShiftHours = hours;
   }
   return { setting: out };
@@ -319,6 +322,8 @@ const DASHBOARD_SHEETS = [
   // and a worker, who stands in the machine's place on the dashboard. Its
   // Ideal Inspection Time counts Total Qty, like SPRING FOR PINS.
   { Model: PowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total" } },
+  // RUBBER is per worker too; its Effective Working Time counts OK Qty, like CNC.
+  { Model: RubberEntry, cycleSec: null, byProcess: true },
 ];
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]

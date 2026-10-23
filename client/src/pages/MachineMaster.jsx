@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, Col, Container, Modal, ModalBody, ModalFooter, ModalHeader, Label, Input, Row } from "reactstrap";
 import DataTable from "react-data-table-component";
@@ -10,8 +11,9 @@ import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateMachines } from "../hooks/useMachines";
-import { useProcesses, useInvalidateProcesses } from "../hooks/useProcesses";
+import { PROCESSES_QUERY_KEY, useProcesses, useInvalidateProcesses } from "../hooks/useProcesses";
 import { createMachine, deleteMachine, getMachineById, updateMachine, searchMachines } from "../api/machines.api";
+import { searchProcesses } from "../api/processes.api";
 
 const initialState = {
   machineName: "",
@@ -26,7 +28,12 @@ const MachineMaster = () => {
   // Sequence (a machine's place in the sheet order) is Super Admin's alone —
   // everyone else neither sees the column nor the box, and the server ignores
   // it if they send one anyway.
-  const { currentPagePermissions = { read: true, write: true, edit: true, delete: true }, isAdmin } = useContext(MenuContext) || {};
+  const {
+    currentPagePermissions = { read: true, write: true, edit: true, delete: true },
+    isAdmin,
+    getPermissionsForMenu,
+    findMenuIdByUrl,
+  } = useContext(MenuContext) || {};
 
   const [values, setValues] = useState(initialState);
   const [formErrors, setFormErrors] = useState({});
@@ -38,9 +45,23 @@ const MachineMaster = () => {
   const [machines, setMachines] = useState([]);
   const invalidateMachines = useInvalidateMachines();
   // The process a machine belongs to decides which dashboard it rolls up into.
-  const { data: processes = [] } = useProcesses();
+  const { data: activeProcesses = [] } = useProcesses();
   const invalidateProcesses = useInvalidateProcesses();
-  const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
+  // Inactive processes too, so a machine still in a deactivated process shows
+  // that process (marked inactive) instead of looking as if it had none. The
+  // route behind this list is Process Master's, so it's only asked for by
+  // someone who may open that page; anyone else gets the active ones.
+  const canListAllProcesses = !!(isAdmin || getPermissionsForMenu?.(findMenuIdByUrl?.("/x/production/processes"))?.view);
+  const { data: allProcesses } = useQuery({
+    queryKey: [...PROCESSES_QUERY_KEY, "withInactive"],
+    queryFn: async () => (await searchProcesses({ skip: 0, per_page: 1000 }))?.data?.data?.[0]?.data || [],
+    enabled: canListAllProcesses,
+    retry: false,
+  });
+  const processes = (canListAllProcesses && allProcesses) || activeProcesses;
+  const processName = Object.fromEntries(
+    processes.map((p) => [p._id, p.isActive === false ? `${p.processName} (inactive)` : p.processName]),
+  );
   const [query, setQuery] = useState("");
 
   const [_id, set_Id] = useState("");
@@ -102,6 +123,11 @@ const MachineMaster = () => {
 
   const handleChange = (e) => setValues({ ...values, [e.target.name]: e.target.value });
 
+  // The Process picker: active processes, plus the one this machine is already
+  // in if that one is inactive, so editing it never silently moves it out.
+  const processOptions = processes.filter((p) => p.isActive !== false || p._id === values.process);
+  const unknownProcess = !!values.process && !processes.some((p) => p._id === values.process);
+
   const validate = (v) => {
     const errors = {};
     if (!v.machineName.trim()) errors.machineName = "Machine No. is required!";
@@ -112,6 +138,11 @@ const MachineMaster = () => {
     if (v.description && v.description.length > 200) errors.description = "Description must not exceed 200 characters";
     return errors;
   };
+
+  // Once Save has been pressed, the messages follow the form as it is fixed.
+  useEffect(() => {
+    if (isSubmit) setFormErrors(validate(values));
+  }, [values, isSubmit]);
 
   // A blank sequence is simply not sent: the server keeps the machine where it
   // is (or puts a new one at the end). Non-admins never send it at all.
@@ -182,7 +213,8 @@ const MachineMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every machine, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -196,7 +228,8 @@ const MachineMaster = () => {
   };
 
   const col = [
-    { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
+    // Numbered on from the previous page rather than starting at 1 again.
+    { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     {
       name: "Machine No.",
       selector: (row) => row.machineName,
@@ -204,7 +237,8 @@ const MachineMaster = () => {
       sortField: "machineName",
       minWidth: "130px",
     },
-    { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "130px" },
+    // A machine's process stays named even after that process is deactivated.
+    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "130px" },
     { name: "Description", selector: (row) => row.description || "", minWidth: "180px" },
     ...(isAdmin
       ? [{ name: "Sequence", selector: (row) => (row.sequence > 0 ? row.sequence : "—"), sortable: true, sortField: "sequence", maxWidth: "120px" }]
@@ -241,7 +275,7 @@ const MachineMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Machines"
+                    formName="Machine"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -282,7 +316,7 @@ const MachineMaster = () => {
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Machine" : "Add Machine"}
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleSave}>
           <ModalBody>
             <Row>
               <Col md={isAdmin ? 6 : 12}>
@@ -312,11 +346,12 @@ const MachineMaster = () => {
             <div className="form-floating mb-3">
               <Input type="select" name="process" value={values.process} onChange={handleChange}>
                 <option value="">Not in any process</option>
-                {processes.map((p) => (
+                {processOptions.map((p) => (
                   <option key={p._id} value={p._id}>
-                    {p.processName}
+                    {processName[p._id]}
                   </option>
                 ))}
+                {unknownProcess && <option value={values.process}>Current process (inactive)</option>}
               </Input>
               <Label>Process (dashboard it appears on)</Label>
             </div>
@@ -355,6 +390,7 @@ const MachineMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!machines.find((r) => r._id === remove_id)?.isActive}
       />
 
       {referenceModal && (

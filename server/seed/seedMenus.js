@@ -81,6 +81,7 @@ const DATA_ENTRY_MENUS = [
   { menuName: "TROBE", menuUrl: "/hqepl/production/trobe-data-entry", sequence: 7, icon: "ClipboardList" },
   { menuName: "SPRING FOR PINS", menuUrl: "/hqepl/production/spring-data-entry", sequence: 8, icon: "ClipboardList" },
   { menuName: "AFTER POWDER COATING", menuUrl: "/hqepl/production/powder-coating-data-entry", sequence: 9, icon: "ClipboardList" },
+  { menuName: "RUBBER", menuUrl: "/hqepl/production/rubber-data-entry", sequence: 10, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

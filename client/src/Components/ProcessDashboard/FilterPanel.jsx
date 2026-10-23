@@ -101,9 +101,11 @@ const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, optio
   }, [open]);
 
   const years = useMemo(() => yearsOfExtent(extent), [extent]);
-  // The Month tab's year: the applied range's year.
-  const [monthYear, setMonthYear] = useState(() => Number(range[0].slice(0, 4)));
-  useEffect(() => setMonthYear(Number(range[0].slice(0, 4))), [range[0]]);
+  // The Month tab's year: the year the applied range ends in. (The entry
+  // sheets' default range starts a year back, so its start year opened the
+  // tab on last year's months.)
+  const [monthYear, setMonthYear] = useState(() => Number(range[1].slice(0, 4)));
+  useEffect(() => setMonthYear(Number(range[1].slice(0, 4))), [range[1]]);
   const monthYears = years.includes(monthYear) ? years : [monthYear, ...years].sort((a, b) => b - a);
 
   const appliedLabel = describeRange(range);

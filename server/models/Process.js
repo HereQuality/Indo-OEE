@@ -70,7 +70,7 @@ const ProcessSchema = new mongoose.Schema(
     plannedShiftLocked: { type: Boolean, default: true },
     plannedShiftHours: {
       type: Number,
-      min: [0.25, "Planned shift must be more than 0 hours"],
+      min: [0.25, "Planned shift must be at least 0.25 hours"],
       max: [24, "Planned shift can't be more than 24 hours"],
       default: 12,
     },

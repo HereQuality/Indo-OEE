@@ -12,6 +12,8 @@
  * machine-day pairs, never over entries.
  */
 import { STOPPAGE_FIELDS, dayCalc, displayDay, fmtNum, fmtPct, rowCalc } from "./productionSheet";
+import { RUBBER_STOPPAGE_FIELDS, isRubberProcess } from "./rubberSheet";
+import { POWDER_IDLE_FIELDS, isPowderCoatingProcess } from "./powderCoatingSheet";
 
 const n = (v) => (Number.isFinite(v) ? v : 0);
 const mean = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
@@ -31,6 +33,8 @@ export const formatExact = (format, v) => (format === "qty" ? (Number.isFinite(v
 // ── Catalog: KPI tiles ─────────────────────────────────────────────────────
 // `tone` picks the accent (ok / reject / downtime) — see chartTheme.js.
 // `example` is a sample value, shown on the tile's preview in the Process Master.
+// `worker` is the label / hint a worker-based process shows instead (see
+// unitWordsFor below) — wording only, the figure is the same.
 export const STAT_CATALOG = [
   { key: "totalQty", label: "Total QTY", hint: "Actual quantity produced", format: "qty", example: "1.43M" },
   { key: "okQty", label: "OK QTY", hint: "Pieces that passed", format: "qty", tone: "ok", example: "269K" },
@@ -44,14 +48,14 @@ export const STAT_CATALOG = [
   { key: "oeeAvailability", label: "Availability", hint: "Operating Time ÷ Planned Production Time", format: "pct", example: "86.96%" },
   { key: "oeePerformance", label: "Performance", hint: "Cycle time × pieces ÷ Operating Time", format: "pct", example: "83.33%" },
   { key: "oeeQuality", label: "Quality", hint: "OK ÷ (OK + Rejected)", format: "pct", tone: "ok", example: "98.00%" },
-  { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%" },
-  { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%" },
+  { key: "oeeLosses", label: "OEE Considering Losses", hint: "Averaged per machine-day", format: "pct", example: "96.42%", worker: { hint: "Averaged per worker-day" } },
+  { key: "oeeLunch", label: "OEE NOT Considering Losses, But Lunch", hint: "Averaged per machine-day", format: "pct", example: "91.10%", worker: { hint: "Averaged per worker-day" } },
   // Key kept as oeeLunchCot: it is what a process's saved dashboard stores, so renaming it would drop the tile.
-  { key: "oeeLunchCot", label: "OEE NOT Considering Losses, But Lunch & Setup Time", hint: "Averaged per machine-day", format: "pct", example: "93.85%" },
-  { key: "effectiveHours", label: "Effective Machine Run Time", hint: "OK × cycle time", format: "hours", example: "7,281 hr" },
-  { key: "shiftHours", label: "Machine Shift Time", hint: "Machine OFF − ON", format: "hours", example: "8,120 hr" },
+  { key: "oeeLunchCot", label: "OEE NOT Considering Losses, But Lunch & Setup Time", hint: "Averaged per machine-day", format: "pct", example: "93.85%", worker: { hint: "Averaged per worker-day" } },
+  { key: "effectiveHours", label: "Effective Machine Run Time", hint: "OK × cycle time", format: "hours", example: "7,281 hr", worker: { label: "Effective Working Time" } },
+  { key: "shiftHours", label: "Machine Shift Time", hint: "Machine OFF − ON", format: "hours", example: "8,120 hr", worker: { label: "Worker Shift Time", hint: "Working end − start" } },
   { key: "downtimeMin", label: "Total Downtime", hint: "All stoppage causes", format: "minutes", tone: "downtime", example: "5,160 min" },
-  { key: "unutilized", label: "Unutilized Machine Time", hint: "(12 − (Shift − Lunch)) ÷ 11 — averaged per entry", format: "pct", tone: "downtime", example: "8.33%" },
+  { key: "unutilized", label: "Unutilized Machine Time", hint: "(12 − (Shift − Lunch)) ÷ 11 — averaged per entry", format: "pct", tone: "downtime", example: "8.33%", worker: { label: "Unutilized Time" } },
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -68,18 +72,18 @@ export const CHART_CATALOG = [
     size: "md",
     preview: "radial",
   },
-  { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok" },
-  { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "nestedTreemap" },
-  { key: "runTimeByMachine", measure: "effectiveHours", label: "Stoppages by Cause (Min)", hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.", size: "md", preview: "radar", tone: "downtime" },
-  { key: "runTimeByMachineBars", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Hours of effective run time on each machine.", size: "md", preview: "vbars", tone: "ok" },
-  { key: "unutilizedTrend", measure: "unutilized", label: "Unutilized Machine Time (over time)", hint: "Unutilized share of the 12-hour day by date — by month on long ranges.", size: "md", preview: "area" },
-  { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples" },
+  { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok", worker: { label: "Effective Working Time (Hour) by Operator" } },
+  { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "nestedTreemap", worker: { label: "Stoppage by Worker", hint: "Minutes lost per worker, by stoppage cause." } },
+  { key: "runTimeByMachine", measure: "effectiveHours", label: "Stoppages by Cause (Min)", hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.", size: "md", preview: "radar", tone: "downtime", worker: { hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each worker, with their working time." } },
+  { key: "runTimeByMachineBars", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Hours of effective run time on each machine.", size: "md", preview: "vbars", tone: "ok", worker: { label: "Effective Working Time (Hour) by Worker", hint: "Hours of effective working time for each worker." } },
+  { key: "unutilizedTrend", measure: "unutilized", label: "Unutilized Machine Time (over time)", hint: "Unutilized share of the 12-hour day by date — by month on long ranges.", size: "md", preview: "area", worker: { label: "Unutilized Time (over time)" } },
+  { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples", worker: { label: "Unreported Time (Min) by Worker", hint: "Minutes not accounted for — one small chart per worker." } },
   { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected QTY (over time)", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
-  { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by MC No.", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok" },
+  { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by MC No.", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok", worker: { label: "OEE by Worker", hint: "Considering losses — average of that worker's days." } },
   { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "donut", tone: "reject" },
   { key: "okPctByOperator", measure: "okPct", label: "Operator v/s OK QTY %", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
   { key: "outputByItem", measure: "okQty", label: "OK QTY by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
-  { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table" },
+  { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table", worker: { label: "Worker Summary (table)", hint: "One row per worker — quantities, working time, downtime and OEE." } },
 ];
 
 export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin", "unutilized"];
@@ -94,6 +98,36 @@ export const CHARTS_BY_KEY = byKey(CHART_CATALOG);
 // array is respected as "show none".
 export const resolveWidgets = (saved, lookup, defaults) =>
   (Array.isArray(saved) ? saved : defaults).map((k) => lookup[k]).filter(Boolean);
+
+// ── Wording: machines or workers ───────────────────────────────────────────
+// RUBBER and AFTER POWDER COATING have no machines — each entry's `machine`
+// is its worker (see utils/rubberSheet.js / utils/powderCoatingSheet.js) — so
+// their dashboards say "Worker" where the others say "MC No." / "Machine",
+// and a catalog entry's `worker` wording stands in for its own. Words only:
+// every figure is worked out exactly as it is for a machine.
+export const isWorkerProcess = (process) => !!process && (isRubberProcess(process) || isPowderCoatingProcess(process));
+
+export const UNIT_WORDS = {
+  machine: { byWorker: false, one: "Machine", many: "machines", mcNo: "MC No.", times: "machine ON/OFF times" },
+  worker: { byWorker: true, one: "Worker", many: "workers", mcNo: "Worker", times: "working start / end times" },
+};
+export const unitWordsFor = (process) => (isWorkerProcess(process) ? UNIT_WORDS.worker : UNIT_WORDS.machine);
+
+// A catalog entry (tile or graph) in the dashboard's own words.
+export const worded = (widget, words) => (words?.byWorker && widget.worker ? { ...widget, ...widget.worker } : widget);
+
+// A dimension's name as the dashboard says it ("By Worker", "Worker: …").
+export const dimLabel = (dim, ctx) => (dim === "machine" && ctx?.words ? ctx.words.one : DIMENSIONS[dim].label);
+
+// The stoppage causes a process's sheet actually has — RUBBER has no B.D.
+// Mech. / B.D. Ele. (a worker has no machine to break down), After Powder
+// Coating only Lunch / Tea and Other — so its tables don't carry columns that
+// can only ever read 0. Every other process (and "All machines") has all ten.
+export const stoppageKeysFor = (process) => {
+  if (isRubberProcess(process)) return RUBBER_STOPPAGE_FIELDS.map((f) => f.key);
+  if (isPowderCoatingProcess(process)) return POWDER_IDLE_FIELDS.map((f) => f.key);
+  return STOPPAGE_FIELDS.map((f) => f.key);
+};
 
 // ── Stoppage groups (Breakdown & Stoppage by Machine) ──────────────────────
 // Ten causes is more series than a stacked bar can carry, so they are folded

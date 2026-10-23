@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
  * models/entryCommon.js
  * ───────────────────────
  * Fields every sheet's entry carries (CNC, VMC, SPM, RIVET, PRESS, CONTACT, TROBE, SPRING FOR PINS,
- * AFTER POWDER COATING),
+ * AFTER POWDER COATING, RUBBER),
  * spread into each entry schema so the six stay identical.
  */
 

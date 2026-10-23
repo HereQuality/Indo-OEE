@@ -170,8 +170,9 @@ const RoleMaster = () => {
       });
   };
 
+  // Escape closes the dialog without an event, so there may be none to cancel.
   const handleDeleteClose = (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     setmodal_delete(false);
   };
 
@@ -245,26 +246,31 @@ const RoleMaster = () => {
       skip = 0;
     }
 
-    await searchRoles({
-      skip: skip,
-      per_page: perPage,
-      sorton: column,
-      sortdir: sortDirection,
-      match: query,
-      isActive: filter === "Active" ? true : filter === "Inactive" ? false : undefined,
-    })
-      .then((response) => {
-        if (response.data.data.length > 0) {
-          let res = response.data.data[0];
-          setRoles(res.data);
-          setTotalRows(response.data.data[0].count);
-          setLoading(false);
-        } else if (response.data.data.length === 0) {
-          setRoles([]);
-        }
+    // A failed request must still end the loading state, or the table's
+    // skeleton spins forever.
+    try {
+      const response = await searchRoles({
+        skip: skip,
+        per_page: perPage,
+        sorton: column,
+        sortdir: sortDirection,
+        match: query,
+        isActive: filter === "Active" ? true : filter === "Inactive" ? false : undefined,
       });
-
-    setLoading(false);
+      if (response.data.data.length > 0) {
+        let res = response.data.data[0];
+        setRoles(res.data);
+        setTotalRows(res.count);
+      } else {
+        setRoles([]);
+      }
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+      toast.error("Failed to load roles. Please try again.");
+      setRoles([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePageChange = (page) => {
@@ -284,9 +290,9 @@ const RoleMaster = () => {
   };
   const col = [
     {
+      // Numbered on from the previous page rather than starting at 1 again.
       name: "Sr No",
-      selector: (row, index) => index + 1,
-      sortable: true,
+      selector: (row, index) => (pageNo - 1) * perPage + index + 1,
       maxWidth: "20px",
     },
     {
@@ -414,7 +420,7 @@ const RoleMaster = () => {
         >
           Add Role
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleClick}>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input
@@ -509,7 +515,7 @@ onChange={handleCheck}
         >
           Update Role
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleUpdate}>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input
@@ -593,6 +599,7 @@ onChange={handleCheck}
         toggle={handleDeleteClose}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!roles.find((r) => r._id === remove_id)?.isActive}
       />
 
       <ReferenceErrorModal

@@ -109,6 +109,8 @@ export default function Profile() {
   const toast = useAlert();
   const isSuperAdmin = adminData?.roleType === "SuperAdmin";
 
+  document.title = `Profile | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+
   // ── Profile details form ─────────────────────────────────────────────────
   const [form, setForm] = useState({
     // SuperAdmin fields
@@ -276,7 +278,9 @@ export default function Profile() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* ── Left Sidebar: Profile Summary ──────────────────────────── */}
         <div className="md:col-span-1">
-          <div className="bg-white/40 backdrop-blur-md rounded-2xl border border-white/50 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] p-6 text-center">
+          {/* The see-through white reads as a grey block on the dark page, so
+              dark mode gets the same solid surface as the cards beside it. */}
+          <div className="bg-white/40 backdrop-blur-md rounded-2xl border border-white/50 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] p-6 text-center dark:bg-[#161616] dark:backdrop-blur-none">
             <div className="mx-auto h-24 w-24 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center mb-4 border border-white/60 relative group shadow-sm">
               {(profilePicPreview || adminData?.profilePic) ? (
                 <img src={profilePicPreview || adminData.profilePic} alt="Profile" className="h-full w-full object-cover" />
@@ -319,7 +323,10 @@ export default function Profile() {
               </button>
             )}
             <h2 className="text-lg font-bold text-slate-900">{adminData?.employeeName || adminData?.name || "User"}</h2>
-            <p className="text-sm text-brand-600 font-medium mb-4">{adminData?.roleName || "No Role"}</p>
+            {/* Super Admin has no Operator role record, so no roleName. */}
+            <p className="text-sm text-brand-600 dark:text-brand-300 font-medium mb-4">
+              {isSuperAdmin ? "Super Admin" : adminData?.roleName || "No Role"}
+            </p>
             
             {!isSuperAdmin && (
               <div className="text-left space-y-4 border-t border-slate-200/50 pt-5 mt-4">
@@ -336,7 +343,7 @@ export default function Profile() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Skills</p>
                     <div className="flex flex-wrap gap-1.5 mt-1">
                       {adminData.skills.map((s, idx) => (
-                        <span key={idx} className="bg-brand-50/80 text-brand-700 text-xs px-2.5 py-0.5 rounded-full border border-brand-100/50">
+                        <span key={idx} className="bg-brand-50/80 text-brand-700 dark:text-brand-300 text-xs px-2.5 py-0.5 rounded-full border border-brand-100/50">
                           {s.label || s}
                         </span>
                       ))}
@@ -354,8 +361,8 @@ export default function Profile() {
 
                 {adminData.remark && (
                   <div>
-                    <h3 className="text-[10px] font-bold text-white/50 uppercase tracking-wider mb-1">Remark</h3>
-                    <p className="text-sm text-white/90">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Remark</h3>
+                    <p className="text-sm text-slate-700">
                       {adminData.remark}
                     </p>
                   </div>

@@ -4,7 +4,7 @@
  * ───────────────────
  * What changed on a part (Item) between two saves — the rows of the Part
  * Master's edit history (models/ItemLog.js). Pure: no database. The caller does
- * the one lookup it needs (process names) and passes it in.
+ * the one lookup it needs (process names and Data Entry Pages) and passes it in.
  *
  * A change is { field, label, from, to }, listed in the order the Part form shows
  * the fields. Values are kept the way a person reads them: a blank is null (so ""
@@ -17,6 +17,22 @@ const { CYCLE_OP_FIELDS } = require("../models/Item");
 const STATUS_ACTIVE = "Active";
 const STATUS_INACTIVE = "Inactive";
 
+// SPRING FOR PINS and AFTER POWDER COATING call their one cycle-time box by
+// their own names on the Part and entry forms. A process is told apart the way
+// the client does (utils/springSheet.js, utils/powderCoatingSheet.js): by its
+// Data Entry Page, or by its name while it isn't linked to one.
+const TOTAL_CYCLE_LABEL = "Total Cycle Time (sec)";
+const CYCLE_LABELS = [
+  { page: /\/spring-data-entry\/?$/, name: /\bspring\b/i, label: "Standard Time per Piece (Sec)" },
+  { page: /\/powder-coating-data-entry\/?$/, name: /powder\s*coating/i, label: "Standard Inspection Time per Piece (Sec)" },
+];
+const cycleLabel = (processId, processNames, processPages) => {
+  const page = processPages[processId] || "";
+  const name = processNames[processId] || "";
+  const own = CYCLE_LABELS.find((c) => (page ? c.page.test(page) : c.name.test(name)));
+  return own ? own.label : TOTAL_CYCLE_LABEL;
+};
+
 // The fields worth a history row, in form order. The two "Other Operation" boxes
 // share a label on the sheet; the second is told apart here as the Part form does.
 const LOGGED_FIELDS = [
@@ -27,7 +43,7 @@ const LOGGED_FIELDS = [
   { key: "programTimeMin", label: "Program Time (min)" },
   { key: "pcsPerProgram", label: "No. of Piece In One Program" },
   ...CYCLE_OP_FIELDS.map((f) => ({ key: f.key, label: f.key === "otherOp2Sec" ? "Other Operation 2 (sec)" : f.label })),
-  { key: "totalCycleSec", label: "Total Cycle Time (sec)" },
+  { key: "totalCycleSec", label: TOTAL_CYCLE_LABEL },
   // Op 1…Op 5 of parts saved before the named operation boxes existed.
   { key: "cycleOpsSec", label: "Operation times, old format (sec)" },
   { key: "isActive", label: "Status" },
@@ -63,15 +79,20 @@ const present = (key, v, processNames) => {
  * @param {object} before  the part as it was ({} for a part that didn't exist)
  * @param {object} after   the part as it is  ({} for one that no longer does)
  * @param {Object<string,string>} processNames  process id → name, for the ids in either
+ * @param {Object<string,string>} processPages  process id → its Data Entry Page, for the same ids
  */
-const diffItem = (before, after, processNames = {}) => {
+const diffItem = (before, after, processNames = {}, processPages = {}) => {
   const a = plain(before);
   const b = plain(after);
+  // The cycle time is named after the process the part is in now — or was in,
+  // for one that was deleted or taken out of its process.
+  const processId = normalize("process", b.process) ?? normalize("process", a.process);
   return LOGGED_FIELDS.flatMap(({ key, label }) => {
     const from = normalize(key, a[key]);
     const to = normalize(key, b[key]);
     if (JSON.stringify(from) === JSON.stringify(to)) return [];
-    return [{ field: key, label, from: present(key, from, processNames), to: present(key, to, processNames) }];
+    const shown = key === "totalCycleSec" ? cycleLabel(processId, processNames, processPages) : label;
+    return [{ field: key, label: shown, from: present(key, from, processNames), to: present(key, to, processNames) }];
   });
 };
 

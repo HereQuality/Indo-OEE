@@ -43,18 +43,30 @@ api.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
+// Pages a signed-out visitor can be on — a 401 there (a stale cookie checked
+// on load) just clears it, with no trip to /login.
+const PUBLIC_PATHS = ["/", "/login", "/landing", "/privacy-policy", "/blocked"];
+
+// Set once a 401 has started the trip to /login: every other request that
+// fails with it in the same moment must not start another one.
+let sendingToLogin = false;
+
 // Response interceptor — handle common error responses
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // Handle 401 Unauthorized — clear stale credentials and redirect to login
+        // 401 = the session is over (expired / invalid token, or the user is
+        // gone). The login, username-check and OTP calls never get here —
+        // they take their own 4xx answers through validateStatus — so a 401
+        // here always comes from a call that needed the session. Clear it and
+        // go to /login once, as a full page load: in-memory state (the
+        // logged-in user, open loaders) still thinks it's signed in.
         if (error.response?.status === 401) {
             clearAuth();
-            const onLoginPage =
-                window.location.pathname === "/" ||
-                window.location.pathname === "/login";
-            if (!onLoginPage) {
-                window.location.href = "/";
+            const path = window.location.pathname.replace(/\/+$/, "") || "/";
+            if (!sendingToLogin && !PUBLIC_PATHS.includes(path)) {
+                sendingToLogin = true;
+                window.location.replace("/login");
             }
         }
 

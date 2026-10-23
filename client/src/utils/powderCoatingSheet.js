@@ -97,4 +97,8 @@ export const POWDER_FORMULAS = {
   productivityLunch:
     "Productivity considering Lunch, Tea, etc. = Ideal Inspection Time ÷ (Planned Operator Shift − Other Activity − Lunch / Tea), combined across every entry of this worker's date.",
   quality: "Quality = OK Qty ÷ Total Qty, for this entry.",
+  availability:
+    "Availability = Operating Time ÷ Planned Production Time, for this entry. Operating Time = Inspection Working Hours − Total Idle Time − Other Activity; Planned Production Time = Planned Operator Shift − Lunch / Tea. Above 100% (red) sends the entry to Admin review.",
+  performance:
+    "Performance = Standard Inspection Time per Piece × Total Qty ÷ Operating Time, for this entry — how fast the inspection went against the standard time. Above 100% (red) sends the entry to Admin review: usually a wrong time per piece, quantity or idle time.",
 };

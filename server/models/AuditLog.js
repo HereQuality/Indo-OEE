@@ -29,7 +29,7 @@ const AuditLogSchema = new mongoose.Schema(
     // Master record (its Operator Planned Shift setting).
     entityType: { type: String, enum: ["entry", "process"], required: true },
     // Which sheet's collection an entry lives in.
-    sheet: { type: String, enum: ["cnc", "vmc", "spm", "rivet", "press", "contact", "trobe", "spring", "powder", null], default: null },
+    sheet: { type: String, enum: ["cnc", "vmc", "spm", "rivet", "press", "contact", "trobe", "spring", "powder", "rubber", null], default: null },
     entity: { type: mongoose.Schema.Types.ObjectId, required: true },
     // Snapshots, so a log still reads correctly after the entry/machine is gone.
     machine: { type: mongoose.Schema.Types.ObjectId, default: null },

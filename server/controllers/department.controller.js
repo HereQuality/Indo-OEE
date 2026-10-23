@@ -5,6 +5,11 @@ exports.createDepartment = async (req, res) => {
   try {
     const { departmentName, departmentCode, isActive, remark } = req.body;
 
+    // The model trims the name, so one of only spaces would fail as a 500.
+    if (!String(departmentName ?? "").trim()) {
+      return res.status(400).json({ isOk: false, message: "Department name is required" });
+    }
+
     const newDepartment = await Department.create({
       departmentName,
       departmentCode,
@@ -27,7 +32,13 @@ exports.createDepartment = async (req, res) => {
 exports.updateDepartment = async (req, res) => {
   try {
     const { departmentId } = req.params;
-    
+
+    // An update doesn't run the model's "required", so a name of only spaces
+    // would be saved blank.
+    if (req.body.departmentName !== undefined && !String(req.body.departmentName ?? "").trim()) {
+      return res.status(400).json({ isOk: false, message: "Department name is required" });
+    }
+
     const department = await Department.findOneAndUpdate(
       { _id: departmentId },
       req.body,
@@ -123,9 +134,11 @@ exports.listDepartmentByParams = async (req, res) => {
 
     let query = {};
     if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const baseOr = [
-        { departmentName: { $regex: match, $options: "i" } },
-        { departmentCode: { $regex: match, $options: "i" } },
+        { departmentName: { $regex: escaped, $options: "i" } },
+        { departmentCode: { $regex: escaped, $options: "i" } },
       ];
 
       query.$or = baseOr;

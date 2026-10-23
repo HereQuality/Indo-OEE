@@ -103,6 +103,11 @@ const OperatorMaster = () => {
     return errors;
   };
 
+  // Once Save has been pressed, the messages follow the form as it is fixed.
+  useEffect(() => {
+    if (isSubmit) setFormErrors(validate(values));
+  }, [values, isSubmit]);
+
   const handleSave = (e) => {
     e.preventDefault();
     const errors = validate(values);
@@ -156,7 +161,8 @@ const OperatorMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every operator, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -170,7 +176,8 @@ const OperatorMaster = () => {
   };
 
   const col = [
-    { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
+    // Numbered on from the previous page rather than starting at 1 again.
+    { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     { name: "Operator Name", selector: (row) => row.name, sortable: true, sortField: "name", minWidth: "260px" },
     {
       name: "Process",
@@ -218,7 +225,7 @@ const OperatorMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Operators"
+                    formName="Operator"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -259,7 +266,9 @@ const OperatorMaster = () => {
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Operator" : "Add Operator"}
         </ModalHeader>
-        <form noValidate>
+        {/* onSubmit: Enter in the name box saves (Update's button isn't a submit
+            button, so without it the browser submitted the page and reloaded). */}
+        <form noValidate onSubmit={handleSave}>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input type="text" name="name" value={values.name} onChange={handleChange} placeholder=" " maxLength={100} />
@@ -321,6 +330,7 @@ const OperatorMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!operators.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );

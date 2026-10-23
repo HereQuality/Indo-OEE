@@ -37,5 +37,10 @@ export const springDayCalc = (rows) => dayCalc((rows || []).map(withBasis));
 export const SPRING_FORMULAS = {
   ...FORMULAS,
   effective: "Effective Machine Run Time = (OK Qty + Rejected Qty) × Standard Time per Piece ÷ 3600 — every piece run counts on this sheet.",
-  cycle: "Total Cycle Time = this entry's own cycle time — filled in from the Part when picked, and can be changed for the day.",
+  cycle: "Standard Time per Piece = this entry's own time per piece — filled in from the Part when picked, and can be changed for the day.",
+  idealQty:
+    "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Standard Time per Piece) — the most the shift could make, so OK + Rejected can't be more than this.",
+  performance:
+    "Performance = Standard Time per Piece × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong time per piece, quantity or stoppage.",
+  rejectedQty: "Rejected Quantity is typed on the form for this entry — it isn't worked out from the other figures.",
 };

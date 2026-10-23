@@ -8,8 +8,8 @@ import { getDashboardEntries, updateProcess } from "../../api/processes.api";
 import { useInvalidateProcesses } from "../../hooks/useProcesses";
 import {
   CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, DIMENSIONS, EMPTY_FILTERS, FORMATS, MAX_RANGE_DAYS, STATS_BY_KEY,
-  applyFilters, compareMachines, defaultRange, describeRange, hasFilters, quickRangeKey, QUICK_RANGES, rangeDays, resolveWidgets,
-  statMeasure, summarize, timeBucket, toggleFilter,
+  applyFilters, compareMachines, defaultRange, describeRange, dimLabel, hasFilters, quickRangeKey, QUICK_RANGES, rangeDays, resolveWidgets,
+  statMeasure, stoppageKeysFor, summarize, timeBucket, toggleFilter, unitWordsFor, worded,
 } from "../../utils/processDashboard";
 import { THEME } from "./chartTheme";
 import { CHART_COMPONENTS, TABLE_ONLY } from "./charts";
@@ -34,6 +34,10 @@ import "./processDashboard.css";
  * Which tiles and graphs appear, and in what order, comes from the process
  * (Production > Processes); SuperAdmin can also change them here via
  * Customize.
+ *
+ * RUBBER and After Powder Coating are made per worker, not per machine, so
+ * their dashboards say "Worker" throughout and their tables leave out the
+ * stoppage causes those sheets don't have (ctx.words / ctx.stoppageKeys).
  */
 // "All machines" (process === null) has no Process document of its own to
 // save a widget selection on, so Super Admin's Customize picks here are kept
@@ -75,6 +79,8 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
 
   const processId = process?._id;
   const [from, to] = range;
+  const words = unitWordsFor(process);
+  const stoppageKeys = useMemo(() => stoppageKeysFor(process), [process]);
 
   useEffect(() => {
     if (!from || !to || to < from) return undefined;
@@ -112,8 +118,10 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
       machineName: { ...entryMachineNames, ...Object.fromEntries(machines.map((m) => [m._id, m.machineName])) },
       machineOrder: Object.fromEntries(machines.map((m, i) => [m._id, i])),
       bucket: timeBucket(rows),
+      words,
+      stoppageKeys,
     }),
-    [machines, rows, entryMachineNames],
+    [machines, rows, entryMachineNames, words, stoppageKeys],
   );
 
   // rowsFor(dim): everything filtered except `dim` itself — see applyFilters.
@@ -165,8 +173,8 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
     resetRange();
   };
 
-  const stats = resolveWidgets(process ? process.stats : allMachinesWidgets?.stats, STATS_BY_KEY, DEFAULT_STATS);
-  const charts = resolveWidgets(process ? process.charts : allMachinesWidgets?.charts, CHARTS_BY_KEY, DEFAULT_CHARTS);
+  const stats = resolveWidgets(process ? process.stats : allMachinesWidgets?.stats, STATS_BY_KEY, DEFAULT_STATS).map((w) => worded(w, words));
+  const charts = resolveWidgets(process ? process.charts : allMachinesWidgets?.charts, CHARTS_BY_KEY, DEFAULT_CHARTS).map((w) => worded(w, words));
 
   const saveCustomize = () => {
     if (!process) {
@@ -192,7 +200,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
       .finally(() => setSaving(false));
   };
 
-  const activeChips = Object.entries(filters).flatMap(([dim, vals]) => vals.map((v) => ({ dim, value: v, label: `${DIMENSIONS[dim].label}: ${DIMENSIONS[dim].text(v, ctx)}` })));
+  const activeChips = Object.entries(filters).flatMap(([dim, vals]) => vals.map((v) => ({ dim, value: v, label: `${dimLabel(dim, ctx)}: ${DIMENSIONS[dim].text(v, ctx)}` })));
 
   return (
     <div className="pd-root">
@@ -212,7 +220,8 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
             )}
           </span>
           <FilterPanel range={range} onRangeChange={onRangeChange} extent={extent} filters={filters} onFilterSet={onFilterSet}
-            options={filterOptions} active={filtersActive} onClearAll={clearAll} />
+            options={filterOptions} active={filtersActive} onClearAll={clearAll}
+            labels={words.byWorker ? { machine: [words.mcNo, `All ${words.many}`] } : undefined} />
           {isAdmin && (
             <Button size="sm" color="light" className="pd-field-btn" onClick={() => setCustomizing({ stats: stats.map((s) => s.key), charts: charts.map((w) => w.key) })}>
               <LayoutDashboard size={15} /> Customize
@@ -240,7 +249,8 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
         <div className="pd-card text-center text-muted py-5">
           No entries for {process ? process.processName : "any machine"} in {periodLabel.toLowerCase()}.
           {extent && <div className="small mt-1">This process has entries from {describeRange([extent.from, extent.from])} to {describeRange([extent.to, extent.to])} — open Filters to pick a period inside that.</div>}
-          {process && !process.machines?.length && <div className="small mt-1">This process has no machines yet — assign them in Production › Processes.</div>}
+          {/* A worker-based process never has machines — its entries come per worker. */}
+          {process && !words.byWorker && !process.machines?.length && <div className="small mt-1">This process has no machines yet — assign them in Production › Processes.</div>}
         </div>
       ) : (
         // While a new range loads, the previous render stays up, dimmed.
@@ -261,9 +271,9 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           <div className="pd-grid">
             {charts.map((w) => {
               const Chart = CHART_COMPONENTS[w.key];
-              const measureStat = w.measure && STATS_BY_KEY[w.measure];
+              const measureStat = w.measure && worded(STATS_BY_KEY[w.measure], words);
               return (
-                <WidgetCard key={w.key} title={w.label} hint={w.hint} size={w.size} preview={w.preview} tone={w.tone} tableOnly={TABLE_ONLY.has(w.key)} resetKey={JSON.stringify(filters)}
+                <WidgetCard key={w.key} title={w.label} hint={w.hint} size={w.size} preview={w.preview} tone={w.tone} tableOnly={TABLE_ONLY.has(w.key)} resetKey={JSON.stringify(filters)} unit={words.one.toLowerCase()}
                   onDrill={measureStat ? () => setDrill(statMeasure(measureStat)) : undefined}>
                   {({ view, expanded, showChart }) => (
                     // Picking a machine / operator / etc. from a table view filters the
@@ -287,7 +297,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
 
       <Modal isOpen={!!customizing} toggle={() => setCustomizing(null)} size="xl" centered scrollable backdrop="static">
         <ModalHeader toggle={() => setCustomizing(null)} className="p-3 border-bottom">Customize — {process?.processName || "All machines"}</ModalHeader>
-        <ModalBody>{customizing && <WidgetPicker stats={customizing.stats} charts={customizing.charts} onChange={setCustomizing} />}</ModalBody>
+        <ModalBody>{customizing && <WidgetPicker stats={customizing.stats} charts={customizing.charts} onChange={setCustomizing} words={words} />}</ModalBody>
         <ModalFooter>
           <Button color="light" onClick={() => setCustomizing(null)} disabled={saving}>Cancel</Button>
           <Button color="primary" onClick={saveCustomize} disabled={saving}>{saving ? <><Spinner size="sm" className="me-1" />Saving…</> : "Save"}</Button>

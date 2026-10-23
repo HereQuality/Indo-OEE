@@ -6,15 +6,15 @@ import { getReviews } from "../../api/oeeReview.api";
 import { displayDay } from "../../utils/productionSheet";
 import { toRolePath } from "../../utils/roleUrl";
 import DecisionModal from "./DecisionModal";
-import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, StatusBadge, flaggedText, fmtDateTime, useElementWidth } from "./reviewShared";
+import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, StatusBadge, flaggedText, fmtDateTime, isWorkerSheet, useElementWidth } from "./reviewShared";
 
 /**
  * Components/OeeReview/ReviewsTab.jsx
  * ─────────────────────────────────────
  * The review desk: every entry whose Availability, Performance or Quality
  * went above 100%, by status (Pending first — the ones waiting on a
- * decision), with a text search over machine / operator / part / drawing
- * no. A pending row is approved or rejected through DecisionModal; every
+ * decision), with a text search over machine (or worker) / operator / part /
+ * drawing no. A pending row is approved or rejected through DecisionModal; every
  * row links to its sheet's data entry page.
  *
  * Given enough room (a desktop with the sidebar open, or a laptop with it
@@ -114,7 +114,8 @@ const ReviewTable = ({ rows, roleSlug, onDecide }) => (
         <tr>
           <th scope="col">Sheet</th>
           <th scope="col">Date</th>
-          <th scope="col">Machine</th>
+          {/* RUBBER / After Powder Coating rows name a worker here. */}
+          <th scope="col">Machine / Worker</th>
           <th scope="col">Operator</th>
           <th scope="col">Part</th>
           <th scope="col" className="text-end">Availability</th>
@@ -136,7 +137,9 @@ const ReviewTable = ({ rows, roleSlug, onDecide }) => (
             </td>
             <td>
               <div className="fw-semibold text-nowrap">{dash(row.machineName)}</div>
-              {row.processName && <div className="text-muted">{row.processName}</div>}
+              {(isWorkerSheet(row.sheet) || row.processName) && (
+                <div className="text-muted">{[isWorkerSheet(row.sheet) && "Worker", row.processName].filter(Boolean).join(" · ")}</div>
+              )}
             </td>
             <td style={{ minWidth: 90 }}>{dash(row.operator)}</td>
             <td style={{ minWidth: 135 }}>
@@ -179,6 +182,7 @@ const ReviewCards = ({ rows, roleSlug, onDecide }) => (
             <div style={{ minWidth: 0 }}>
               <div className="fw-semibold">
                 {sheetName(row)} · <span className="text-nowrap">{dash(row.machineName)}</span>
+                {isWorkerSheet(row.sheet) && <span className="text-muted fw-normal small"> (worker)</span>}
               </div>
               <div className="text-muted small">
                 {displayDay(row.date)} · Entry {dash(row.slot)}
@@ -309,9 +313,9 @@ const ReviewsTab = ({ roleSlug }) => {
               bsSize="sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search machine, operator, part…"
-              title="Search by machine, operator, part name or drawing no."
-              aria-label="Search by machine, operator, part name or drawing no."
+              placeholder="Search machine / worker, operator, part…"
+              title="Search by machine or worker, operator, part name or drawing no."
+              aria-label="Search by machine or worker, operator, part name or drawing no."
               style={{ paddingLeft: 30 }}
             />
           </div>

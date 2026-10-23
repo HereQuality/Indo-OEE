@@ -16,7 +16,7 @@ import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
 import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
 import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
-import { isTimeRuleMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
+import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { RIVET_OP_FIELDS, RIVET_PROCESS_TYPES, rivetRowCalc } from "../../utils/rivetSheet";
 import { RIVET_DOWNTIME_KEYS } from "../../utils/rivetValidation";
 import { hoursToHm, parseHm } from "../../utils/shiftHours";
@@ -152,7 +152,9 @@ const EntryBlock = ({
   const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
   const stoppageLimit = useMemo(() => stoppageLimitMin(withDecimalPlanned(values)), [values]);
   const machineShiftMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
-  const plannedBelowMachine = planned !== null && machineShiftMin !== null && Math.round(planned * 60) < machineShiftMin;
+  // Not while End isn't after Start — that "shift" wraps past midnight, and
+  // the End box already says what's wrong.
+  const plannedBelowMachine = !isEndBeforeStartMessage(errors.machineOffTime) && planned !== null && machineShiftMin !== null && Math.round(planned * 60) < machineShiftMin;
   const overStoppage = stoppageLimit !== null && calc.totalStoppageMin > stoppageLimit;
   const otherDowntimeUsed = Number(values.otherMin) > 0;
 
@@ -189,8 +191,10 @@ const EntryBlock = ({
     notice(...qtyNotice({ calc, entered: typed + (Number(values[otherKey]) || 0) }));
 
   // The time rules (OFF after ON, no overlap) show as soon as the times are
-  // picked; everything else waits until Save has been pressed.
-  const err = (key) => (isSubmit || isTimeRuleMessage(errors[key]) ? errors[key] : undefined);
+  // picked (and a typed time that isn't one, or a machine already full
+  // for the date, as soon as it's there); everything else waits until Save
+  // has been pressed.
+  const err = (key) => (isSubmit || isLiveMessage(errors[key]) ? errors[key] : undefined);
 
   // An OFF picker offers nothing at or before its ON time.
   const after = (on) => {
@@ -304,6 +308,7 @@ const EntryBlock = ({
     <div
       ref={registerRef}
       data-entry-index={index}
+      data-expanded="true"
       className={`entry-block-in border rounded mb-2 transition-colors ${
         isSubmit && errorCount > 0 ? "border-danger" : "border-primary"
       }`}
@@ -533,7 +538,7 @@ const EntryBlock = ({
           <OeeCheck calc={oeeCalc} over={overMetrics} />
         </Line>
 
-        <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Fixed — nothing to enter" : ""}>
+        <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Shift fixed — Lunch / Rest optional" : ""}>
           <Row className="g-1">
             <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
@@ -572,7 +577,7 @@ const EntryBlock = ({
               label="Stoppage Allowed (min)"
               value={stoppageLimit === null ? "" : String(stoppageLimit)}
               md={4}
-              title="Planned Operator Shift (min) − Machine Shift (min): the most Lunch / Rest plus every downtime can add up to"
+              title="The Machine Shift in minutes: the most Lunch / Rest plus every downtime can add up to"
             />
           </Row>
         </Line>
@@ -699,20 +704,32 @@ const RivetEntryForm = ({
     let tries = 0;
     let frame;
     const go = () => {
-      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"] [data-field="${field}"]`);
+      const el = rootRef.current?.querySelector(`[data-entry-index="${index}"][data-expanded] [data-field="${field}"]`);
       if (!el) {
         tries += 1;
         if (tries < 20) frame = requestAnimationFrame(go);
         return;
       }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.querySelector("input, select, textarea")?.focus({ preventScroll: true });
+      el.querySelector("input, select, textarea, button")?.focus({ preventScroll: true });
     };
     frame = requestAnimationFrame(go);
     return () => cancelAnimationFrame(frame);
     // Only a new request (its nonce) should steer the scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusTarget?.nonce]);
+
+  // Removing a block moves every block after it up one; the open one moves
+  // with them rather than closing (and removing the open one closes it).
+  const removeBlock = (i) => {
+    setExpandedIndex((open) => (open === null || open < i ? open : open === i ? null : open - 1));
+    onRemove(i);
+  };
+
+  // A new block takes the last block's date; once every machine is already on
+  // that date in this form, it would have none left to pick (TROBE has one).
+  const lastDate = entries[entries.length - 1]?.date;
+  const allTaken = machines.length > 0 && machines.every((m) => entries.some((v) => v.date === lastDate && String(v.machine) === String(m._id)));
 
   // "Add another machine": once the new block is on screen, scroll to it and
   // put the cursor in its machine box.
@@ -752,7 +769,7 @@ const RivetEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
-          onRemove={onRemove}
+          onRemove={removeBlock}
           registerRef={(el) => {
             blockRefs.current[i] = el;
           }}
@@ -760,18 +777,22 @@ const RivetEntryForm = ({
       ))}
 
       {!isEdit && (
-        <button
-          type="button"
-          className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
-          onClick={() => {
-            // The new block stays closed and asks for its machine first (focus
-            // goes to the machine box); it opens once one is picked.
-            askMachineFor.current = entries.length;
-            onAdd();
-          }}
-        >
-          <Plus size={16} /> Add another machine
-        </button>
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-outline-primary d-inline-flex align-items-center gap-2"
+            disabled={allTaken}
+            onClick={() => {
+              // The new block stays closed and asks for its machine first (focus
+              // goes to the machine box); it opens once one is picked.
+              askMachineFor.current = entries.length;
+              onAdd();
+            }}
+          >
+            <Plus size={16} /> Add another machine
+          </button>
+          {allTaken && <span className="text-muted small">Every machine is already in this form for this date.</span>}
+        </div>
       )}
     </div>
   );

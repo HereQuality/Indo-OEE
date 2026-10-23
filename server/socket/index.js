@@ -30,9 +30,16 @@ const initSocket = (httpServer) => {
   });
 
   ioInstance.on("connection", (socket) => {
-    socket.on("join", (token) => {
+    socket.on("join", async (token) => {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Same rule as the REST API (middlewares/auth.middleware.js): a deleted
+        // (deactivated) or blocked employee's token no longer gets them in.
+        if (decoded.roleType !== "SuperAdmin") {
+          const Operator = require("../models/Operator");
+          const person = await Operator.findById(decoded.id).select("isActive isBlocked").lean();
+          if (!person || person.isActive === false || person.isBlocked) return;
+        }
         socket.data.personId = decoded.id;
         socket.data.roleType = decoded.roleType;
         socket.join(String(decoded.id));

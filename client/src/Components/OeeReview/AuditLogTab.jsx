@@ -230,7 +230,11 @@ const AuditLogTab = () => {
         </div>
       ) : !error && filtered.length === 0 ? (
         <div className="text-center text-muted py-5">
-          {text.trim() ? `Nothing on this page matches “${text.trim()}”.` : "Nothing recorded yet. Changes made from now on are listed here."}
+          {text.trim()
+            ? `Nothing on this page matches “${text.trim()}”.`
+            : action
+              ? `Nothing matches the “${AUDIT_ACTIONS.find((a) => a.key === action)?.label || action}” filter.`
+              : "Nothing recorded yet. Changes made from now on are listed here."}
         </div>
       ) : !error ? (
         filtered.map((log) => <LogRow key={log._id} log={log} />)

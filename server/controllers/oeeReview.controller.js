@@ -8,6 +8,7 @@ const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
 const PowderCoatingEntry = require("../models/PowderCoatingEntry");
+const RubberEntry = require("../models/RubberEntry");
 const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
@@ -24,7 +25,7 @@ const { createNotification } = require("../services/notification.service");
  * Everything here except /access is Admin / Super Admin only (route-level
  * requireAdmin). Figures are shown exactly as saved — never capped.
  */
-const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry, spring: SpringEntry, powder: PowderCoatingEntry };
+const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry, spring: SpringEntry, powder: PowderCoatingEntry, rubber: RubberEntry };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const parseDay = (s) => {
   if (!DATE_RE.test(String(s || ""))) return null;
@@ -72,7 +73,7 @@ exports.listReviews = async (req, res) => {
       ),
     );
     const rows = lists.flat();
-    // An After Powder Coating entry has a worker in its machine's place, and
+    // An After Powder Coating or RUBBER entry has a worker in its machine's place, and
     // carries its own process (there's no machine to find it through).
     const names = await machineNamesOf(...rows.map(keyOf));
     const machines = await Machine.find({ _id: { $in: rows.map((r) => r.machine).filter(Boolean) } }).select("process").lean();
@@ -111,10 +112,18 @@ exports.listReviews = async (req, res) => {
   }
 };
 
+// Why a decision can't be applied to the review the reviewer had open — each
+// one a 409, so the review dialog reloads the list instead of just failing.
+const NO_REVIEW = "This entry doesn't need review any more";
+const EDITED = "This entry was edited after you opened it — reload and review the new figures";
+const alreadyDecided = (review) => `Already ${review.status} by ${review.decidedBy?.name || "another reviewer"} — reload`;
+
 // PUT /oee-review/:sheet/:id  { decision: "approved"|"rejected", remark, flaggedAt }
 // `flaggedAt` is the flag the reviewer was looking at: if the entry has been
 // edited (and re-flagged) since, the decision is refused rather than applied
-// to figures nobody reviewed.
+// to figures nobody reviewed. Only a pending review can be decided, so two
+// Admins on the same entry can't overwrite each other — the second is told who
+// got there first.
 exports.decide = async (req, res) => {
   try {
     const { sheet, id } = req.params;
@@ -132,20 +141,25 @@ exports.decide = async (req, res) => {
 
     const entry = await Model.findById(id).lean();
     if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
-    if (!entry.review) return res.status(400).json({ isOk: false, message: "This entry doesn't need review any more" });
+    if (!entry.review) return res.status(409).json({ isOk: false, message: NO_REVIEW });
     if (req.body.flaggedAt && new Date(req.body.flaggedAt).getTime() !== new Date(entry.review.flaggedAt).getTime()) {
-      return res.status(409).json({ isOk: false, message: "This entry was edited after you opened it — reload and review the new figures" });
+      return res.status(409).json({ isOk: false, message: EDITED });
     }
+    if (entry.review.status !== "pending") return res.status(409).json({ isOk: false, message: alreadyDecided(entry.review) });
 
     const actor = await actorOf(req);
     const decidedAt = new Date();
     const updated = await Model.findOneAndUpdate(
-      { _id: id, "review.flaggedAt": entry.review.flaggedAt },
+      { _id: id, "review.flaggedAt": entry.review.flaggedAt, "review.status": "pending" },
       { $set: { "review.status": decision, "review.decidedBy": actor, "review.decidedAt": decidedAt, "review.remark": remark } },
       { new: true, runValidators: true },
     ).lean();
     if (!updated) {
-      return res.status(409).json({ isOk: false, message: "This entry was edited after you opened it — reload and review the new figures" });
+      // Something changed between the read above and this write: say what.
+      const now = await Model.findById(id).select("review").lean();
+      const sameFlag = now?.review && new Date(now.review.flaggedAt).getTime() === new Date(entry.review.flaggedAt).getTime();
+      const message = !now?.review ? NO_REVIEW : sameFlag && now.review.status !== "pending" ? alreadyDecided(now.review) : EDITED;
+      return res.status(409).json({ isOk: false, message });
     }
 
     const names = await machineNamesOf(keyOf(entry));

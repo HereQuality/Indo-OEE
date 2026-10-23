@@ -19,7 +19,10 @@ import { STOPPAGE_FIELDS } from "../../utils/productionSheet";
  *   rowsFor(dim) — the filtered entries; pass the dimension the chart itself
  *                  is sliced by so it keeps all its marks and dims the
  *                  unselected ones, or null for fully filtered rows
- *   ctx          — { machineName, bucket }   bucket = "date" | "month"
+ *   ctx          — { machineName, bucket, words, stoppageKeys }
+ *                  bucket = "date" | "month"; words / stoppageKeys = how
+ *                  the process names its rows (machine or worker) and which
+ *                  stoppage causes its sheet has (utils/processDashboard.js)
  *   c            — theme colours             filters — active cross-filters
  *   onToggle(dim, value) — cross-filter the whole dashboard
  *   onDrill(measure)     — open the breakdown for a measure
@@ -31,6 +34,17 @@ const truncate = (s, max = 18) => (String(s).length > max ? `${String(s).slice(0
 const pct100 = (v) => (Number.isFinite(v) ? v * 100 : null);
 const naturalSort = (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true });
 const clickedKey = (d) => d?.payload?.key ?? d?.key;
+
+// "Machine" — or "Worker" on a worker-based process — and what its times are
+// called, for headings and empty-state hints. Wording only.
+const unitOf = (ctx) => ctx.words?.one || "Machine";
+const timesOf = (ctx) => ctx.words?.times || "machine ON/OFF times";
+
+// The stoppage causes a table gives a column: the ones the process's sheet
+// has (ctx.stoppageKeys — no B.D. Mech. / Ele. on RUBBER), plus any other
+// that does carry minutes, so a column never hides time the totals include.
+const causeColumns = (ctx, groups) =>
+  STOPPAGE_FIELDS.filter((f) => !ctx.stoppageKeys || ctx.stoppageKeys.includes(f.key) || groups.some((g) => g.summary.downtimeByCause[f.key]));
 
 export const Empty = ({ children }) => (
   <div className="d-flex align-items-center justify-content-center h-100 text-muted small text-center px-3">{children}</div>
@@ -202,10 +216,10 @@ const RejectByReason = ({ rowsFor, c, onDrill, view }) => {
 
 const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const data = useDimBars(rowsFor("machine"), "machine", ctx, (s) => pct100(s.oeeLosses), { sort: "machine", positiveOnly: false });
-  if (!data.length) return <Empty>Needs machine ON/OFF times and OK quantity.</Empty>;
+  if (!data.length) return <Empty>Needs {timesOf(ctx)} and OK quantity.</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={["Machine", "OEE considering losses"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+      <MiniTable columns={[unitOf(ctx), "OEE considering losses"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={data.map((d) => ({ key: d.key, cells: [d.label, `${d.value.toFixed(2)}%`] }))} />
     );
   }
@@ -225,13 +239,13 @@ const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   );
 };
 
-// Effective run time per machine, in sheet order — one bar each, hours on top.
+// Effective run time per machine (or worker), in sheet order — one bar each, hours on top.
 const RunTimeByMachineBars = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const data = useDimBars(rowsFor("machine"), "machine", ctx, (s) => s.effectiveHours, { sort: "machine" });
   if (!data.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={["Machine", "Effective run time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+      <MiniTable columns={[unitOf(ctx), "Effective run time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
     );
   }
@@ -329,21 +343,22 @@ const PctTrend = ({ series, empty, ceiling = false, fit = false, area = false, r
   );
 };
 
-const OeeTrend = (props) => <PctTrend {...props} series={OEE_SERIES} empty="Needs machine ON/OFF times and OK quantity." />;
+const OeeTrend = (props) => <PctTrend {...props} series={OEE_SERIES} empty={`Needs ${timesOf(props.ctx)} and OK quantity.`} />;
 
 // Availability · Performance · Quality for the period as three concentric
 // rings (a full ring is 100%), with the exact figures beside them. A figure
 // over 100% fills its ring and is marked — that is an entry held for Admin
 // review. The table view keeps the by-date numbers.
 const ApqRings = (props) => {
-  const { rowsFor, c, view } = props;
+  const { rowsFor, ctx, c, view } = props;
   const rows = rowsFor(null);
   const sum = useMemo(() => summarize(rows), [rows]);
+  const needs = `Needs ${timesOf(ctx)}, Planned Operator Shift, a part's cycle time and quantities.`;
   if (view === "table") {
-    return <PctTrend {...props} series={APQ_SERIES} ceiling empty="Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities." />;
+    return <PctTrend {...props} series={APQ_SERIES} ceiling empty={needs} />;
   }
   const items = APQ_SERIES.map((s, i) => ({ ...s, color: c.series[i], value: pct100(sum[s.key]) }));
-  if (items.every((d) => d.value === null)) return <Empty>Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities.</Empty>;
+  if (items.every((d) => d.value === null)) return <Empty>{needs}</Empty>;
   const data = [...items].reverse().map((d) => ({ name: d.label, value: Math.min(100, Math.max(0, d.value ?? 0)), fill: d.color }));
   return (
     <div className="d-flex flex-wrap align-items-center justify-content-center h-100 gap-3">
@@ -382,7 +397,10 @@ const ApqTrend = ApqRings;
 // averaged per date, or per month on long ranges). `fit` keeps the axis to the
 // data instead of stretching it to 100%.
 const UTIL_SERIES = [{ key: "unutilized", label: "Unutilized machine time", tone: "downtime" }];
-const UnutilizedTrend = (props) => <PctTrend {...props} series={UTIL_SERIES} fit area empty="Needs machine ON/OFF times." />;
+const UTIL_SERIES_WORKER = [{ ...UTIL_SERIES[0], label: "Unutilized time" }];
+const UnutilizedTrend = (props) => (
+  <PctTrend {...props} series={props.ctx.words?.byWorker ? UTIL_SERIES_WORKER : UTIL_SERIES} fit area empty={`Needs ${timesOf(props.ctx)}.`} />
+);
 
 const OkRejectedTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   const dim = ctx.bucket;
@@ -476,9 +494,12 @@ const DowntimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   if (!machines.length) return <Empty>No downtime recorded.</Empty>;
   const groupTotal = (g, grp) => grp.fields.reduce((sum, f) => sum + g.summary.downtimeByCause[f], 0);
   if (view === "table") {
+    // Only the groups holding a cause this process has (no Breakdown on RUBBER).
+    const shown = new Set(causeColumns(ctx, machines).map((f) => f.key));
+    const groups = STOPPAGE_GROUPS.filter((grp) => grp.fields.some((f) => shown.has(f)));
     return (
-      <MiniTable columns={["Machine", ...STOPPAGE_GROUPS.map((g) => `${g.label} (min)`)]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
-        rows={machines.map((g) => ({ key: g.key, cells: [g.label, ...STOPPAGE_GROUPS.map((grp) => formatExact("qty", groupTotal(g, grp)))] }))} />
+      <MiniTable columns={[unitOf(ctx), ...groups.map((g) => `${g.label} (min)`)]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+        rows={machines.map((g) => ({ key: g.key, cells: [g.label, ...groups.map((grp) => formatExact("qty", groupTotal(g, grp)))] }))} />
     );
   }
   const data = machines.map((g, i) => {
@@ -538,14 +559,15 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, ...rest })
   );
   if (view === "table") {
     if (!machines.length) return <Empty>No entries for this period.</Empty>;
+    const causeFields = causeColumns(ctx, machines);
     return (
       <MiniTable
-        columns={["Machine", "Effective run time", ...STOPPAGE_FIELDS.map((f) => `${causeLabel(f.key)} (min)`)]}
+        columns={[unitOf(ctx), "Effective run time", ...causeFields.map((f) => `${causeLabel(f.key)} (min)`)]}
         selected={filters.machine}
         onRowClick={(k) => onToggle("machine", k)}
         rows={machines.map((g) => ({
           key: g.key,
-          cells: [g.label, formatExact("hours", g.summary.effectiveHours), ...STOPPAGE_FIELDS.map((f) => formatExact("qty", g.summary.downtimeByCause[f.key]))],
+          cells: [g.label, formatExact("hours", g.summary.effectiveHours), ...causeFields.map((f) => formatExact("qty", g.summary.downtimeByCause[f.key]))],
         }))}
       />
     );
@@ -629,10 +651,10 @@ const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, expande
   );
   const axisWidth = 12 + 7 * Math.max(...ticks.map((t) => tickText(t).length));
 
-  if (!n) return <Empty>Needs machine ON/OFF times.</Empty>;
+  if (!n) return <Empty>Needs {timesOf(ctx)}.</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={["Machine", "Unreported time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+      <MiniTable columns={[unitOf(ctx), "Unreported time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={panels.map((p) => ({ key: p.key, cells: [p.label, formatExact("minutes", p.total)] }))} />
     );
   }
@@ -650,7 +672,7 @@ const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, expande
     <div className={`h-100 pd-multiples${fits ? " pd-multiples-fit" : ""}`} style={gridStyle}>
       {panels.map((p) => (
         <div key={p.key} className="pd-multiple">
-          <button type="button" className="pd-multiple-title" onClick={() => onToggle("machine", p.key)} title="Filter the dashboard to this machine">
+          <button type="button" className="pd-multiple-title" onClick={() => onToggle("machine", p.key)} title={`Filter the dashboard to this ${unitOf(ctx).toLowerCase()}`}>
             {p.label} <span className="text-muted fw-normal">· {FORMATS.minutes(p.total)}</span>
           </button>
           <div className="pd-multiple-plot" style={fits ? undefined : { height: plotHeight, flex: "none" }}>
@@ -671,33 +693,37 @@ const UnreportedByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, expande
   );
 };
 
-// One row per machine. Read left to right: the quantities (Actual, OK, then OK %
+// One row per machine (or worker). Read left to right: the quantities (Actual, OK, then OK %
 // then the Rejected count and Rejected % that go with it), then run time,
 // downtime and unreported time, and last the three OEE figures each in its own
 // column — the same three the entries table shows — rather than one blended OEE.
-const SUMMARY_COLUMNS = [
-  { label: "Machine" },
-  { label: "Actual", hint: "Actual quantity produced" },
-  { label: "OK", hint: "Pieces that passed" },
-  { label: "% OK", hint: "OK ÷ (OK + Rejected)" },
-  { label: "Rejected", hint: "Actual − OK" },
-  { label: "% Rejected", hint: "Rejected ÷ Actual" },
-  { label: "Effective Run", hint: "OK × cycle time" },
-  { label: "Downtime", hint: "All stoppage causes" },
-  { label: "Unreported", hint: "Planned shift − machine shift − downtime, per machine-day" },
-  { label: "OEE · Losses", hint: "OEE considering losses — averaged over the machine's days" },
-  { label: "OEE · Lunch", hint: "OEE not considering losses, but lunch — averaged over the machine's days" },
-  { label: "OEE · Lunch + Setup Time", hint: "OEE not considering losses, but lunch and setup time — averaged over the machine's days" },
-];
+const summaryColumns = (ctx) => {
+  const unit = unitOf(ctx).toLowerCase();
+  return [
+    { label: unitOf(ctx) },
+    { label: "Actual", hint: "Actual quantity produced" },
+    { label: "OK", hint: "Pieces that passed" },
+    { label: "% OK", hint: "OK ÷ (OK + Rejected)" },
+    { label: "Rejected", hint: "Actual − OK" },
+    { label: "% Rejected", hint: "Rejected ÷ Actual" },
+    { label: "Effective Run", hint: "OK × cycle time" },
+    { label: "Downtime", hint: "All stoppage causes" },
+    { label: "Unreported", hint: `Planned shift − ${unit} shift − downtime, per ${unit}-day` },
+    { label: "OEE · Losses", hint: `OEE considering losses — averaged over the ${unit}'s days` },
+    { label: "OEE · Lunch", hint: `OEE not considering losses, but lunch — averaged over the ${unit}'s days` },
+    { label: "OEE · Lunch + Setup Time", hint: `OEE not considering losses, but lunch and setup time — averaged over the ${unit}'s days` },
+  ];
+};
 
 const MachineSummary = ({ rowsFor, ctx, filters, onToggle }) => {
   const rows = rowsFor("machine");
   const data = useMemo(() => summarizeBy(rows, "machine", ctx).sort(compareMachines(ctx)), [rows, ctx]);
   if (!data.length) return <Empty>No entries for this period.</Empty>;
+  const columns = summaryColumns(ctx);
   return (
     <MiniTable
-      columns={SUMMARY_COLUMNS.map((c) => c.label)}
-      hints={SUMMARY_COLUMNS.map((c) => c.hint)}
+      columns={columns.map((c) => c.label)}
+      hints={columns.map((c) => c.hint)}
       selected={filters.machine}
       onRowClick={(k) => onToggle("machine", k)}
       rows={data.map(({ key, label, summary: s }) => ({

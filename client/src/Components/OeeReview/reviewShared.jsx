@@ -25,7 +25,14 @@ export const SHEET_PATHS = {
   trobe: "/hqepl/production/trobe-data-entry",
   spring: "/hqepl/production/spring-data-entry",
   powder: "/hqepl/production/powder-coating-data-entry",
+  rubber: "/hqepl/production/rubber-data-entry",
 };
+
+// RUBBER and After Powder Coating have no machines: their entries are made
+// per worker, and the review row carries the worker where the others carry
+// the machine (server keyOf — entry.machine ?? entry.worker).
+const WORKER_SHEETS = new Set(["rubber", "powder"]);
+export const isWorkerSheet = (sheet) => WORKER_SHEETS.has(sheet);
 
 export const REVIEW_STYLE = {
   pending: { label: "Pending", badge: "bg-warning-subtle text-warning-emphasis" },

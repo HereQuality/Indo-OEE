@@ -86,7 +86,9 @@ const DateRangeField = ({ value, onChange, minDate, maxDate }) => {
       showMonthDropdown
       showYearDropdown
       dropdownMode="select"
-      openToDate={start}
+      // Opens on the month the range ends in (today's, for the default range),
+      // not where it starts — a year back, with nothing pickable before the data.
+      openToDate={end || start}
       autoComplete="off"
     >
       {/* react-datepicker renders children inside the calendar, so clicks here don't count as "outside". */}

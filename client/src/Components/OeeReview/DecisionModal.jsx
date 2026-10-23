@@ -13,7 +13,10 @@ import { METRIC_KEYS, METRIC_LABELS, MetricValue, entryTitle, flaggedText } from
  * most), Confirm / Cancel. The decision is sent with the flag the reviewer
  * was looking at (flaggedAt) — if the entry was edited meanwhile the server
  * answers 409, which is shown and the list reloaded rather than deciding on
- * figures nobody reviewed.
+ * figures nobody reviewed. Every other way the row can have gone stale —
+ * deleted (404), already decided or no longer over 100% (409, or a 400 that
+ * isn't about the remark) — closes the modal and reloads the same way, so the
+ * stale Pending row doesn't stay on the list.
  */
 
 const REMARK_MAX = 500;
@@ -59,10 +62,12 @@ const DecisionModal = ({ isOpen, row, decision, onClose, onDecided }) => {
       const status = err?.response?.status;
       const message = err?.response?.data?.message || "Could not save the decision. Please try again.";
       toast.error(message);
-      // Edited after it was opened: the figures on screen are stale, so
-      // the modal closes and the list reloads with the new flag.
-      if (status === 409) onDecided();
-      else if (status === 400) setError(message);
+      // A remark the server refused is the reviewer's to fix, so the modal
+      // stays open with it. Anything else it refuses means the row on screen
+      // is stale: the modal closes and the list reloads.
+      const aboutRemark = status === 400 && /remark/i.test(message);
+      if (aboutRemark) setError(message);
+      else if (status === 400 || status === 404 || status === 409) onDecided();
     } finally {
       setSubmitting(false);
     }

@@ -24,6 +24,8 @@ const n = (v) => (v === "" || v === null || v === undefined ? 0 : Number(v) || 0
 // inspects pieces within Inspection Working Hours, it doesn't make them.
 const MACHINE_WORDS = { who: "Machine", canMake: "this machine can make", shift: "Machine Shift" };
 export const WORKER_WORDS = { who: "Worker", canMake: "this worker can inspect", shift: "Inspection Working Hours" };
+// RUBBER's worker makes pieces, within a Worker Shift Time.
+export const RUBBER_WORDS = { who: "Worker", canMake: "this worker can make", shift: "Worker Shift Time" };
 const whoRow = (machine, words) => (machine ? [{ label: words.who, value: machine }] : []);
 
 export const qtyNotice = ({ calc, entered, label = "OK + Rejected", machine = "", words = MACHINE_WORDS }) => [

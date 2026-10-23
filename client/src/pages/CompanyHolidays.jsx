@@ -121,6 +121,10 @@ const CompanyHolidays = () => {
     // failure) once confirmed.
     const doToggleWeeklyOffDay = async (day) => {
         const next = weeklyOffDays.includes(day) ? weeklyOffDays.filter((d) => d !== day) : [...weeklyOffDays, day];
+        if (next.length >= WEEKDAYS.length) {
+            toast.error("At least one day of the week must stay a working day.");
+            return;
+        }
         const prev = weeklyOffDays;
         setWeeklyOffDays(next);
         setSavingDay(day);
@@ -134,6 +138,11 @@ const CompanyHolidays = () => {
             setSavingDay(null);
         }
     };
+
+    // With six days already off, the one left can't be ticked too: a week with
+    // no working day would mean the entry lock's 2 working days never come
+    // (the server refuses it as well).
+    const lastWorkingDayLeft = weeklyOffDays.length >= WEEKDAYS.length - 1;
 
     const confirmingAdd = confirmDay !== null && !weeklyOffDays.includes(confirmDay);
     const confirmDayLabel = confirmDay !== null ? WEEKDAYS.find((d) => d.value === confirmDay)?.label : "";
@@ -229,7 +238,7 @@ const CompanyHolidays = () => {
                         <span className="fw-bold small">Weekly Off</span>
                     </div>
                     <p className="text-muted mb-3 small">
-                        Day(s) the company doesn't operate at all, every week.
+                        Day(s) the company doesn't operate at all, every week. At least one day has to stay a working day.
                     </p>
                     {weeklyOffLoading ? (
                         <Spinner size="sm" />
@@ -237,11 +246,13 @@ const CompanyHolidays = () => {
                         <div className="d-flex gap-2 flex-wrap">
                             {WEEKDAYS.map((d) => {
                                 const active = weeklyOffDays.includes(d.value);
+                                const blocked = !active && lastWorkingDayLeft;
                                 return (
                                     <button
                                         key={d.value}
                                         type="button"
-                                        disabled={savingDay !== null || !currentPagePermissions.edit}
+                                        disabled={savingDay !== null || !currentPagePermissions.edit || blocked}
+                                        title={blocked ? "At least one day of the week must stay a working day" : undefined}
                                         onClick={() => setConfirmDay(d.value)}
                                         className="btn btn-sm"
                                         style={{
@@ -250,7 +261,7 @@ const CompanyHolidays = () => {
                                             background: active ? "#fef2f2" : "transparent",
                                             color: active ? "#b91c1c" : undefined,
                                             fontWeight: 600,
-                                            opacity: (savingDay !== null && savingDay !== d.value) || !currentPagePermissions.edit ? 0.6 : 1,
+                                            opacity: (savingDay !== null && savingDay !== d.value) || !currentPagePermissions.edit || blocked ? 0.6 : 1,
                                             minWidth: 56,
                                         }}
                                     >

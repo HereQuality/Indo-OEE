@@ -40,6 +40,11 @@ const buildHolidaySets = (holidays) => {
 const isNonWorkingDay = (date, weeklyOffDays, holidaySets) =>
   weeklyOffDays.includes(date.getUTCDay()) || holidaySets.exact.has(toISO(date)) || holidaySets.recurring.has(toMonthDay(date));
 
+// How far ahead getLockDeadline looks for working days. Any real calendar
+// finds them within a week or two; this only stops a calendar with no working
+// day at all (every weekday off) from looping forever.
+const MAX_SCAN_DAYS = 366;
+
 /**
  * The last calendar date (inclusive, "YYYY-MM-DD") an entry dated
  * `entryDateISO` can still be edited or deleted — exactly `workingDaysAhead`
@@ -50,7 +55,9 @@ const getLockDeadline = (entryDateISO, weeklyOffDays, holidays, workingDaysAhead
   const holidaySets = buildHolidaySets(holidays);
   let d = parseISODay(entryDateISO);
   let counted = 0;
-  while (counted < workingDaysAhead) {
+  let scanned = 0;
+  while (counted < workingDaysAhead && scanned < MAX_SCAN_DAYS) {
+    scanned += 1;
     d = new Date(d.getTime() + 86400000);
     if (!isNonWorkingDay(d, weeklyOffDays, holidaySets)) counted += 1;
   }

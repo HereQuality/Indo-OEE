@@ -502,7 +502,9 @@ export const fmtPct = (v) => (v === null || v === undefined || !Number.isFinite(
 // leaving the suffix off).
 export const partCycleLabel = (it) => {
   const n = it?.totalCycleSec;
-  return `${it.itemName}${n !== null && n !== undefined && n !== "" && Number.isFinite(Number(n)) ? ` — ${n} sec` : ""}`;
+  // Rounded for the label only (a VMC part's cycle is program time ÷ pieces,
+  // e.g. 65.80645…) — the part's own value is what the form fills in.
+  return `${it.itemName}${n !== null && n !== undefined && n !== "" && Number.isFinite(Number(n)) ? ` — ${fmtNum(Number(n))} sec` : ""}`;
 };
 
 // ── Dates ──────────────────────────────────────────────────────────────────

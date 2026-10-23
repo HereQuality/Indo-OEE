@@ -21,6 +21,10 @@ import { toRolePath } from "../utils/roleUrl";
 import NumberInput from "../Components/Production/NumberInput";
 import { useReviewAccess } from "../hooks/useReviewAccess";
 import { LOCKED_SHIFT_HOURS } from "../utils/plannedShift";
+import { guardEscape } from "../utils/modalEscape";
+
+// The fewest Operator Planned Shift hours the server accepts (models/Process.js).
+const MIN_SHIFT_HOURS = 0.25;
 
 /**
  * Production > Processes.
@@ -98,13 +102,20 @@ const ProcessMaster = () => {
       .then((res) => setMenuGroups((res?.data?.data || []).filter((g) => g.isActive && g.isLink && g.menuUrl)))
       .catch(() => setMenuGroups([]));
   }, [isAdmin]);
-  const menuOptions = useMemo(
-    () => [
+  // Only data entry pages (their menuUrl says "data-entry") are offered — not
+  // Home, Support, Menu Master and the like — plus whatever page this process
+  // is already linked to, so editing it never silently unlinks it.
+  const menuOptions = useMemo(() => {
+    const pages = [
       ...menuGroups.map((g) => ({ value: g.menuUrl, label: g.menuGroupName })),
       ...menus.map((m) => ({ value: m.menuUrl, label: m.menuName })),
-    ],
-    [menus, menuGroups],
-  );
+    ];
+    const options = pages.filter((o) => o.value.includes("data-entry") || o.value === values.dataEntryMenu);
+    if (values.dataEntryMenu && !options.some((o) => o.value === values.dataEntryMenu)) {
+      options.push({ value: values.dataEntryMenu, label: values.dataEntryMenuLabel || values.dataEntryMenu });
+    }
+    return options;
+  }, [menus, menuGroups, values.dataEntryMenu, values.dataEntryMenuLabel]);
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -174,10 +185,17 @@ const ProcessMaster = () => {
     if (v.description && v.description.length > 200) errors.description = "Description must not exceed 200 characters";
     if (v.plannedShiftLocked) {
       const h = Number(v.plannedShiftHours);
-      if (v.plannedShiftHours === "" || !Number.isFinite(h) || h <= 0 || h > 24) errors.plannedShiftHours = "Shift hours must be more than 0 and at most 24";
+      if (v.plannedShiftHours === "" || !Number.isFinite(h) || h < MIN_SHIFT_HOURS || h > 24) {
+        errors.plannedShiftHours = `Shift hours must be at least ${MIN_SHIFT_HOURS} and at most 24`;
+      }
     }
     return errors;
   };
+
+  // Once Save has been pressed, the messages follow the form as it is fixed.
+  useEffect(() => {
+    if (isSubmit) setFormErrors(validate(values));
+  }, [values, isSubmit]);
 
   const payload = () => ({
     ...values,
@@ -238,7 +256,8 @@ const ProcessMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every process, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -265,7 +284,8 @@ const ProcessMaster = () => {
   }, [machines, activeProcesses, _id, modalMode]);
 
   const col = [
-    { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
+    // Numbered on from the previous page rather than starting at 1 again.
+    { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     { name: "Process", selector: (row) => row.processName, sortable: true, sortField: "processName", minWidth: "140px" },
     {
       name: "Machines",
@@ -349,7 +369,7 @@ const ProcessMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Processes"
+                    formName="Process"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -386,7 +406,9 @@ const ProcessMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered size="xl" scrollable backdrop="static">
+      {/* guardEscape: Escape that only closes the machine / page picker's open
+          list leaves the form open. */}
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered size="xl" scrollable backdrop="static">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Process" : "Add Process"}
         </ModalHeader>
@@ -484,7 +506,7 @@ const ProcessMaster = () => {
                   <input
                     type="number"
                     inputMode="decimal"
-                    min="0.25"
+                    min={MIN_SHIFT_HOURS}
                     max="24"
                     step="0.25"
                     className="form-control form-control-sm"
@@ -548,6 +570,7 @@ const ProcessMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!processes.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );
