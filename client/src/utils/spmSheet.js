@@ -64,12 +64,16 @@ const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
 // are unticked for this entry — the exact same rule as CNC's own cycle
 // (utils/productionSheet.js's rowCalc), just keyed to SPM_OP_FIELDS instead
 // of CYCLE_OP_FIELDS. Blank without a Part Name, same as CNC.
+// An entry saved before SPM entries carried the Part's Total Cycle Time (8–9
+// Oct 2026) adds up its four operations instead — what its cycle was then, the
+// same fallback CNC keeps for its oldest rows. Mirrored in server/utils/oeeMetrics.js.
 export const spmCycleSec = (row) => {
   if (!String(row?.itemName || "").trim()) return null;
   const excluded = new Set(row?.excludedOps || []);
-  const excludedSec = sumOrZero(SPM_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
   const ownTotal = num(row?.totalCycleSec);
-  return isNum(ownTotal) ? ownTotal - excludedSec : null;
+  if (isNum(ownTotal)) return ownTotal - sumOrZero(SPM_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
+  const ops = SPM_OP_FIELDS.filter((f) => !excluded.has(f.key)).map((f) => num(row?.[f.key]));
+  return ops.some(isNum) ? sumOrZero(ops) : null;
 };
 
 // The row as the shared formulas read it: its own cycle time in `totalCycleSec`.

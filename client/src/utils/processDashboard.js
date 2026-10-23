@@ -272,17 +272,18 @@ export function summarize(rows) {
     byMachineDay.get(k).push(row);
   }
 
-  // dayCalc hands back one result per row of the group (a rolling window
-  // starting at that row), not one shared value for the whole day — so every
-  // row's own figure is added in here, not the day's counted once.
+  // Unreported Time, Unutilized and the three OEE figures are one figure per
+  // machine-day — dayCalc gives every entry of that day the same value — so
+  // each day counts once: a day saved as three entries isn't weighed three
+  // times in the averages, nor its Unreported Time added up three times.
   const oee = { oeeLosses: [], oeeLunch: [], oeeLunchCot: [] };
   const unutilizedList = [];
   for (const group of byMachineDay.values()) {
-    for (const d of dayCalc(group)) {
-      if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
-      if (Number.isFinite(d.unutilized)) { s.unutilizedDays += d.unutilized; unutilizedList.push(d.unutilized); }
-      for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
-    }
+    const d = dayCalc(group)[0];
+    if (!d) continue;
+    if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
+    if (Number.isFinite(d.unutilized)) { s.unutilizedDays += d.unutilized; unutilizedList.push(d.unutilized); }
+    for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
   }
 
   return {

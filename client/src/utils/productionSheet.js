@@ -127,6 +127,15 @@ export const STOPPAGE_FIELDS = [
 const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 const isNum = (v) => v !== null && Number.isFinite(v);
 
+// Planned Operator Shift in minutes. It is saved as hours to 6 decimals
+// (6 h 50 min is 6.833333), so it's taken back to the minute it stands for, to
+// 1/1000 min — otherwise that rounding leaves Availability a hair over 100%
+// (shown red) and Unreported at −0. Mirrored in server/utils/oeeMetrics.js.
+const plannedMinOf = (row) => {
+  const h = num(row?.plannedOperatorShiftHours);
+  return isNum(h) ? Math.round(h * 60000) / 1000 : null;
+};
+
 // Accepts what people type in a time cell — "9", "930", "0930", "9:30",
 // "9.30", "21:30" — and returns "HH:mm", or null if it isn't a valid time.
 export const normalizeTime = (raw) => {
@@ -279,8 +288,8 @@ export const PLANNED_STOP_KEYS = ["lunchMin", "plannedDownMin"];
 function oeeParts({ shiftMin, totalStoppageMin, row, cycle, ok, totalQty }) {
   const empty = { availability: null, performance: null, quality: null, plannedProdMin: null, operatingMin: null, idealRunSec: null };
   if (shiftMin === null) return empty;
-  const plannedH = num(row.plannedOperatorShiftHours);
-  const plannedProdMin = (isNum(plannedH) ? plannedH * 60 : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(row[k])));
+  const plannedMin = plannedMinOf(row);
+  const plannedProdMin = (isNum(plannedMin) ? plannedMin : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(row[k])));
   // Time on other work (After Powder Coating's Other Activity) isn't idle,
   // but it isn't inspecting either. No other sheet's rows carry it.
   const operatingMin = shiftMin - (totalStoppageMin || 0) - (num(row.otherActivityMin) || 0);
@@ -364,9 +373,9 @@ export function dayCalc(rows) {
   // the paper sheet's entries add up to the day's Planned (checked against
   // RIVET 11/A 21-06-2025 and PRESS 1D 30-09-2026: exact).
   const lockedDay = (() => {
-    const idx = list.map((r, i) => i).filter((i) => list[i].plannedLocked === true && isNum(num(list[i].plannedOperatorShiftHours)) && isNum(calcs[i].shiftHours));
+    const idx = list.map((r, i) => i).filter((i) => list[i].plannedLocked === true && isNum(plannedMinOf(list[i])) && isNum(calcs[i].shiftHours));
     if (!idx.length) return { idx: new Set(), hours: 0 };
-    const planned = Math.max(...idx.map((i) => num(list[i].plannedOperatorShiftHours)));
+    const planned = Math.max(...idx.map((i) => plannedMinOf(list[i]) / 60));
     const run = sumOrZero(idx.map((i) => calcs[i].shiftHours));
     return { idx: new Set(idx), hours: Math.max(planned, run) };
   })();
@@ -376,8 +385,8 @@ export function dayCalc(rows) {
         if (lockedDay.idx.has(i)) return null;
         const shift = calcs[i].shiftHours;
         if (!isNum(shift)) return null;
-        const planned = num(r.plannedOperatorShiftHours);
-        return isNum(planned) && planned > shift ? planned : shift;
+        const plannedMin = plannedMinOf(r);
+        return isNum(plannedMin) && plannedMin / 60 > shift ? plannedMin / 60 : shift;
       }),
     ) + lockedDay.hours;
   const dayStoppageMin = sumOrZero(calcs.map((c) => c.totalStoppageMin));
@@ -413,8 +422,8 @@ export function dayCalc(rows) {
           const stop = (c.totalStoppageMin || 0) + (num(r.otherActivityMin) || 0);
           const effectiveMin = (c.effectiveHours || 0) * 60;
           if (lockedDay.idx.has(i)) return -effectiveMin - stop;
-          const planned = num(r.plannedOperatorShiftHours);
-          const basisMin = isNum(planned) ? planned * 60 : isNum(c.shiftHours) ? c.shiftHours * 60 : null;
+          const plannedMin = plannedMinOf(r);
+          const basisMin = isNum(plannedMin) ? plannedMin : isNum(c.shiftHours) ? c.shiftHours * 60 : null;
           return basisMin === null ? -stop : basisMin - effectiveMin - stop;
         }),
       ) + lockedDay.hours * 60

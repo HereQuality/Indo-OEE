@@ -79,7 +79,7 @@ void main() {
     expect(closed.expandSummary['downtime'], 'totalStoppage');
     // Every calculated column's formula exists, and Rejected is typed (no formula).
     for (final c in [...closed.left, ...closed.middle, ...open.middle]) {
-      if (c.formulaKey != null) expect(spmSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
+      expect(spmSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
     }
   });
 

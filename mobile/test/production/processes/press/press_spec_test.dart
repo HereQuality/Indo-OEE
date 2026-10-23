@@ -123,7 +123,7 @@ void main() {
     expect(open.middle.firstWhere((c) => c.key == 'otherMin').remarkKind, 'downtime');
     // Every formula a column points at has a text.
     for (final c in [...closed.middle, ...open.middle]) {
-      if (c.formulaKey != null) expect(pressSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
+      expect(pressSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
     }
   });
 

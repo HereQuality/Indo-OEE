@@ -17,6 +17,7 @@ const { machineNamesFor } = require("../utils/machineNames");
 const { isAdminUser, actorOf } = require("../utils/adminAccess");
 const { settingOf } = require("../utils/plannedShift");
 const { viewableProcessIds } = require("../utils/processAccess");
+const { CYCLE_SEC } = require("../utils/oeeMetrics");
 const AuditLog = require("../models/AuditLog");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -271,49 +272,22 @@ exports.listProcessByParams = async (req, res) => {
   }
 };
 
-const dashNum = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
-const dashIsNum = (v) => v !== null && Number.isFinite(v);
-
-// Product Cycle Time (sec) = Program Time (min) × 60 ÷ pieces per program —
-// VmcEntry's own formula (client/src/utils/vmcSheet.js's programCycleSec).
-const vmcCycleSec = (e) => {
-  const minutes = dashNum(e.programTimeMin);
-  const pieces = dashNum(e.pcsPerProgram);
-  return dashIsNum(minutes) && dashIsNum(pieces) && pieces > 0 ? (minutes * 60) / pieces : null;
-};
-
-// Total Cycle Time (sec) = Loading + Process + Unloading and Cleaning + Other
-// Operations — SpmEntry's own formula (client/src/utils/spmSheet.js's cycle
-// helper). RivetEntry does NOT use this: checked against real rows, those
-// four fields are always blank there — RivetEntry stores totalCycleSec
-// directly, typed per entry, same as CNC (see rivetSheet.js).
-const fourPartCycleSec = (e) => {
-  const parts = [e.loadingSec, e.processSec, e.unloadingCleaningSec, e.otherOperationsSec].map(dashNum);
-  return parts.every(dashIsNum) ? parts.reduce((sum, n) => sum + n, 0) : null;
-};
-
-// Product Cycle Time (sec) = Standard Time Taken (min) × 60 ÷ No. Piece in
-// Standard Time — PressEntry's own formula, the same shape as VmcEntry's
-// (client/src/utils/pressSheet.js's standardCycleSec).
-const pressCycleSec = (e) => {
-  const minutes = dashNum(e.standardTimeMin);
-  const pieces = dashNum(e.pcsPerStandardTime);
-  return dashIsNum(minutes) && dashIsNum(pieces) && pieces > 0 ? (minutes * 60) / pieces : null;
-};
-
-// Every sheet's own collection, and (for the ones that don't store a
-// totalCycleSec of their own) the function that works it out from that
-// collection's fields. CNC and RIVET both store totalCycleSec directly, so
-// neither needs one. The client's shared rowCalc/dayCalc
-// (utils/productionSheet.js) read `totalCycleSec` off the row however it's
-// reached them, so once it's attached here every sheet's entries can be
-// merged into one dashboard feed and treated identically from here on.
+// Every sheet's own collection, and (for the sheets whose table works its
+// cycle time out from other fields) that table's own cycle time — taken from
+// utils/oeeMetrics.js's CYCLE_SEC, the server's copy of each sheet's rule
+// (VMC/PRESS: per piece of a program or standard time; SPM/RIVET: the Part's
+// Total Cycle Time minus the operations unticked on the entry). The client's
+// shared rowCalc/dayCalc (utils/productionSheet.js) read `totalCycleSec` off
+// the row however it's reached them, so once it's attached here every sheet's
+// entries can be merged into one dashboard feed and show the same figures as
+// their own Data Entry page. CNC needs none: rowCalc takes its unticked
+// operations out itself.
 const DASHBOARD_SHEETS = [
   { Model: ProductionEntry, cycleSec: null },
-  { Model: VmcEntry, cycleSec: vmcCycleSec },
-  { Model: SpmEntry, cycleSec: fourPartCycleSec },
-  { Model: RivetEntry, cycleSec: null },
-  { Model: PressEntry, cycleSec: pressCycleSec },
+  { Model: VmcEntry, cycleSec: CYCLE_SEC.vmc },
+  { Model: SpmEntry, cycleSec: CYCLE_SEC.spm },
+  { Model: RivetEntry, cycleSec: CYCLE_SEC.rivet },
+  { Model: PressEntry, cycleSec: CYCLE_SEC.press },
   { Model: ContactEntry, cycleSec: null },
   { Model: TrobeEntry, cycleSec: null },
   // SPRING FOR PINS works out Effective Run Time on OK + Rejected (its own

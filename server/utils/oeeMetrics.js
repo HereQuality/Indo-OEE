@@ -21,6 +21,14 @@ const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v)
 const isNum = (v) => v !== null && Number.isFinite(v);
 const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
 
+// Planned Operator Shift in minutes, back to the minute it stands for (to
+// 1/1000 min) from the 6-decimal hours it is saved as — 6.833333 is 410, not
+// 409.99998. The browser's plannedMinOf (utils/productionSheet.js) does the same.
+const plannedMinOf = (e) => {
+  const h = num(e.plannedOperatorShiftHours);
+  return isNum(h) ? Math.round(h * 60000) / 1000 : null;
+};
+
 const PLANNED_STOP_KEYS = ["lunchMin", "plannedDownMin"];
 const METRICS = ["availability", "performance", "quality"];
 const METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
@@ -47,6 +55,16 @@ const minusExcluded = (e, fields) => {
   return own - sumOrZero(fields.filter((f) => excluded.has(f.key)).map((f) => num(e[f.key])));
 };
 
+// SPM: the Part's own figure as above; an entry saved before SPM entries
+// carried it (8–9 Oct 2026) adds up its four operations instead, which is what
+// its cycle was then — the browser's spmCycleSec (utils/spmSheet.js) does the same.
+const spmCycleSec = (e) => {
+  if (isNum(num(e.totalCycleSec))) return minusExcluded(e, SPM_OP_FIELDS);
+  const excluded = new Set(e.excludedOps || []);
+  const ops = SPM_OP_FIELDS.filter((f) => !excluded.has(f.key)).map((f) => num(e[f.key]));
+  return ops.some(isNum) ? sumOrZero(ops) : null;
+};
+
 // CNC: utils/productionSheet.js rowCalc's own fallbacks, oldest rows included.
 const cncCycleSec = (e) => {
   const excluded = new Set(e.excludedOps || []);
@@ -68,7 +86,7 @@ const perPieceSec = (minutesKey, piecesKey) => (e) => {
 const CYCLE_SEC = {
   cnc: cncCycleSec,
   vmc: perPieceSec("programTimeMin", "pcsPerProgram"),
-  spm: (e) => minusExcluded(e, SPM_OP_FIELDS),
+  spm: spmCycleSec,
   rivet: (e) => minusExcluded(e, RIVET_OP_FIELDS),
   press: perPieceSec("standardTimeMin", "pcsPerStandardTime"),
   contact: (e) => num(e.totalCycleSec),
@@ -91,8 +109,8 @@ const entryMetrics = (sheet, e) => {
   const actual = num(e.actualQty);
   const totalQty = isNum(actual) ? actual : isNum(ok) || isNum(rej) ? (ok || 0) + (rej || 0) : null;
 
-  const plannedH = num(e.plannedOperatorShiftHours);
-  const plannedProdMin = (isNum(plannedH) ? plannedH * 60 : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(e[k])));
+  const plannedMin = plannedMinOf(e);
+  const plannedProdMin = (isNum(plannedMin) ? plannedMin : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(e[k])));
   // Time spent on other work (After Powder Coating's Other Activity) isn't
   // idle, but it isn't inspecting either — so it's out of Operating Time too.
   // Only that sheet's rows carry it; on every other sheet it's 0.
