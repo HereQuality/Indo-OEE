@@ -2,7 +2,7 @@ import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, timesUnchanged, withDecimalPlanned } from "./entryValidation";
 import { springRowCalc, isStatusOnly } from "./springSheet";
-import { hoursToHm, parseHm } from "./shiftHours";
+import { hoursToHm, parseShiftHours } from "./shiftHours";
 
 /**
  * utils/springValidation.js
@@ -18,7 +18,7 @@ import { hoursToHm, parseHm } from "./shiftHours";
  *               only Date and Machine No. — nothing else is asked for.
  *   Required    Date, Machine No., Operator, Part Name, Total Cycle Time (> 0),
  *               Machine ON/OFF Time, Actual OK Quantity, Rejected Quantity,
- *               Planned Operator Shift (typed H.MM, not less than the Machine
+ *               Planned Operator Shift (typed as decimal hours like the sheet, not less than the Machine
  *               Shift).
  *   Optional     Working Status, Setting ON/OFF Time — informational only.
  *   Quantities  OK + Rejected can't be more than Ideal Quantity.
@@ -121,12 +121,11 @@ export const validateSpringEntry = (v, { saved = null } = {}) => {
     errors.okQty = `OK + Rejected (${ok + rej}) can't be more than Ideal Quantity (${calc.idealQty})`;
   }
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  const plannedParse = parseHm(v.plannedOperatorShiftHours);
+  // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
+  const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);
   const planned = plannedParse.hours;
   if (blank(v.plannedOperatorShiftHours)) errors.plannedOperatorShiftHours = "Planned Operator Shift is required";
-  else if (plannedParse.minutesTooBig) errors.plannedOperatorShiftHours = "Minutes must be 00–59 (3.30 means 3 h 30 min)";
-  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
+  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours as on the sheet, like 8.5 or 5.33";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
     // Not while End isn't after Start: the span would wrap past midnight

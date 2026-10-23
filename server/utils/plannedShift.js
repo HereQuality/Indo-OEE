@@ -43,16 +43,32 @@ const settingForProcess = async (processId) =>
 // process's locked hours. An unlocked process enforces nothing: the typed
 // value stands. Left alone when the body leaves it blank (clearing a row, or a
 // status-only day) and when there's no setting.
+//
+// It also sets body.plannedLocked — whether the hours came from the lock — so
+// the day figures can count a locked shift once per machine per day (see
+// plannedLocked in models/entryCommon.js). Never taken from the request.
 const applySetting = (body, existing, setting) => {
   const typed = body.plannedOperatorShiftHours;
   if (typed === undefined || typed === null || String(typed).trim() === "") return;
-  if (!setting) return;
+  if (!setting) {
+    body.plannedLocked = false;
+    return;
+  }
   const kept = existing?.plannedOperatorShiftHours;
-  body.plannedOperatorShiftHours = kept !== undefined && kept !== null && Number.isFinite(Number(kept)) ? Number(kept) : setting.hours;
+  if (kept !== undefined && kept !== null && Number.isFinite(Number(kept))) {
+    body.plannedOperatorShiftHours = Number(kept);
+    // An entry saved before the flag existed: its hours came from the lock
+    // when they are the lock's.
+    body.plannedLocked = typeof existing.plannedLocked === "boolean" ? existing.plannedLocked : Number(kept) === setting.hours;
+  } else {
+    body.plannedOperatorShiftHours = setting.hours;
+    body.plannedLocked = true;
+  }
 };
 
 // The rule for the machine's process — every machine sheet.
 const enforcePlannedShift = async (body, existing) => {
+  delete body.plannedLocked;
   const typed = body.plannedOperatorShiftHours;
   if (typed === undefined || typed === null || String(typed).trim() === "") return;
   applySetting(body, existing, await settingForMachine(body.machine));
@@ -60,6 +76,7 @@ const enforcePlannedShift = async (body, existing) => {
 
 // The same rule for an entry saved straight on a process (After Powder Coating).
 const enforcePlannedShiftForProcess = async (body, existing, processId) => {
+  delete body.plannedLocked;
   const typed = body.plannedOperatorShiftHours;
   if (typed === undefined || typed === null || String(typed).trim() === "") return;
   applySetting(body, existing, await settingForProcess(processId));

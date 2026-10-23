@@ -1,7 +1,7 @@
 import { isNonWorking, normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, timesUnchanged } from "./entryValidation";
 import { RUBBER_STOPPAGE_FIELDS, isStatusOnly, rubberRowCalc } from "./rubberSheet";
-import { hoursToHm, parseHm } from "./shiftHours";
+import { hoursToHm, parseShiftHours } from "./shiftHours";
 
 /**
  * utils/rubberValidation.js
@@ -13,7 +13,7 @@ import { hoursToHm, parseHm } from "./shiftHours";
  *               and Worker Name — nothing else is asked for.
  *   Required    Date, Worker Name, Part Name, Total Cycle Time (> 0), Working
  *               Start / End Time, Actual OK Quantity, Planned Operator Shift
- *               (typed H.MM, not less than the Worker Shift Time).
+ *               (typed as decimal hours like the sheet, not less than the Worker Shift Time).
  *   Optional    Rejected Quantity (blank counts as 0, as the sheet leaves it).
  *   Quantities  Whole numbers, 0 or more. OK + Rejected MAY be more than IDEAL
  *               Quantity — unlike a machine, a person can beat the standard
@@ -94,12 +94,11 @@ export const validateRubberEntry = (v, { saved = null } = {}) => {
   const rej = num(v.rejectedQty);
   if (rej !== null && (!isNum(rej) || rej < 0 || !Number.isInteger(rej))) errors.rejectedQty = "Must be a whole number, 0 or more";
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  const plannedParse = parseHm(v.plannedOperatorShiftHours);
+  // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
+  const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);
   const planned = plannedParse.hours;
   if (blank(v.plannedOperatorShiftHours)) errors.plannedOperatorShiftHours = "Planned Operator Shift is required";
-  else if (plannedParse.minutesTooBig) errors.plannedOperatorShiftHours = "Minutes must be 00–59 (3.30 means 3 h 30 min)";
-  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
+  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours as on the sheet, like 8.5 or 5.33";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
     // Not while End isn't after Start: the span would wrap past midnight

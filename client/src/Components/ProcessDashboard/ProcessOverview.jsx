@@ -27,8 +27,11 @@ const machineCount = (count) => `${count} machine${count === 1 ? "" : "s"}`;
 // worker), so "0 machines" was wrong — they're named for what they count by.
 const processSubtitle = (p) => (isWorkerProcess(p) ? "Per worker" : machineCount(p.machines.length));
 
-const ProcessOverview = ({ processes, machines, loading, onOpen }) => {
-  const unassigned = machines.filter((m) => !m.process).length;
+const ProcessOverview = ({ processes, machines, limited, loading, onOpen }) => {
+  // Machines "not in any process" are only shown to someone who can see every
+  // process — otherwise there's no way to tell "unassigned" apart from "in a
+  // process this role can't view", and showing it would leak that count.
+  const unassigned = limited ? 0 : machines.filter((m) => !m.process).length;
 
   if (loading) return <div className="text-center text-muted py-5">Loading processes…</div>;
 
@@ -39,10 +42,14 @@ const ProcessOverview = ({ processes, machines, loading, onOpen }) => {
         <span className="text-muted small">Select a process to open its dashboard</span>
       </div>
 
-      {!processes.length && (
+      {!processes.length && !machines.length && (
         <div className="pd-card text-center text-muted py-5 mb-3">
           <Layers size={28} className="mb-2" />
-          <div>No processes yet. Add them in <b>Production › Processes</b> — name each one, assign its machines and choose its graphs.</div>
+          <div>
+            {limited
+              ? "You don't have view access to any process yet. Ask a Super Admin to grant it in Manage Role."
+              : <>No processes yet. Add them in <b>Production › Processes</b> — name each one, assign its machines and choose its graphs.</>}
+          </div>
         </div>
       )}
 

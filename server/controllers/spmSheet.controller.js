@@ -452,6 +452,9 @@ exports.saveRow = async (req, res) => {
     const vendorUpdate = await vendorFields(req.body, existing, () => machineProcess(machine));
     Object.assign(set, vendorUpdate.set);
     Object.assign(unset, vendorUpdate.unset);
+    // Whether Planned came from the lock — set by enforcePlannedShift above, never by the request.
+    if (typeof req.body.plannedLocked === "boolean") set.plannedLocked = req.body.plannedLocked;
+    else unset.plannedLocked = "";
     // Availability / Performance / Quality, and whether this save needs Admin
     // review — written in the same update as the entry (utils/entryAudit.js).
     const review = reviewFor(SHEET, existing, set, unset);

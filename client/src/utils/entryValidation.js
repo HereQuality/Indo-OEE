@@ -1,6 +1,6 @@
 import { isNonWorking } from "./productionSheet";
 import { CYCLE_OP_FIELDS, normalizeTime, rowCalc, spanMinutes } from "./productionSheet";
-import { hoursToHm, parseHm } from "./shiftHours";
+import { hoursToHm, parseShiftHours } from "./shiftHours";
 
 /**
  * utils/entryValidation.js
@@ -11,8 +11,8 @@ import { hoursToHm, parseHm } from "./shiftHours";
  *
  *   Required    Date, Machine No., Operator, Part Name, Machine ON/OFF Time,
  *               Actual Qty, OK Qty, Planned Operator Shift. Planned Operator
- *               Shift is typed as H.MM (3.30 = 3 h 30 min, 60 minutes to the
- *               hour) and can't be less than the Machine Shift.
+ *               Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min,
+ *               taken to the whole minute) and can't be less than the Machine Shift.
  *   Quantities  Actual ≤ Ideal, OK ≤ Actual, and the Rejection Master split has
  *               to account for every rejected piece (Rejected = Actual − OK).
  *   Times       Machine OFF Time must be after Machine ON Time, and one machine's
@@ -262,9 +262,9 @@ export const stoppageLimitMin = (v) => {
   return shiftMin;
 };
 
-// A form block with Planned Operator Shift converted from typed H.MM to decimal
-// hours ("" when it isn't a usable time).
-export const withDecimalPlanned = (v) => ({ ...v, plannedOperatorShiftHours: parseHm(v.plannedOperatorShiftHours).hours ?? "" });
+// A form block with Planned Operator Shift converted from the typed decimal hours
+// (to the whole minute) ("" when it isn't a usable time).
+export const withDecimalPlanned = (v) => ({ ...v, plannedOperatorShiftHours: parseShiftHours(v.plannedOperatorShiftHours).hours ?? "" });
 
 // The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
 export const cleanSplit = (split) =>
@@ -334,12 +334,11 @@ export const validateEntry = (v, { saved = null } = {}) => {
     errors.rejectOtherRemark = 'Remark is required when "Other" is a reject reason';
   }
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  const plannedParse = parseHm(v.plannedOperatorShiftHours);
+  // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
+  const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);
   const planned = plannedParse.hours;
   if (blank(v.plannedOperatorShiftHours)) errors.plannedOperatorShiftHours = "Planned Operator Shift is required";
-  else if (plannedParse.minutesTooBig) errors.plannedOperatorShiftHours = "Minutes must be 00–59 (3.30 means 3 h 30 min)";
-  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
+  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours as on the sheet, like 8.5 or 5.33";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
     // The operator's planned shift has to cover the time the machine ran —

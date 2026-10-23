@@ -14,7 +14,7 @@ import { WORKER_WORDS, stoppageNotice } from "../../utils/limitNotice";
 import { MACHINE_STATUSES, fmtNum, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { DEFECT_FIELDS, isStatusOnly, powderRowCalc } from "../../utils/powderCoatingSheet";
-import { hoursToHm, parseHm } from "../../utils/shiftHours";
+import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 
 /**
  * components/Production/PowderCoatingEntryForm.jsx
@@ -129,7 +129,7 @@ const EntryBlock = ({
   const nonWorking = isNonWorking(values);
   const calc = useMemo(() => powderRowCalc(values), [values]);
   // Availability / Performance / Quality as Save will work them out (planned
-  // shift converted from its typed H.MM first) — any above 100% sends the
+  // shift converted from its typed decimal hours first) — any above 100% sends the
   // entry to Admin review, so it's flagged here before Save.
   const oeeCalc = useMemo(() => powderRowCalc(withDecimalPlanned(values)), [values]);
   const overMetrics = metricsOver100(oeeCalc);
@@ -144,7 +144,7 @@ const EntryBlock = ({
     return n === null || n === undefined || n === "" || !Number.isFinite(Number(n)) ? null : Number(n);
   }, [items, values.item]);
 
-  const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
+  const planned = useMemo(() => parseShiftHours(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
   // Idle Time and Other Activity together have to fit in the working hours.
   const awayLimit = useMemo(() => stoppageLimitMin(values), [values]);
   const workingMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
@@ -478,7 +478,7 @@ const EntryBlock = ({
               summary={plannedLock ? "Shift fixed — Lunch / Tea optional" : ""}
             >
               <Row className="g-1">
-                <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} cols={THIRD} fieldKey="plannedOperatorShiftHours">
+                <Field label="Planned Operator Shift (hours)" required error={err("plannedOperatorShiftHours")} cols={THIRD} fieldKey="plannedOperatorShiftHours">
                   <NumberInput
                     name="plannedOperatorShiftHours"
                     disabled={!!plannedLock}
@@ -495,7 +495,7 @@ const EntryBlock = ({
                         ? `Can't be less than the Inspection Working Hours (${hoursToHm(workingMin / 60)}).`
                         : planned !== null
                           ? `= ${hoursToHm(planned)} hr`
-                          : "Type hours.minutes — 3.30 is 3 h 30 min."}
+                          : "Type hours as on the sheet — 3.5 is 3 h 30 min."}
                     </p>
                   )}
                   {plannedLock && (

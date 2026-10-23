@@ -16,6 +16,7 @@ const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 const { isAdminUser, actorOf } = require("../utils/adminAccess");
 const { settingOf } = require("../utils/plannedShift");
+const { viewableProcessIds } = require("../utils/processAccess");
 const AuditLog = require("../models/AuditLog");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -349,20 +350,35 @@ exports.getDashboardEntries = async (req, res) => {
       return res.status(400).json({ isOk: false, message: "Date range can't exceed 5 years" });
     }
 
+    // Only the processes this person's role can view (utils/processAccess.js):
+    // a process they can't is refused outright, and "All machines" covers just
+    // theirs. null = no limit.
+    const viewable = await viewableProcessIds(req, await Process.find().select("processName dataEntryMenu isActive").lean());
+
     const scope = {};
+    let processScope = {};
     if (req.query.process) {
       if (!mongoose.isValidObjectId(req.query.process)) {
         return res.status(400).json({ isOk: false, message: "Invalid process" });
+      }
+      if (viewable && !viewable.has(String(req.query.process))) {
+        return res.status(403).json({ isOk: false, message: "You don't have access to this process's dashboard" });
       }
       // Deliberately includes machines deleted from Machine Master: their past
       // entries still belong to this process's dashboard.
       const machineIds = await Machine.find({ process: req.query.process }).distinct("_id");
       scope.machine = { $in: machineIds };
+      processScope = { process: req.query.process };
+    } else if (viewable) {
+      const mine = [...viewable];
+      const machineIds = await Machine.find({ process: { $in: mine } }).distinct("_id");
+      scope.machine = { $in: machineIds };
+      processScope = { process: { $in: mine } };
     }
 
     const results = await Promise.all(
       DASHBOARD_SHEETS.map(async ({ Model, cycleSec, byProcess, extra }) => {
-        const own = byProcess ? (req.query.process ? { process: req.query.process } : {}) : scope;
+        const own = byProcess ? processScope : scope;
         const edge = (dir) => Model.findOne(own).sort({ date: dir }).select("date").lean();
         const [entries, first, last] = await Promise.all([
           Model.find({ ...own, date: { $gte: from, $lte: to } })

@@ -99,8 +99,8 @@ test("bookedRanges lists what the machine already has, minus the row being edite
   assert.deepEqual(bookedRanges(entry({ machine: "m9" }), occupied), []);
 });
 
-// ── Planned Operator Shift (H.MM), Lunch / Rest, stoppage ───────────────────
-import { hoursToHm, hoursToHmInput, parseHm } from "./shiftHours";
+// ── Planned Operator Shift (decimal hours), Lunch / Rest, stoppage ───────────────────
+import { hoursToHm, hoursToShiftInput, parseShiftHours } from "./shiftHours";
 import { validateEntry as validate } from "./entryValidation";
 
 const block = (o = {}) => ({
@@ -110,19 +110,29 @@ const block = (o = {}) => ({
   plannedOperatorShiftHours: "9.00", lunchMin: "", ...o,
 });
 
-test("H.MM: 60 minutes to the hour, one minute digit is tens of minutes", () => {
-  assert.equal(parseHm("3.30").hours, 3.5);
-  assert.equal(parseHm("3.5").hours, 3 + 50 / 60);
-  assert.equal(parseHm("3").hours, 3);
-  assert.equal(parseHm("3.75").minutesTooBig, true);
-  assert.equal(parseHm("").hours, null);
+test("Planned is typed in decimal hours like the sheet, taken to the whole minute", () => {
+  // The real RIVET sheet (11/A, 21-06-2025): 5.33, 1 and 0.5 are 5 h 20 min, 1 h and 30 min.
+  assert.equal(Math.round(parseShiftHours("5.33").hours * 60), 320);
+  assert.equal(parseShiftHours("0.5").hours, 0.5);
+  assert.equal(parseShiftHours("1").hours, 1);
+  assert.equal(Math.round(parseShiftHours("3.7").hours * 60), 222);
+  assert.equal(parseShiftHours("3.5").hours, 3.5);
+  assert.equal(parseShiftHours("8.").hours, 8);
+  assert.equal(parseShiftHours("").hours, null);
+  assert.equal(parseShiftHours("abc").hours, null);
   assert.equal(hoursToHm(3.5), "3:30");
-  assert.equal(hoursToHmInput(7.5), "7.30");
+  // What the box shows for a saved shift reads back to the very same minute.
+  assert.equal(hoursToShiftInput(320 / 60), "5.33");
+  assert.equal(hoursToShiftInput(7.5), "7.5");
+  for (let min = 0; min <= 24 * 60; min += 1) {
+    assert.equal(Math.round(parseShiftHours(hoursToShiftInput(min / 60)).hours * 60), min);
+  }
 });
 
-test("Planned Operator Shift can't be less than the Machine Shift, and its minutes stop at 59", () => {
+test("Planned Operator Shift can't be less than the Machine Shift; 8.75 is 8 h 45 min", () => {
   assert.equal(validate(block({ plannedOperatorShiftHours: "7.30" })).plannedOperatorShiftHours, "Planned Operator Shift can't be less than the Machine Shift (8:00)");
-  assert.equal(validate(block({ plannedOperatorShiftHours: "8.75" })).plannedOperatorShiftHours, "Minutes must be 00–59 (3.30 means 3 h 30 min)");
+  assert.equal(validate(block({ plannedOperatorShiftHours: "8.75" })).plannedOperatorShiftHours, undefined);
+  assert.equal(validate(block({ plannedOperatorShiftHours: "abc" })).plannedOperatorShiftHours, "Enter hours as on the sheet, like 8.5 or 5.33");
   assert.equal(validate(block({ plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours, undefined);
 });
 
@@ -309,4 +319,38 @@ test("editing: a row on its own date is one of the 3; moved onto a full date it 
 test("a typed time that isn't one is said under the box before Save", () => {
   assert.ok(isLiveMessage("Enter a valid time"));
   assert.ok(!isLiveMessage("Machine ON Time is required"));
+});
+
+// A locked Planned is the machine's whole day: three entries on a 12 h lock
+// are a 12 h day, not 36 h. Typed hours are each entry's own share and add up.
+// The real RIVET day (11/A, 21-06-2025, RAJU), as CNC rows.
+test("a locked 12 h counts once per machine per day; typed Planned adds up like the sheet", () => {
+  const rivetDay = (planned, plannedLocked) => [
+    { itemName: "A", totalCycleSec: 40, machineOnTime: "08:10", machineOffTime: "13:30", okQty: 197, actualQty: 197, plannedOperatorShiftHours: planned[0], plannedLocked, setupMin: 5, materialShiftingMin: 35, lunchMin: 30, otherMin: 120 },
+    { itemName: "B", totalCycleSec: 20, machineOnTime: "13:30", machineOffTime: "14:30", okQty: 60, actualQty: 60, plannedOperatorShiftHours: planned[1], plannedLocked, setupMin: 5, materialShiftingMin: 10, otherMin: 20 },
+    { itemName: "C", totalCycleSec: 30, machineOnTime: "14:30", machineOffTime: "15:00", okQty: 50, actualQty: 50, plannedOperatorShiftHours: planned[2], plannedLocked, setupMin: 5, materialShiftingMin: 5 },
+  ];
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.006, `${a} ≈ ${b}`);
+
+  // Typed as on the sheet (5.33 / 1 / 0.5): the paper's own figures.
+  const typed = dayCalc(rivetDay([320 / 60, 1, 0.5], false))[0];
+  close(typed.unreportedMin, -1.33);
+  close(typed.oeeLosses, 1.0076);
+  close(typed.oeeLunch, 0.464);
+  close(typed.oeeLunchCot, 0.4831);
+
+  // Locked at 12 h: 12 h for the day (720 − 176.33 effective − 235 stoppage), not 36 h.
+  const locked = dayCalc(rivetDay([12, 12, 12], true))[0];
+  close(locked.unreportedMin, 720 - 176.333 - 235);
+  close(locked.oeeLosses, 2.93889 / (12 - 235 / 60));
+
+  // A single locked entry reads exactly as before.
+  const one = rivetDay([12], true).slice(0, 1);
+  close(dayCalc(one)[0].unreportedMin, dayCalc(one.map((r) => ({ ...r, plannedLocked: undefined })))[0].unreportedMin);
+  // Locked entries whose runs add up past 12 h count their runs instead.
+  const long = dayCalc([
+    { itemName: "A", totalCycleSec: 60, machineOnTime: "06:00", machineOffTime: "14:00", okQty: 1, actualQty: 1, plannedOperatorShiftHours: 12, plannedLocked: true },
+    { itemName: "B", totalCycleSec: 60, machineOnTime: "14:00", machineOffTime: "21:00", okQty: 1, actualQty: 1, plannedOperatorShiftHours: 12, plannedLocked: true },
+  ])[0];
+  close(long.unreportedMin, 15 * 60 - 2); // 15 h of runs, 2 × 60 s effective
 });

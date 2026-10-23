@@ -46,7 +46,7 @@ import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
 import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
-import { hmToWireHours, hoursToHmInput, parseHm } from "../utils/shiftHours";
+import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../utils/shiftHours";
 import { shiftSettingForMachine } from "../utils/plannedShift";
 
 /**
@@ -140,8 +140,8 @@ const toFormValues = (row) => ({
   item: row.item || "",
   vendor: row.vendor || "",
   slot: row.slot,
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 → "7.30").
-  plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
+  // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
+  plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
 
 // A status-only day (ABSENT, SUNDAY, …) keeps just its status and Remarks —
@@ -184,9 +184,9 @@ const toFullPayload = (v, isEdit, processId) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
-  // Typed as H.MM, saved as decimal hours (3.30 → 3.5).
+  // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   // Lunch is optional on the form; the server wants a 0 rather than nothing.
@@ -612,7 +612,7 @@ const RubberDataEntry = () => {
       const next = list.map((v, i) => {
         const lock = plannedLocks[i];
         if (!lock || lock.fromEntry) return v;
-        const want = hoursToHmInput(lock.hours);
+        const want = hoursToShiftInput(lock.hours);
         if (v.plannedOperatorShiftHours === want) return v;
         changed = true;
         return { ...v, plannedOperatorShiftHours: want };

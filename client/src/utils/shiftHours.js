@@ -1,13 +1,13 @@
 /**
  * utils/shiftHours.js
  * ────────────────────
- * Hours the way a clock reads them (60 minutes to the hour, not 100).
- *
- * The server and the reports keep a shift length as decimal hours (3.5 = 3 h
- * 30 min). On the entry form a person types and reads it as H.MM — "3.30" is
- * 3 h 30 min, and a single minute digit is tens of minutes ("3.5" is 3 h
- * 50 min) — and sees it as "3:30". These helpers are the only place the two
- * meet. Keep in step with the phone app's shared/shift_hours.dart.
+ * The Planned Operator Shift is typed the way the paper sheet writes it:
+ * decimal hours, 100 to the hour — 3.5 is 3 h 30 min, 5.33 is 5 h 20 min,
+ * 3.7 is 3 h 42 min. Everything after that runs on clock minutes (60 to the
+ * hour): what's typed is taken to the nearest whole minute, so the sheet's
+ * two-decimal 5.33 lands on the 5 h 20 min it stands for rather than on
+ * 5 h 19.8 min. The tables show it as "5:20". The server and the reports keep
+ * it as decimal hours. These helpers are the only place the two meet.
  */
 
 // Decimal hours → "H:MM" (3.5 → "3:30"). "" when not a number.
@@ -18,24 +18,22 @@ export const hoursToHm = (hours) => {
   return `${total < 0 ? "-" : ""}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
 };
 
-// Decimal hours → what the H.MM box shows (7.5 → "7.30").
-export const hoursToHmInput = (hours) => {
+// Decimal hours → what the Planned box shows, as the sheet writes it
+// (5 h 20 min → "5.33", 7.5 → "7.5"). Two decimals always read back to the
+// same whole minute.
+export const hoursToShiftInput = (hours) => {
   if (hours === "" || hours === null || hours === undefined || !Number.isFinite(Number(hours))) return "";
-  const abs = Math.abs(Math.round(Number(hours) * 60));
-  return `${Math.floor(abs / 60)}.${String(abs % 60).padStart(2, "0")}`;
+  const minutes = Math.abs(Math.round(Number(hours) * 60));
+  return String(Number((minutes / 60).toFixed(2)));
 };
 
-// "3.30" → { hours: 3.5 }, "3.5" → 3 h 50 min, "3" → 3. Minutes above 59 →
-// { minutesTooBig: true }; anything else unusable (or blank) → { hours: null }.
-export const parseHm = (text) => {
+// "5.33" → { hours: 5 h 20 min }, "3.7" → 3 h 42 min, "8" → 8; blank or
+// anything else unusable → { hours: null }.
+export const parseShiftHours = (text) => {
   const t = String(text ?? "").trim().replace(",", ".");
-  const m = /^(\d{1,3})(?:\.(\d{0,2}))?$/.exec(t);
-  if (!m) return { hours: null, minutesTooBig: false };
-  const frac = m[2] ?? "";
-  const mm = frac === "" ? 0 : Number(frac.length === 1 ? `${frac}0` : frac);
-  if (mm > 59) return { hours: null, minutesTooBig: true };
-  return { hours: (Number(m[1]) * 60 + mm) / 60, minutesTooBig: false };
+  if (!/^\d{0,3}(?:\.\d*)?$/.test(t) || !/\d/.test(t)) return { hours: null };
+  return { hours: Math.round(Number(t) * 60) / 60 };
 };
 
-// Decimal hours for the server, without float noise (3 h 50 min → 3.833333).
+// Decimal hours for the server, without float noise (5 h 20 min → 5.333333).
 export const hmToWireHours = (hours) => Number(hours.toFixed(6));

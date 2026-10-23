@@ -17,7 +17,7 @@ import { useAlert } from "../../context/AlertContext";
 import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
 import { CYCLE_OP_FIELDS, REJECT_REASONS, cycleOpLabel, fmtNum, fmtPct, normalizeTime, partCycleLabel, rowCalc } from "../../utils/productionSheet";
 import { DOWNTIME_KEYS, cleanSplit, isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { hoursToHm, parseHm } from "../../utils/shiftHours";
+import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 
 /**
  * components/Production/ProductionEntryForm.jsx
@@ -152,7 +152,7 @@ const EntryBlock = ({
   const nonWorking = isNonWorking(values);
   const calc = useMemo(() => rowCalc(values), [values]);
   // Availability / Performance / Quality as Save will work them out (planned
-  // shift converted from its typed H.MM first) — any above 100% sends the
+  // shift converted from its typed decimal hours first) — any above 100% sends the
   // entry to Admin review, so it's flagged here before Save.
   const oeeCalc = useMemo(() => rowCalc(withDecimalPlanned(values)), [values]);
   const overMetrics = metricsOver100(oeeCalc);
@@ -169,7 +169,7 @@ const EntryBlock = ({
   const rejectOtherUsed = Number(values.rejectBreakdown?.Other) > 0;
 
   // The most stoppage this entry can account for, against what's typed.
-  const planned = useMemo(() => parseHm(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
+  const planned = useMemo(() => parseShiftHours(values.plannedOperatorShiftHours).hours, [values.plannedOperatorShiftHours]);
   const stoppageLimit = useMemo(() => stoppageLimitMin(withDecimalPlanned(values)), [values]);
   const machineShiftMin = calc.shiftHours === null || calc.shiftHours === undefined ? null : Math.round(calc.shiftHours * 60);
   // Not while End isn't after Start — that "shift" wraps past midnight, and
@@ -611,7 +611,7 @@ const EntryBlock = ({
 
         <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Shift fixed — Lunch / Rest optional" : ""}>
           <Row className="g-1">
-            <Field label="Planned Operator Shift (hr.min)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
+            <Field label="Planned Operator Shift (hours)" required error={err("plannedOperatorShiftHours")} md={4} fieldKey="plannedOperatorShiftHours">
               <NumberInput
                 name="plannedOperatorShiftHours"
                 disabled={!!plannedLock}
@@ -628,7 +628,7 @@ const EntryBlock = ({
                     ? `Can't be less than Machine Shift (${hoursToHm(machineShiftMin / 60)}).`
                     : planned !== null
                       ? `= ${hoursToHm(planned)} hr`
-                      : "Type hours.minutes — 3.30 is 3 h 30 min."}
+                      : "Type hours as on the sheet — 3.5 is 3 h 30 min."}
                 </p>
               )}
               {plannedLock && (

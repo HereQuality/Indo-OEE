@@ -30,6 +30,12 @@ const entryCommonFields = {
   // with it, so a renamed or removed vendor still reads right.
   vendor: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", default: undefined },
   vendorName: { type: String, trim: true, maxlength: 100, default: undefined },
+  // Whether this entry's Planned Operator Shift came from Process Master's lock
+  // (set by utils/plannedShift.js, never by the request). A locked shift is
+  // the machine's whole day, so the day figures count it once however many
+  // entries share that date; hours typed on each entry add up instead.
+  // Absent on entries saved before this existed.
+  plannedLocked: { type: Boolean, default: undefined },
   // "Non Working" = the machine did not run (see utils/workingMode.js); absent = Working.
   workingMode: { type: String, enum: ["Non Working"], default: undefined },
   machineStatus: {

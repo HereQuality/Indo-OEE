@@ -80,3 +80,33 @@ test("an entry made straight on a process follows that process's lock the same w
   setting = { plannedShiftLocked: false, plannedShiftHours: 12 };
   assert.equal(await saveOnProcess(1, 12), 1, "edited, unlocked → the hours typed");
 });
+
+// Whether the hours came from the lock — the day figures count a locked shift
+// once per machine per day (client/src/utils/productionSheet.js dayCalc).
+const flagOf = async (typed, existing, extra = {}) => {
+  const body = { machine: MACHINE, plannedOperatorShiftHours: typed, ...extra };
+  await enforcePlannedShift(body, existing);
+  return body.plannedLocked;
+};
+
+test("plannedLocked: true when the lock supplied the hours, false when typed", async () => {
+  setting = { plannedShiftLocked: true, plannedShiftHours: 12 };
+  assert.equal(await flagOf(SHEET, null), true, "a new entry on a locked process");
+  setting = { plannedShiftLocked: false, plannedShiftHours: 12 };
+  assert.equal(await flagOf(SHEET, null), false, "typed on an unlocked process");
+});
+
+test("plannedLocked: an edit keeps what the entry was saved with", async () => {
+  setting = { plannedShiftLocked: true, plannedShiftHours: 12 };
+  assert.equal(await flagOf(12, { plannedOperatorShiftHours: SHEET, plannedLocked: false }), false, "typed hours kept under a later lock");
+  assert.equal(await flagOf(12, { plannedOperatorShiftHours: 12, plannedLocked: true }), true);
+  // Saved before the flag existed: the lock's own hours mean it came from the lock.
+  assert.equal(await flagOf(12, { plannedOperatorShiftHours: 12 }), true);
+  assert.equal(await flagOf(12, { plannedOperatorShiftHours: SHEET }), false);
+});
+
+test("plannedLocked: never taken from the request, and dropped with a blank shift", async () => {
+  setting = { plannedShiftLocked: false, plannedShiftHours: 12 };
+  assert.equal(await flagOf(SHEET, null, { plannedLocked: true }), false);
+  assert.equal(await flagOf("", null, { plannedLocked: true }), undefined);
+});

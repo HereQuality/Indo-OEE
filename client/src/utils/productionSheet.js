@@ -355,14 +355,31 @@ export function dayCalc(rows) {
   // disproves). A row with no usable Planned (or one shorter than its
   // Machine Shift, an old row) counts its Machine Shift, so nothing is ever
   // less than the run itself.
-  const dayAvailH = sumOrZero(
-    list.map((r, i) => {
-      const shift = calcs[i].shiftHours;
-      if (!isNum(shift)) return null;
-      const planned = num(r.plannedOperatorShiftHours);
-      return isNum(planned) && planned > shift ? planned : shift;
-    }),
-  );
+  //
+  // A Planned that came from Process Master's lock (plannedLocked, set by the
+  // server) is the machine's whole day, not each entry's: it counts once per
+  // date however many entries share it — three entries on a 12 h lock are a
+  // 12 h day, not 36 h (never less than those entries' own runs added up).
+  // Hours typed on each entry are that entry's own share and add up, the way
+  // the paper sheet's entries add up to the day's Planned (checked against
+  // RIVET 11/A 21-06-2025 and PRESS 1D 30-09-2026: exact).
+  const lockedDay = (() => {
+    const idx = list.map((r, i) => i).filter((i) => list[i].plannedLocked === true && isNum(num(list[i].plannedOperatorShiftHours)) && isNum(calcs[i].shiftHours));
+    if (!idx.length) return { idx: new Set(), hours: 0 };
+    const planned = Math.max(...idx.map((i) => num(list[i].plannedOperatorShiftHours)));
+    const run = sumOrZero(idx.map((i) => calcs[i].shiftHours));
+    return { idx: new Set(idx), hours: Math.max(planned, run) };
+  })();
+  const dayAvailH =
+    sumOrZero(
+      list.map((r, i) => {
+        if (lockedDay.idx.has(i)) return null;
+        const shift = calcs[i].shiftHours;
+        if (!isNum(shift)) return null;
+        const planned = num(r.plannedOperatorShiftHours);
+        return isNum(planned) && planned > shift ? planned : shift;
+      }),
+    ) + lockedDay.hours;
   const dayStoppageMin = sumOrZero(calcs.map((c) => c.totalStoppageMin));
   const dayEffectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
   const dayLunchMin = sumOrZero(list.map((r) => num(r.lunchMin)));
@@ -387,18 +404,20 @@ export function dayCalc(rows) {
   // where the machine was on but not always producing and nothing was logged
   // for that gap, giving a wrong (often negative) result. (A row saved
   // without a Planned shift — only the oldest ones — falls back to Machine
-  // Shift in Planned's place.)
+  // Shift in Planned's place.) A locked Planned counts once for the day, as
+  // in dayAvailH above.
   const dayUnreportedMin = dayHasShift
     ? sumOrZero(
         list.map((r, i) => {
           const c = calcs[i];
           const stop = (c.totalStoppageMin || 0) + (num(r.otherActivityMin) || 0);
           const effectiveMin = (c.effectiveHours || 0) * 60;
+          if (lockedDay.idx.has(i)) return -effectiveMin - stop;
           const planned = num(r.plannedOperatorShiftHours);
           const basisMin = isNum(planned) ? planned * 60 : isNum(c.shiftHours) ? c.shiftHours * 60 : null;
           return basisMin === null ? -stop : basisMin - effectiveMin - stop;
         }),
-      )
+      ) + lockedDay.hours * 60
     : null;
   const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
   const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
