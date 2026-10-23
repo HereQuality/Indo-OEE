@@ -16,6 +16,10 @@ const MONTHS_FULL = [
  *   name        – field name (forwarded in synthetic event)
  *   placeholder – string shown when no date selected
  *   hasError    – boolean → red border
+ *
+ * The trigger carries aria-expanded while the calendar shows, and Escape closes
+ * just the calendar — so a form's modal knows that Escape wasn't meant for it
+ * (see utils/modalEscape.js).
  */
 const DatePicker = ({
   value,
@@ -56,6 +60,14 @@ const DatePicker = ({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Escape closes the calendar (only), wherever the focus is.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   const prevMonth = (e) => {
     e.stopPropagation();
     setView((v) => { const d = new Date(v.year, v.month - 1); return { year: d.getFullYear(), month: d.getMonth() }; });
@@ -65,8 +77,7 @@ const DatePicker = ({
     setView((v) => { const d = new Date(v.year, v.month + 1); return { year: d.getFullYear(), month: d.getMonth() }; });
   };
 
-  const handleSelect = (day) => {
-    const d = new Date(view.year, view.month, day);
+  const pick = (d) => {
     const iso = [
       d.getFullYear(),
       String(d.getMonth() + 1).padStart(2, "0"),
@@ -75,6 +86,7 @@ const DatePicker = ({
     onChange({ target: { name, value: iso } });
     setOpen(false);
   };
+  const handleSelect = (day) => pick(new Date(view.year, view.month, day));
 
   // Display label
   const displayValue = selected
@@ -92,6 +104,8 @@ const DatePicker = ({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className={`w-full flex items-center gap-2 cursor-pointer border rounded-xl px-2.5 py-1.5 text-xs transition-all bg-white text-left ${
           hasError
             ? "border-red-400 ring-4 ring-red-500/10"
@@ -152,10 +166,10 @@ const DatePicker = ({
             })}
           </div>
 
-          {/* Today shortcut */}
+          {/* Today shortcut — today's own date, whichever month is on screen */}
           <div className="mt-2 pt-2 border-t border-slate-100">
             <button type="button"
-              onClick={() => handleSelect(today.getDate()) || setView({ year: today.getFullYear(), month: today.getMonth() })}
+              onClick={() => pick(new Date())}
               className="w-full text-[11px] text-center text-brand-600 hover:text-brand-700 font-medium py-1 rounded-lg hover:bg-brand-50 transition-colors">
               Today
             </button>

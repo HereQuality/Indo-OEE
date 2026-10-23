@@ -90,6 +90,13 @@ const globalErrorHandler = (err, req, res, next) => {
     formattedErr.stack = err.stack; // Preserve stack trace for dev
   }
 
+  // A bad or expired token is a 401 in every mode too: the client logs the
+  // user out on 401, while a 500 left them on a page that could never load.
+  if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+    formattedErr = err.name === "TokenExpiredError" ? handleJWTExpiredError() : handleJWTError();
+    formattedErr.stack = err.stack;
+  }
+
   if (process.env.NODE_ENV === "development") {
     sendErrorDev(formattedErr, res);
   } else {

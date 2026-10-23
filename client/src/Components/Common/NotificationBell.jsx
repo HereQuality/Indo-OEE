@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Bell } from "lucide-react";
 import { useSocket } from "../../context/SocketContext";
@@ -9,6 +9,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "../../api/notifications.api";
+import { NOTIFICATIONS_CHANGED, announceNotificationsRead, useNotificationLink } from "../../utils/notifications";
 
 const formatTime = (value) => {
   if (!value) return "Now";
@@ -22,9 +23,8 @@ const formatTime = (value) => {
  * ─────────────────────────────────────────
  * Lives in the top bar (Layouts/Layout.jsx). Uses the app's one shared
  * socket connection (SocketContext) — no separate connection of its own.
- * Currently only support-ticket events feed this, but it's generic
- * (title/message/type/referenceId) so anything else can push through it
- * later without changes here.
+ * Generic (title/message/type/referenceId): clicking one marks it read and
+ * opens the page it's about, when there is one (utils/notifications.js).
  */
 export default function NotificationBell() {
   const { socket, connected } = useSocket();
@@ -36,12 +36,27 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const linkOf = useNotificationLink();
 
-  useEffect(() => {
+  const refreshCount = useCallback(() => {
     getUnreadNotificationCount()
       .then((res) => setUnreadCount(res?.data?.unreadCount || 0))
       .catch(() => {});
   }, []);
+
+  useEffect(refreshCount, [refreshCount]);
+
+  // Kept in step with the Notifications page (which announces what it marks
+  // read) and with other tabs (refetched when this one comes back into view).
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === "visible" && refreshCount();
+    window.addEventListener(NOTIFICATIONS_CHANGED, refreshCount);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener(NOTIFICATIONS_CHANGED, refreshCount);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshCount]);
 
   useEffect(() => {
     if (!socket || !connected) return undefined;
@@ -85,13 +100,26 @@ export default function NotificationBell() {
     }
   };
 
-  const handleMarkRead = async (id) => {
+  // Only an unread one lowers the count — clicking an already-read one used
+  // to take it down again.
+  const markRead = async (item) => {
+    if (item.isRead) return;
     try {
-      await markNotificationRead(id);
-      setNotifications((prev) => prev.map((n) => (String(n._id) === String(id) ? { ...n, isRead: true } : n)));
+      await markNotificationRead(item._id);
+      setNotifications((prev) => prev.map((n) => (String(n._id) === String(item._id) ? { ...n, isRead: true } : n)));
       setUnreadCount((c) => (c > 0 ? c - 1 : 0));
+      announceNotificationsRead({ id: String(item._id) });
     } catch {
       /* ignore */
+    }
+  };
+
+  const handleOpen = (item) => {
+    markRead(item);
+    const link = linkOf(item);
+    if (link) {
+      setIsOpen(false);
+      navigate(link);
     }
   };
 
@@ -100,6 +128,7 @@ export default function NotificationBell() {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
+      announceNotificationsRead({ all: true });
     } catch {
       /* ignore */
     }
@@ -117,6 +146,8 @@ export default function NotificationBell() {
         className="relative h-9 w-9 flex items-center justify-center rounded-full transition"
         style={{ color: isDarkMode ? "#cbd5e1" : "#475569", background: "transparent" }}
         title="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+        aria-expanded={isOpen}
       >
         <Bell size={18} />
         {unreadCount > 0 && (
@@ -130,8 +161,11 @@ export default function NotificationBell() {
       </button>
 
       {isOpen && (
+        // On a phone the bell sits too far left for a 320px panel hung off
+        // its right edge (it ran off the left of the screen), so there the
+        // panel spans the viewport just under the header instead.
         <div
-          className="absolute right-0 z-50 mt-2 w-80 max-w-[90vw] overflow-hidden rounded-xl shadow-lg"
+          className="fixed inset-x-3 top-[4.25rem] z-50 overflow-hidden rounded-xl shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
           style={{ background: panelBg, border }}
         >
           <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: border }}>
@@ -161,7 +195,7 @@ export default function NotificationBell() {
                 <button
                   key={item._id}
                   type="button"
-                  onClick={() => handleMarkRead(item._id)}
+                  onClick={() => handleOpen(item)}
                   className="w-full px-4 py-3 text-left transition-colors"
                   style={{
                     borderBottom: border,

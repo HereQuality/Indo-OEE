@@ -158,6 +158,13 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/powder-coating-sheet/filter-options`,
         OCCUPIED: `${V1}/powder-coating-sheet/occupied`,
     },
+    RUBBER_SHEET: {
+        BASE: `${V1}/rubber-sheet`,
+        ROW: `${V1}/rubber-sheet/row`,
+        EXTENT: `${V1}/rubber-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/rubber-sheet/filter-options`,
+        OCCUPIED: `${V1}/rubber-sheet/occupied`,
+    },
     SPRING_SHEET: {
         BASE: `${V1}/spring-sheet`,
         ROW: `${V1}/spring-sheet/row`,

@@ -1,5 +1,5 @@
 import React, { Suspense } from "react";
-import { Routes, Route, Outlet } from "react-router-dom";
+import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import RoleRoute, { PageGuard } from "./RoleRoute";
 import HomeRedirect from "./HomeRedirect";
 
@@ -60,6 +60,9 @@ const Index = () => {
           "/:roleSlug/..." tree, all nested under one persistent Layout.
           Defined once in allRoutes.jsx. */}
       <Route path="/:roleSlug" element={<RoleRoute />}>
+        {/* The bare "/<roleSlug>" has no page of its own — without this it
+            rendered an empty Outlet, i.e. a blank screen. */}
+        <Route index element={<Navigate to="home" replace />} />
         <Route element={<AppLayout />}>
           {protectedRoutes.map((route, idx) => (
             <Route

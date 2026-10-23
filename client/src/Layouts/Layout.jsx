@@ -42,6 +42,12 @@ export default function Layout({ children }) {
   useEffect(() => {
     localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+  // Layout stays mounted across pages, so tapping a link in the mobile
+  // sidebar navigated underneath it and left the overlay covering the new
+  // page — close it whenever the page changes.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const { menuData: menus, loading } = useContext(MenuContext);
   const { adminData } = useContext(AuthContext);
@@ -187,7 +193,9 @@ export default function Layout({ children }) {
         >
           <Link to={`/${roleSlug}/home`} className="flex items-center justify-center w-full min-w-0">
             {logo ? (
-              <img src={logo} alt={APP_NAME} className="h-12 w-auto shrink-0" />
+              // object-contain: in the 72px collapsed rail the image is held to
+              // the rail's width, and without it a wide logo gets squashed.
+              <img src={logo} alt={APP_NAME} className="h-12 w-auto max-w-full shrink-0 object-contain" />
             ) : (
               <span style={{ color: isDarkMode ? '#f1f5f9' : '#1e293b' }} className="font-bold text-lg truncate px-2">{APP_NAME}</span>
             )}
@@ -196,6 +204,7 @@ export default function Layout({ children }) {
             style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}
             className="md:hidden hover:opacity-80"
             onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close menu"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -261,19 +270,30 @@ export default function Layout({ children }) {
                   </NavLink>
                 ) : (
                   <>
-                    {/* Group header button */}
+                    {/* Group header button. Collapsed it's only an icon, so it
+                        carries the group's name as its title / label, and is
+                        highlighted like an active link when the current page
+                        lives inside it — the rail shows no child links. */}
                     <button
                       type="button"
                       onClick={() => !sidebarCollapsed && toggleGroup(group.groupId, isGroupOpen(group))}
-                      style={{ color: isDarkMode ? '#94a3b8' : '#334155' }}
-                      className={`w-full flex items-center px-2.5 rounded-md cursor-pointer transition-colors hover:opacity-80 ${sidebarCollapsed
-                          ? 'justify-center py-2.5 hover:bg-blue-50 hover:!text-blue-600'
-                          : 'justify-between py-1.5 mb-1 mt-2'
+                      title={sidebarCollapsed ? group.groupName : undefined}
+                      aria-label={sidebarCollapsed ? group.groupName : undefined}
+                      aria-expanded={sidebarCollapsed ? undefined : isGroupOpen(group)}
+                      style={sidebarCollapsed && groupContainsCurrentPath(group)
+                        ? {
+                            background: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.09)',
+                            color: isDarkMode ? '#ffffff' : '#2563eb',
+                          }
+                        : { color: isDarkMode ? '#94a3b8' : '#334155' }}
+                      className={`w-full flex items-center px-2.5 cursor-pointer transition-colors hover:opacity-80 ${sidebarCollapsed
+                          ? 'justify-center py-2.5 rounded-xl hover:bg-blue-50 hover:!text-blue-600'
+                          : 'justify-between py-1.5 mb-1 mt-2 rounded-md'
                         }`}
                     >
                       {sidebarCollapsed ? (
-                        // Collapsed: show icon
-                        <DynamicIcon name={group.icon} defaultIcon="Folder" size={18} className="shrink-0" style={{ color: isDarkMode ? '#94a3b8' : '#334155' }} />
+                        // Collapsed: show icon (in the button's colour, so it follows the highlight)
+                        <DynamicIcon name={group.icon} defaultIcon="Folder" size={18} className="shrink-0" />
                       ) : (
                         // Expanded: show icon + label + chevron
                         <>
@@ -430,6 +450,7 @@ export default function Layout({ children }) {
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="text-slate-500 hover:text-slate-700 p-1"
+              aria-label="Open menu"
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

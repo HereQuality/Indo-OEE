@@ -1,5 +1,6 @@
 import React from "react";
 import { ChevronRight, Layers } from "lucide-react";
+import { isWorkerProcess } from "../../utils/processDashboard";
 import "./processDashboard.css";
 
 /**
@@ -21,6 +22,10 @@ const Tile = ({ title, subtitle, onOpen }) => (
 );
 
 const machineCount = (count) => `${count} machine${count === 1 ? "" : "s"}`;
+
+// RUBBER / After Powder Coating have no machines (their entries are made per
+// worker), so "0 machines" was wrong — they're named for what they count by.
+const processSubtitle = (p) => (isWorkerProcess(p) ? "Per worker" : machineCount(p.machines.length));
 
 const ProcessOverview = ({ processes, machines, loading, onOpen }) => {
   const unassigned = machines.filter((m) => !m.process).length;
@@ -45,7 +50,7 @@ const ProcessOverview = ({ processes, machines, loading, onOpen }) => {
         <section className="pd-group">
           <div className="pd-tiles">
             {processes.map((p) => (
-              <Tile key={p._id} title={p.processName} subtitle={machineCount(p.machines.length)} onOpen={() => onOpen(p._id)} />
+              <Tile key={p._id} title={p.processName} subtitle={processSubtitle(p)} onOpen={() => onOpen(p._id)} />
             ))}
           </div>
         </section>

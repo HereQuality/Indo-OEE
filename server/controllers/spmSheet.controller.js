@@ -129,6 +129,15 @@ const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 const sameTimes = (existing, body) =>
   !!existing && existing.machineOnTime === body.machineOnTime && existing.machineOffTime === body.machineOffTime;
 
+// Whether a save moves a saved entry to another Date or Machine. The exemption
+// above only holds while the entry stays where it is: moved, its times meet
+// entries they were never checked against, so the overlap rules apply again.
+const movesEntry = (existing, date, machine) => {
+  if (!existing) return false;
+  const existingDay = existing.date instanceof Date ? existing.date.toISOString().slice(0, 10) : String(existing.date).slice(0, 10);
+  return existingDay !== date || String(existing.machine) !== String(machine);
+};
+
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
   ["itemName", "Part Name"],
@@ -249,7 +258,9 @@ exports.getSheet = async (req, res) => {
 
     const entries = pageDates.length
       ? await SpmEntry.find({ ...query, date: { $in: pageDates } })
-          .select("-__v -createdAt -updatedBy -updatedByModel")
+          // createdAt and unlockedUntil stay in: the sheet works out each row's
+          // working-day lock, and whether to offer Unlock, from them.
+          .select("-__v -updatedBy -updatedByModel")
           .lean()
       : [];
 
@@ -347,6 +358,20 @@ exports.saveRow = async (req, res) => {
     const ruleError = entryRuleError(req.body, existing);
     if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
+    // Only an edit of an already-saved row can be locked; catching up on a late
+    // new entry is fine. Every save that finds a saved row is checked, whatever
+    // slot it names — one sent with slot "auto" used to skip this. The window
+    // counts from when that row was first saved (createdAt), not from its own
+    // Date — see checkNotLocked's own comment.
+    if (existing) {
+      const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
+      const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
+      if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+    }
+    // Whether this save moves the saved entry to another Date or Machine — for the
+    // slot it lands in and the overlap checks below.
+    const moved = movesEntry(existing, date, machine);
+
     // The form sends "auto" for a new entry; the lowest free slot is picked here
     // because only the server sees every entry, so a new one can never overwrite
     // an existing one.
@@ -369,37 +394,26 @@ exports.saveRow = async (req, res) => {
       // slot number over, which may already belong to an unrelated entry on
       // the new date — reassign to that date's next free slot instead of
       // colliding with (or, worse, overwriting) someone else's row.
-      if (existing) {
-        const existingDay = existing.date instanceof Date ? existing.date.toISOString().slice(0, 10) : String(existing.date).slice(0, 10);
-        const moved = existingDay !== date || String(existing.machine) !== String(machine);
-        if (moved) {
-          const used = new Set(
-            (await SpmEntry.find({ date: day, machine, _id: { $ne: existing._id } }).select("slot").lean()).map((e) => e.slot),
-          );
-          if (used.has(slotNo)) {
-            const free = SLOT_NUMBERS.find((n) => !used.has(n));
-            if (!free) {
-              return res.status(400).json({
-                isOk: false,
-                message: `This machine already has ${MAX_SLOTS} entries on ${dayLabel(date)} — can't move this entry there`,
-              });
-            }
-            slotNo = free;
+      if (moved) {
+        const used = new Set(
+          (await SpmEntry.find({ date: day, machine, _id: { $ne: existing._id } }).select("slot").lean()).map((e) => e.slot),
+        );
+        if (used.has(slotNo)) {
+          const free = SLOT_NUMBERS.find((n) => !used.has(n));
+          if (!free) {
+            return res.status(400).json({
+              isOk: false,
+              message: `This machine already has ${MAX_SLOTS} entries on ${dayLabel(date)} — can't move this entry there`,
+            });
           }
+          slotNo = free;
         }
-      }
-      // Only editing a saved row can be locked; catching up on a late new
-      // entry is fine. The window counts from when that row was first saved
-      // (createdAt), not from its own Date — see checkNotLocked's own comment.
-      if (existing) {
-        const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
-        const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
-        if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
       }
     }
 
-    // One machine runs one thing at a time.
-    if (!sameTimes(existing, req.body)) {
+    // One machine runs one thing at a time. Checked when the times are new or
+    // changed, or the entry moves to another Date or Machine.
+    if (moved || !sameTimes(existing, req.body)) {
       const others = await SpmEntry.find({ date: day, machine, slot: { $ne: slotNo } })
         .select("slot machineOnTime machineOffTime")
         .lean();
@@ -415,8 +429,10 @@ exports.saveRow = async (req, res) => {
     // One operator runs one machine at a time (on this SPM sheet).
     const operator = String(req.body.operator ?? "").trim();
     const operatorChanged = !existing || String(existing.operator ?? "").trim() !== operator;
-    if (operator && (operatorChanged || !sameTimes(existing, req.body))) {
-      const others = await SpmEntry.find({ date: day, operator, $nor: [{ machine, slot: slotNo }] })
+    if (operator && (operatorChanged || moved || !sameTimes(existing, req.body))) {
+      // The entry itself never counts: moved to another machine, it would
+      // otherwise clash with its own saved row.
+      const others = await SpmEntry.find({ date: day, operator, $nor: [{ machine, slot: slotNo }], ...(existing ? { _id: { $ne: existing._id } } : {}) })
         .select("machine slot machineOnTime machineOffTime")
         .populate("machine", "machineName")
         .lean();

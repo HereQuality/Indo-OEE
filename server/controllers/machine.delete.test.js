@@ -6,6 +6,12 @@ const assert = require("node:assert/strict");
 const Machine = require("../models/Machine");
 const ProductionEntry = require("../models/ProductionEntry");
 const VmcEntry = require("../models/VmcEntry");
+const SpmEntry = require("../models/SpmEntry");
+const RivetEntry = require("../models/RivetEntry");
+const PressEntry = require("../models/PressEntry");
+const ContactEntry = require("../models/ContactEntry");
+const TrobeEntry = require("../models/TrobeEntry");
+const SpringEntry = require("../models/SpringEntry");
 const { deleteMachine, updateMachine, listMachineByParams } = require("./machine.controller");
 const { machineNamesFor } = require("../utils/machineNames");
 
@@ -17,8 +23,12 @@ const call = async (handler, req) => {
   return res;
 };
 
-// One machine, with `entries` CNC entries and `vmcEntries` VMC entries pointing at it.
-const withModels = async ({ machine, entries = 0, vmcEntries = 0 }, fn) => {
+// Every sheet whose entries are made on a machine.
+const ENTRY_MODELS = { ProductionEntry, VmcEntry, SpmEntry, RivetEntry, PressEntry, ContactEntry, TrobeEntry, SpringEntry };
+
+// One machine, with `entries` CNC entries, `vmcEntries` VMC entries and `others`
+// ({ SpmEntry: 2, … }) entries on the other sheets pointing at it.
+const withModels = async ({ machine, entries = 0, vmcEntries = 0, others = {} }, fn) => {
   const seen = { saved: null, entryWrites: 0, machineQuery: null, bulk: null };
   const restore = [];
   const stub = (obj, name, impl) => {
@@ -46,15 +56,15 @@ const withModels = async ({ machine, entries = 0, vmcEntries = 0 }, fn) => {
   stub(Machine, "findByIdAndDelete", async () => {
     throw new Error("a machine must not be physically removed");
   });
-  for (const model of [ProductionEntry, VmcEntry]) {
+  const counts = { ProductionEntry: entries, VmcEntry: vmcEntries, ...others };
+  for (const [key, model] of Object.entries(ENTRY_MODELS)) {
     for (const name of ["deleteMany", "updateMany", "deleteOne", "findOneAndUpdate"]) {
       stub(model, name, async () => {
         seen.entryWrites += 1;
       });
     }
+    stub(model, "countDocuments", async () => counts[key] || 0);
   }
-  stub(ProductionEntry, "countDocuments", async () => entries);
-  stub(VmcEntry, "countDocuments", async () => vmcEntries);
   try {
     await fn(seen);
   } finally {
@@ -93,6 +103,16 @@ test("a machine with a single entry says so in the singular, and one with none s
   });
 });
 
+test("the kept-entries count takes in every machine sheet, not only CNC and VMC", async () => {
+  const others = { SpmEntry: 1, RivetEntry: 1, PressEntry: 1, ContactEntry: 1, TrobeEntry: 1, SpringEntry: 2 };
+  await withModels({ machine: { machineName: "7E", isActive: false, isDeleted: false }, entries: 1, vmcEntries: 1, others }, async (seen) => {
+    const res = await call(deleteMachine, {});
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /Its 9 data entries are kept as they were\./);
+    assert.equal(seen.entryWrites, 0, "no entry is touched");
+  });
+});
+
 test("a machine that is already deleted is gone as far as Machine Master is concerned", async () => {
   await withModels({ machine: { machineName: "7E", isActive: false, isDeleted: true } }, async () => {
     assert.equal((await call(deleteMachine, {})).statusCode, 404);
@@ -112,6 +132,27 @@ test("the Machine Master list leaves deleted machines out", async () => {
       const res = await call(listMachineByParams, { body: { isActive: false } });
       assert.equal(res.statusCode, 200);
       assert.deepEqual(query.isDeleted, { $ne: true });
+    } finally {
+      Machine.find = orig;
+    }
+  });
+});
+
+test("search text is matched as plain text, so \"(\" or \"*\" can't break it", async () => {
+  await withModels({ machine: null }, async () => {
+    let query = null;
+    const orig = Machine.find;
+    Machine.find = (q) => {
+      query = q;
+      return { lean: async () => [] };
+    };
+    try {
+      const res = await call(listMachineByParams, { body: { match: "7A (old*" } });
+      assert.equal(res.statusCode, 200);
+      const pattern = query.$or[0].machineName.$regex;
+      assert.doesNotThrow(() => new RegExp(pattern));
+      assert.ok(new RegExp(pattern, "i").test("7a (OLD*"));
+      assert.ok(!new RegExp(pattern, "i").test("7A old"));
     } finally {
       Machine.find = orig;
     }

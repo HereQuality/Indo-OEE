@@ -22,7 +22,7 @@ test("blank and invalid times keep their own messages", () => {
 });
 
 test("an older row keeps saving while its times are untouched, and the rule returns when they change", () => {
-  const saved = { machineOnTime: "22:00", machineOffTime: "06:00" };
+  const saved = { date: "2026-09-25", machine: "m1", machineOnTime: "22:00", machineOffTime: "06:00" };
   const legacy = { machineOnTime: "22:00", machineOffTime: "06:00" };
   assert.equal(offError(legacy, { saved }), undefined);
   assert.equal(offError({ ...legacy, machineOffTime: "05:00" }, { saved }), "Machine OFF Time must be after Machine ON Time");
@@ -87,7 +87,7 @@ test("editing: the row's own slot is not 'another entry', but its neighbours sti
 });
 
 test("an older overlapping row is left alone while its times are untouched", () => {
-  const saved = { machineOnTime: "10:00", machineOffTime: "13:00" };
+  const saved = { date: "2026-09-25", machine: "m1", machineOnTime: "10:00", machineOffTime: "13:00" };
   assert.deepEqual(overlapErrors([entry({ machineOnTime: "10:00", machineOffTime: "13:00" })], occupied, { editSlot: 3, saved }), [{}]);
   const [changed] = overlapErrors([entry({ machineOnTime: "10:00", machineOffTime: "13:05" })], occupied, { editSlot: 3, saved });
   assert.ok(changed.machineOnTime);
@@ -182,5 +182,131 @@ test("one operator can't be on two machines at overlapping times on a date", () 
   const both = operatorOverlapErrors([a, mine], {}, { machineName: (id) => ({ m1: "7A", m2: "7B" })[id] });
   assert.ok(both[0].machineOffTime && both[1].machineOnTime); // each is flagged on the box that runs into the other
   // an older row that already breaks it stays editable while its times and operator are untouched
-  assert.deepEqual(operatorOverlapErrors([mine], saved, { saved: { machineOnTime: "10:00", machineOffTime: "14:00", operator: "Asha" } }), [{}]);
+  assert.deepEqual(operatorOverlapErrors([mine], saved, { saved: { date: "2026-09-28", machine: "m2", machineOnTime: "10:00", machineOffTime: "14:00", operator: "Asha" } }), [{}]);
+});
+
+// ── Edit: moving a row to another date (or machine) ─────────────────────────
+import { isEndBeforeStartMessage, isLiveMessage, slotsFullErrors, timesUnchanged } from "./entryValidation";
+
+test("timesUnchanged also compares the date and the machine", () => {
+  const saved = { date: "2026-09-25", machine: "m1", machineOnTime: "08:00", machineOffTime: "12:00" };
+  assert.equal(timesUnchanged(entry(), saved), true);
+  assert.equal(timesUnchanged(entry({ date: "2026-09-26" }), saved), false);
+  assert.equal(timesUnchanged(entry({ machine: "m2" }), saved), false);
+  assert.equal(timesUnchanged(entry(), null), false);
+});
+
+test("an older overnight row moved to another date gets the OFF-after-ON rule again", () => {
+  const saved = { date: "2026-09-25", machine: "m1", machineOnTime: "22:00", machineOffTime: "06:00" };
+  const legacy = { machineOnTime: "22:00", machineOffTime: "06:00" };
+  assert.equal(offError(legacy, { saved }), undefined);
+  assert.equal(offError({ ...legacy, date: "2026-09-26" }, { saved }), "Machine OFF Time must be after Machine ON Time");
+});
+
+test("editing: changing only the Date still checks the new date's entries", () => {
+  // The row was slot 1 on the 24th, 08:00–12:00; the 25th already has slot 1 at the same time.
+  const saved = { date: "2026-09-24", machine: "m1", machineOnTime: "08:00", machineOffTime: "12:00" };
+  const [moved] = overlapErrors([entry({ machineOnTime: "08:00", machineOffTime: "12:00" })], occupied, { editSlot: 1, saved });
+  assert.match(moved.machineOnTime, /overlaps another entry for this machine on this date \(08:00 – 12:00\)/);
+  // On its own saved date its slot is still itself.
+  const home = { ...saved, date: "2026-09-25" };
+  assert.deepEqual(overlapErrors([entry({ machineOnTime: "09:00", machineOffTime: "11:00" })], occupied, { editSlot: 1, saved: home }), [{}]);
+});
+
+test("the 'Already booked' hint hides the edited row only on its own saved date and machine", () => {
+  const home = { date: "2026-09-25", machine: "m1", machineOnTime: "08:00", machineOffTime: "12:00" };
+  assert.deepEqual(bookedRanges(entry(), occupied, 1, home), ["14:00 – 18:00"]);
+  const elsewhere = { ...home, date: "2026-09-24" };
+  assert.deepEqual(bookedRanges(entry(), occupied, 1, elsewhere), ["08:00 – 12:00", "14:00 – 18:00"]);
+});
+
+test("editing: changing only the Date still checks the operator's other machines that day", () => {
+  const theirs = { "Asha|2026-09-29": [{ machine: "m1", machineName: "7A", slot: 1, machineOnTime: "10:00", machineOffTime: "12:00" }] };
+  const row = { date: "2026-09-29", machine: "m2", operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00" };
+  const saved = { ...row, date: "2026-09-28" };
+  const [err] = operatorOverlapErrors([row], theirs, { editing: { machine: "m2", slot: 1 }, saved });
+  assert.match(err.machineOnTime, /already on machine 7A/);
+  // Untouched on its own date, it stays editable.
+  assert.deepEqual(operatorOverlapErrors([{ ...row, date: "2026-09-28" }], { "Asha|2026-09-28": theirs["Asha|2026-09-29"] }, { editing: { machine: "m2", slot: 1 }, saved }), [{}]);
+});
+
+// ── End before Start, in every sheet's words ───────────────────────────────
+import { validateRubberEntry, RUBBER_TIME_WORDS } from "./rubberValidation";
+import { validatePowderEntry, POWDER_TIME_WORDS } from "./powderCoatingValidation";
+import { validateVmcEntry } from "./vmcValidation";
+
+const worker = (o = {}) => ({
+  date: "2026-10-20", machine: "w1", itemName: "Seal", totalCycleSec: "30",
+  machineOnTime: "09:00", machineOffTime: "10:00", okQty: "100", actualQty: "100",
+  plannedOperatorShiftHours: "8.00", ...o,
+});
+
+test("End before Start is a live time-rule message on the worker sheets too", () => {
+  const rubber = validateRubberEntry(worker({ machineOffTime: "08:00" }));
+  assert.equal(rubber.machineOffTime, "Working End Time must be after Working Start Time");
+  assert.ok(isTimeRuleMessage(rubber.machineOffTime));
+  assert.ok(isEndBeforeStartMessage(rubber.machineOffTime));
+  const powder = validatePowderEntry(worker({ machineOffTime: "08:00" }));
+  assert.equal(powder.machineOffTime, "Inspection End Time must be after Inspection Start Time");
+  assert.ok(isTimeRuleMessage(powder.machineOffTime));
+});
+
+test("End before Start doesn't also claim the Planned shift is shorter than a wrapped-round 23 h shift", () => {
+  assert.equal(validateRubberEntry(worker({ machineOffTime: "08:00" })).plannedOperatorShiftHours, undefined);
+  assert.equal(validatePowderEntry(worker({ machineOffTime: "08:00" })).plannedOperatorShiftHours, undefined);
+  assert.equal(validate(block({ machineOffTime: "07:00" })).plannedOperatorShiftHours, undefined);
+  assert.equal(validateVmcEntry({ ...block({ machineOffTime: "07:00" }), rejectedQty: "0" }).plannedOperatorShiftHours, undefined);
+  // With the times in order the rule is as before.
+  assert.equal(
+    validateRubberEntry(worker({ machineOffTime: "18:00", plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours,
+    "Planned Operator Shift can't be less than the Worker Shift Time (9:00)",
+  );
+});
+
+test("the overlap message uses the worker sheet's own wording", () => {
+  const taken = { "w1|2026-10-20": [{ slot: 1, machineOnTime: "08:00", machineOffTime: "12:00" }] };
+  const [r] = overlapErrors([worker()], taken, { words: RUBBER_TIME_WORDS });
+  assert.equal(r.machineOnTime, "Working Start Time overlaps another entry for this worker on this date (08:00 – 12:00)");
+  assert.ok(isTimeRuleMessage(r.machineOnTime));
+  const [p] = overlapErrors([worker({ machineOnTime: "07:00" })], taken, { words: POWDER_TIME_WORDS });
+  assert.match(p.machineOffTime, /^Inspection End Time overlaps another entry for this worker/);
+});
+
+// ── A 4th entry for a machine/worker on a date ─────────────────────────────
+const full = {
+  "m1|2026-09-25": [
+    { slot: 1, machineOnTime: "06:00", machineOffTime: "08:00" },
+    { slot: 2, machineOnTime: "08:00", machineOffTime: "10:00" },
+    { slot: 3, machineOnTime: "", machineOffTime: "" },
+  ],
+};
+
+test("a machine with 3 saved entries that date is flagged on the Machine box, in the server's words", () => {
+  const [e] = slotsFullErrors([entry()], full);
+  assert.equal(e.machine, "This machine already has 3 entries on 25/09/2026 — edit one of them instead");
+  assert.ok(isLiveMessage(e.machine));
+  assert.ok(!isTimeRuleMessage(e.machine), "said on the box, not toasted");
+  assert.deepEqual(slotsFullErrors([entry({ date: "2026-09-26" })], full), [{}]);
+  assert.deepEqual(slotsFullErrors([entry({ machine: "" })], full), [{}]);
+  // A worker sheet names the worker.
+  assert.match(slotsFullErrors([entry()], full, { who: () => "Asha" })[0].machine, /^Asha already has 3 entries/);
+});
+
+test("earlier blocks of the same form count toward the 3", () => {
+  const two = { "m1|2026-09-25": full["m1|2026-09-25"].slice(0, 2) };
+  const errs = slotsFullErrors([entry(), entry({ machineOnTime: "13:00", machineOffTime: "14:00" })], two);
+  assert.deepEqual(errs[0], {});
+  assert.ok(errs[1].machine);
+});
+
+test("editing: a row on its own date is one of the 3; moved onto a full date it can't go", () => {
+  const home = { date: "2026-09-25", machine: "m1", machineOnTime: "08:00", machineOffTime: "10:00" };
+  assert.deepEqual(slotsFullErrors([entry()], full, { editSlot: 2, saved: home }), [{}]);
+  const [moved] = slotsFullErrors([entry()], full, { editSlot: 1, saved: { ...home, date: "2026-09-24" } });
+  assert.equal(moved.date, "This machine already has 3 entries on 25/09/2026 — can't move this entry there");
+});
+
+test("a typed time that isn't one is said under the box before Save", () => {
+  assert.ok(isLiveMessage("Enter a valid time"));
+  assert.ok(!isLiveMessage("Machine ON Time is required"));
 });

@@ -28,7 +28,7 @@ const { createNotificationForMany } = require("../services/notification.service"
  * save goes through, the same rule ItemLog follows.
  */
 
-const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE", spring: "SPRING FOR PINS", powder: "AFTER POWDER COATING" };
+const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE", spring: "SPRING FOR PINS", powder: "AFTER POWDER COATING", rubber: "RUBBER" };
 
 const STOPPAGE_LABELS = {
   plannedDownMin: "Planned Down Time (min)",
@@ -87,6 +87,31 @@ const FIELD_LABELS = {
   ...Object.fromEntries([...CYCLE_OP_FIELDS, ...SPM_OP_FIELDS, ...RIVET_OP_FIELDS, ...SPM_REFERENCE_FIELDS].map((f) => [f.key, f.label])),
 };
 
+// Where a sheet's own column heading says something else for the same field.
+// RUBBER and AFTER POWDER COATING are worker sheets: their times are a
+// worker's start / end, not a machine's ON / OFF.
+const SHEET_FIELD_LABELS = {
+  spring: { totalCycleSec: "Standard Time per Piece (sec)" },
+  rubber: {
+    machineOnTime: "Working Start Time",
+    machineOffTime: "Working End Time",
+    okQty: "Actual OK Quantity",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    otherMin: "Others (min)",
+  },
+  powder: {
+    itemName: "Item Name",
+    totalCycleSec: "Standard Inspection Time per Piece (sec)",
+    machineOnTime: "Inspection Start Time",
+    machineOffTime: "Inspection End Time",
+    actualQty: "Total Qty",
+    otherActivityMin: "Time in Other Activity (min)",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+  },
+};
+
+const fieldLabel = (sheet, field) => SHEET_FIELD_LABELS[sheet]?.[field] || FIELD_LABELS[field] || field;
+
 const isBlank = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "") || (Array.isArray(v) && !v.length);
 
 // A stored value as a log shows it: blanks → null, dates → YYYY-MM-DD, lists
@@ -112,13 +137,14 @@ const machineNamesOf = (...ids) => machineNamesFor(ids.filter(Boolean));
 // sheet, which has none, its worker. Logged in the machine's place.
 const keyOf = (entry) => entry?.machine ?? entry?.worker;
 
-// Field-by-field old → new over `fields`, in that order.
-const diff = (fields, before, after, machineNames) =>
+// Field-by-field old → new over `fields`, in that order, labelled the way
+// `sheet` itself words them.
+const diff = (sheet, fields, before, after, machineNames) =>
   fields
     .map((field) => {
       const from = present(field, before?.[field], machineNames);
       const to = present(field, after?.[field], machineNames);
-      return JSON.stringify(from) === JSON.stringify(to) ? null : { field, label: FIELD_LABELS[field] || field, from, to };
+      return JSON.stringify(from) === JSON.stringify(to) ? null : { field, label: fieldLabel(sheet, field), from, to };
     })
     .filter(Boolean);
 
@@ -197,7 +223,7 @@ const logEntrySave = async ({ sheet, req, before, after, fields, review }) => {
       label: labelOf(sheet, after, machineName),
       actor: await actorOf(req),
     };
-    const changes = diff(["date", "machine", ...fields], before, after, names);
+    const changes = diff(sheet, ["date", "machine", ...fields], before, after, names);
     if (!before || changes.length) await write({ ...base, action: before ? "update" : "create", changes, metrics: review?.oee || {} });
     if (review?.transition === "flagged") {
       await write({ ...base, action: "flagged", metrics: review.oee, flagged: review.over, remark: `Over 100%: ${overText(review.over)}` });
@@ -223,7 +249,7 @@ const logEntryDelete = async ({ sheet, req, before, fields }) => {
       date: present("date", before.date, {}),
       label: labelOf(sheet, before, machineName),
       action: "delete",
-      changes: diff(["date", "machine", ...fields], before, {}, names),
+      changes: diff(sheet, ["date", "machine", ...fields], before, {}, names),
       metrics: before.oee || {},
       actor: await actorOf(req),
     });

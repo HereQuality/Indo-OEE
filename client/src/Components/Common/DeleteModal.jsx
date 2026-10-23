@@ -5,10 +5,16 @@ const DeleteModal = ({
   handleDelete,
   toggle,
   disabled,
+  // The masters' first delete only deactivates a record (the server keeps it,
+  // marked Inactive); only deleting one already inactive removes it for good.
+  // Pass the record's own isActive so the dialog says which will happen.
+  deactivates = false,
   title = 'Are you sure?',
-  message = 'Are you sure you want to remove this record? This action cannot be undone.',
-  confirmLabel = 'Yes, Delete It!',
-  confirmingLabel = 'Deleting...',
+  message = deactivates
+    ? 'This will deactivate it — it stays in the list as Inactive and can be made active again. Delete it once more to remove it for good.'
+    : 'Are you sure you want to remove this record? This action cannot be undone.',
+  confirmLabel = deactivates ? 'Yes, Deactivate It!' : 'Yes, Delete It!',
+  confirmingLabel = deactivates ? 'Deactivating...' : 'Deleting...',
 }) => {
   // Keyboard shortcuts while the confirm dialog is open: Enter confirms
   // delete, Escape cancels — same pattern used everywhere this modal is

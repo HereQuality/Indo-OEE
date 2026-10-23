@@ -14,7 +14,8 @@ import IconPicker from "../Components/Common/IconPicker";
 const initialState = {
   menuGroupName: "",
   sequence: "",
-  isActive: false,
+  // Ticked by default, so a group just added isn't hidden by "Active only".
+  isActive: true,
   isLink: false,
   menuUrl: "",
   portal: "Both",
@@ -201,8 +202,9 @@ const MenuGroup = () => {
       });
   };
 
+  // Escape closes the dialog without an event, so there may be none to cancel.
   const handleDeleteClose = (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     setmodal_delete(false);
   };
 
@@ -239,12 +241,15 @@ const MenuGroup = () => {
   const validate = (values) => {
     const errors = {};
 
-    if (values.menuGroupName === "") {
+    // Spaces alone aren't a name.
+    if (!String(values.menuGroupName ?? "").trim()) {
       errors.menuGroupName = "Menu Group Name is required!";
     }
 
-    if (values.sequence === "") {
+    if (values.sequence === "" || values.sequence === null || values.sequence === undefined) {
       errors.sequence = "Sequence is required!";
+    } else if (Number(values.sequence) < 0) {
+      errors.sequence = "Sequence can't be negative";
     }
 
     if (values.isLink && values.menuUrl === "") {
@@ -285,7 +290,8 @@ const MenuGroup = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: filter ? true : false,
+        // "Active only" off lists every menu group, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
 
       if (response && response.data && response.data.data && response.data.data.length > 0) {
@@ -317,9 +323,9 @@ const MenuGroup = () => {
   };
   const col = [
     {
+      // Numbered on from the previous page rather than starting at 1 again.
       name: "Sr No",
-      selector: (row, index) => index + 1,
-      sortable: true,
+      selector: (row, index) => (pageNo - 1) * perPage + index + 1,
       maxWidth: "60px",
     },
     {
@@ -672,6 +678,7 @@ const MenuGroup = () => {
         handleDelete={handleDelete}
         toggle={handleDeleteClose}
         disabled={isDeleteLoading}
+        deactivates={!!departments.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );

@@ -14,12 +14,16 @@ import { MACHINE_STATUSES } from "../../utils/productionSheet";
  * MACHINE_STATUSES order. `remark` is the form's Remarks text, so the box shows
  * ticked while something is written there.
  *
+ * `statuses` narrows what's offered (a worker sheet has no machine to break
+ * down); a status a saved entry already carries is still listed, ticked, so
+ * editing it neither hides nor silently drops it.
+ *
  * The list is drawn in a portal at the box's screen position, so a card or the
  * modal's edge can never clip it; it opens upward when there's no room below.
  */
 const REMARKS = "Remarks";
 
-const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = false }) => {
+const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = false, statuses = MACHINE_STATUSES }) => {
   const [open, setOpen] = useState(false);
   const [remarksOn, setRemarksOn] = useState(!!remark); // Remarks ticked
   const [pos, setPos] = useState(null);
@@ -27,6 +31,7 @@ const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = fals
   const panelRef = useRef(null);
   const listId = useId();
   const ticked = Array.isArray(value) ? value : [];
+  const offered = MACHINE_STATUSES.filter((s) => statuses.includes(s) || ticked.includes(s));
   // An entry opened for editing, or another row loaded into this form, brings its own text.
   useEffect(() => {
     if (remark) setRemarksOn(true);
@@ -72,7 +77,7 @@ const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = fals
   }, [open]);
 
   const toggle = (status) =>
-    onChange(MACHINE_STATUSES.filter((s) => (s === status ? !ticked.includes(s) : ticked.includes(s))));
+    onChange(offered.filter((s) => (s === status ? !ticked.includes(s) : ticked.includes(s))));
   const toggleRemarks = () => setRemarksOn((on) => (remark ? true : !on)); // text written there keeps it ticked
 
   // Apply closes the list and, when Remarks is ticked, opens the Remarks box and puts the cursor in it.
@@ -116,7 +121,7 @@ const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = fals
             className="bg-body border rounded shadow p-2"
             style={{ position: "fixed", zIndex: 2000, left: pos?.left ?? 0, top: pos?.top ?? 0, width: pos?.width ?? 240, visibility: pos ? "visible" : "hidden", maxHeight: "70vh", overflowY: "auto" }}
           >
-            {MACHINE_STATUSES.map((status) => row(`${listId}-${status.replace(/\W+/g, "-")}`, status, ticked.includes(status), () => toggle(status)))}
+            {offered.map((status) => row(`${listId}-${status.replace(/\W+/g, "-")}`, status, ticked.includes(status), () => toggle(status)))}
             {row(`${listId}-remarks`, REMARKS, remarksOn || !!remark, toggleRemarks)}
             <button type="button" className="btn btn-primary w-100 mt-2 d-inline-flex justify-content-center align-items-center gap-1" style={{ minHeight: 42 }} onClick={apply}>
               <Check size={16} /> Apply

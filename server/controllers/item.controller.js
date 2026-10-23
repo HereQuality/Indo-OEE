@@ -142,8 +142,13 @@ const actorOf = (user) => ({
 const recordItemLog = async (req, action, before, after) => {
   try {
     const processIds = [before?.process, after?.process].filter(Boolean).map(String);
-    const processes = processIds.length ? await Process.find({ _id: { $in: processIds } }).select("processName").lean() : [];
-    const changes = diffItem(before, after, Object.fromEntries(processes.map((p) => [String(p._id), p.processName])));
+    const processes = processIds.length ? await Process.find({ _id: { $in: processIds } }).select("processName dataEntryMenu").lean() : [];
+    const changes = diffItem(
+      before,
+      after,
+      Object.fromEntries(processes.map((p) => [String(p._id), p.processName])),
+      Object.fromEntries(processes.map((p) => [String(p._id), p.dataEntryMenu || ""])),
+    );
     if (action === "update") {
       if (!changes.length) return;
       action = updateAction(changes);
@@ -206,11 +211,11 @@ exports.deleteItem = async (req, res) => {
       item.isActive = false;
       await item.save();
       await recordItemLog(req, "update", before, item);
-      return res.status(200).json({ isOk: true, message: "Item deactivated successfully" });
+      return res.status(200).json({ isOk: true, message: "Part deactivated successfully" });
     }
     await Item.findByIdAndDelete(item._id);
     await recordItemLog(req, "delete", before, {});
-    res.status(200).json({ isOk: true, message: "Item deleted successfully" });
+    res.status(200).json({ isOk: true, message: "Part deleted successfully" });
   } catch (error) {
     console.error("Error deleting item:", error);
     res.status(500).json({ isOk: false, message: error.message });
@@ -246,10 +251,12 @@ exports.listItemByParams = async (req, res) => {
 
     const query = {};
     if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
-        { itemName: { $regex: match, $options: "i" } },
-        { drawingNo: { $regex: match, $options: "i" } },
-        { setupNo: { $regex: match, $options: "i" } },
+        { itemName: { $regex: escaped, $options: "i" } },
+        { drawingNo: { $regex: escaped, $options: "i" } },
+        { setupNo: { $regex: escaped, $options: "i" } },
       ];
     }
     if (isActive !== undefined) query.isActive = isActive;

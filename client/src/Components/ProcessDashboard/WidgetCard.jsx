@@ -17,6 +17,8 @@ import { Modal, ModalBody } from "reactstrap";
  * its content instead of being stretched across the pop-up.
  *
  * `children` is a render prop: ({ view, expanded, showChart }) => visual (showChart flips the card back to its chart).
+ * `unit` is what the dashboard is broken down by — "machine", or "worker" on a
+ * worker-based process.
  */
 const IconButton = ({ title, onClick, active, children }) => (
   <button type="button" className={`pd-icon-btn ${active ? "is-on" : ""}`} title={title} aria-label={title} onClick={onClick}>
@@ -37,8 +39,8 @@ const ViewToggle = ({ view, onChange }) => (
   </div>
 );
 
-const DrillButton = ({ onDrill }) => (
-  <IconButton title="Break down by machine, operator, item, date" onClick={onDrill}>
+const DrillButton = ({ onDrill, unit }) => (
+  <IconButton title={`Break down by ${unit}, operator, item, date`} onClick={onDrill}>
     <ListTree size={15} />
   </IconButton>
 );
@@ -46,7 +48,7 @@ const DrillButton = ({ onDrill }) => (
 // A small icon per kind of graph, so each card reads at a glance.
 const KIND_ICON = { lines: LineChart, hbars: Rows3, vbars: BarChart3, stacked: Layers, stackedTime: Layers, treemap: LayoutGrid, multiples: Activity, table: Table2, radial: Gauge, radar: Radar, area: AreaChart, donut: PieChart, nestedTreemap: LayoutGrid };
 
-const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false, onDrill, resetKey, preview, tone, children }) => {
+const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false, onDrill, resetKey, preview, tone, unit = "machine", children }) => {
   const KindIcon = KIND_ICON[preview] || BarChart3;
   const [view, setView] = useState("chart");
   // Any change to the dashboard's filters (a bar, a table row, Clear, the
@@ -74,7 +76,7 @@ const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false,
         </div>
         <div className="d-flex align-items-center gap-1 flex-shrink-0">
           {!tableOnly && <ViewToggle view={view} onChange={setView} />}
-          {onDrill && <DrillButton onDrill={onDrill} />}
+          {onDrill && <DrillButton onDrill={onDrill} unit={unit} />}
           <IconButton title="Maximize" onClick={openPopup}>
             <Maximize2 size={15} />
           </IconButton>
@@ -95,7 +97,7 @@ const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false,
           </div>
           <div className="d-flex align-items-center gap-1 flex-shrink-0">
             {!tableOnly && <ViewToggle view={popView} onChange={setPopView} />}
-            {onDrill && <DrillButton onDrill={onDrill} />}
+            {onDrill && <DrillButton onDrill={onDrill} unit={unit} />}
             <IconButton title="Close" onClick={closePopup}>
               <X size={17} />
             </IconButton>

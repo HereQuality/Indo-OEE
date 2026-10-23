@@ -93,11 +93,15 @@ const dayBoundary = "border-t-2 border-t-slate-400 dark:border-t-slate-500";
 // Date and Machine stay put on the left while the rest of the columns
 // scroll past underneath them; Action stays put on the right the same way.
 // Whichever frozen column borders the scrolling middle carries the shadow
-// that marks that freeze line.
+// that marks that freeze line. On a phone (below `sm`) the three together
+// took 296px of a 375px screen, leaving the data columns no room to scroll
+// into view — there Date and Machine are narrower (a long machine / worker
+// name wraps) and Action scrolls with the rest.
 const FROZEN = {
-  date: "sticky left-0 w-[104px] min-w-[104px]",
-  machine: "sticky left-[104px] w-[96px] min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
-  action: "sticky right-0 w-[96px] min-w-[96px] shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
+  date: "sticky left-0 w-[84px] min-w-[84px] sm:w-[104px] sm:min-w-[104px]",
+  machine:
+    "sticky left-[84px] w-[88px] min-w-[88px] max-sm:whitespace-normal sm:left-[104px] sm:w-[96px] sm:min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
+  action: "sm:sticky sm:right-0 w-[96px] min-w-[96px] sm:shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
 };
 
 // A white header, with each column family's own colour carried in its text
@@ -156,6 +160,18 @@ export const min = (v) => (v === null || v === undefined || v === "" ? "—" : f
 // scan and add up by eye than a row mixing dashes and numbers. Display only:
 // the formulas already treat a blank the same as 0.
 export const zeroIfBlank = (v) => fmtNum(v === null || v === undefined || v === "" ? 0 : Number(v));
+
+// What the table says when it has nothing to list. Entries that are there but
+// don't match the search box or the Filters are not the same as there being
+// none yet, so only the plain "none" invites adding one. `sheet` names the
+// entries ("RUBBER" → "No RUBBER entries…"); search only looks through the
+// page on screen, so its message says so.
+export const emptyEntriesText = ({ sheet = "", period, search = "", searchedOut = false, filtered = false }) => {
+  const entries = sheet ? `${sheet} entries` : "entries";
+  if (searchedOut) return `No ${entries} on this page match “${search.trim()}”.`;
+  if (filtered) return `No ${entries} match the Filters for ${period}.`;
+  return `No ${entries} for ${period}. Click “Add Entry” to start.`;
+};
 
 // Remarks used to sit in the table as full wrapped text, which forced the
 // column wide and pushed most rows down whether or not that entry actually
@@ -645,6 +661,14 @@ const ProductionEntriesTable = ({
       prev?.key === key ? null : { key, label, text, x: rect.left, y: rect.bottom + 6 },
     );
   };
+
+  // Escape closes the formula popover, as it does the remarks one.
+  useEffect(() => {
+    if (!formulaPopup) return undefined;
+    const onKey = (e) => e.key === "Escape" && setFormulaPopup(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [formulaPopup]);
 
   const ctx = useMemo(() => ({ machineName }), [machineName]);
 

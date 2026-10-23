@@ -293,6 +293,8 @@
 .pd-group { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 20px; align-items: start; margin-bottom: 22px; }
 .pd-group-name { margin: 0; padding-top: 22px; font-weight: 700; color: var(--pd-ink); }
 .pd-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+/* A group shown without a name (the landing's single group) takes the full width. */
+.pd-group > .pd-tiles:first-child { grid-column: 1 / -1; }
 .pd-tile {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; min-height: 64px; padding: 12px 16px;
   color: var(--pd-ink); transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;

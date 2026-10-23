@@ -570,6 +570,11 @@ const Support = () => {
     const canAct = !!currentPagePermissions.edit;
     const canDeletePerm = !!currentPagePermissions.delete;
     const myId = adminData?._id;
+    // Super Admin answers tickets but never raises one — the server refuses
+    // it ("SuperAdmin doesn't raise support tickets"), so there's no button.
+    const canRaise = adminData?.roleType !== "SuperAdmin" && currentPagePermissions.create !== false;
+
+    document.title = `Support | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
     const load = () => {
         setLoading(true);
@@ -604,7 +609,7 @@ const Support = () => {
             <Container fluid>
                 <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                     <h4 className="mb-0">Support Tickets</h4>
-                    {currentPagePermissions.create !== false && (
+                    {canRaise && (
                         <Button className="d-flex align-items-center gap-1" onClick={() => setCreateOpen(true)}
                             style={{ background: "#6366f1", border: "none", borderRadius: 8, fontWeight: 700, padding: "8px 20px", color: "#fff" }}>
                             <Plus size={16} /> New Ticket

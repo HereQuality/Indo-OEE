@@ -122,7 +122,7 @@ exports.getVendorById = async (req, res) => {
 // Each vendor carries its `processes`; every form keeps only its own process's.
 exports.listVendors = async (req, res) => {
   try {
-    const vendors = await Vendor.find({ isActive: true }).sort({ name: 1 }).lean();
+    const vendors = await Vendor.find({ isActive: true }).collation({ locale: "en", strength: 2 }).sort({ name: 1 }).lean();
     res.status(200).json({ isOk: true, data: vendors });
   } catch (error) {
     console.error("Error listing vendors:", error);
@@ -136,7 +136,8 @@ exports.listVendorsByParams = async (req, res) => {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
 
     const query = {};
-    if (match) query.name = { $regex: match, $options: "i" };
+    // Matched as plain text, so a "(" or "*" typed in can't break the search.
+    if (match) query.name = { $regex: String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     if (isActive !== undefined) query.isActive = isActive;
     if (req.body.process) query.processes = req.body.process;
 
@@ -145,7 +146,8 @@ exports.listVendorsByParams = async (req, res) => {
 
     const [totalCount, vendors] = await Promise.all([
       Vendor.countDocuments(query),
-      Vendor.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
+      // Case-insensitive, so "acme" sorts beside "Acme" rather than after every capital.
+      Vendor.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: vendors }] });

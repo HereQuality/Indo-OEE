@@ -17,6 +17,7 @@ import { useInvalidateWorkOrders } from "../hooks/useWorkOrders";
 import { createWorkOrder, deleteWorkOrder, getWorkOrderById, searchWorkOrders, updateWorkOrder,
   getWorkOrderProgress,
 } from "../api/workOrders.api";
+import { guardEscape } from "../utils/modalEscape";
 
 /**
  * pages/WorkOrderMaster.jsx
@@ -257,7 +258,8 @@ const WorkOrderMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every work order, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -363,11 +365,13 @@ const WorkOrderMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="lg">
+      {/* guardEscape: Escape that only closes the part picker's open list (or
+          the date calendar) leaves the form open. */}
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="lg">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Work Order" : "Add Work Order"}
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleSave}>
           <ModalBody>
             {/* The modal is only 500px wide below 992px, so the Work Order No. /
                 Part pair sits side by side from lg up; Quantity / Dispatch Date
@@ -495,6 +499,7 @@ const WorkOrderMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!workOrders.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );

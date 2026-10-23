@@ -1,5 +1,6 @@
 const RoleMaster = require("../models/RoleMaster");
 const OperatorRoles = require("../models/OperatorRoles");
+const Operator = require("../models/Operator");
 const { slugify, RESERVED_SLUGS } = require("../utils/slugify");
 
 // Create Role
@@ -126,6 +127,18 @@ exports.deleteRole = async (req, res) => {
         message: "Role deactivated successfully",
       });
     } else {
+      // Every employee needs a role to log in and route under, so one that is
+      // still given to anybody (active or not) stays. The Role page shows this
+      // in its "Cannot Delete Role" box, listing who has it.
+      const users = await Operator.find({ roleId }).select("employeeName").lean();
+      if (users.length) {
+        return res.status(409).json({
+          isOk: false,
+          message: `The ${role.roleName} role is still given to ${users.length} ${users.length === 1 ? "employee" : "employees"}. Move them to another role before deleting it.`,
+          references: users.map((u) => ({ name: u.employeeName, type: "Employee" })),
+        });
+      }
+
       // Hard Delete
       await RoleMaster.findByIdAndDelete(roleId);
       // Also delete associated permissions
@@ -184,9 +197,11 @@ exports.listRoleByParams = async (req, res) => {
 
     let query = {};
     if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
-        { roleName: { $regex: match, $options: "i" } },
-        { roleCode: { $regex: match, $options: "i" } },
+        { roleName: { $regex: escaped, $options: "i" } },
+        { roleCode: { $regex: escaped, $options: "i" } },
       ];
     }
 

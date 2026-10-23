@@ -121,7 +121,7 @@ exports.getMachineOperatorById = async (req, res) => {
 // ── List all (for dropdown) ───────────────────────────────────────────────
 exports.listMachineOperators = async (req, res) => {
   try {
-    const operators = await MachineOperator.find({ isActive: true }).sort({ name: 1 }).lean();
+    const operators = await MachineOperator.find({ isActive: true }).collation({ locale: "en", strength: 2 }).sort({ name: 1 }).lean();
     res.status(200).json({ isOk: true, data: operators });
   } catch (error) {
     console.error("Error listing machine operators:", error);
@@ -135,7 +135,8 @@ exports.listMachineOperatorsByParams = async (req, res) => {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
 
     const query = {};
-    if (match) query.name = { $regex: match, $options: "i" };
+    // Matched as plain text, so a "(" or "*" typed in can't break the search.
+    if (match) query.name = { $regex: String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     if (isActive !== undefined) query.isActive = isActive;
     if (req.body.process) query.processes = req.body.process;
 
@@ -144,7 +145,8 @@ exports.listMachineOperatorsByParams = async (req, res) => {
 
     const [totalCount, operators] = await Promise.all([
       MachineOperator.countDocuments(query),
-      MachineOperator.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
+      // Case-insensitive, so "acme" sorts beside "Acme" rather than after every capital.
+      MachineOperator.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: operators }] });

@@ -40,8 +40,9 @@ export default function NoAccess() {
             Manage Role.
           </p>
           <div className="mt-6">
+            {/* "/home" resolves to this user's own "/<roleSlug>/home" (HomeRedirect). */}
             <Link
-              to="/"
+              to="/home"
               className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 transition-colors"
             >
               Back to my dashboard

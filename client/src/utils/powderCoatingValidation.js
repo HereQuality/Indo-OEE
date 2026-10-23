@@ -1,5 +1,5 @@
 import { isNonWorking, normalizeTime, spanMinutes } from "./productionSheet";
-import { stoppageLimitMin } from "./entryValidation";
+import { stoppageLimitMin, timesUnchanged } from "./entryValidation";
 import { DEFECT_FIELDS, defectTotal, isStatusOnly, powderRowCalc } from "./powderCoatingSheet";
 import { hoursToHm, parseHm } from "./shiftHours";
 
@@ -57,16 +57,14 @@ export const POWDER_FIELD_ORDER = [
   "otherMinRemark",
 ];
 
+// The overlap message (entryValidation's overlapErrors) in this sheet's words:
+// a worker's own Start / End, not a machine's ON / OFF.
+export const POWDER_TIME_WORDS = { start: "Inspection Start Time", end: "Inspection End Time", owner: "this worker" };
+
 const clock = (t) => {
   const n = normalizeTime(t);
   return n ? Number(n.slice(0, 2)) * 60 + Number(n.slice(3)) : null;
 };
-
-// An older row that already breaks a time rule stays editable.
-const timesUnchanged = (v, saved) =>
-  !!saved &&
-  normalizeTime(v.machineOnTime) === normalizeTime(saved.machineOnTime) &&
-  normalizeTime(v.machineOffTime) === normalizeTime(saved.machineOffTime);
 
 // One block's values → { fieldKey: message }. Empty object = ready to save.
 export const validatePowderEntry = (v, { saved = null } = {}) => {
@@ -117,7 +115,9 @@ export const validatePowderEntry = (v, { saved = null } = {}) => {
   else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
-    const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
+    // Not while End isn't after Start: the span would wrap past midnight
+    // (23 h and the like), and the End box already says what's wrong.
+    const shiftMin = errors.machineOffTime ? null : spanMinutes(v.machineOnTime, v.machineOffTime);
     if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
       errors.plannedOperatorShiftHours = `Planned Operator Shift can't be less than the Inspection Working Hours (${hoursToHm(shiftMin / 60)})`;
     }

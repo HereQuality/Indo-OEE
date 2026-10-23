@@ -103,3 +103,20 @@ test("a saved document is read through toObject()", () => {
   assert.deepEqual(partLabel(doc({ itemName: "Plate", drawingNo: "D", setupNo: "S" })), { itemName: "Plate", drawingNo: "D", setupNo: "S" });
   assert.deepEqual(partLabel(undefined), { itemName: "", drawingNo: "", setupNo: "" });
 });
+
+test("SPRING FOR PINS and AFTER POWDER COATING name the cycle time as their forms do", () => {
+  const SPRING = "64b0c0ffee0000000000cccc";
+  const POWDER = "64b0c0ffee0000000000dddd";
+  const procNames = { ...names, [SPRING]: "SPRING FOR PINS", [POWDER]: "AFTER POWDER COATING" };
+  const label = (process, pages = {}) =>
+    diffItem(part({ process }), part({ process, totalCycleSec: 90 }), procNames, pages).find((c) => c.field === "totalCycleSec").label;
+  assert.equal(label(SPRING), "Standard Time per Piece (Sec)");
+  assert.equal(label(POWDER), "Standard Inspection Time per Piece (Sec)");
+  assert.equal(label(CNC), "Total Cycle Time (sec)");
+  assert.equal(label(null), "Total Cycle Time (sec)");
+  // The Data Entry Page decides over the name, as on the client.
+  assert.equal(label(CNC, { [CNC]: "/hqepl/production/spring-data-entry" }), "Standard Time per Piece (Sec)");
+  assert.equal(label(SPRING, { [SPRING]: "/hqepl/production/cnc-data-entry" }), "Total Cycle Time (sec)");
+  // A deleted part is named by the process it was in.
+  assert.equal(diffItem(part({ process: POWDER }), {}, procNames).find((c) => c.field === "totalCycleSec").label, "Standard Inspection Time per Piece (Sec)");
+});

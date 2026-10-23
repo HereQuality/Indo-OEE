@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { History, Pencil, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, Col, Container, Modal, ModalBody, ModalFooter, ModalHeader, Label, Input, Row } from "reactstrap";
 import DataTable from "react-data-table-component";
@@ -9,8 +10,9 @@ import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateItems } from "../hooks/useItems";
-import { useProcesses } from "../hooks/useProcesses";
+import { PROCESSES_QUERY_KEY, useProcesses } from "../hooks/useProcesses";
 import { createItem, deleteItem, getItemById, updateItem, searchItems } from "../api/items.api";
+import { searchProcesses } from "../api/processes.api";
 import { CYCLE_OP_FIELDS, cycleOpLabel } from "../utils/productionSheet";
 import { isCncProcess, isVmcProcess } from "../utils/vmcSheet";
 import { SPM_OP_FIELDS, SPM_REFERENCE_FIELDS, isSpmProcess } from "../utils/spmSheet";
@@ -20,6 +22,7 @@ import { isContactProcess } from "../utils/contactSheet";
 import { isTrobeProcess } from "../utils/trobeSheet";
 import { isSpringProcess } from "../utils/springSheet";
 import { isPowderCoatingProcess } from "../utils/powderCoatingSheet";
+import { isRubberProcess } from "../utils/rubberSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -50,6 +53,21 @@ const sumRivetOps = (v) => {
   return nums.reduce((s, n) => s + Number(n), 0);
 };
 
+// A worked-out time (VMC's or PRESS's program ÷ pieces) shown to 2 decimals
+// rather than 62.142857142857146. Display only — the full figure is what's saved.
+const showSec = (n) => (n === "" || n === null || n === undefined || !Number.isFinite(Number(n)) ? n ?? "" : Number(Number(n).toFixed(2)));
+
+// SPRING FOR PINS and AFTER POWDER COATING call their one typed-in time what
+// their own data entry sheet calls it; every other process says Total Cycle Time.
+const cycleTimeName = (process) =>
+  isSpringProcess(process)
+    ? "Standard Time per Piece"
+    : isPowderCoatingProcess(process)
+      ? "Standard Inspection Time per Piece"
+      : "Total Cycle Time";
+const cycleTimeLabel = (process) =>
+  isSpringProcess(process) || isPowderCoatingProcess(process) ? `${cycleTimeName(process)} (Sec)` : "Total Cycle Time (sec)";
+
 const initialState = {
   itemName: "",
   // Which process runs this part — decides which data entry page offers it, and
@@ -74,7 +92,12 @@ const initialState = {
 
 const ItemMaster = () => {
   const toast = useAlert();
-  const { currentPagePermissions = { read: true, write: true, edit: true, delete: true } } = useContext(MenuContext) || {};
+  const {
+    currentPagePermissions = { read: true, write: true, edit: true, delete: true },
+    isAdmin,
+    getPermissionsForMenu,
+    findMenuIdByUrl,
+  } = useContext(MenuContext) || {};
 
   const [values, setValues] = useState(initialState);
   const [formErrors, setFormErrors] = useState({});
@@ -88,8 +111,23 @@ const ItemMaster = () => {
   const [query, setQuery] = useState("");
   // Parts are told apart by process: the list can be narrowed to one ("" = all,
   // "none" = parts not in any process yet), and the form picks it.
-  const { data: processes = [] } = useProcesses();
-  const processName = Object.fromEntries(processes.map((p) => [p._id, p.processName]));
+  const { data: activeProcesses = [] } = useProcesses();
+  // Inactive processes too: a part can still belong to a process that has since
+  // been deactivated, and it needs that process to show its name and the right
+  // cycle time boxes (missing, the form showed none and Save cleared them). The
+  // route behind this list is Process Master's, so it's only asked for by
+  // someone who may open that page; anyone else gets the active ones.
+  const canListAllProcesses = !!(isAdmin || getPermissionsForMenu?.(findMenuIdByUrl?.("/x/production/processes"))?.view);
+  const { data: allProcesses } = useQuery({
+    queryKey: [...PROCESSES_QUERY_KEY, "withInactive"],
+    queryFn: async () => (await searchProcesses({ skip: 0, per_page: 1000 }))?.data?.data?.[0]?.data || [],
+    enabled: canListAllProcesses,
+    retry: false,
+  });
+  const processes = (canListAllProcesses && allProcesses) || activeProcesses;
+  const processName = Object.fromEntries(
+    processes.map((p) => [p._id, p.isActive === false ? `${p.processName} (inactive)` : p.processName]),
+  );
   const [processFilter, setProcessFilter] = useState("");
   // A VMC part has a program; a CNC or SPM part has operation times (CNC's
   // eight, SPM's own four); anything else (not in a process yet, or another
@@ -100,7 +138,7 @@ const ItemMaster = () => {
   const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
   const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
   const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
-  // TROBE, SPRING FOR PINS and AFTER POWDER COATING parts work the same way as
+  // TROBE, SPRING FOR PINS, AFTER POWDER COATING and RUBBER parts work the same way as
   // Contact ones: one Total Cycle Time (for After Powder Coating, its Standard
   // Inspection Time per Piece), typed straight in.
   const isContact = useMemo(
@@ -108,9 +146,16 @@ const ItemMaster = () => {
       isContactProcess(selectedProcess) ||
       isTrobeProcess(selectedProcess) ||
       isSpringProcess(selectedProcess) ||
-      isPowderCoatingProcess(selectedProcess),
+      isPowderCoatingProcess(selectedProcess) ||
+      isRubberProcess(selectedProcess),
     [selectedProcess],
   );
+  // The form's Process picker: active processes, plus the one this part
+  // already has if that one is inactive, so editing it never drops it.
+  const processOptions = processes.filter((p) => p.isActive !== false || p._id === values.process);
+  // A process this page can't look up at all (inactive, for someone without
+  // Process Master) says nothing about which boxes the part has.
+  const unknownProcess = !!values.process && !selectedProcess;
 
   const [_id, set_Id] = useState("");
   const [remove_id, setRemove_id] = useState("");
@@ -229,6 +274,8 @@ const ItemMaster = () => {
         if (v[f.key] === "") errors[f.key] = `${f.label} is required`;
         else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
       }
+      // The sheet divides by it, so a cycle has to make at least one piece.
+      if (!errors.piecesPerCycle && Number(v.piecesPerCycle) < 1) errors.piecesPerCycle = "Must be 1 or more";
     }
     // A RIVET part's four operations drive its Total Cycle Time everywhere
     // this part is used, same reasoning as SPM's above.
@@ -254,11 +301,16 @@ const ItemMaster = () => {
     // typed straight in here and drives every Contact Data Entry row.
     if (isContact) {
       const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
-      if (v.totalCycleSec === "") errors.totalCycleSec = "Total Cycle Time is required";
+      if (v.totalCycleSec === "") errors.totalCycleSec = `${cycleTimeName(selectedProcess)} is required`;
       else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
     }
     return errors;
   };
+
+  // Once Save has been pressed, the messages follow the form as it is fixed.
+  useEffect(() => {
+    if (isSubmit) setFormErrors(validate(values));
+  }, [values, isSubmit]);
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -280,6 +332,21 @@ const ItemMaster = () => {
     const noRivetOps = Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, null]));
     const noRivetProcessType = { rivetProcessType: null };
     const noPressOperation = { pressOperation: null };
+    const noneOfThem = {
+      ...noProgram,
+      ...noPress,
+      totalCycleSec: null,
+      ...noCycleOps,
+      ...noSpmOps,
+      ...noSpmReference,
+      ...noRivetOps,
+      ...noRivetProcessType,
+      ...noPressOperation,
+    };
+    // A process this page couldn't look up showed none of the boxes, so none
+    // are sent at all (undefined is left out of the request) and the server
+    // keeps whatever the part already has, instead of clearing it.
+    const leaveAsTheyAre = Object.fromEntries(Object.keys(noneOfThem).map((k) => [k, undefined]));
     const cycleFields = isCnc
       ? {
           ...noProgram,
@@ -360,17 +427,9 @@ const ItemMaster = () => {
                     ...noRivetProcessType,
                     ...noPressOperation,
                   }
-              : {
-                  ...noProgram,
-                  ...noPress,
-                  totalCycleSec: null,
-                  ...noCycleOps,
-                  ...noSpmOps,
-                  ...noSpmReference,
-                  ...noRivetOps,
-                  ...noRivetProcessType,
-                  ...noPressOperation,
-                };
+              : unknownProcess
+                ? leaveAsTheyAre
+                : noneOfThem;
     const data = {
       ...values,
       itemName: values.itemName.trim(),
@@ -422,7 +481,8 @@ const ItemMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every part, active or not.
+        ...(filter ? { isActive: true } : {}),
         ...(processFilter ? { process: processFilter } : {}),
       });
       const res = response.data.data[0];
@@ -436,12 +496,20 @@ const ItemMaster = () => {
     }
   };
 
+  // Narrowed to SPRING FOR PINS or AFTER POWDER COATING, the cycle column takes
+  // that process's own name for the time; across processes it stays generic.
+  const filteredProcess = processes.find((p) => p._id === processFilter);
+  const cycleColumn =
+    isSpringProcess(filteredProcess) || isPowderCoatingProcess(filteredProcess) ? cycleTimeLabel(filteredProcess) : "Total Cycle (sec)";
+
   const col = [
-    { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
+    // Numbered on from the previous page rather than starting at 1 again.
+    { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
-    { name: "Process", selector: (row) => processName[row.process] || "—", minWidth: "110px" },
+    // A part's process stays named even after that process is deactivated.
+    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "110px" },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
-    { name: "Total Cycle (sec)", selector: (row) => row.totalCycleSec ?? "", sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
+    { name: cycleColumn, selector: (row) => showSec(row.totalCycleSec), sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
       name: "Action",
@@ -500,7 +568,7 @@ const ItemMaster = () => {
                           <option value="">All processes</option>
                           {processes.map((p) => (
                             <option key={p._id} value={p._id}>
-                              {p.processName}
+                              {processName[p._id]}
                             </option>
                           ))}
                           <option value="none">Not in any process</option>
@@ -548,7 +616,7 @@ const ItemMaster = () => {
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Part" : "Add Part"}
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleSave}>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input type="text" name="itemName" value={values.itemName} onChange={handleChange} placeholder=" " maxLength={120} />
@@ -560,11 +628,12 @@ const ItemMaster = () => {
             <div className="form-floating mb-3">
               <Input type="select" name="process" value={values.process} onChange={handleChange}>
                 <option value="">Not in any process</option>
-                {processes.map((p) => (
+                {processOptions.map((p) => (
                   <option key={p._id} value={p._id}>
-                    {p.processName}
+                    {processName[p._id]}
                   </option>
                 ))}
+                {unknownProcess && <option value={values.process}>Current process (inactive)</option>}
               </Input>
               <Label>Process (the data entry page that offers this part)</Label>
             </div>
@@ -608,7 +677,7 @@ const ItemMaster = () => {
                       name="vmcTotalCycleSec"
                       value={
                         values.programTimeMin !== "" && values.pcsPerProgram !== "" && Number(values.pcsPerProgram) > 0
-                          ? (Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram)
+                          ? showSec((Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram))
                           : ""
                       }
                       onChange={() => {}}
@@ -792,7 +861,7 @@ const ItemMaster = () => {
                       name="pressTotalCycleSec"
                       value={
                         values.standardTimeMin !== "" && values.pcsPerStandardTime !== "" && Number(values.pcsPerStandardTime) > 0
-                          ? (Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime)
+                          ? showSec((Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime))
                           : ""
                       }
                       onChange={() => {}}
@@ -811,7 +880,7 @@ const ItemMaster = () => {
               <div className="form-floating mb-1">
                 <NumberInput name="totalCycleSec" value={values.totalCycleSec} onChange={handleChange} placeholder=" " />
                 <Label>
-                  Total Cycle Time (sec) <span className="text-danger">*</span>
+                  {cycleTimeLabel(selectedProcess)} <span className="text-danger">*</span>
                 </Label>
                 {isSubmit && formErrors.totalCycleSec ? (
                   <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>
@@ -852,6 +921,7 @@ const ItemMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!items.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );

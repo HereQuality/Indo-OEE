@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Clock } from "lucide-react";
 
 /**
@@ -10,8 +10,14 @@ import { Clock } from "lucide-react";
  * a phone, an iPad or a desktop. No AM/PM anywhere, so there is no half of the
  * day to mix up. Value in and out is always "HH:mm" (or "" when empty).
  *
- * `minTime` ("HH:mm", inclusive) greys out anything earlier — the OFF box uses
- * it so it can't be set before the ON time.
+ * `minTime` ("HH:mm", inclusive) greys out anything earlier in the panel — the
+ * OFF box uses it so it isn't picked before the ON time. A time typed earlier
+ * than it is kept, as is something typed that isn't a time at all ("25:00",
+ * "abc"), so the form can say what's wrong with it instead of it vanishing.
+ *
+ * The input and the clock button carry aria-expanded while the panel shows,
+ * which is how a form's modal knows an Escape was meant for the panel (see
+ * utils/modalEscape.js).
  */
 const pad = (n) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -79,22 +85,54 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(null); // what is being typed, until the box is left
   const wrap = useRef(null);
+  const clockBtn = useRef(null);
+  const panel = useRef(null);
+  const panelId = useId();
   const min = toMin(minTime);
   const shown = draft !== null ? draft : value || "";
-  const hour = /^\d{2}:\d{2}$/.test(value || "") ? Number(value.slice(0, 2)) : null;
-  const minute = /^\d{2}:\d{2}$/.test(value || "") ? Number(value.slice(3)) : null;
+  // The columns only follow a real time: a box still holding something typed
+  // that isn't one ("25:00") has no hour or minute picked.
+  const known = parseTyped(value);
+  const hour = known ? Number(known.slice(0, 2)) : null;
+  const minute = known ? Number(known.slice(3)) : null;
 
   const emit = (v) => onChange({ target: { name, value: v } });
 
-  // A tap or click outside the box and its panel closes the panel.
+  // A tap or click elsewhere closes the panel once it's over (on its click),
+  // not as it starts: closing on mousedown shrank the form under the pointer,
+  // so the click landed on whatever moved into its place — the first press of
+  // Save was lost. `pressing` tells onBlur below that a press, not Tab, is
+  // what took the focus away, so it leaves the closing to this.
+  const pressing = useRef(false);
   useEffect(() => {
     if (!open) return undefined;
-    const away = (e) => wrap.current && !wrap.current.contains(e.target) && setOpen(false);
-    document.addEventListener("mousedown", away);
-    document.addEventListener("touchstart", away);
+    let outside = false;
+    const down = (e) => {
+      pressing.current = true;
+      outside = !!wrap.current && !wrap.current.contains(e.target);
+    };
+    const up = () => {
+      pressing.current = false;
+    };
+    const click = () => {
+      if (outside) setOpen(false);
+      outside = false;
+    };
+    // A touch that turns into a scroll ends without a click; the panel stays.
+    const cancel = () => {
+      pressing.current = false;
+      outside = false;
+    };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("pointerup", up, true);
+    document.addEventListener("click", click, true);
+    document.addEventListener("pointercancel", cancel, true);
     return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("touchstart", away);
+      pressing.current = false;
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("pointerup", up, true);
+      document.removeEventListener("click", click, true);
+      document.removeEventListener("pointercancel", cancel, true);
     };
   }, [open]);
 
@@ -102,9 +140,11 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
     if (draft === null) return;
     const parsed = parseTyped(draft);
     setDraft(null);
-    if (parsed === null) return; // not a time — keep what was there
-    if (parsed !== "" && min !== null && toMin(parsed) < min) return;
-    emit(parsed);
+    // Not a time ("25:00", "9.75", "abc"): keep it as typed, so the form's
+    // own "Enter a valid time" says what's wrong rather than the typing
+    // silently disappearing. A real time before minTime is kept the same way
+    // ("… must be after …"); only real times are ever stored as "HH:mm".
+    emit(parsed === null ? draft.trim() : parsed);
   };
 
   const pickHour = (h) => {
@@ -114,7 +154,25 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
   const pickMinute = (m) => emit(`${pad(hour === null ? 0 : hour)}:${pad(m)}`);
 
   return (
-    <div ref={wrap} className="position-relative">
+    <div
+      ref={wrap}
+      className="position-relative"
+      // Focus moving on by keyboard (Tab) closes the panel, so it isn't still
+      // open under the form by the time Save is reached. A press elsewhere is
+      // left to the listener above, which closes it once the press is over.
+      onBlur={(e) => {
+        if (!pressing.current && !wrap.current?.contains(e.relatedTarget)) setOpen(false);
+      }}
+      // Escape closes just the panel, wherever in the picker the focus is. From
+      // a panel button the focus goes back to the clock (not the input, whose
+      // focus would open the panel again).
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !open) return;
+        const inPanel = !!panel.current?.contains(e.target);
+        setOpen(false);
+        if (inPanel) clockBtn.current?.focus();
+      }}
+    >
       <div className="input-group input-group-sm">
         <input
           type="text"
@@ -125,6 +183,10 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
           className={`form-control form-control-sm ${hasError ? "is-invalid" : ""}`}
           placeholder={placeholder}
           value={shown}
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
           onFocus={() => setOpen(true)}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitTyped}
@@ -134,16 +196,26 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
               commitTyped();
               setOpen(false);
             }
-            if (e.key === "Escape") setOpen(false);
+            // Tab out of a typed time moves on: the panel doesn't stay open for
+            // the focus to wander through its hour and minute buttons.
+            if (e.key === "Tab") setOpen(false);
           }}
         />
-        <button type="button" className="btn btn-outline-secondary" aria-label="Choose time" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button
+          ref={clockBtn}
+          type="button"
+          className="btn btn-outline-secondary"
+          aria-label="Choose time"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
           <Clock size={15} />
         </button>
       </div>
 
       {open && (
-        <div className="border rounded bg-body shadow-sm p-2 mt-1" style={{ position: "relative", zIndex: 5, minWidth: 220, maxWidth: 300 }}>
+        <div ref={panel} id={panelId} className="border rounded bg-body shadow-sm p-2 mt-1" style={{ position: "relative", zIndex: 5, minWidth: 220, maxWidth: 300 }}>
           <div className="d-flex gap-2">
             <Column
               label="Hour"

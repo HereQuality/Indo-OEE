@@ -25,7 +25,8 @@ const initialState = {
     menuGroup: "",
     menuUrl: "",
     sequence: "",
-    isActive: false,
+    // Ticked by default, so a menu just added isn't hidden by "Active only".
+    isActive: true,
     isParent: false,
     parentMenu: null,
     icon: "",
@@ -360,8 +361,9 @@ const MenuMaster = () => {
             });
     };
 
+    // Escape closes the dialog without an event, so there may be none to cancel.
     const handleDeleteClose = (e) => {
-        e.preventDefault();
+        e?.preventDefault?.();
         setmodal_delete(false);
     };
 
@@ -466,7 +468,8 @@ const MenuMaster = () => {
                 sorton: column,
                 sortdir: sortDirection,
                 match: query,
-                isActive: filter ? true : false,
+                // "Active only" off lists every menu, active or not.
+                ...(filter ? { isActive: true } : {}),
             });
 
             if (response && response.data && response.data.data && response.data.data.length > 0) {
@@ -497,9 +500,9 @@ const MenuMaster = () => {
     };
     const col = [
         {
+            // Numbered on from the previous page rather than starting at 1 again.
             name: "Sr No",
-            selector: (row, index) => index + 1,
-            sortable: true,
+            selector: (row, index) => (pageNo - 1) * perPage + index + 1,
             maxWidth: "60px",
         },
         {
@@ -544,6 +547,21 @@ const MenuMaster = () => {
             sortable: true,
             sortField: "sequence",
             minWidth: "110px",
+        },
+        // "Active only" off lists both, so each row says which it is (same
+        // badge as Menu Group's).
+        {
+            name: "Status",
+            selector: (row) => (
+                <span
+                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                        row.isActive ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-500"
+                    }`}
+                >
+                    {row.isActive ? "Active" : "Inactive"}
+                </span>
+            ),
+            minWidth: "130px",
         },
         
         {
@@ -789,6 +807,7 @@ const MenuMaster = () => {
                 handleDelete={handleDelete}
                 toggle={handleDeleteClose}
                 disabled={isDeleteLoading}
+                deactivates={!!departments.find((r) => r._id === remove_id)?.isActive}
             />
         </React.Fragment>
     );

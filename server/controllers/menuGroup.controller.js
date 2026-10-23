@@ -1,12 +1,26 @@
 const MenuGroupMaster = require("../models/MenuGroupMaster");
 
+// A message when the name is blank (spaces only count as blank) or the
+// sequence isn't a number of 0 or more; null when both are fine. Without it a
+// bad value either failed as a 500 or, on an update, was saved as it came.
+const menuGroupError = ({ menuGroupName, sequence }) => {
+  if (!String(menuGroupName ?? "").trim()) return "Menu Group name is required";
+  if (sequence === undefined || sequence === null || sequence === "") return "Sequence is required";
+  const n = Number(sequence);
+  if (!Number.isFinite(n) || n < 0) return "Sequence must be 0 or more";
+  return null;
+};
+
 exports.createMenuGroup = async (req, res) => {
   try {
     const { menuGroupName, sequence, isActive, isLink, menuUrl, icon, portal } = req.body;
     console.log("Creating menu group:", req.body);
 
+    const invalid = menuGroupError(req.body);
+    if (invalid) return res.status(400).json({ isOk: false, message: invalid });
+
     const menuGroup = await MenuGroupMaster.create({
-      menuGroupName,
+      menuGroupName: String(menuGroupName).trim(),
       sequence,
       isActive,
       isLink: isLink || false,
@@ -75,10 +89,13 @@ exports.updateMenuGroup = async (req, res) => {
     const { menuGroupId } = req.params;
     const { menuGroupName, sequence, isActive, isLink, menuUrl, icon, portal } = req.body;
 
+    const invalid = menuGroupError(req.body);
+    if (invalid) return res.status(400).json({ isOk: false, message: invalid });
+
     const menuGroup = await MenuGroupMaster.findByIdAndUpdate(
       menuGroupId,
       {
-        menuGroupName,
+        menuGroupName: String(menuGroupName).trim(),
         sequence,
         isActive,
         isLink: isLink || false,
@@ -172,7 +189,8 @@ exports.listMenuGroupByParams = async (req, res) => {
         {
           $match: {
             $or: [
-              { menuGroupName: { $regex: match, $options: "i" } },
+              // Matched as plain text, so a "(" or "*" typed in can't break the search.
+              { menuGroupName: { $regex: String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } },
             ],
           },
         },

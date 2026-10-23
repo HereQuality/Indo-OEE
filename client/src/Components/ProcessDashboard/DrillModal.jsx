@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Modal, ModalBody, ModalHeader } from "reactstrap";
 import { displayDay, remarkParts } from "../../utils/productionSheet";
-import { DIMENSIONS, FORMATS, calcOf, formatExact, summarize, summarizeBy } from "../../utils/processDashboard";
+import { FORMATS, calcOf, dimLabel, formatExact, summarize, summarizeBy } from "../../utils/processDashboard";
 
 /**
  * Components/ProcessDashboard/DrillModal.jsx
@@ -50,7 +50,7 @@ const Records = ({ rows, ctx }) => {
         <table className="table table-sm align-middle mb-0 pd-table">
           <thead>
             <tr>
-              {["Date", "Machine", "Operator", "Part", "Actual", "OK", "Rejected", "Shift (hr)", "Effective (hr)", "Stoppage (min)", "Remarks"].map((h, i) => (
+              {["Date", dimLabel("machine", ctx), "Operator", "Part", "Actual", "OK", "Rejected", "Shift (hr)", "Effective (hr)", "Stoppage (min)", "Remarks"].map((h, i) => (
                 <th key={h} className={i > 3 && i < 10 ? "text-end" : ""}>{h}</th>
               ))}
             </tr>
@@ -120,7 +120,7 @@ const DrillModal = ({ measure, rows, ctx, c, onClose, onPick }) => {
         <div className="pd-tabs mb-3" role="tablist">
           {tabs.map((t) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} className={`pd-chip ${tab === t ? "is-on" : ""}`} onClick={() => setTab(t)}>
-              {t === "records" ? "Entries" : `By ${DIMENSIONS[t].label}`}
+              {t === "records" ? "Entries" : `By ${dimLabel(t, ctx)}`}
             </button>
           ))}
         </div>

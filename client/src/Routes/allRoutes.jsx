@@ -56,6 +56,7 @@ const ContactDataEntry = lazyWithRetry(() => import("../pages/ContactDataEntry")
 const TrobeDataEntry = lazyWithRetry(() => import("../pages/TrobeDataEntry"));
 const SpringDataEntry = lazyWithRetry(() => import("../pages/SpringDataEntry"));
 const PowderCoatingDataEntry = lazyWithRetry(() => import("../pages/PowderCoatingDataEntry"));
+const RubberDataEntry = lazyWithRetry(() => import("../pages/RubberDataEntry"));
 const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
@@ -142,6 +143,7 @@ const protectedRoutes = [
   { path: "/production/trobe-data-entry", component: <TrobeDataEntry /> },
   { path: "/production/spring-data-entry", component: <SpringDataEntry /> },
   { path: "/production/powder-coating-data-entry", component: <PowderCoatingDataEntry /> },
+  { path: "/production/rubber-data-entry", component: <RubberDataEntry /> },
   // Old URL, kept working for anyone with it bookmarked or pinned.
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },

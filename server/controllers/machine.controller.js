@@ -1,6 +1,12 @@
 const Machine = require("../models/Machine");
 const ProductionEntry = require("../models/ProductionEntry");
 const VmcEntry = require("../models/VmcEntry");
+const SpmEntry = require("../models/SpmEntry");
+const RivetEntry = require("../models/RivetEntry");
+const PressEntry = require("../models/PressEntry");
+const ContactEntry = require("../models/ContactEntry");
+const TrobeEntry = require("../models/TrobeEntry");
+const SpringEntry = require("../models/SpringEntry");
 const { compareBySequence, sortMachines } = require("../utils/machineOrder");
 
 // `process` is only touched when the request actually sends it, so a form
@@ -20,6 +26,10 @@ const pickMachine = ({ machineName, description, color, isActive, process }) => 
 const NOT_DELETED = { isDeleted: { $ne: true } };
 
 const isSuperAdmin = (req) => req.user?.roleType === "SuperAdmin";
+
+// Every sheet whose entries are made on a machine (After Powder Coating and
+// RUBBER have a worker instead), for the count of entries a deleted machine keeps.
+const MACHINE_ENTRY_MODELS = [ProductionEntry, VmcEntry, SpmEntry, RivetEntry, PressEntry, ContactEntry, TrobeEntry, SpringEntry];
 
 // Sequence is Super Admin-only: everyone else neither sets it nor sees it.
 const present = (req, machine) => {
@@ -135,8 +145,8 @@ exports.deleteMachine = async (req, res) => {
     await machine.save();
     await placeMachine(null);
 
-    const kept =
-      (await ProductionEntry.countDocuments({ machine: machineId })) + (await VmcEntry.countDocuments({ machine: machineId }));
+    const counts = await Promise.all(MACHINE_ENTRY_MODELS.map((Model) => Model.countDocuments({ machine: machineId })));
+    const kept = counts.reduce((sum, n) => sum + n, 0);
     res.status(200).json({
       isOk: true,
       message: kept
@@ -180,9 +190,11 @@ exports.listMachineByParams = async (req, res) => {
 
     const query = { ...NOT_DELETED };
     if (match) {
+      // Matched as plain text, so a "(" or "*" typed in can't break the search.
+      const escaped = String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
-        { machineName: { $regex: match, $options: "i" } },
-        { description: { $regex: match, $options: "i" } },
+        { machineName: { $regex: escaped, $options: "i" } },
+        { description: { $regex: escaped, $options: "i" } },
       ];
     }
     if (isActive !== undefined) query.isActive = isActive;

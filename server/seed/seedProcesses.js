@@ -4,7 +4,7 @@
  * ────────────────────────────
  * The Indo process list, as laid out on the dashboard landing page:
  *
- *   SPM · PRESS · RIVET · VMC · CNC · CONTACT · TROBE · SPRING FOR PINS · AFTER POWDER COATING
+ *   SPM · PRESS · RIVET · VMC · CNC · CONTACT · TROBE · SPRING FOR PINS · AFTER POWDER COATING · RUBBER
  *
  * Safe to re-run: a process that already exists (by name) is left exactly as
  * it is — its machines and chosen visuals are never overwritten. The
@@ -33,6 +33,7 @@ const PROCESSES = [
   { processName: "TROBE" },
   { processName: "SPRING FOR PINS" },
   { processName: "AFTER POWDER COATING" },
+  { processName: "RUBBER" },
 ];
 
 async function run() {

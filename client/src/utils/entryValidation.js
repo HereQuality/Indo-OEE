@@ -72,45 +72,70 @@ const intervalsOverlap = (a, b) => a.start < b.end && b.start < a.end;
 
 const intervalText = (i) => `${fmt12(i.start)} – ${fmt12(i.end)}`;
 
+// "End before Start", in each sheet's own words ("Machine OFF Time must be after
+// Machine ON Time", "Working End Time must be after Working Start Time", …).
+export const isEndBeforeStartMessage = (message) => typeof message === "string" && message.includes(" Time must be after ");
+
 // The two time rules speak up as soon as the times are picked, not only after
 // Save is pressed like the other messages ("is required" and the like).
 // (The Planned Operator Shift being shorter than the Machine Shift, and an operator
 // already being on another machine then, speak up the same way.)
 export const isTimeRuleMessage = (message) =>
   typeof message === "string" &&
-  (message.startsWith("Machine OFF Time must be after") ||
+  (isEndBeforeStartMessage(message) ||
     message.includes("overlaps another entry") ||
     message.includes("is already on machine") ||
     message.startsWith("Planned Operator Shift can't be less than"));
 
-// Only when a row's times are set or changed do the two rules apply — an
-// older row that already breaks them stays editable. `saved` is the row's
-// { machineOnTime, machineOffTime } as it was loaded (edit mode), else null.
-const timesUnchanged = (v, saved) =>
+// What a box shows under it before Save is pressed: the time rules above, a
+// typed time that isn't one (the time box keeps what was typed, so it can be
+// said), and a machine or worker that already has its entries for the date.
+export const isLiveMessage = (message) =>
+  isTimeRuleMessage(message) ||
+  (typeof message === "string" && (message === "Enter a valid time" || / already has \d+ entries on /.test(message)));
+
+// Only when a row's times, or the date or machine (worker) they're on, are set
+// or changed do the rules apply — an older row that already breaks them stays
+// editable. Moving a row to another date is a change: nothing it meets there
+// was checked when it was saved. `saved` is the row as it was loaded (edit
+// mode: { date, machine, machineOnTime, machineOffTime, … }), else null.
+export const timesUnchanged = (v, saved) =>
   !!saved &&
+  String(v.date ?? "") === String(saved.date ?? "") &&
+  String(v.machine ?? "") === String(saved.machine ?? "") &&
   normalizeTime(v.machineOnTime) === normalizeTime(saved.machineOnTime) &&
   normalizeTime(v.machineOffTime) === normalizeTime(saved.machineOffTime);
 
+// The row being edited is not "another" entry — but only on the date and
+// machine it was saved on. Moved elsewhere, whatever holds its slot number
+// there is a different entry. (Without `saved`, the slot alone decides.)
+const isEditedRow = (o, v, editSlot, saved) =>
+  editSlot !== null && o.slot === editSlot && (!saved || (v.date === saved.date && v.machine === saved.machine));
+
 // What the machine already has on this entry's date, as readable ranges, for the
 // "already booked" hint. `occupied` maps "machine|date" → [{ slot, machineOnTime,
-// machineOffTime }] (the server's saved entries); `editSlot` is the slot of the
-// row being edited, which is not "another" entry.
-export const bookedRanges = (v, occupied = {}, editSlot = null) =>
+// machineOffTime }] (the server's saved entries); `editSlot` / `saved` are the
+// row being edited (see isEditedRow).
+export const bookedRanges = (v, occupied = {}, editSlot = null, saved = null) =>
   (occupied[`${v.machine}|${v.date}`] || [])
-    .filter((o) => o.slot !== editSlot)
+    .filter((o) => !isEditedRow(o, v, editSlot, saved))
     .map((o) => timeInterval(o.machineOnTime, o.machineOffTime))
     .filter(Boolean)
     .map(intervalText);
 
+// How the overlap message names the two boxes and whose entries they are — a
+// worker sheet passes its own (see RUBBER_TIME_WORDS / POWDER_TIME_WORDS).
+export const MACHINE_TIME_WORDS = { start: "Machine ON Time", end: "Machine OFF Time", owner: "this machine" };
+
 // Overlap problems for every block: { [machineOnTime | machineOffTime]: message }.
 // Each block is checked against the machine's saved entries on its date AND
 // against the other blocks of the same form (same machine, same date).
-export const overlapErrors = (entries, occupied = {}, { editSlot = null, saved = null } = {}) =>
+export const overlapErrors = (entries, occupied = {}, { editSlot = null, saved = null, words = MACHINE_TIME_WORDS } = {}) =>
   entries.map((v, i) => {
     const mine = timeInterval(v.machineOnTime, v.machineOffTime);
     if (!mine || blank(v.machine) || blank(v.date) || timesUnchanged(v, saved)) return {};
     const others = [
-      ...(occupied[`${v.machine}|${v.date}`] || []).filter((o) => o.slot !== editSlot),
+      ...(occupied[`${v.machine}|${v.date}`] || []).filter((o) => !isEditedRow(o, v, editSlot, saved)),
       ...entries.filter((o, j) => j !== i && o.machine === v.machine && o.date === v.date),
     ]
       .map((o) => timeInterval(o.machineOnTime, o.machineOffTime))
@@ -122,8 +147,37 @@ export const overlapErrors = (entries, occupied = {}, { editSlot = null, saved =
     const startInside = mine.start >= hit.start && mine.start < hit.end;
     return {
       [startInside ? "machineOnTime" : "machineOffTime"]:
-        `${startInside ? "Machine ON Time" : "Machine OFF Time"} overlaps another entry for this machine on this date (${intervalText(hit)})`,
+        `${startInside ? words.start : words.end} overlaps another entry for ${words.owner} on this date (${intervalText(hit)})`,
     };
+  });
+
+// One machine (or worker) takes at most this many entries on a date; the
+// server refuses one more on Save (saveRow's MAX_SLOTS).
+export const MAX_ENTRIES_PER_DAY = 3;
+
+const dayText = (iso) => {
+  const [y, m, d] = String(iso).split("-");
+  return `${d}/${m}/${y}`;
+};
+
+// The server's "already has 3 entries" refusal, said on the box as soon as the
+// machine and date are picked instead of only after Save. A block still on
+// its own saved date and machine (edit) is one of those entries, not a new
+// one. Earlier blocks of the same form count too: they're saved first.
+// `who(machineId)` names the row key the way the server does ("This machine",
+// or the worker's name). { machine | date: message } per block.
+export const slotsFullErrors = (entries, occupied = {}, { editSlot = null, saved = null, who = () => "This machine" } = {}) =>
+  entries.map((v, i) => {
+    if (blank(v.machine) || blank(v.date)) return {};
+    if (saved && v.date === saved.date && v.machine === saved.machine) return {};
+    const taken =
+      (occupied[`${v.machine}|${v.date}`] || []).filter((o) => !isEditedRow(o, v, editSlot, saved)).length +
+      entries.filter((o, j) => j < i && o.machine === v.machine && o.date === v.date).length;
+    if (taken < MAX_ENTRIES_PER_DAY) return {};
+    const full = `${who(v.machine)} already has ${MAX_ENTRIES_PER_DAY} entries on ${dayText(v.date)}`;
+    // An edited row is moved by its Date (its machine stays locked); a new one
+    // is placed by its Machine / Worker.
+    return saved ? { date: `${full} — can't move this entry there` } : { machine: `${full} — edit one of them instead` };
   });
 
 // One operator runs one machine at a time: on a date, their entries on DIFFERENT
@@ -140,9 +194,11 @@ export const operatorOverlapErrors = (entries, operatorOccupied = {}, { editing 
     const mine = timeInterval(v.machineOnTime, v.machineOffTime);
     if (!op || !mine || blank(v.machine) || blank(v.date)) return {};
     if (timesUnchanged(v, saved) && String(saved?.operator ?? "").trim() === op) return {};
+    // The edited row itself only counts as itself on the date it was saved on.
+    const isSelf = (o) => editing && o.machine === editing.machine && o.slot === editing.slot && (!saved || v.date === saved.date);
     const others = [
       ...(operatorOccupied[`${op}|${v.date}`] || [])
-        .filter((o) => o.machine !== v.machine && !(editing && o.machine === editing.machine && o.slot === editing.slot))
+        .filter((o) => o.machine !== v.machine && !isSelf(o))
         .map((o) => ({ name: o.machineName, on: o.machineOnTime, off: o.machineOffTime })),
       ...entries
         .filter((o, j) => j !== i && String(o.operator ?? "").trim() === op && o.date === v.date && o.machine !== v.machine)
@@ -286,8 +342,10 @@ export const validateEntry = (v, { saved = null } = {}) => {
   else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
-    // The operator's planned shift has to cover the time the machine ran.
-    const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
+    // The operator's planned shift has to cover the time the machine ran —
+    // once that time makes sense. With OFF not after ON the span would wrap
+    // past midnight (23 h and the like), and the OFF box already says what's wrong.
+    const shiftMin = errors.machineOffTime ? null : spanMinutes(v.machineOnTime, v.machineOffTime);
     if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
       errors.plannedOperatorShiftHours = `Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})`;
     }

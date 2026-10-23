@@ -1,6 +1,6 @@
 import React from "react";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
-import { CHART_CATALOG, STAT_CATALOG } from "../../utils/processDashboard";
+import { CHART_CATALOG, STAT_CATALOG, worded } from "../../utils/processDashboard";
 import { ChartPreview, StatPreview } from "./WidgetPreview";
 
 /**
@@ -14,7 +14,9 @@ import { ChartPreview, StatPreview } from "./WidgetPreview";
  * how it looks (a sample figure for a tile, a sketch for a graph), so it can
  * be chosen without already knowing the dashboard. `stats` / `charts` are
  * ordered arrays of catalog keys: ticked cards come first, numbered in their
- * dashboard order, and the arrows move a card earlier or later.
+ * dashboard order, and the arrows move a card earlier or later. `words` (the
+ * dashboard's own, from unitWordsFor) names the cards the way that dashboard
+ * shows them — "by Worker" on a worker-based process.
  */
 const Gallery = ({ title, note, catalog, selected, onChange, kind }) => {
   const ordered = [
@@ -78,12 +80,12 @@ const Gallery = ({ title, note, catalog, selected, onChange, kind }) => {
   );
 };
 
-const WidgetPicker = ({ stats, charts, onChange }) => (
+const WidgetPicker = ({ stats, charts, onChange, words }) => (
   <div>
     <Gallery kind="stat" title="KPI tiles" note="The headline figures across the top of the dashboard. The number on each card is only an example."
-      catalog={STAT_CATALOG} selected={stats} onChange={(next) => onChange({ stats: next, charts })} />
+      catalog={STAT_CATALOG.map((w) => worded(w, words))} selected={stats} onChange={(next) => onChange({ stats: next, charts })} />
     <Gallery kind="chart" title="Graphs" note="Each picture is a sketch of how the graph looks. On the dashboard every graph can be clicked to filter, maximized, shown as a table and broken down."
-      catalog={CHART_CATALOG} selected={charts} onChange={(next) => onChange({ stats, charts: next })} />
+      catalog={CHART_CATALOG.map((w) => worded(w, words))} selected={charts} onChange={(next) => onChange({ stats, charts: next })} />
   </div>
 );
 

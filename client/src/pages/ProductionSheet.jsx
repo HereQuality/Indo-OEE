@@ -15,7 +15,7 @@ import {
 import DeleteModal from "../Components/Common/DeleteModal";
 import FormsFooter from "../Components/Common/FormAddFooter";
 import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
-import ProductionEntriesTable from "../Components/Production/ProductionEntriesTable";
+import ProductionEntriesTable, { emptyEntriesText } from "../Components/Production/ProductionEntriesTable";
 import ProductionEntryForm from "../Components/Production/ProductionEntryForm";
 import NumberInput from "../Components/Production/NumberInput";
 import FilterPanel from "../Components/ProcessDashboard/FilterPanel";
@@ -47,7 +47,8 @@ import {
   rowCalc,
   sortByMachineOn,
 } from "../utils/productionSheet";
-import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, validateEntry } from "../utils/entryValidation";
+import { bookedRanges, cleanSplit, firstError, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, slotsFullErrors, validateEntry } from "../utils/entryValidation";
+import { guardEscape } from "../utils/modalEscape";
 import { firstOverLimit } from "../utils/limitNotice";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
@@ -261,8 +262,15 @@ const ProductionSheet = () => {
   const lockInfo = useCallback(
     (row) => {
       if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
-      const asOf = isoDay(new Date());
-      const deadline = getLockDeadline(isoDay(new Date(row.createdAt)), weeklyOffDays, holidays, LOCK_WORKING_DAYS);
+      // A row without a usable createdAt can't be dated, so it isn't shown as
+      // locked (rather than worked out from "NaN-NaN-NaN") — Save is still checked.
+      const created = row.createdAt ? new Date(row.createdAt) : null;
+      if (!created || Number.isNaN(created.getTime())) return "";
+      // Both days in UTC, as the server's own check counts them (utils/workingDays.js
+      // toISO) — a local day would show a row saved after midnight IST as
+      // editable a day longer than Save allows.
+      const asOf = new Date().toISOString().slice(0, 10);
+      const deadline = getLockDeadline(created.toISOString().slice(0, 10), weeklyOffDays, holidays, LOCK_WORKING_DAYS);
       if (asOf <= deadline) return "";
       const [y, m, d] = deadline.split("-");
       return `Locked — saved more than ${LOCK_WORKING_DAYS} working days ago (editable through ${d}/${m}/${y})`;
@@ -523,10 +531,20 @@ const ProductionSheet = () => {
     [filteredRows, machineName, rankOf],
   );
 
+  // A page that isn't there (0, or past the last) goes to the nearest one
+  // that is, and says so, instead of quietly doing nothing.
   const goToPage = () => {
     if (goTo === "") return;
     const n = Number(goTo);
-    if (Number.isInteger(n) && n >= 1 && n <= totalPages) setPage(n);
+    if (!Number.isInteger(n)) {
+      toast.warning(`Enter a page number from 1 to ${totalPages}.`);
+    } else if (n < 1 || n > totalPages) {
+      const nearest = Math.min(Math.max(n, 1), totalPages);
+      toast.warning(`There's no page ${n} — showing page ${nearest} of ${totalPages}.`);
+      setPage(nearest);
+    } else {
+      setPage(n);
+    }
     setGoTo("");
   };
 
@@ -590,6 +608,8 @@ const ProductionSheet = () => {
   const errorsList = useMemo(() => {
     const saved = editing?.saved || null;
     const overlap = overlapErrors(entries, occupied, { editSlot: editing?.slot ?? null, saved });
+    // A machine that already has three entries that date — the server's own refusal, said on the box.
+    const full = slotsFullErrors(entries, occupied, { editSlot: editing?.slot ?? null, saved });
     const operatorClash = operatorOverlapErrors(entries, operatorOccupied, {
       editing: editing ? { machine: editing.machine, slot: editing.slot } : null,
       saved,
@@ -597,7 +617,7 @@ const ProductionSheet = () => {
     });
     // A block's own problems (blank / invalid / OFF before ON) come first, then a
     // clash with the machine's own entries, then with the operator's other machines.
-    return entries.map((v, i) => ({ ...operatorClash[i], ...overlap[i], ...validateEntry(v, { saved }) }));
+    return entries.map((v, i) => ({ ...full[i], ...operatorClash[i], ...overlap[i], ...validateEntry(v, { saved }) }));
   }, [entries, occupied, operatorOccupied, editing, machineName]);
   // Warn the moment a pick creates (or changes) a time-rule problem — not only
   // when Save is pressed. Nothing repeats while the problem stays as it was.
@@ -647,7 +667,7 @@ const ProductionSheet = () => {
   }, [modalMode, plannedLocks]);
 
   const bookedList = useMemo(
-    () => entries.map((v) => bookedRanges(v, occupied, editing?.slot ?? null)),
+    () => entries.map((v) => bookedRanges(v, occupied, editing?.slot ?? null, editing?.saved || null)),
     [entries, occupied, editing],
   );
   const incompleteCount = errorsList.filter((e) => Object.keys(e).length).length;
@@ -693,7 +713,7 @@ const ProductionSheet = () => {
 
   const openEdit = (row) => {
     setEntries([toFormValues(row)]);
-    setEditing({ slot: row.slot, machine: row.machine, savedPlanned: row.plannedOperatorShiftHours ?? null, saved: { machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
+    setEditing({ slot: row.slot, machine: row.machine, savedPlanned: row.plannedOperatorShiftHours ?? null, saved: { date: row.date, machine: row.machine, machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
     resetOccupied();
     setFocusTarget(null);
     setIsSubmit(false);
@@ -939,7 +959,12 @@ const ProductionSheet = () => {
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}
                 loading={loading}
-                emptyText={`No entries for ${periodLabel}. Click “Add Entry” to start.`}
+                emptyText={emptyEntriesText({
+                  period: periodLabel,
+                  search,
+                  searchedOut: !!search.trim() && sortedRows.length > 0,
+                  filtered: hasFilters(filters),
+                })}
                 canEdit={canEdit}
                 canDelete={canDelete}
                 onEdit={openEdit}
@@ -958,7 +983,7 @@ const ProductionSheet = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={() => closeModal()} centered backdrop="static" size="xl" scrollable>
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(() => closeModal())} centered backdrop="static" size="xl" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={() => closeModal()}>
           <div className="d-flex align-items-center gap-2">
             <span>{modalMode === "edit" ? "Update Production Entry" : "Add Production Entry"}</span>

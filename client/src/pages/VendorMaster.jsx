@@ -12,6 +12,7 @@ import { MenuContext } from "../context/MenuContext";
 import { useInvalidateVendors } from "../hooks/useVendors";
 import { useProcesses } from "../hooks/useProcesses";
 import { createVendor, deleteVendor, getVendorById, updateVendor, searchVendors } from "../api/vendors.api";
+import { guardEscape } from "../utils/modalEscape";
 
 /**
  * pages/VendorMaster.jsx
@@ -106,6 +107,11 @@ const VendorMaster = () => {
     return errors;
   };
 
+  // Once Save has been pressed, the messages follow the form as it is fixed.
+  useEffect(() => {
+    if (isSubmit) setFormErrors(validate(values));
+  }, [values, isSubmit]);
+
   const handleSave = (e) => {
     e.preventDefault();
     const errors = validate(values);
@@ -159,7 +165,8 @@ const VendorMaster = () => {
         sorton: column,
         sortdir: sortDirection,
         match: query,
-        isActive: !!filter,
+        // "Active only" off lists every vendor, active or not.
+        ...(filter ? { isActive: true } : {}),
       });
       const res = response.data.data[0];
       setTotalRows(res?.count || 0);
@@ -173,7 +180,8 @@ const VendorMaster = () => {
   };
 
   const col = [
-    { name: "Sr No", selector: (row, index) => index + 1, maxWidth: "20px" },
+    // Numbered on from the previous page rather than starting at 1 again.
+    { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     { name: "Vendor Name", selector: (row) => row.name, sortable: true, sortField: "name", minWidth: "260px" },
     {
       name: "Process",
@@ -221,7 +229,7 @@ const VendorMaster = () => {
               <Card>
                 <CardHeader>
                   <FormsHeader
-                    formName="Vendors"
+                    formName="Vendor"
                     filter={filter}
                     handleFilter={(e) => {
                       setPageNo(1);
@@ -258,11 +266,13 @@ const VendorMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="md">
+      {/* guardEscape: Escape that only closes the process picker's open list
+          leaves the form open. */}
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="md">
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Vendor" : "Add Vendor"}
         </ModalHeader>
-        <form noValidate>
+        <form noValidate onSubmit={handleSave}>
           <ModalBody>
             <div className="form-floating mb-3">
               <Input type="text" name="name" value={values.name} onChange={handleChange} placeholder=" " maxLength={100} />
@@ -280,12 +290,7 @@ const VendorMaster = () => {
                 classNamePrefix="select"
                 options={processOptions}
                 value={processOptions.filter((o) => values.processes.includes(o.value))}
-                onChange={(picked) => {
-                  const next = { ...values, processes: (picked || []).map((o) => o.value) };
-                  setValues(next);
-                  // Once Save has flagged it, the message goes as soon as a process is picked.
-                  if (isSubmit) setFormErrors(validate(next));
-                }}
+                onChange={(picked) => setValues({ ...values, processes: (picked || []).map((o) => o.value) })}
                 placeholder="Select processes…"
                 noOptionsMessage={() => (processes.length ? "No more processes" : "No processes — add them in Production › Processes")}
                 closeMenuOnSelect={false}
@@ -326,6 +331,7 @@ const VendorMaster = () => {
         }}
         setmodal_delete={setmodal_delete}
         disabled={isDeleteLoading}
+        deactivates={!!vendors.find((r) => r._id === remove_id)?.isActive}
       />
     </React.Fragment>
   );

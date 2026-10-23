@@ -1,6 +1,6 @@
 import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
-import { stoppageLimitMin, withDecimalPlanned } from "./entryValidation";
+import { stoppageLimitMin, timesUnchanged, withDecimalPlanned } from "./entryValidation";
 import { springRowCalc, isStatusOnly } from "./springSheet";
 import { hoursToHm, parseHm } from "./shiftHours";
 
@@ -72,13 +72,6 @@ const clock = (t) => {
   return n ? Number(n.slice(0, 2)) * 60 + Number(n.slice(3)) : null;
 };
 
-// Same only-when-changed rule as the CNC sheet: an older row that already breaks a
-// time rule stays editable.
-const timesUnchanged = (v, saved) =>
-  !!saved &&
-  normalizeTime(v.machineOnTime) === normalizeTime(saved.machineOnTime) &&
-  normalizeTime(v.machineOffTime) === normalizeTime(saved.machineOffTime);
-
 // One block's values → { fieldKey: message }. Empty object = ready to save.
 export const validateSpringEntry = (v, { saved = null } = {}) => {
   const errors = {};
@@ -136,7 +129,9 @@ export const validateSpringEntry = (v, { saved = null } = {}) => {
   else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
   else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
   else {
-    const shiftMin = spanMinutes(v.machineOnTime, v.machineOffTime);
+    // Not while End isn't after Start: the span would wrap past midnight
+    // (23 h and the like), and the End box already says what's wrong.
+    const shiftMin = errors.machineOffTime ? null : spanMinutes(v.machineOnTime, v.machineOffTime);
     if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
       errors.plannedOperatorShiftHours = `Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})`;
     }

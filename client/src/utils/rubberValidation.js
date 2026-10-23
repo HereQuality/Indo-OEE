@@ -1,0 +1,136 @@
+import { isNonWorking, normalizeTime, spanMinutes } from "./productionSheet";
+import { stoppageLimitMin, timesUnchanged } from "./entryValidation";
+import { RUBBER_STOPPAGE_FIELDS, isStatusOnly, rubberRowCalc } from "./rubberSheet";
+import { hoursToHm, parseHm } from "./shiftHours";
+
+/**
+ * utils/rubberValidation.js
+ * ───────────────────────────
+ * Every rule the RUBBER form enforces — After Powder Coating's rules
+ * (utils/powderCoatingValidation.js) over this sheet's own fields:
+ *
+ *   Status-only Any Working Status but PRESENT (ABSENT, SUNDAY, …): only Date
+ *               and Worker Name — nothing else is asked for.
+ *   Required    Date, Worker Name, Part Name, Total Cycle Time (> 0), Working
+ *               Start / End Time, Actual OK Quantity, Planned Operator Shift
+ *               (typed H.MM, not less than the Worker Shift Time).
+ *   Optional    Rejected Quantity (blank counts as 0, as the sheet leaves it).
+ *   Quantities  Whole numbers, 0 or more. OK + Rejected MAY be more than IDEAL
+ *               Quantity — unlike a machine, a person can beat the standard
+ *               time (real row: 166 pcs where 163 was ideal) — and such an
+ *               entry goes to OEE Review (Performance > 100%).
+ *   Times       Working End after Start.
+ *   Stoppage    Optional, 0–1440 each; all of it together within the Worker
+ *               Shift Time. "Others" needs a remark.
+ *
+ * The server re-checks these (server/controllers/rubberSheet.controller.js —
+ * entryRuleError); keep the two in step.
+ */
+
+const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+const isNum = (v) => v !== null && Number.isFinite(v);
+const blank = (v) => v === "" || v === null || v === undefined || String(v).trim() === "";
+
+export const RUBBER_MINUTE_KEYS = RUBBER_STOPPAGE_FIELDS.map((f) => f.key);
+
+// Top to bottom, the way the form reads — the first key with an error is where Save scrolls to.
+export const RUBBER_FIELD_ORDER = [
+  "date",
+  "machine",
+  "workingStatus",
+  "itemName",
+  "vendor",
+  "totalCycleSec",
+  "machineOnTime",
+  "machineOffTime",
+  "okQty",
+  "rejectedQty",
+  "plannedOperatorShiftHours",
+  ...RUBBER_MINUTE_KEYS,
+  "stoppageTotal",
+  "otherMinRemark",
+];
+
+// The overlap message (entryValidation's overlapErrors) in this sheet's words:
+// a worker's own Start / End, not a machine's ON / OFF.
+export const RUBBER_TIME_WORDS = { start: "Working Start Time", end: "Working End Time", owner: "this worker" };
+
+const clock = (t) => {
+  const n = normalizeTime(t);
+  return n ? Number(n.slice(0, 2)) * 60 + Number(n.slice(3)) : null;
+};
+
+// One block's values → { fieldKey: message }. Empty object = ready to save.
+export const validateRubberEntry = (v, { saved = null } = {}) => {
+  const errors = {};
+  const calc = rubberRowCalc(v);
+
+  if (blank(v.date)) errors.date = "Date is required";
+  if (blank(v.machine)) errors.machine = "Worker Name is required";
+  // ABSENT, SUNDAY, … — a day with no work records just its status.
+  if (isStatusOnly(v) || isNonWorking(v)) return errors;
+
+  if (blank(v.itemName)) errors.itemName = "Part Name is required";
+  const cycle = num(v.totalCycleSec);
+  if (blank(v.totalCycleSec)) errors.totalCycleSec = "Total Cycle Time is required";
+  else if (!isNum(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
+
+  for (const [key, label] of [
+    ["machineOnTime", "Working Start Time"],
+    ["machineOffTime", "Working End Time"],
+  ]) {
+    if (blank(v[key])) errors[key] = `${label} is required`;
+    else if (!normalizeTime(v[key])) errors[key] = "Enter a valid time";
+  }
+  if (!errors.machineOnTime && !errors.machineOffTime && !timesUnchanged(v, saved)) {
+    const on = clock(v.machineOnTime);
+    const off = clock(v.machineOffTime);
+    if (on !== null && off !== null && off <= on) errors.machineOffTime = "Working End Time must be after Working Start Time";
+  }
+
+  const ok = num(v.okQty);
+  if (blank(v.okQty)) errors.okQty = "Actual OK Quantity is required";
+  else if (!isNum(ok) || ok < 0 || !Number.isInteger(ok)) errors.okQty = "Must be a whole number, 0 or more";
+  const rej = num(v.rejectedQty);
+  if (rej !== null && (!isNum(rej) || rej < 0 || !Number.isInteger(rej))) errors.rejectedQty = "Must be a whole number, 0 or more";
+
+  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
+  const plannedParse = parseHm(v.plannedOperatorShiftHours);
+  const planned = plannedParse.hours;
+  if (blank(v.plannedOperatorShiftHours)) errors.plannedOperatorShiftHours = "Planned Operator Shift is required";
+  else if (plannedParse.minutesTooBig) errors.plannedOperatorShiftHours = "Minutes must be 00–59 (3.30 means 3 h 30 min)";
+  else if (planned === null) errors.plannedOperatorShiftHours = "Enter hours and minutes like 8.30";
+  else if (planned <= 0 || planned > 24) errors.plannedOperatorShiftHours = "Must be more than 0:00 and at most 24:00";
+  else {
+    // Not while End isn't after Start: the span would wrap past midnight
+    // (23 h and the like), and the End box already says what's wrong.
+    const shiftMin = errors.machineOffTime ? null : spanMinutes(v.machineOnTime, v.machineOffTime);
+    if (shiftMin !== null && Math.round(planned * 60) < shiftMin) {
+      errors.plannedOperatorShiftHours = `Planned Operator Shift can't be less than the Worker Shift Time (${hoursToHm(shiftMin / 60)})`;
+    }
+  }
+
+  // Stoppage is optional, like every downtime box: blank counts as 0.
+  for (const key of RUBBER_MINUTE_KEYS) {
+    const n = num(v[key]);
+    if (n !== null && (!Number.isFinite(n) || n < 0 || n > 1440)) errors[key] = "0–1440";
+  }
+  const limit = stoppageLimitMin(v);
+  if (limit !== null && (calc.totalStoppageMin || 0) > limit) {
+    errors.stoppageTotal = `Total stoppage is ${calc.totalStoppageMin} min but the Worker Shift Time is only ${limit} min`;
+  }
+  if (num(v.otherMin) > 0 && blank(v.otherMinRemark)) {
+    errors.otherMinRemark = "Remark is required when Others stoppage is entered";
+  }
+  return errors;
+};
+
+// The first field with an error, in form order — { index, field } — or null.
+export const firstRubberError = (errorsList) => {
+  for (let index = 0; index < errorsList.length; index += 1) {
+    const errors = errorsList[index] || {};
+    const field = RUBBER_FIELD_ORDER.find((k) => errors[k]) || Object.keys(errors)[0];
+    if (field) return { index, field };
+  }
+  return null;
+};

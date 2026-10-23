@@ -47,7 +47,8 @@ const fakeWorld = ({ process = null } = {}) => {
         (!q.operator || r.operator === q.operator) &&
         (!q.$nor || !q.$nor.some((n) => sameId(r.machine, n.machine) && r.slot === n.slot)) &&
         (q.slot === undefined || (q.slot && q.slot.$ne !== undefined ? r.slot !== q.slot.$ne : r.slot === q.slot)) &&
-        (!q["review.flaggedAt"] || (r.review && new Date(r.review.flaggedAt).getTime() === new Date(q["review.flaggedAt"]).getTime())),
+        (!q["review.flaggedAt"] || (r.review && new Date(r.review.flaggedAt).getTime() === new Date(q["review.flaggedAt"]).getTime())) &&
+        (!q["review.status"] || (r.review && r.review.status === q["review.status"])),
     );
   const apply = (doc, update) => {
     for (const [k, v] of Object.entries(update.$set || {})) {
@@ -317,6 +318,59 @@ test("review decisions: Admin only, a reject needs a remark, and a stale screen 
     assert.equal(reject.statusCode, 200, JSON.stringify(reject.payload));
     assert.equal(entries[0].review.status, "rejected");
     assert.equal(entries[0].review.remark, "Recount");
+  });
+});
+
+test("two Admins on one entry: the second is told who decided it, and nothing is overwritten", async () => {
+  await withWorld({}, async ({ entries, logs }) => {
+    await call(saveRow, { body: body({ actualQty: 490, okQty: 485 }) });
+    const id = entries[0]._id;
+    const flaggedAt = entries[0].review.flaggedAt;
+
+    const first = await call(decide, { user: ADMIN_OP, params: { sheet: "cnc", id }, body: { decision: "approved", remark: "OK", flaggedAt } });
+    assert.equal(first.statusCode, 200, JSON.stringify(first.payload));
+    const decisions = logs.length;
+
+    // Opened before the first decision landed — same flag, but no longer pending.
+    const second = await call(decide, { params: { sheet: "cnc", id }, body: { decision: "rejected", remark: "Recount", flaggedAt } });
+    assert.equal(second.statusCode, 409);
+    assert.equal(second.payload.message, "Already approved by Asha — reload");
+    assert.equal(entries[0].review.status, "approved");
+    assert.equal(entries[0].review.decidedBy.name, "Asha");
+    assert.equal(logs.length, decisions, "no second decision logged");
+  });
+});
+
+test("a decision racing another one is refused by the write itself, not only by the read before it", async () => {
+  await withWorld({}, async ({ entries }) => {
+    await call(saveRow, { body: body({ actualQty: 490, okQty: 485 }) });
+    const id = entries[0]._id;
+    const flaggedAt = entries[0].review.flaggedAt;
+    // The reviewer's read still sees it pending; by the time it writes, Asha has rejected it.
+    const pendingSnapshot = JSON.parse(JSON.stringify(entries[0]), (k, x) => (k === "date" ? new Date(x) : x));
+    entries[0].review = { ...entries[0].review, status: "rejected", decidedBy: { name: "Asha" }, remark: "Recount" };
+    const findById = ProductionEntry.findById;
+    let reads = 0;
+    ProductionEntry.findById = (...args) => (reads++ === 0 ? { lean: async () => pendingSnapshot } : findById(...args));
+    try {
+      const res = await call(decide, { params: { sheet: "cnc", id }, body: { decision: "approved", flaggedAt } });
+      assert.equal(res.statusCode, 409);
+      assert.equal(res.payload.message, "Already rejected by Asha — reload");
+      assert.equal(entries[0].review.status, "rejected");
+    } finally {
+      ProductionEntry.findById = findById;
+    }
+  });
+});
+
+test("deciding an entry whose review has gone is a stale screen too (409)", async () => {
+  await withWorld({}, async ({ entries }) => {
+    await call(saveRow, { body: body({ actualQty: 490, okQty: 485 }) });
+    const id = entries[0]._id;
+    await call(saveRow, { body: body({ _id: id, slot: 1, actualQty: 470, okQty: 465 }) });
+    const res = await call(decide, { params: { sheet: "cnc", id }, body: { decision: "approved" } });
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.payload.message, "This entry doesn't need review any more");
   });
 });
 

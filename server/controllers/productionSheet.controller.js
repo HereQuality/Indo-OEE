@@ -226,6 +226,15 @@ const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 const sameTimes = (existing, body) =>
   !!existing && existing.machineOnTime === body.machineOnTime && existing.machineOffTime === body.machineOffTime;
 
+// Whether a save moves a saved entry to another Date or Machine. The exemption
+// above only holds while the entry stays where it is: moved, its times meet
+// entries they were never checked against, so the overlap rules apply again.
+const movesEntry = (existing, date, machine) => {
+  if (!existing) return false;
+  const existingDay = existing.date instanceof Date ? existing.date.toISOString().slice(0, 10) : String(existing.date).slice(0, 10);
+  return existingDay !== date || String(existing.machine) !== String(machine);
+};
+
 // What the entry form always makes mandatory.
 const REQUIRED_FIELDS = [
   ["operator", "Operator"],
@@ -342,7 +351,9 @@ exports.getSheet = async (req, res) => {
 
     const entries = pageDates.length
       ? await ProductionEntry.find({ ...query, date: { $in: pageDates } })
-          .select("-__v -createdAt -updatedBy -updatedByModel")
+          // createdAt and unlockedUntil stay in: the sheet works out each row's
+          // working-day lock, and whether to offer Unlock, from them.
+          .select("-__v -updatedBy -updatedByModel")
           .lean()
       : [];
 
@@ -449,6 +460,20 @@ exports.saveRow = async (req, res) => {
     const ruleError = entryRuleError(req.body, existing);
     if (ruleError) return res.status(400).json({ isOk: false, message: ruleError });
 
+    // Only an edit of an already-saved row can be locked; catching up on a late
+    // new entry is fine. Every save that finds a saved row is checked, whatever
+    // slot it names — one sent with slot "auto" used to skip this. The window
+    // counts from when that row was first saved (createdAt), not from its own
+    // Date — see checkNotLocked above.
+    if (existing) {
+      const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
+      const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
+      if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+    }
+    // Whether this save moves the saved entry to another Date or Machine — for the
+    // slot it lands in and the overlap checks below.
+    const moved = movesEntry(existing, date, machine);
+
     // The entry form no longer asks for a slot — it sends "auto" and this
     // picks the machine's lowest free slot for that date. Done here rather
     // than in the form because the form only holds the entries it has loaded,
@@ -474,42 +499,29 @@ exports.saveRow = async (req, res) => {
       // the new date — reassign to that date's next free slot instead of
       // colliding with (or, worse, overwriting) someone else's row, the same
       // way a brand new entry picks one above.
-      if (existing) {
-        const existingDay = existing.date instanceof Date ? existing.date.toISOString().slice(0, 10) : String(existing.date).slice(0, 10);
-        const moved = existingDay !== date || String(existing.machine) !== String(machine);
-        if (moved) {
-          const used = new Set(
-            (await ProductionEntry.find({ date: day, machine, _id: { $ne: existing._id } }).select("slot").lean()).map((e) => e.slot),
-          );
-          if (used.has(slotNo)) {
-            const free = SLOT_NUMBERS.find((n) => !used.has(n));
-            if (!free) {
-              return res.status(400).json({
-                isOk: false,
-                message: `This machine already has ${MAX_SLOTS} entries on ${date} — can't move this entry there`,
-              });
-            }
-            slotNo = free;
+      if (moved) {
+        const used = new Set(
+          (await ProductionEntry.find({ date: day, machine, _id: { $ne: existing._id } }).select("slot").lean()).map((e) => e.slot),
+        );
+        if (used.has(slotNo)) {
+          const free = SLOT_NUMBERS.find((n) => !used.has(n));
+          if (!free) {
+            return res.status(400).json({
+              isOk: false,
+              message: `This machine already has ${MAX_SLOTS} entries on ${date} — can't move this entry there`,
+            });
           }
+          slotNo = free;
         }
-      }
-      // Only an edit of an already-saved row can be locked — a brand new
-      // entry (slot "auto", handled above) is never blocked just because
-      // its own date is old; catching up on late-entered data is fine.
-      // The window counts from when that row was first saved (createdAt),
-      // not from its own Date — see checkNotLocked above.
-      if (existing) {
-        const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
-        const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
-        if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
       }
     }
 
     // One machine runs one thing at a time: its entries on a date can't
     // overlap in time. Checked here, against everything saved (the form only
-    // knows what it has loaded), and only when the times are new or changed —
-    // an older row that already breaks this stays editable.
-    if (!sameTimes(existing, req.body)) {
+    // knows what it has loaded), and only when the times are new or changed or
+    // the entry moves to another Date or Machine — an older row that already
+    // breaks this stays editable while it stays where it is.
+    if (moved || !sameTimes(existing, req.body)) {
       const others = await ProductionEntry.find({ date: day, machine, slot: { $ne: slotNo } })
         .select("slot machineOnTime machineOffTime")
         .lean();
@@ -525,12 +537,15 @@ exports.saveRow = async (req, res) => {
 
     // One operator runs one machine at a time: on a date, their entries on
     // DIFFERENT machines can't overlap in time either. Checked when the times or
-    // the operator are new or changed (an older row that already breaks this
-    // stays editable).
+    // the operator are new or changed, or the entry moves to another Date or
+    // Machine (an older row that already breaks this stays editable while it
+    // stays where it is).
     const operator = String(req.body.operator ?? "").trim();
     const operatorChanged = !existing || String(existing.operator ?? "").trim() !== operator;
-    if (operator && (operatorChanged || !sameTimes(existing, req.body))) {
-      const others = await ProductionEntry.find({ date: day, operator, $nor: [{ machine, slot: slotNo }] })
+    if (operator && (operatorChanged || moved || !sameTimes(existing, req.body))) {
+      // The entry itself never counts: moved to another machine, it would
+      // otherwise clash with its own saved row.
+      const others = await ProductionEntry.find({ date: day, operator, $nor: [{ machine, slot: slotNo }], ...(existing ? { _id: { $ne: existing._id } } : {}) })
         .select("machine slot machineOnTime machineOffTime")
         .populate("machine", "machineName")
         .lean();

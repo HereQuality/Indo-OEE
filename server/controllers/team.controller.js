@@ -5,12 +5,16 @@ const Operator = require("../models/Operator");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
 
+// A team name or search text as plain text inside a pattern, so a "(" in it
+// can't break the query.
+const escapeRegex = (text) => String(text ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // @desc    Create a new team
 // @route   POST /api/v1/teams
 exports.createTeam = asyncHandler(async (req, res, next) => {
   const { teamName, description, teamLeadId, memberIds, isActive, remark } = req.body;
 
-  const exists = await Team.findOne({ teamName: { $regex: new RegExp(`^${teamName}$`, "i") } });
+  const exists = await Team.findOne({ teamName: { $regex: new RegExp(`^${escapeRegex(teamName)}$`, "i") } });
   if (exists) {
     return next(new AppError("Team name already exists", 400));
   }
@@ -69,7 +73,7 @@ exports.updateTeam = asyncHandler(async (req, res, next) => {
   if (!team) return next(new AppError("Team not found", 404));
 
   if (teamName && teamName.toLowerCase() !== team.teamName.toLowerCase()) {
-    const exists = await Team.findOne({ teamName: { $regex: new RegExp(`^${teamName}$`, "i") } });
+    const exists = await Team.findOne({ teamName: { $regex: new RegExp(`^${escapeRegex(teamName)}$`, "i") } });
     if (exists) return next(new AppError("Team name already exists", 400));
   }
 
@@ -128,9 +132,11 @@ exports.searchTeams = asyncHandler(async (req, res, next) => {
 
   let query = {};
   if (match) {
+    // Matched as plain text, so a "(" or "*" typed in can't break the search.
+    const escaped = escapeRegex(match);
     query.$or = [
-      { teamName: { $regex: match, $options: "i" } },
-      { description: { $regex: match, $options: "i" } },
+      { teamName: { $regex: escaped, $options: "i" } },
+      { description: { $regex: escaped, $options: "i" } },
     ];
   }
   if (isActive !== undefined) query.isActive = isActive;

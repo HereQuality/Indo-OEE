@@ -42,6 +42,12 @@ const protect = async (req, res, next) => {
       return next(new AppError("Your account has been blocked.", 403));
     }
 
+    // A deleted employee is only deactivated, so a token issued before the
+    // delete would otherwise keep working until it expires.
+    if (currentUser.isActive === false) {
+      return next(new AppError("Your account is inactive. Please contact your administrator.", 403));
+    }
+
     req.user = currentUser;
     // Use roleType from token if available, otherwise fallback to model
     req.user.roleType = decoded.roleType || currentUser.roleType || 'Operator';

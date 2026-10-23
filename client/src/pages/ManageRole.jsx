@@ -16,6 +16,7 @@ import {
   Alert
 } from "reactstrap";
 import Select from "react-select";
+import ConfirmAlert from "../Components/Common/ConfirmAlert";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { ThemeContext } from "../context/ThemeContext";
@@ -48,6 +49,11 @@ const OperatorRoles = () => {
   const [operatorRoles, setOperatorRoles] = useState(null);
   const [rolesChanged, setRolesChanged] = useState(false);
   const [hoveredRow, setHoveredRow] = useState(null);
+  // Both wipe ticks, so each asks first: Clear All saves an empty set straight
+  // away, and picking another role (or clearing the box) with unsaved ticks
+  // would drop them. `switchTo` is the role waiting on that answer.
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [switchTo, setSwitchTo] = useState(undefined);
 
   const { menuData: contextMenuData, currentPagePermissions } = useContext(MenuContext);
   const { isDarkMode } = useContext(ThemeContext);
@@ -285,6 +291,7 @@ const OperatorRoles = () => {
   };
 
   const clearAllPermissions = async () => {
+    setConfirmClear(false);
     if (!selectedRole) return;
     setSaveLoading(true);
     try {
@@ -295,6 +302,11 @@ const OperatorRoles = () => {
       fetchOperatorRoles(selectedRole.value);
     } catch { toast.error("Failed to clear permissions"); }
     finally { setSaveLoading(false); }
+  };
+
+  const handleRoleChange = (role) => {
+    if (rolesChanged && selectedRole && role?.value !== selectedRole.value) setSwitchTo(role);
+    else setSelectedRole(role);
   };
 
   const getRowStyles = (id, isGroup) => {
@@ -390,7 +402,7 @@ const OperatorRoles = () => {
                       id="employeeSelect"
                       options={roles}
                       value={selectedRole}
-                      onChange={setSelectedRole}
+                      onChange={handleRoleChange}
                       className="basic-single"
                       classNamePrefix="select"
                       placeholder="Select a role..."
@@ -411,7 +423,7 @@ const OperatorRoles = () => {
                     </span>
                   )}
                   {selectedRole && canWrite && operatorRoles?._id && (
-                    <Button color="danger" outline size="sm" onClick={clearAllPermissions} disabled={saveLoading}>
+                    <Button color="danger" outline size="sm" onClick={() => setConfirmClear(true)} disabled={saveLoading}>
                       <i className="bx bx-trash me-1" />Clear All
                     </Button>
                   )}
@@ -567,6 +579,32 @@ const OperatorRoles = () => {
           </Card>
         </Container>
       </div>
+
+      <ConfirmAlert
+        isOpen={confirmClear}
+        variant="danger"
+        title="Clear all permissions?"
+        message={`Every permission of ${selectedRole?.label || "this role"} is removed and saved straight away. This can't be undone.`}
+        confirmText="Yes, Clear All"
+        cancelText="Cancel"
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={clearAllPermissions}
+      />
+      <ConfirmAlert
+        isOpen={switchTo !== undefined}
+        variant="warning"
+        title="Discard unsaved changes?"
+        message={`The permissions ticked for ${selectedRole?.label || "this role"} haven't been saved. ${
+          switchTo ? `Switching to ${switchTo.label}` : "Clearing the role"
+        } drops them.`}
+        confirmText="Discard changes"
+        cancelText="Keep editing"
+        onCancel={() => setSwitchTo(undefined)}
+        onConfirm={() => {
+          setSelectedRole(switchTo);
+          setSwitchTo(undefined);
+        }}
+      />
 
       <style>{`
         .menu-roles-table th, .menu-roles-table td { vertical-align: middle; }

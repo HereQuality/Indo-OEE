@@ -90,6 +90,11 @@ exports.updateWeeklyOff = async (req, res) => {
     if (!Array.isArray(weeklyOffDays) || !weeklyOffDays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) {
       return res.status(400).json({ isOk: false, message: "weeklyOffDays must be an array of integers 0–6" });
     }
+    // A week with no working day at all would mean the entry lock's
+    // "2 working days" never arrive (utils/workingDays.js).
+    if (new Set(weeklyOffDays).size >= 7) {
+      return res.status(400).json({ isOk: false, message: "At least one day of the week must stay a working day — all 7 can't be Weekly Off" });
+    }
     const doc = await getOrCreateWeeklyOff();
     doc.weeklyOffDays = [...new Set(weeklyOffDays)].sort();
     await doc.save();

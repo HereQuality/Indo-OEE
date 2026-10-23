@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 
 const ProductionEntry = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
+const MachineOperator = require("../models/MachineOperator");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const Process = require("../models/Process");
@@ -12,7 +13,7 @@ const AuditLog = require("../models/AuditLog");
 const User = require("../models/user.model");
 const Operator = require("../models/Operator");
 const RoleMaster = require("../models/RoleMaster");
-const { saveRow, getOccupied } = require("./productionSheet.controller");
+const { saveRow, getOccupied, deleteRow } = require("./productionSheet.controller");
 
 const MACHINE = "64b0c0ffee0000000000aaaa";
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -28,6 +29,7 @@ const fakeDb = (rows = [], process = null) => {
         (!q.machine || r.machine === q.machine) &&
         (!q.operator || r.operator === q.operator) &&
         (!q.$nor || !q.$nor.some((n) => r.machine === n.machine && r.slot === n.slot)) &&
+        (!q._id?.$ne || String(r._id) !== String(q._id.$ne)) &&
         (q.slot === undefined || (q.slot && q.slot.$ne !== undefined ? r.slot !== q.slot.$ne : r.slot === q.slot)),
     );
   const chain = (rows) => ({ select: () => chain(rows), sort: () => chain(rows), populate: () => chain(rows), lean: async () => rows });
@@ -48,6 +50,8 @@ const fakeDb = (rows = [], process = null) => {
       // planned-shift rule and the audit log; the audit log itself is captured.
       stub(Machine, "findById", () => chain(process ? { _id: MACHINE, process: "64b0c0ffee0000000000dddd" } : { _id: MACHINE, process: null }));
       stub(Machine, "find", () => chain([{ _id: MACHINE, machineName: "7A" }]));
+      // A machine id not found above is looked up as a worker (utils/machineNames.js).
+      stub(MachineOperator, "find", () => chain([]));
       stub(Process, "findById", () => chain(process));
       stub(AuditLog, "create", async (row) => (logs.push(row), row));
       stub(User, "find", () => chain([]));
@@ -55,6 +59,8 @@ const fakeDb = (rows = [], process = null) => {
       stub(RoleMaster, "find", () => chain([]));
       stub(ProductionEntry, "find", (q) => chain(match(q)));
       stub(ProductionEntry, "findOne", (q) => chain(match(q)[0] || null));
+      // An edit by _id; its update goes through findOneAndUpdate below ({ _id }).
+      stub(ProductionEntry, "findById", (id) => chain(table.find((r) => String(r._id) === String(id)) || null));
       stub(ProductionEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -260,5 +266,61 @@ test("the occupied lookup can list an operator's entries on a date across machin
     assert.equal(res.payload.data.length, 1);
     assert.equal(res.payload.data[0].machine, OTHER_MACHINE);
     assert.equal(res.payload.data[0].machineOnTime, "08:00");
+  });
+});
+
+const ENTRY = "64b0c0ffee0000000000eeee";
+const daysAgo = (n) => new Date(Date.now() - n * 86400000);
+
+test("a locked entry can't be edited or deleted, whatever slot the save names", async () => {
+  // Saved a month ago: well past the 2-working-day window.
+  const old = { _id: ENTRY, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00", createdAt: daysAgo(30) };
+  await withDb([old], async (db) => {
+    // slot "auto" with the entry's _id used to skip the lock check.
+    for (const slot of [1, "auto"]) {
+      const res = await call(saveRow, { body: body({ _id: ENTRY, slot, remarks: "late fix" }) });
+      assert.equal(res.statusCode, 403, `slot ${slot}: ${JSON.stringify(res.payload)}`);
+      assert.match(res.payload.message, /locked/);
+    }
+    const del = await call(deleteRow, { params: { id: ENTRY } });
+    assert.equal(del.statusCode, 403);
+    assert.equal(db.saved.length, 0);
+  });
+  // A Super Admin unlock still lets the same edit through.
+  await withDb([{ ...old, unlockedUntil: new Date(Date.now() + 3600000) }], async (db) => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1, remarks: "late fix" }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].remarks, "late fix");
+  });
+});
+
+test("moving an entry to another Date runs the overlap checks there, even with its times unchanged", async () => {
+  const yesterday = new Date(`${TODAY}T00:00:00.000Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const moving = { _id: ENTRY, date: yesterday, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00" };
+
+  // Same machine, new date: another entry already runs 10:00–14:00 there.
+  await withDb([moving, { slot: 1, operator: "Ravi", machineOnTime: "10:00", machineOffTime: "14:00" }], async (db) => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1 }) });
+    assert.equal(res.statusCode, 400, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /already has an entry from 10:00 – 14:00/);
+    assert.equal(db.saved.length, 0);
+  });
+
+  // Same operator on another machine at that time on the new date.
+  await withDb([moving, { machine: OTHER_MACHINE, slot: 1, operator: "Asha", machineOnTime: "10:00", machineOffTime: "14:00" }], async (db) => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1 }) });
+    assert.equal(res.statusCode, 400, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /Operator Asha is already on machine .* from 10:00 – 14:00/);
+    assert.equal(db.saved.length, 0);
+  });
+});
+
+test("moving an entry to another machine doesn't clash with its own saved row", async () => {
+  const saved = { _id: ENTRY, machine: OTHER_MACHINE, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00" };
+  await withDb([saved], async (db) => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1, machine: MACHINE }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].machine, MACHINE);
   });
 });

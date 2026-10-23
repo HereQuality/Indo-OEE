@@ -75,6 +75,7 @@ const CYCLE_SEC = {
   trobe: (e) => num(e.totalCycleSec),
   spring: (e) => num(e.totalCycleSec),
   powder: (e) => num(e.totalCycleSec),
+  rubber: (e) => num(e.totalCycleSec),
 };
 
 // { availability, performance, quality } as fractions (1 = 100%), each null

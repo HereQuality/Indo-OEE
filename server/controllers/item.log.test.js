@@ -149,14 +149,14 @@ test("the first delete deactivates the part, the second deletes it — each is l
   const part = stored();
   await withModels({ part }, async (seen) => {
     const first = await call(deleteItem, { user: ravi, params: { itemId: "i1" } });
-    assert.equal(first.payload.message, "Item deactivated successfully");
+    assert.equal(first.payload.message, "Part deactivated successfully");
     assert.equal(part.saves, 1);
     assert.equal(seen.logs.length, 1);
     assert.equal(seen.logs[0].action, "deactivate");
     assert.deepEqual(seen.logs[0].changes, [{ field: "isActive", label: "Status", from: "Active", to: "Inactive" }]);
 
     const second = await call(deleteItem, { user: ravi, params: { itemId: "i1" } });
-    assert.equal(second.payload.message, "Item deleted successfully");
+    assert.equal(second.payload.message, "Part deleted successfully");
     assert.equal(seen.deleted, part._id);
     assert.equal(seen.logs.length, 2);
     const gone = seen.logs[1];
