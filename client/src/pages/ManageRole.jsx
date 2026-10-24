@@ -21,6 +21,7 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { ThemeContext } from "../context/ThemeContext";
 import { useRoles } from "../hooks/useRoles";
+import { useReviewAccess } from "../hooks/useReviewAccess";
 import { getMenusByGroups } from "../api/menus.api";
 import { getOperatorRolesByRoleId, createOperatorRoles, updateOperatorRoles } from "../api/operatorRoles.api";
 
@@ -55,7 +56,10 @@ const OperatorRoles = () => {
   const [confirmClear, setConfirmClear] = useState(false);
   const [switchTo, setSwitchTo] = useState(undefined);
 
-  const { menuData: contextMenuData, currentPagePermissions } = useContext(MenuContext);
+  const { menuData: contextMenuData, currentPagePermissions, isAdmin: isSuperAdmin } = useContext(MenuContext);
+  // Ticking Full access is itself a Full access power (the server refuses anyone else).
+  const { canReview } = useReviewAccess();
+  const canGrantFullAccess = !!isSuperAdmin || canReview;
   const { isDarkMode } = useContext(ThemeContext);
   const canWrite = !!(currentPagePermissions?.create || currentPagePermissions?.edit || currentPagePermissions?.delete);
 
@@ -265,9 +269,24 @@ const OperatorRoles = () => {
     setOperatorRoles(base);
   };
 
+  // Full access: the box once it has been saved; before that, a role coded
+  // "admin" counts (the server's rule — utils/adminAccess.js).
+  const selectedRoleCode = rawRoles.find((r) => r._id === selectedRole?.value)?.roleCode;
+  const fullAccess =
+    typeof operatorRoles?.fullAccess === "boolean" ? operatorRoles.fullAccess : String(selectedRoleCode || "").trim().toLowerCase() === "admin";
+  const handleFullAccessChange = (checked) => {
+    setRolesChanged(true);
+    setOperatorRoles({ ...ensureBase(), fullAccess: checked });
+  };
+
   const saveOperatorRoles = async () => {
     if (!selectedRole) return;
-    const payload = { roleId: selectedRole.value, roles: operatorRoles ? operatorRoles.roles : [] };
+    const payload = {
+      roleId: selectedRole.value,
+      roles: operatorRoles ? operatorRoles.roles : [],
+      // Only once it has been set — a role that never saved the box sends nothing.
+      ...(typeof operatorRoles?.fullAccess === "boolean" ? { fullAccess: operatorRoles.fullAccess } : {}),
+    };
     setSaveLoading(true);
     try {
       if (operatorRoles?._id) {
@@ -436,6 +455,30 @@ const OperatorRoles = () => {
                   )}
                 </Col>
               </Row>
+
+              {selectedRole && (
+                <div className="border rounded-3 p-3 mb-3 d-flex align-items-start gap-3">
+                  <Input
+                    type="checkbox"
+                    id="fullAccessCheck"
+                    checked={fullAccess}
+                    onChange={(e) => handleFullAccessChange(e.target.checked)}
+                    disabled={!canWrite || !canGrantFullAccess}
+                    style={{ width: 18, height: 18, marginTop: 2 }}
+                  />
+                  <div>
+                    <Label htmlFor="fullAccessCheck" className="fw-bold mb-0">
+                      <i className="bx bx-shield-quarter me-1 text-primary" />Full access
+                    </Label>
+                    <div className="text-muted small">
+                      People in this role can do the admin things: review and approve / reject OEE entries that went over 100%
+                      (they are the only ones notified), unlock a locked entry for 24 hours, and change a process&apos;s Operator
+                      Planned Shift. Company holidays and weekly offs only affect when entries lock.
+                      {!canGrantFullAccess && " Only a Super Admin or a Full access user can change this."}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="text-muted small mb-2 d-flex align-items-center">
                 <i className="bx bx-info-circle me-1" />

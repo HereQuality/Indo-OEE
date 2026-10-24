@@ -127,4 +127,4 @@ const entryMetrics = (sheet, e) => {
 const metricsOver100 = (m) =>
   METRICS.filter((k) => isNum(m?.[k]) && m[k] > 1 + 1e-9).map((k) => ({ metric: k, value: m[k] }));
 
-module.exports = { entryMetrics, metricsOver100, METRICS, METRIC_LABELS, CYCLE_SEC };
+module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, METRIC_LABELS, CYCLE_SEC };

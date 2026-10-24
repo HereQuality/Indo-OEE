@@ -78,7 +78,7 @@ const OeeReviewPage = () => {
                       >
                         <ShieldAlert size={28} />
                       </div>
-                      <h6 className="fw-semibold mb-1">Only Admin or Super Admin can review entries</h6>
+                      <h6 className="fw-semibold mb-1">Only a Super Admin or a Full access user can review entries</h6>
                       <p className="text-muted small mb-0">
                         Entries that go above 100% are still saved and flagged — an administrator will take the decision here.
                       </p>

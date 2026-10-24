@@ -9,7 +9,7 @@ import {
     markNotificationRead,
     markAllNotificationsRead,
 } from "../api/notifications.api";
-import { NOTIFICATIONS_CHANGED, announceNotificationsRead, useNotificationLink } from "../utils/notifications";
+import { NOTIFICATIONS_CHANGED, announceNotificationsRead, prepareNotification, useNotificationLink } from "../utils/notifications";
 
 const formatDateTime = (value) => {
     if (!value) return "";
@@ -98,10 +98,12 @@ const Notifications = () => {
         }
     };
 
-    const handleOpen = (n) => {
+    const handleOpen = async (n) => {
         if (!n.isRead) handleMarkRead(n._id);
         const link = linkOf(n);
-        if (link) navigate(link);
+        if (!link) return;
+        await prepareNotification(n);
+        navigate(link);
     };
 
     // Theme-aware: under dark mode the card's text turns light (index.css),

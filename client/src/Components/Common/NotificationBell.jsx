@@ -9,7 +9,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "../../api/notifications.api";
-import { NOTIFICATIONS_CHANGED, announceNotificationsRead, useNotificationLink } from "../../utils/notifications";
+import { NOTIFICATIONS_CHANGED, announceNotificationsRead, prepareNotification, useNotificationLink } from "../../utils/notifications";
 
 const formatTime = (value) => {
   if (!value) return "Now";
@@ -114,11 +114,12 @@ export default function NotificationBell() {
     }
   };
 
-  const handleOpen = (item) => {
+  const handleOpen = async (item) => {
     markRead(item);
     const link = linkOf(item);
     if (link) {
       setIsOpen(false);
+      await prepareNotification(item);
       navigate(link);
     }
   };

@@ -1,5 +1,6 @@
 const express = require("express");
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const { requireAdmin } = require("../utils/adminAccess");
 const { requireMenuPermission } = require("../middlewares/permission.middleware");
 const {
   getSheet,
@@ -24,7 +25,7 @@ router.get("/filter-options", requireMenuPermission(MENU_URL, "read"), getFilter
 router.get("/occupied", requireMenuPermission(MENU_URL, "read"), getOccupied);
 router.put("/row", requireMenuPermission(MENU_URL, "write"), saveRow);
 router.delete("/row/:id", requireMenuPermission(MENU_URL, "write"), deleteRow);
-// Super Admin only, not gated by the page's own write permission — an admin override.
-router.put("/row/:id/unlock", authorize("SuperAdmin"), unlockRow);
+// Super Admin or Full access, not gated by the page's own write permission — an admin override.
+router.put("/row/:id/unlock", requireAdmin, unlockRow);
 
 module.exports = router;

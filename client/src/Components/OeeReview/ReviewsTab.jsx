@@ -5,6 +5,7 @@ import { Col, Input, Row, Spinner } from "reactstrap";
 import { getReviews } from "../../api/oeeReview.api";
 import { displayDay } from "../../utils/productionSheet";
 import { toRolePath } from "../../utils/roleUrl";
+import { useCanOpenPage } from "../../utils/notifications";
 import DecisionModal from "./DecisionModal";
 import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, StatusBadge, flaggedText, fmtDateTime, isWorkerSheet, useElementWidth } from "./reviewShared";
 
@@ -15,7 +16,7 @@ import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, Sta
  * went above 100%, by status (Pending first — the ones waiting on a
  * decision), with a text search over machine (or worker) / operator / part /
  * drawing no. A pending row is approved or rejected through DecisionModal; every
- * row links to its sheet's data entry page.
+ * row's "Open entry" opens that entry's form on its sheet's data entry page.
  *
  * Given enough room (a desktop with the sidebar open, or a laptop with it
  * collapsed) the list is one row per entry in a table; anything narrower —
@@ -97,15 +98,31 @@ const DecideButtons = ({ row, onDecide }) =>
     </>
   ) : null;
 
-const OpenSheetLink = ({ row, roleSlug }) => (
-  <Link
-    to={toRolePath(SHEET_PATHS[row.sheet] || SHEET_PATHS.cnc, roleSlug)}
-    className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 text-nowrap"
-    title={`Open the ${sheetName(row)} data entry page`}
-  >
-    Open sheet <ExternalLink size={13} />
-  </Link>
-);
+const OpenSheetLink = ({ row, roleSlug }) => {
+  const canOpen = useCanOpenPage();
+  const page = toRolePath(SHEET_PATHS[row.sheet] || SHEET_PATHS.cnc, roleSlug);
+  const cls = "btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 text-nowrap";
+  // Reviewing never needs the sheet: without View on it (Manage Role) the
+  // button says so instead of sending the reviewer to a No Access page.
+  if (!canOpen(page)) {
+    return (
+      <span title={`Your role has no access to the ${sheetName(row)} data entry page — ask an admin to give it View in Manage Role`} style={{ cursor: "not-allowed" }}>
+        <button type="button" className={cls} disabled style={{ pointerEvents: "none" }}>
+          Open entry <ExternalLink size={13} />
+        </button>
+      </span>
+    );
+  }
+  return (
+    <Link
+      to={`${page}?${new URLSearchParams({ entry: row._id, date: row.date })}`}
+      className={cls}
+      title={`Open this entry's form on the ${sheetName(row)} data entry page`}
+    >
+      Open entry <ExternalLink size={13} />
+    </Link>
+  );
+};
 
 const ReviewTable = ({ rows, roleSlug, onDecide }) => (
   <div className="table-responsive">

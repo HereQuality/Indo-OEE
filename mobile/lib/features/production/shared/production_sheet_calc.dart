@@ -52,6 +52,7 @@ const List<String> rejectReasons = [
   'Setting Mistake',
   'Operator Mistake',
   'Machine Fault',
+  'Broken',
   'Other',
 ];
 

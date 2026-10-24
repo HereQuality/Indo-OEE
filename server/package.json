@@ -9,6 +9,7 @@
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix",
     "seed": "node seed/seed.js",
+    "dump": "node dump.js",
     "seed:menus": "node seed/seedMenus.js",
     "seed:superadmin": "node seed/seedSuperAdmin.js",
     "seed:processes": "node seed/seedProcesses.js",

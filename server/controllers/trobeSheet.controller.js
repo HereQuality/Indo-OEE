@@ -5,7 +5,7 @@ const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
-const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
 const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
@@ -238,8 +238,9 @@ exports.getSheet = async (req, res) => {
       ? await TrobeEntry.find({ ...query, date: { $in: pageDates } })
           // createdAt and unlockedUntil stay in: the sheet works out each row's
           // working-day lock, and whether to offer Unlock, from them.
-          .select("-__v -updatedBy -updatedByModel")
+          .select("-__v")
           .lean()
+          .then((rows) => withAuthors(SHEET, rows))
       : [];
 
     res.status(200).json({
@@ -535,7 +536,7 @@ exports.deleteRow = async (req, res) => {
   }
 };
 
-// PUT /trobe-sheet/row/:id/unlock — Super Admin only (route-level authorize):
+// PUT /trobe-sheet/row/:id/unlock — Super Admin or Full access (route-level requireAdmin):
 // 24 hours of edit/delete on this one entry despite the working-day lock.
 exports.unlockRow = async (req, res) => {
   try {

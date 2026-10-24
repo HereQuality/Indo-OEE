@@ -1,5 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { useReviewAccess } from "../hooks/useReviewAccess";
+import { entryLinkRange, useOpenEntryFromLink } from "../hooks/useOpenEntryFromLink";
 import { Plus, Search } from "lucide-react";
 import {
   Card,
@@ -208,7 +210,10 @@ const withPart = (v, it) => ({
 
 const PressDataEntry = () => {
   const toast = useAlert();
-  const { currentPagePermissions, isAdmin } = useContext(MenuContext) || {};
+  const { currentPagePermissions, isAdmin: isSuperAdmin } = useContext(MenuContext) || {};
+  // Super Admin or a Full access role — the people who can unlock a locked entry.
+  const { canReview } = useReviewAccess();
+  const isAdmin = !!isSuperAdmin || canReview;
   const canCreate = currentPagePermissions ? !!currentPagePermissions.create : true;
   const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
   const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
@@ -268,7 +273,7 @@ const PressDataEntry = () => {
   // (date range / month / year), Machine, Operator, Item — the same panel
   // the process dashboards use, so both pages behave alike. Search stays its
   // own field beside it, since it searches text the panel can't multi-select.
-  const [range, setRange] = useState(defaultEntryRange);
+  const [range, setRange] = useState(() => entryLinkRange(defaultEntryRange));
   const [baseRange, setBaseRange] = useState(range);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState("");
@@ -689,6 +694,16 @@ const PressDataEntry = () => {
     setIsSubmit(false);
     setModalMode("edit");
   };
+
+  // "?entry=<id>&date=…" (OEE Review, an OEE notification) opens that entry's edit form.
+  useOpenEntryFromLink({
+    rows,
+    loading,
+    range,
+    onRangeChange,
+    openEdit,
+    blockedReason: (row) => (!canEdit ? "You don't have permission to edit entries on this page." : lockInfo(row)),
+  });
 
   const handleChange = useCallback((index, name, value) => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));

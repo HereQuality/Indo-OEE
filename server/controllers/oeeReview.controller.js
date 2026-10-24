@@ -13,8 +13,11 @@ const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
 const { REVIEW_STATUSES } = require("../models/entryCommon");
-const { accessOf, actorOf } = require("../utils/adminAccess");
-const { SHEET_LABELS, labelOf, machineNamesOf, keyOf, write, overText } = require("../utils/entryAudit");
+const { accessOf, actorOf, isAdminUser } = require("../utils/adminAccess");
+const { SHEET_LABELS, labelOf, machineNamesOf, keyOf, write, overText, logEntryUnlock, logEntrySave, reviewFor } = require("../utils/entryAudit");
+const { settingForMachine, settingForProcess } = require("../utils/plannedShift");
+const { spanMinutes } = require("../utils/oeeMetrics");
+const { checkNotLocked } = require("./productionSheet.controller");
 const { createNotification } = require("../services/notification.service");
 
 /**
@@ -33,6 +36,9 @@ const parseDay = (s) => {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
 };
 const MAX_ROWS = 500;
+// A rejected entry is opened for correction this long — whatever the 2-working-day lock says.
+const FIX_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FIX_REMARK = "Unlocked for 24 hours so it can be corrected after the OEE review rejection";
 
 // GET /oee-review/access — { canReview } for whoever is logged in, so the
 // client knows whether to offer the review page and the shift lock.
@@ -151,7 +157,17 @@ exports.decide = async (req, res) => {
     const decidedAt = new Date();
     const updated = await Model.findOneAndUpdate(
       { _id: id, "review.flaggedAt": entry.review.flaggedAt, "review.status": "pending" },
-      { $set: { "review.status": decision, "review.decidedBy": actor, "review.decidedAt": decidedAt, "review.remark": remark } },
+      {
+        $set: {
+          "review.status": decision,
+          "review.decidedBy": actor,
+          "review.decidedAt": decidedAt,
+          "review.remark": remark,
+          // A rejection hands the entry back to be fixed, so it opens for 24 hours
+          // even if the 2-working-day lock has closed it (see reopen below for later).
+          ...(decision === "rejected" ? { unlockedUntil: new Date(decidedAt.getTime() + FIX_WINDOW_MS) } : {}),
+        },
+      },
       { new: true, runValidators: true },
     ).lean();
     if (!updated) {
@@ -179,21 +195,121 @@ exports.decide = async (req, res) => {
       actor,
     });
 
-    // Tell whoever last saved the entry, unless it's the reviewer.
+    if (decision === "rejected") await logEntryUnlock({ sheet, req, entry: updated, remark: FIX_REMARK });
+
+    // Tell whoever last saved the entry (the save that put it over 100%), unless
+    // it's the reviewer. `decision` in the reference is what sends them to the
+    // data entry sheet to fix it, rather than to the review desk.
     if (entry.updatedBy && String(entry.updatedBy) !== String(req.user._id) && entry.updatedByModel) {
       createNotification(
         entry.updatedByModel,
         entry.updatedBy,
         `OEE review: ${decision === "approved" ? "approved" : "rejected"}`,
-        `${label} (${overText(entry.review.flagged)})${remark ? ` — ${remark}` : ""}`,
+        `${label} (${overText(entry.review.flagged)})${remark ? ` — ${remark}` : ""}${decision === "rejected" ? " · Open it to correct it — unlocked for 24 hours" : ""}`,
         "oeeReview",
-        { sheet, entry: String(entry._id) },
+        { sheet, entry: String(entry._id), date: entry.date.toISOString().slice(0, 10), decision },
       ).catch((error) => console.error("Error notifying about an OEE review decision:", error));
     }
 
     res.status(200).json({ isOk: true, data: { _id: String(updated._id), sheet, review: updated.review }, message: decision === "approved" ? "Entry approved" : "Entry rejected" });
   } catch (error) {
     console.error("Error deciding an OEE review:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// PUT /oee-review/:sheet/:id/reopen — what opening a "rejected" notification does:
+// the entry is unlocked for another 24 hours from now, so someone who comes back
+// after the first window (or after the 2-working-day lock closed it again) can
+// still correct it. Only while the entry is still rejected, and only for who last
+// saved it (the person the notification went to) or a Full access user.
+exports.reopen = async (req, res) => {
+  try {
+    const { sheet, id } = req.params;
+    const Model = MODELS[sheet];
+    if (!Model || !mongoose.isValidObjectId(id)) return res.status(400).json({ isOk: false, message: "Invalid entry" });
+    const entry = await Model.findById(id).lean();
+    if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
+    if (entry.review?.status !== "rejected") {
+      return res.status(409).json({ isOk: false, message: "This entry isn't waiting for a correction" });
+    }
+    const mine = entry.updatedBy && String(entry.updatedBy) === String(req.user._id);
+    if (!mine && !(await isAdminUser(req))) {
+      return res.status(403).json({ isOk: false, message: "Only the person who saved this entry can reopen it" });
+    }
+    const unlockedUntil = new Date(Date.now() + FIX_WINDOW_MS);
+    const updated = await Model.findOneAndUpdate({ _id: id, "review.status": "rejected" }, { $set: { unlockedUntil } }, { new: true }).lean();
+    if (!updated) return res.status(409).json({ isOk: false, message: "This entry isn't waiting for a correction" });
+    await logEntryUnlock({ sheet, req, entry: updated, remark: `${FIX_REMARK} (reopened from the notification)` });
+    res.status(200).json({ isOk: true, data: { _id: String(updated._id), unlockedUntil }, message: "Unlocked for 24 hours" });
+  } catch (error) {
+    console.error("Error reopening a rejected entry:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// PUT /oee-review/:sheet/:id/shift — Full access only. A change to a process's
+// Operator Planned Shift only reaches entries made after it; this is the
+// separate, deliberate way to bring one earlier entry (saved on the old shift,
+// say by mistake) onto the process's CURRENT shift. The hours are never typed
+// here — they are the process's own setting — and the entry's Availability /
+// Performance / Quality are worked out again, so it may be flagged for review
+// (or cleared) by the new figures. An entry past the 2-working-day lock must be
+// unlocked first, like any edit. Logged as an ordinary update of the entry.
+exports.applyShift = async (req, res) => {
+  try {
+    const { sheet, id } = req.params;
+    const Model = MODELS[sheet];
+    if (!Model || !mongoose.isValidObjectId(id)) return res.status(400).json({ isOk: false, message: "Invalid entry" });
+    const entry = await Model.findById(id).lean();
+    if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
+
+    const typed = entry.plannedOperatorShiftHours;
+    if (typed === undefined || typed === null || !Number.isFinite(Number(typed))) {
+      return res.status(409).json({ isOk: false, message: "This entry has no Planned Operator Shift to change" });
+    }
+    const setting = entry.machine ? await settingForMachine(entry.machine) : await settingForProcess(entry.process);
+    if (!setting) {
+      return res.status(409).json({ isOk: false, message: "This process has no fixed shift — its hours are typed on each entry, so edit the entry itself" });
+    }
+    if (Math.abs(Number(typed) - setting.hours) < 0.0005 && entry.plannedLocked !== false) {
+      return res.status(409).json({ isOk: false, message: `Already on the current shift (${setting.hours} hr)` });
+    }
+
+    const lockMessage = await checkNotLocked(new Date(entry.createdAt).toISOString().slice(0, 10), req.user, entry.unlockedUntil);
+    if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
+
+    // The same rule the entry form enforces: the shift can't be shorter than the run.
+    const runMin = spanMinutes(entry.machineOnTime, entry.machineOffTime);
+    if (runMin !== null && setting.hours * 60 < runMin - 1e-9) {
+      const hm = (h) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+      return res.status(400).json({
+        isOk: false,
+        message: `The current shift (${hm(setting.hours)}) is shorter than this entry's Machine Shift (${hm(runMin / 60)}) — edit the entry's times first`,
+      });
+    }
+
+    const set = { plannedOperatorShiftHours: setting.hours, plannedLocked: true };
+    const review = reviewFor(sheet, entry, set, {});
+    const unset = review.unset;
+    const updated = await Model.findOneAndUpdate(
+      { _id: id, plannedOperatorShiftHours: typed },
+      {
+        $set: { ...set, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+        ...(Object.keys(unset).length ? { $unset: unset } : {}),
+      },
+      { new: true, runValidators: true },
+    ).lean();
+    if (!updated) return res.status(409).json({ isOk: false, message: "This entry was changed while you were looking at it — reload and try again" });
+
+    await logEntrySave({ sheet, req, before: entry, after: updated, fields: ["plannedOperatorShiftHours"], review });
+    res.status(200).json({
+      isOk: true,
+      data: { _id: String(updated._id), plannedOperatorShiftHours: updated.plannedOperatorShiftHours, oee: updated.oee, review: updated.review || null },
+      message: `Planned Operator Shift changed from ${Number(typed)} hr to ${setting.hours} hr`,
+    });
+  } catch (error) {
+    console.error("Error applying the current shift to an entry:", error);
     res.status(500).json({ isOk: false, message: error.message });
   }
 };

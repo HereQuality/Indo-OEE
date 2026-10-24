@@ -1,4 +1,7 @@
 const AuditLog = require("../models/AuditLog");
+const User = require("../models/user.model");
+const Operator = require("../models/Operator");
+const RoleMaster = require("../models/RoleMaster");
 const { machineNamesFor } = require("./machineNames");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const { CYCLE_OP_FIELDS, SPM_OP_FIELDS, RIVET_OP_FIELDS, SPM_REFERENCE_FIELDS } = require("../models/Item");
@@ -185,13 +188,60 @@ const reviewFor = (sheet, before, set, unset) => {
   };
 };
 
+// Who did each entry, for the data entry sheets' "Entered By" column. The audit
+// log has it exactly — the actor of the entry's create row is who entered it,
+// the newest create / update row who saved it last — so that is what is used;
+// an entry from before the log existed falls back to the account stamped on it
+// as its last saver (updatedBy), and has no `enteredBy`. Adds
+// `enteredBy` / `savedBy` ({ name, role, at }) and drops the raw updatedBy ids.
+// Never fails the sheet it decorates: on an error the rows go out without them.
+const withAuthors = async (sheet, rows) => {
+  try {
+    if (!rows.length) return rows;
+    const logs = await AuditLog.find({ entityType: "entry", sheet, entity: { $in: rows.map((r) => r._id) }, action: { $in: ["create", "update"] } })
+      .select("entity action actor createdAt")
+      .sort({ createdAt: -1, _id: -1 })
+      .lean();
+    const byEntry = {};
+    for (const l of logs) {
+      const e = (byEntry[String(l.entity)] ||= {});
+      e.saved ||= l; // newest first
+      if (l.action === "create") e.created = l;
+    }
+    const person = (l) => (l?.actor?.name ? { name: l.actor.name, role: l.actor.role || "", at: l.createdAt } : null);
+
+    // Entries with no log row: whoever is stamped as their last saver.
+    const stamped = rows.filter((r) => !byEntry[String(r._id)]?.saved && r.updatedBy);
+    const idsOf = (model) => [...new Set(stamped.filter((r) => r.updatedByModel === model).map((r) => String(r.updatedBy)))];
+    const [users, operators] = await Promise.all([
+      idsOf("User").length ? User.find({ _id: { $in: idsOf("User") } }).select("name username").lean() : [],
+      idsOf("Operator").length ? Operator.find({ _id: { $in: idsOf("Operator") } }).select("employeeName name username roleId").lean() : [],
+    ]);
+    const roles = operators.length ? await RoleMaster.find({ _id: { $in: operators.map((o) => o.roleId).filter(Boolean) } }).select("roleName").lean() : [];
+    const roleName = Object.fromEntries(roles.map((r) => [String(r._id), r.roleName]));
+    const known = {
+      ...Object.fromEntries(users.map((u) => [String(u._id), { name: u.name || u.username || "", role: "Super Admin" }])),
+      ...Object.fromEntries(operators.map((o) => [String(o._id), { name: o.employeeName || o.name || o.username || "", role: roleName[String(o.roleId)] || "" }])),
+    };
+
+    return rows.map(({ updatedBy, updatedByModel, ...row }) => {
+      const e = byEntry[String(row._id)] || {};
+      const fallback = updatedBy && known[String(updatedBy)]?.name ? { ...known[String(updatedBy)], at: row.updatedAt || null } : null;
+      return { ...row, enteredBy: person(e.created), savedBy: person(e.saved) || fallback };
+    });
+  } catch (error) {
+    console.error("Error adding who entered each row:", error);
+    return rows.map(({ updatedBy, updatedByModel, ...row }) => row);
+  }
+};
+
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 const overText = (over) => over.map((f) => `${METRIC_LABELS[f.metric]} ${pct(f.value)}`).join(", ");
 
 const write = (row) =>
   AuditLog.create(row).catch((error) => console.error("Error writing audit log:", error));
 
-const notifyFlagged = async (req, label, over, sheet, entryId) => {
+const notifyFlagged = async (req, label, over, sheet, entryId, date) => {
   try {
     const me = String(req.user?._id || "");
     const recipients = (await adminRecipients()).filter((r) => r.id !== me);
@@ -200,7 +250,7 @@ const notifyFlagged = async (req, label, over, sheet, entryId) => {
       "OEE above 100% — review needed",
       `${label}: ${overText(over)}`,
       "oeeReview",
-      { sheet, entry: String(entryId) },
+      { sheet, entry: String(entryId), date },
     );
   } catch (error) {
     console.error("Error notifying admins of an OEE review:", error);
@@ -227,7 +277,7 @@ const logEntrySave = async ({ sheet, req, before, after, fields, review }) => {
     if (!before || changes.length) await write({ ...base, action: before ? "update" : "create", changes, metrics: review?.oee || {} });
     if (review?.transition === "flagged") {
       await write({ ...base, action: "flagged", metrics: review.oee, flagged: review.over, remark: `Over 100%: ${overText(review.over)}` });
-      notifyFlagged(req, base.label, review.over, sheet, after._id);
+      notifyFlagged(req, base.label, review.over, sheet, after._id, base.date);
     } else if (review?.transition === "cleared") {
       await write({ ...base, action: "cleared", metrics: review.oee, remark: "Back at or under 100% after an edit — review no longer needed" });
     }
@@ -258,7 +308,7 @@ const logEntryDelete = async ({ sheet, req, before, fields }) => {
   }
 };
 
-const logEntryUnlock = async ({ sheet, req, entry }) => {
+const logEntryUnlock = async ({ sheet, req, entry, remark = "Unlocked for 24 hours past the 2-working-day lock" }) => {
   try {
     const names = await machineNamesOf(keyOf(entry));
     const machineName = names[String(keyOf(entry))] || "";
@@ -271,7 +321,7 @@ const logEntryUnlock = async ({ sheet, req, entry }) => {
       date: present("date", entry.date, {}),
       label: labelOf(sheet, entry, machineName),
       action: "unlocked",
-      remark: "Unlocked for 24 hours past the 2-working-day lock",
+      remark,
       actor: await actorOf(req),
     });
   } catch (error) {
@@ -286,6 +336,7 @@ module.exports = {
   logEntrySave,
   logEntryDelete,
   logEntryUnlock,
+  withAuthors,
   labelOf,
   machineNamesOf,
   keyOf,

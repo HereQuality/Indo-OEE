@@ -11,12 +11,13 @@ const AuditLog = require("../models/AuditLog");
 const User = require("../models/user.model");
 const Operator = require("../models/Operator");
 const RoleMaster = require("../models/RoleMaster");
+const OperatorRoles = require("../models/OperatorRoles");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const Notification = require("../models/Notification");
 const { saveRow } = require("./productionSheet.controller");
 const { updateProcess } = require("./process.controller");
-const { decide } = require("./oeeReview.controller");
+const { decide, getAccess, reopen, applyShift } = require("./oeeReview.controller");
 const { requireAdmin } = require("../utils/adminAccess");
 const { reviewFor } = require("../utils/entryAudit");
 
@@ -29,7 +30,14 @@ const newId = () => `64b0c0ffee00000000${String(nextId++).padStart(6, "0")}`;
 const SUPER_ADMIN = { _id: "64b0c0ffee0000000000a001", roleType: "SuperAdmin", name: "HQEPL Admin", constructor: { modelName: "User" } };
 const ADMIN_OP = { _id: "64b0c0ffee0000000000a002", roleType: "Operator", roleId: "role-admin", employeeName: "Asha", constructor: { modelName: "Operator" } };
 const OTHER_OP = { _id: "64b0c0ffee0000000000a003", roleType: "Operator", roleId: "role-sup", employeeName: "Ravi", constructor: { modelName: "Operator" } };
-const ROLES = { "role-admin": { roleName: "Admin", roleCode: "admin" }, "role-sup": { roleName: "Supervisor", roleCode: "supervisor" } };
+const ROLES = {
+  "role-admin": { roleName: "Admin", roleCode: "admin" },
+  "role-sup": { roleName: "Supervisor", roleCode: "supervisor" },
+  "role-full": { roleName: "Plant Head", roleCode: "head" },
+  "role-unticked": { roleName: "Old Admin", roleCode: "admin" },
+};
+// What Manage Role saved per role — the "Full access" box. Absent = never saved.
+const PERMS = { "role-full": { fullAccess: true }, "role-unticked": { fullAccess: false } };
 
 // Everything the controllers touch, kept in plain arrays.
 const fakeWorld = ({ process = null } = {}) => {
@@ -108,6 +116,8 @@ const fakeWorld = ({ process = null } = {}) => {
   stub(Operator, "find", () => chain([]));
   stub(RoleMaster, "find", () => chain([]));
   stub(RoleMaster, "findById", (id) => chain(ROLES[id] || null));
+  stub(OperatorRoles, "findOne", (q) => chain(PERMS[q.roleId] || null));
+  stub(OperatorRoles, "find", () => chain(Object.entries(PERMS).map(([roleId, p]) => ({ roleId, ...p }))));
   stub(WeeklyOffSetting, "findOne", () => ({ lean: () => Promise.resolve(null) }));
   stub(CompanyHoliday, "find", () => ({ lean: async () => [] }));
   return { entries, logs, processes, restore: () => restore.forEach((r) => r()) };
@@ -397,5 +407,99 @@ test("Machine Working Status: anything but Working / Non Working is refused; Wor
     const ok = await call(saveRow, { body: body({ workingMode: "Working" }) });
     assert.equal(ok.statusCode, 200, JSON.stringify(ok.payload));
     assert.equal(entries[0].workingMode, undefined);
+  });
+});
+
+test("Full access ticked in Manage Role lets any role in; unticking it takes an \"admin\"-coded role out", async () => {
+  const op = (roleId) => ({ ...ADMIN_OP, roleId });
+  await withWorld({}, async () => {
+    const ask = async (roleId) => (await call(getAccess, { user: op(roleId) })).payload.data.canReview;
+    assert.equal(await ask("role-full"), true, "ticked, whatever its code");
+    assert.equal(await ask("role-admin"), true, "never saved: the legacy admin code still counts");
+    assert.equal(await ask("role-unticked"), false, "unticked beats the admin code");
+    assert.equal(await ask("role-sup"), false);
+  });
+});
+
+test("a rejection unlocks the entry for 24 hours, and opening the notification later unlocks it again — for its maker only", async () => {
+  await withWorld({}, async ({ entries, logs }) => {
+    const MAKER = OTHER_OP;
+    const THIRD = { ...OTHER_OP, _id: "64b0c0ffee0000000000a004", employeeName: "Meena" };
+    await call(saveRow, { user: MAKER, body: body({ actualQty: 490, okQty: 485 }) });
+    const id = entries[0]._id;
+    const hours = (d) => (new Date(d).getTime() - Date.now()) / 3600000;
+
+    // Not rejected yet: nothing to reopen.
+    assert.equal((await call(reopen, { user: MAKER, params: { sheet: "cnc", id } })).statusCode, 409);
+
+    const reject = await call(decide, { user: ADMIN_OP, params: { sheet: "cnc", id }, body: { decision: "rejected", remark: "Recount" } });
+    assert.equal(reject.statusCode, 200, JSON.stringify(reject.payload));
+    assert.ok(hours(entries[0].unlockedUntil) > 23.9 && hours(entries[0].unlockedUntil) <= 24, "open for 24 hours from the rejection");
+    const unlock = logs.find((l) => l.action === "unlocked");
+    assert.ok(unlock, "the unlock is in the audit log");
+    assert.match(unlock.remark, /corrected after the OEE review rejection/);
+    assert.equal(unlock.actor.name, "Asha", "by the reviewer");
+
+    // The first window has run out; the maker opens the notification.
+    entries[0].unlockedUntil = new Date(Date.now() - 3600000);
+    assert.equal((await call(reopen, { user: THIRD, params: { sheet: "cnc", id } })).statusCode, 403, "someone else can't");
+    const again = await call(reopen, { user: MAKER, params: { sheet: "cnc", id } });
+    assert.equal(again.statusCode, 200, JSON.stringify(again.payload));
+    assert.ok(hours(entries[0].unlockedUntil) > 23.9, "another 24 hours");
+    assert.equal(logs.filter((l) => l.action === "unlocked").length, 2);
+
+    // A Full access user may too; once approved, it can't be reopened.
+    assert.equal((await call(reopen, { user: ADMIN_OP, params: { sheet: "cnc", id } })).statusCode, 200);
+    entries[0].review.status = "approved";
+    assert.equal((await call(reopen, { user: MAKER, params: { sheet: "cnc", id } })).statusCode, 409);
+  });
+});
+
+test("changing a process's shift leaves past entries alone; \"apply current shift\" brings one earlier entry onto it, separately", async () => {
+  await withWorld({ process: { plannedShiftLocked: true, plannedShiftHours: 12 } }, async ({ entries, processes, logs }) => {
+    await call(saveRow, { body: body({ machineOnTime: "08:00", machineOffTime: "16:00", actualQty: 400, okQty: 390 }) });
+    const id = entries[0]._id;
+    assert.equal(entries[0].plannedOperatorShiftHours, 12);
+    assert.ok(Math.abs(entries[0].oee.availability - 480 / 720) < 1e-3, "Availability on the 12 h shift");
+
+    // The Admin changes the process to 8 h: yesterday's entry is untouched…
+    processes[0].plannedShiftHours = 8;
+    assert.equal(entries[0].plannedOperatorShiftHours, 12);
+    // …a new one takes the new shift…
+    await call(saveRow, { body: body({ machineOnTime: "17:00", machineOffTime: "20:00", plannedOperatorShiftHours: 12, actualQty: 100, okQty: 100 }) });
+    assert.equal(entries[1].plannedOperatorShiftHours, 8);
+
+    // …and the first is moved over on purpose.
+    const run = (user = ADMIN_OP) => call(applyShift, { user, params: { sheet: "cnc", id } });
+    const done = await run();
+    assert.equal(done.statusCode, 200, JSON.stringify(done.payload));
+    assert.equal(entries[0].plannedOperatorShiftHours, 8);
+    assert.equal(entries[0].plannedLocked, true);
+    assert.ok(Math.abs(entries[0].oee.availability - 1) < 1e-3, "figures worked out again on 8 h");
+    const row = logs.filter((l) => l.action === "update").at(-1);
+    assert.deepEqual(row.changes.map((c) => [c.field, c.from, c.to]), [["plannedOperatorShiftHours", 12, 8]]);
+    assert.equal(row.actor.name, "Asha");
+
+    // Already there: refused, nothing logged again.
+    const logged = logs.length;
+    assert.equal((await run()).statusCode, 409);
+    assert.equal(logs.length, logged);
+  });
+});
+
+test("apply current shift: not for a process with no fixed shift, nor when the run is longer than the shift", async () => {
+  await withWorld({ process: { plannedShiftLocked: false, plannedShiftHours: 10 } }, async ({ entries }) => {
+    await call(saveRow, { body: body({ plannedOperatorShiftHours: 8 }) });
+    const res = await call(applyShift, { user: ADMIN_OP, params: { sheet: "cnc", id: entries[0]._id } });
+    assert.equal(res.statusCode, 409);
+    assert.match(res.payload.message, /no fixed shift/);
+  });
+  await withWorld({ process: { plannedShiftLocked: true, plannedShiftHours: 12 } }, async ({ entries, processes }) => {
+    await call(saveRow, { body: body({ machineOnTime: "06:00", machineOffTime: "18:00", actualQty: 600, okQty: 600 }) });
+    processes[0].plannedShiftHours = 8;
+    const res = await call(applyShift, { user: ADMIN_OP, params: { sheet: "cnc", id: entries[0]._id } });
+    assert.equal(res.statusCode, 400);
+    assert.match(res.payload.message, /shorter than this entry's Machine Shift/);
+    assert.equal(entries[0].plannedOperatorShiftHours, 12, "unchanged");
   });
 });

@@ -73,7 +73,7 @@ const shiftChangeError = async (req, current, next) => {
   const before = { plannedShiftLocked: current?.plannedShiftLocked !== false, plannedShiftHours: current?.plannedShiftHours ?? 12 };
   const after = { ...before, ...next };
   const changed = before.plannedShiftLocked !== after.plannedShiftLocked || Number(before.plannedShiftHours) !== Number(after.plannedShiftHours);
-  if (changed && !(await isAdminUser(req))) return { status: 403, message: "Only Admin or Super Admin can change the Operator Planned Shift" };
+  if (changed && !(await isAdminUser(req))) return { status: 403, message: "Only a Super Admin or a Full access user can change the Operator Planned Shift" };
   return { changed, before, after };
 };
 

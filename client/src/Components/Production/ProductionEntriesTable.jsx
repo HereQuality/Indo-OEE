@@ -390,6 +390,28 @@ export const APQ_COLUMNS = [
 // The review state sits after the OEE columns.
 export const REVIEW_COLUMN = { key: "review", label: "OEE Review", get: (r) => <ReviewBadge review={r.review} />, align: "text-center", headStyle: { minWidth: 120 } };
 
+// Who did the entry — the person who first saved it (the audit log's create row)
+// and, when someone else has edited it since, who saved it last. An entry from
+// before the log existed shows its last saver alone. Added to every sheet's
+// table here, last; the server sends it (utils/entryAudit.js withAuthors).
+const authorTime = (p) => {
+  const d = p?.at ? new Date(p.at) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+};
+const EnteredByCell = ({ row }) => {
+  const by = row.enteredBy || row.savedBy;
+  if (!by) return "—";
+  const edited = row.enteredBy && row.savedBy && row.savedBy.name !== row.enteredBy.name ? row.savedBy : null;
+  return (
+    <div className="text-start" title={[`Entered by ${by.name}${by.role ? ` (${by.role})` : ""}`, authorTime(by)].filter(Boolean).join(" · ")}>
+      <div className="fw-semibold text-nowrap">{by.name}</div>
+      <div className="text-muted small text-nowrap">{[by.role, authorTime(by)].filter(Boolean).join(" · ")}</div>
+      {edited && <div className="text-muted small text-nowrap">edited by {edited.name}</div>}
+    </div>
+  );
+};
+export const ENTERED_BY_COLUMN = { key: "enteredBy", label: "Entered By", get: (r) => <EnteredByCell row={r} />, headStyle: { minWidth: 150 } };
+
 // Vendor Name — right after Part Name on every sheet, but shown only on a
 // process that uses vendors (the page's `showVendor`; see utils/vendorsFor.js).
 export const VENDOR_COLUMN = { key: "vendorName", label: "Vendor Name", get: (r) => dash(r.vendorName), headStyle: { minWidth: 140 } };
@@ -710,7 +732,7 @@ const ProductionEntriesTable = ({
   // doesn't mean scrolling all the way back to the summary column first.
   const visible = useMemo(() => {
     const out = [];
-    for (const col of columns) {
+    for (const col of [...columns, ENTERED_BY_COLUMN]) {
       if (col.key === VENDOR_COLUMN.key && !showVendor) continue;
       if (!col.expandable) {
         out.push(col);

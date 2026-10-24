@@ -5,7 +5,7 @@ const MachineOperator = require("../models/MachineOperator");
 const Process = require("../models/Process");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
-const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
 const { vendorFields } = require("../utils/entryVendor");
 const { enforcePlannedShiftForProcess } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
@@ -239,8 +239,9 @@ exports.getSheet = async (req, res) => {
       ? await RubberEntry.find({ ...query, date: { $in: pageDates } })
           // createdAt and unlockedUntil stay in: the sheet works out each row's
           // working-day lock, and whether to offer Unlock, from them.
-          .select("-__v -updatedBy -updatedByModel")
+          .select("-__v")
           .lean()
+          .then((rows) => withAuthors(SHEET, rows))
       : [];
 
     res.status(200).json({
@@ -496,7 +497,7 @@ exports.deleteRow = async (req, res) => {
   }
 };
 
-// PUT /rubber-sheet/row/:id/unlock — Super Admin only (route-level
+// PUT /rubber-sheet/row/:id/unlock — Super Admin or Full access (route-level
 // authorize): 24 hours of edit/delete on this one entry despite the working-day lock.
 exports.unlockRow = async (req, res) => {
   try {

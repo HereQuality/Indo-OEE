@@ -51,6 +51,13 @@ const OperatorRolesSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // "Full access" — ticked in Manage Role. Lets the role's people do the admin
+    // things: review OEE entries over 100%, unlock a locked entry for 24 hours
+    // and change a process's Operator Planned Shift (see utils/adminAccess.js).
+    // Absent = never ticked or unticked, which is why it has no default: a role
+    // coded "admin" from before this checkbox existed keeps its access until
+    // someone saves the box explicitly.
+    fullAccess: { type: Boolean, default: undefined },
   },
   { timestamps: true, collection: "employeeroles" },
 );

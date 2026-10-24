@@ -23,6 +23,7 @@ const _rejectReasons = [
   'Setting Mistake',
   'Operator Mistake',
   'Machine Fault',
+  'Broken',
   'Other',
 ];
 const _downtime = ['setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'otherMin'];

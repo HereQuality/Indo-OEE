@@ -83,6 +83,7 @@ export const REJECT_REASONS = [
   "Setting Mistake",
   "Operator Mistake",
   "Machine Fault",
+  "Broken",
   "Other",
 ];
 

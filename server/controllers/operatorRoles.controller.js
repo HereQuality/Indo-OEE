@@ -1,9 +1,23 @@
 const OperatorRoles = require("../models/OperatorRoles");
+const { isAdminUser } = require("../utils/adminAccess");
+
+// Granting or taking away Full access is itself a Full access power — the
+// Manage Role write permission alone must not be a way to promote yourself.
+// An absent flag means "leave it as it is".
+const fullAccessChange = async (req, current) => {
+  if (typeof req.body.fullAccess !== "boolean") return { value: undefined };
+  if (req.body.fullAccess === (current?.fullAccess === true)) return { value: req.body.fullAccess };
+  if (!(await isAdminUser(req))) return { denied: true };
+  return { value: req.body.fullAccess };
+};
+const DENIED = { isOk: false, message: "Only a Full Access user or Super Admin can change Full access" };
 
 // Create Operator Role Permissions
 exports.createOperatorRoles = async (req, res) => {
   try {
     const { roleId, roles, isActive } = req.body;
+    const fullAccess = await fullAccessChange(req, null);
+    if (fullAccess.denied) return res.status(403).json(DENIED);
 
     // Check if role permissions already exist
     const existingRoles = await OperatorRoles.findOne({ roleId });
@@ -14,7 +28,8 @@ exports.createOperatorRoles = async (req, res) => {
     const operatorRoles = await OperatorRoles.create({
       roleId,
       roles,
-      isActive
+      isActive,
+      ...(fullAccess.value === undefined ? {} : { fullAccess: fullAccess.value }),
     });
 
     res.status(201).json({
@@ -55,9 +70,13 @@ exports.updateOperatorRoles = async (req, res) => {
     const { roleId } = req.params;
     const { roles, isActive } = req.body;
 
+    const current = await OperatorRoles.findOne({ roleId }).select("fullAccess").lean();
+    const fullAccess = await fullAccessChange(req, current);
+    if (fullAccess.denied) return res.status(403).json(DENIED);
+
     const operatorRoles = await OperatorRoles.findOneAndUpdate(
       { roleId },
-      { roles, isActive },
+      { roles, isActive, ...(fullAccess.value === undefined ? {} : { fullAccess: fullAccess.value }) },
       { new: true }
     );
 

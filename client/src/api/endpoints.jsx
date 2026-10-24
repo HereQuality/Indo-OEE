@@ -150,6 +150,7 @@ export const ENDPOINTS = {
         ACCESS: `${V1}/oee-review/access`,
         LOGS: `${V1}/oee-review/logs`,
         DECIDE: (sheet, id) => `${V1}/oee-review/${sheet}/${id}`,
+        REOPEN: (sheet, id) => `${V1}/oee-review/${sheet}/${id}/reopen`,
     },
     POWDER_SHEET: {
         BASE: `${V1}/powder-coating-sheet`,

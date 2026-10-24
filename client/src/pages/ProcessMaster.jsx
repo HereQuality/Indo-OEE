@@ -528,7 +528,7 @@ const ProcessMaster = () => {
               <div className="text-muted small mb-2">
                 Planned Operator Shift for this process's machines. Locked: the
                 hours below, fixed on every entry. Unlocked: the hours are typed by hand on each data entry. Entries already saved keep their own value.
-                {!canSetShift && " Only Admin or Super Admin can change this."}
+                {!canSetShift && " Only a Super Admin or a Full access user can change this."}
               </div>
             </div>
 

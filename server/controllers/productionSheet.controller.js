@@ -9,7 +9,7 @@ const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const { isEntryLocked } = require("../utils/workingDays");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
-const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock } = require("../utils/entryAudit");
+const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
 const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
@@ -37,7 +37,7 @@ const checkNotLocked = async (createdAtISO, user, unlockedUntil) => {
     CompanyHoliday.find({ isActive: true }).lean(),
   ]);
   if (isEntryLocked(createdAtISO, weeklyOffDays, holidays, undefined, LOCK_WORKING_DAYS)) {
-    return `This entry was saved more than ${LOCK_WORKING_DAYS} working days ago and is locked. Ask a Super Admin to unlock it.`;
+    return `This entry was saved more than ${LOCK_WORKING_DAYS} working days ago and is locked. Ask a Super Admin or a Full Access user to unlock it.`;
   }
   return null;
 };
@@ -353,8 +353,9 @@ exports.getSheet = async (req, res) => {
       ? await ProductionEntry.find({ ...query, date: { $in: pageDates } })
           // createdAt and unlockedUntil stay in: the sheet works out each row's
           // working-day lock, and whether to offer Unlock, from them.
-          .select("-__v -updatedBy -updatedByModel")
+          .select("-__v")
           .lean()
+          .then((rows) => withAuthors(SHEET, rows))
       : [];
 
     // The pickers list active machines only, so the names of any other machine
@@ -696,7 +697,7 @@ exports.deleteRow = async (req, res) => {
   }
 };
 
-// PUT /production-sheet/row/:id/unlock — Super Admin only (route-level
+// PUT /production-sheet/row/:id/unlock — Super Admin or Full access (route-level
 // authorize check). Grants exactly 24 hours of edit/delete access on this
 // one entry regardless of the normal 2-working-day lock, so an Operator can
 // fix it themselves instead of Super Admin doing the edit.
