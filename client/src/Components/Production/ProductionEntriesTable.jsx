@@ -10,6 +10,7 @@ import {
   STOPPAGE_FIELDS,
   cycleOpLabel,
   displayDay,
+  spanMinutes,
   fmtNum,
   fmtPct,
   remarkParts,
@@ -657,19 +658,21 @@ const ProductionEntriesTable = ({
   const [confirm, setConfirm] = useState(null); // { kind: "shift" | "delete", rows, was?, now? }
   const [progress, setProgress] = useState(null); // { label, done, total }
 
-  // A row saved on a different shift from its process's current one: { was, now }, else null.
+  // A row saved on a different shift from its process's current one: { was, now, tooShort }, else null.
+  // tooShort: its machine ran longer than the current shift, which the entry form (and the server) refuse.
   const shiftChange = (r) => {
     const now = currentShiftOf(r);
     const was = r.plannedOperatorShiftHours;
     if (now === null || now === undefined || was === null || was === undefined || was === "" || !Number.isFinite(Number(was))) return null;
     if (Math.abs(Number(was) - now) < 0.0005 && r.plannedLocked !== false) return null;
-    return { was: Number(was), now };
+    const run = spanMinutes(r.machineOnTime, r.machineOffTime);
+    return { was: Number(was), now, run, tooShort: run !== null && now * 60 < run - 1e-9 };
   };
   // What each bulk action can do to a row — the rest of the selection is skipped.
   const canBulk = {
     delete: (r) => !!bulk?.remove && canDelete && !lockInfo(r),
     unlock: (r) => !!bulk?.unlock && isAdmin && !!lockInfo(r),
-    shift: (r) => !!bulk?.sheet && isAdmin && !lockInfo(r) && !!shiftChange(r),
+    shift: (r) => !!bulk?.sheet && isAdmin && !lockInfo(r) && !!shiftChange(r) && !shiftChange(r).tooShort,
   };
 
   // Only rows still on the page stay ticked (a new page, filter or save drops the rest).
@@ -1043,6 +1046,16 @@ const ProductionEntriesTable = ({
                             {isAdmin && bulk?.sheet && (() => {
                               const change = shiftChange(r);
                               if (!change) return null;
+                              if (change.tooShort) {
+                                return (
+                                  <span
+                                    className="inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-300 dark:text-slate-600 cursor-not-allowed"
+                                    title={`Can't apply the current ${hoursToHm(change.now)} shift: this entry's machine ran ${hoursToHm(change.run / 60)}, longer than that. Edit its ON/OFF times first.`}
+                                  >
+                                    <Clock size={14} />
+                                  </span>
+                                );
+                              }
                               return (
                                 <button
                                   type="button"
@@ -1109,7 +1122,7 @@ const ProductionEntriesTable = ({
           progress={progress}
           onClear={clearSelection}
           actions={[
-            isAdmin && bulk.sheet && { key: "shift", label: "Apply shift", icon: Clock, tone: "amber", count: eligible("shift").length, title: "needs an unlocked entry saved on a different shift from its process's current one", onClick: () => askOrRun("shift") },
+            isAdmin && bulk.sheet && { key: "shift", label: "Apply shift", icon: Clock, tone: "amber", count: eligible("shift").length, title: "needs an unlocked entry saved on a different shift from its process's current one, whose machine run fits in it", onClick: () => askOrRun("shift") },
             isAdmin && bulk.unlock && { key: "unlock", label: "Unlock", icon: LockOpen, tone: "blue", count: eligible("unlock").length, title: "needs a locked entry", onClick: () => askOrRun("unlock") },
             canDelete && bulk.remove && { key: "delete", label: "Delete", icon: Trash2, tone: "rose", count: eligible("delete").length, title: "needs an unlocked entry", onClick: () => askOrRun("delete") },
           ].filter(Boolean)}
