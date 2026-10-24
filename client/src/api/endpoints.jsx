@@ -151,6 +151,7 @@ export const ENDPOINTS = {
         LOGS: `${V1}/oee-review/logs`,
         DECIDE: (sheet, id) => `${V1}/oee-review/${sheet}/${id}`,
         REOPEN: (sheet, id) => `${V1}/oee-review/${sheet}/${id}/reopen`,
+        SHIFT: (sheet, id) => `${V1}/oee-review/${sheet}/${id}/shift`,
     },
     POWDER_SHEET: {
         BASE: `${V1}/powder-coating-sheet`,

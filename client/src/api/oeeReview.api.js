@@ -19,6 +19,10 @@ export const decideReview = async (sheet, id, { decision, remark, flaggedAt }) =
 // A rejected entry, unlocked for another 24 hours — what opening its notification does.
 export const reopenReview = async (sheet, id) => api.put(ENDPOINTS.OEE_REVIEW.REOPEN(sheet, id));
 
+// Full access: one earlier entry brought onto its process's CURRENT Operator Planned Shift
+// (a change to the process only reaches entries made after it).
+export const applyEntryShift = async (sheet, id) => api.put(ENDPOINTS.OEE_REVIEW.SHIFT(sheet, id));
+
 // The audit log, newest first — one entry's/process's history when `entity` is given.
 export const getAuditLogs = async ({ entity, entityType, action, skip = 0, limit = 50 } = {}) =>
     api.get(ENDPOINTS.OEE_REVIEW.LOGS, {

@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
+import ConfirmAlert from "../Common/ConfirmAlert";
 import {
   CYCLE_OP_FIELDS,
   REJECT_REASONS,
@@ -614,6 +615,13 @@ const ProductionEntriesTable = ({
   isAdmin = false,
   onUnlock,
   unlockingId = null,
+  // Super Admin / Full access: a row saved on an older shift gets a clock button
+  // that moves just that entry onto the process's current Operator Planned Shift
+  // (a change to the process only reaches new entries). currentShiftOf(row) is
+  // the process's fixed hours for that row, or null when hours are typed per entry.
+  currentShiftOf = () => null,
+  onApplyShift,
+  applyingShiftId = null,
   // When true, the table fills whatever vertical space its flex parent
   // gives it (that parent — ProductionSheet's Card/CardBody — is itself a
   // flex column sized to the page's own viewport slice) and scrolls
@@ -636,6 +644,8 @@ const ProductionEntriesTable = ({
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
   const [open, setOpen] = useState({ cycle: false, downtime: false });
+  // The row waiting on the "apply the current shift?" confirmation.
+  const [shiftRow, setShiftRow] = useState(null);
   // Expanding/collapsing a breakdown changes how many columns sit to its
   // right without moving anything to its left — but the browser doesn't
   // know that, so when the table gets narrower it just clamps the native
@@ -913,6 +923,23 @@ const ProductionEntriesTable = ({
                                 <Pencil size={14} />
                               </button>
                             )}
+                            {isAdmin && onApplyShift && (() => {
+                              const now = currentShiftOf(r);
+                              const was = r.plannedOperatorShiftHours;
+                              if (now === null || now === undefined || was === null || was === undefined || was === "" || !Number.isFinite(Number(was))) return null;
+                              if (Math.abs(Number(was) - now) < 0.0005 && r.plannedLocked !== false) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={applyingShiftId === r._id}
+                                  className="inline-flex items-center justify-center w-7 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60"
+                                  title={`Saved on a ${hoursToHm(was)} shift — apply the current ${hoursToHm(now)} shift to this entry`}
+                                  onClick={() => setShiftRow({ row: r, was: Number(was), now })}
+                                >
+                                  <Clock size={14} />
+                                </button>
+                              );
+                            })()}
                             {canDelete && (
                               <button
                                 type="button"
@@ -933,6 +960,24 @@ const ProductionEntriesTable = ({
           </tbody>
         </table>
       </div>
+
+      <ConfirmAlert
+        isOpen={!!shiftRow}
+        variant="warning"
+        title="Apply the current shift to this entry?"
+        message={
+          shiftRow
+            ? `${displayDay(shiftRow.row.date)} · ${machineName[shiftRow.row.machine] || shiftRow.row.operator || "entry"}: Planned Operator Shift ${hoursToHm(shiftRow.was)} → ${hoursToHm(shiftRow.now)}. Its Availability, Performance and Quality are worked out again, and it may go to OEE Review. The change is logged.`
+            : ""
+        }
+        confirmText="Apply shift"
+        onCancel={() => setShiftRow(null)}
+        onConfirm={() => {
+          const target = shiftRow?.row;
+          setShiftRow(null);
+          if (target) onApplyShift?.(target);
+        }}
+      />
 
       {formulaPopup && (
         <>
