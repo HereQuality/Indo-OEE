@@ -2,6 +2,8 @@
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Clock, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
 import ConfirmAlert from "../Common/ConfirmAlert";
+import BulkActionBar from "./BulkActionBar";
+import { applyEntryShift } from "../../api/oeeReview.api";
 import {
   CYCLE_OP_FIELDS,
   REJECT_REASONS,
@@ -102,7 +104,7 @@ const FROZEN = {
   date: "sticky left-0 w-[84px] min-w-[84px] sm:w-[104px] sm:min-w-[104px]",
   machine:
     "sticky left-[84px] w-[88px] min-w-[88px] max-sm:whitespace-normal sm:left-[104px] sm:w-[96px] sm:min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
-  action: "sm:sticky sm:right-0 w-[96px] min-w-[96px] sm:shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
+  action: "sm:sticky sm:right-0 w-[136px] min-w-[136px] sm:shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
 };
 
 // A white header, with each column family's own colour carried in its text
@@ -620,8 +622,10 @@ const ProductionEntriesTable = ({
   // (a change to the process only reaches new entries). currentShiftOf(row) is
   // the process's fixed hours for that row, or null when hours are typed per entry.
   currentShiftOf = () => null,
-  onApplyShift,
-  applyingShiftId = null,
+  // Ticking rows in the Action column turns on a bar of actions for all of them
+  // at once. { sheet, unlock(id), remove(id), onDone({ type, message }) } — the
+  // sheet's own single-row calls, run one after another; null = no ticking.
+  bulk = null,
   // When true, the table fills whatever vertical space its flex parent
   // gives it (that parent — ProductionSheet's Card/CardBody — is itself a
   // flex column sized to the page's own viewport slice) and scrolls
@@ -644,8 +648,99 @@ const ProductionEntriesTable = ({
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
   const [open, setOpen] = useState({ cycle: false, downtime: false });
-  // The row waiting on the "apply the current shift?" confirmation.
-  const [shiftRow, setShiftRow] = useState(null);
+  // Ticked rows (by id), the action waiting on its confirmation, and a running batch.
+  const [selected, setSelected] = useState(() => new Set());
+  // Ticking rows is for Super Admin / Full access only (isAdmin) — everyone else sees the plain table.
+  const bulkOn = !!bulk && isAdmin;
+  // The last row ticked, for Shift-click to tick everything between it and the next.
+  const lastTicked = useRef(null);
+  const [confirm, setConfirm] = useState(null); // { kind: "shift" | "delete", rows, was?, now? }
+  const [progress, setProgress] = useState(null); // { label, done, total }
+
+  // A row saved on a different shift from its process's current one: { was, now }, else null.
+  const shiftChange = (r) => {
+    const now = currentShiftOf(r);
+    const was = r.plannedOperatorShiftHours;
+    if (now === null || now === undefined || was === null || was === undefined || was === "" || !Number.isFinite(Number(was))) return null;
+    if (Math.abs(Number(was) - now) < 0.0005 && r.plannedLocked !== false) return null;
+    return { was: Number(was), now };
+  };
+  // What each bulk action can do to a row — the rest of the selection is skipped.
+  const canBulk = {
+    delete: (r) => !!bulk?.remove && canDelete && !lockInfo(r),
+    unlock: (r) => !!bulk?.unlock && isAdmin && !!lockInfo(r),
+    shift: (r) => !!bulk?.sheet && isAdmin && !lockInfo(r) && !!shiftChange(r),
+  };
+
+  // Only rows still on the page stay ticked (a new page, filter or save drops the rest).
+  useEffect(() => {
+    lastTicked.current = null;
+    setSelected((prev) => {
+      if (!prev.size) return prev;
+      const ids = new Set(rows.map((r) => r._id));
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [rows]);
+  const selectedRows = useMemo(() => rows.filter((r) => selected.has(r._id)), [rows, selected]);
+  // Tick or untick a row; with Shift held, every row between the last one ticked and this one
+  // (in the order shown) gets the same state.
+  const tick = (index, withShift) => {
+    const id = rows[index]._id;
+    const anchor = lastTicked.current;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const adding = !prev.has(id);
+      const [from, to] = withShift && anchor !== null && rows[anchor] ? [Math.min(anchor, index), Math.max(anchor, index)] : [index, index];
+      for (let i = from; i <= to; i += 1) {
+        if (adding) next.add(rows[i]._id);
+        else next.delete(rows[i]._id);
+      }
+      return next;
+    });
+    lastTicked.current = index;
+  };
+  const clearSelection = () => {
+    setSelected(new Set());
+    lastTicked.current = null;
+  };
+
+  const KINDS = {
+    delete: { run: (id) => bulk.remove(id), label: "Deleting", done: "Deleted" },
+    unlock: { run: (id) => bulk.unlock(id), label: "Unlocking", done: "Unlocked for 24 hours:" },
+    shift: { run: (id) => applyEntryShift(bulk.sheet, id), label: "Applying the current shift to", done: "Applied the current shift to" },
+  };
+  // One after another, not in parallel: the sheet's slot and overlap rules look at what is already saved.
+  const runBatch = async (kind, list) => {
+    if (!list.length) return;
+    const { run, label, done } = KINDS[kind];
+    const failures = [];
+    const succeeded = [];
+    setProgress({ label, done: 0, total: list.length });
+    for (const [i, r] of list.entries()) {
+      try {
+        await run(r._id);
+        succeeded.push(r._id);
+      } catch (err) {
+        failures.push(err?.response?.data?.message || err?.message || "failed");
+      }
+      setProgress({ label, done: i + 1, total: list.length });
+    }
+    setProgress(null);
+    setSelected((prev) => new Set([...prev].filter((id) => !succeeded.includes(id))));
+    const noun = (n) => `${n} ${n === 1 ? "entry" : "entries"}`;
+    const type = !failures.length ? "success" : succeeded.length ? "warning" : "error";
+    const message = failures.length
+      ? `${succeeded.length ? `${done} ${noun(succeeded.length)}; ` : ""}${noun(failures.length)} failed — ${failures[0]}`
+      : `${done} ${noun(succeeded.length)}`;
+    bulk?.onDone?.({ type, message });
+  };
+  const eligible = (kind) => selectedRows.filter(canBulk[kind]);
+  const askOrRun = (kind) => {
+    const list = eligible(kind);
+    if (kind === "unlock") runBatch(kind, list);
+    else setConfirm({ kind, rows: list });
+  };
   // Expanding/collapsing a breakdown changes how many columns sit to its
   // right without moving anything to its left — but the browser doesn't
   // know that, so when the table gets narrower it just clamps the native
@@ -784,7 +879,8 @@ const ProductionEntriesTable = ({
         className={`table-scroll-x border border-slate-200 dark:border-slate-700 rounded-xl overflow-auto ${
           fillHeight ? "h-full" : ""
         }`}
-        style={fillHeight ? undefined : { maxHeight: "calc(100vh - 300px)" }}
+        // Room under the last rows for the bulk bar while rows are ticked.
+        style={{ ...(fillHeight ? {} : { maxHeight: "calc(100vh - 300px)" }), ...(selected.size ? { paddingBottom: 96 } : {}) }}
       >
         <table className="w-full text-xs sm:text-sm border-separate border-spacing-0">
           <thead>
@@ -820,7 +916,9 @@ const ProductionEntriesTable = ({
                   </span>
                 </th>
               ))}
-              <th className={`${thBase} ${HEAD_BG} ${HEAD_TEXT_DEFAULT} text-center ${FROZEN.action} z-30`}>Action</th>
+              <th className={`${thBase} ${HEAD_BG} ${HEAD_TEXT_DEFAULT} text-center ${FROZEN.action} z-30`}>
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -843,7 +941,8 @@ const ProductionEntriesTable = ({
                 const calc = calcRow(r);
                 const day = dayResultByKey[r._id] || {};
                 const span = layout[i];
-                const dayBg = DAY_TINT[span.dayIndex % 2];
+                const isPicked = selected.has(r._id);
+                const dayBg = isPicked ? "bg-sky-100 dark:bg-sky-950/60" : DAY_TINT[span.dayIndex % 2];
                 // The row that starts a new date (other than the sheet's
                 // very first row) gets the heavier top border marking where
                 // one day's block ends and the next begins.
@@ -863,14 +962,17 @@ const ProductionEntriesTable = ({
                       // its own, so it still takes the row's alternating date
                       // tint; every other tone (or none) carries its own
                       // opaque bg.
+                      // A merged cell (Date, Machine) stands for several rows, so
+                      // ticking one of them doesn't tint it.
+                      const cellBg = c.merge ? DAY_TINT[span.dayIndex % 2] : dayBg;
                       const bg =
                         c.tone === "oee"
                           ? OEE_TINT[span.dayIndex % 2]
                           : c.tone && TEXT_ONLY_TONES.has(c.tone)
-                            ? `${dayBg} ${TONE[c.tone]}`
+                            ? `${cellBg} ${TONE[c.tone]}`
                             : c.tone
                               ? TONE[c.tone]
-                              : `${dayBg} text-slate-700 dark:text-slate-200`;
+                              : `${cellBg} text-slate-700 dark:text-slate-200`;
                       return (
                         <td
                           key={c.key}
@@ -887,11 +989,24 @@ const ProductionEntriesTable = ({
                     <td className={`${td} ${dayBg} ${boundary} ${FROZEN.action} z-10`}>
                       {(() => {
                         const locked = lockInfo(r);
+                        const box = bulkOn ? (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 flex-shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
+                            checked={isPicked}
+                            onChange={(e) => tick(i, e.nativeEvent.shiftKey)}
+                            // Shift + click shouldn't also highlight the text between the two rows.
+                            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                            title="Tick — hold Shift and tick another to tick every row in between"
+                            aria-label="Select this entry"
+                          />
+                        ) : null;
                         if (locked) {
                           if (isAdmin) {
                             const busy = unlockingId === r._id;
                             return (
-                              <div className="flex items-center justify-center">
+                              <div className="flex items-center justify-center gap-2">
+                                {box}
                                 <button
                                   type="button"
                                   disabled={busy}
@@ -906,13 +1021,15 @@ const ProductionEntriesTable = ({
                             );
                           }
                           return (
-                            <div className="flex items-center justify-center" title={locked}>
+                            <div className="flex items-center justify-center gap-2" title={locked}>
+                              {box}
                               <Lock size={14} className="text-slate-400 dark:text-slate-500" />
                             </div>
                           );
                         }
                         return (
-                          <div className="flex gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            {box}
                             {canEdit && (
                               <button
                                 type="button"
@@ -923,18 +1040,15 @@ const ProductionEntriesTable = ({
                                 <Pencil size={14} />
                               </button>
                             )}
-                            {isAdmin && onApplyShift && (() => {
-                              const now = currentShiftOf(r);
-                              const was = r.plannedOperatorShiftHours;
-                              if (now === null || now === undefined || was === null || was === undefined || was === "" || !Number.isFinite(Number(was))) return null;
-                              if (Math.abs(Number(was) - now) < 0.0005 && r.plannedLocked !== false) return null;
+                            {isAdmin && bulk?.sheet && (() => {
+                              const change = shiftChange(r);
+                              if (!change) return null;
                               return (
                                 <button
                                   type="button"
-                                  disabled={applyingShiftId === r._id}
-                                  className="inline-flex items-center justify-center w-7 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60"
-                                  title={`Saved on a ${hoursToHm(was)} shift — apply the current ${hoursToHm(now)} shift to this entry`}
-                                  onClick={() => setShiftRow({ row: r, was: Number(was), now })}
+                                  className="inline-flex items-center justify-center w-7 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors"
+                                  title={`Saved on a ${hoursToHm(change.was)} shift — apply the current ${hoursToHm(change.now)} shift to this entry`}
+                                  onClick={() => setConfirm({ kind: "shift", rows: [r], ...change })}
                                 >
                                   <Clock size={14} />
                                 </button>
@@ -962,22 +1076,45 @@ const ProductionEntriesTable = ({
       </div>
 
       <ConfirmAlert
-        isOpen={!!shiftRow}
-        variant="warning"
-        title="Apply the current shift to this entry?"
-        message={
-          shiftRow
-            ? `${displayDay(shiftRow.row.date)} · ${machineName[shiftRow.row.machine] || shiftRow.row.operator || "entry"}: Planned Operator Shift ${hoursToHm(shiftRow.was)} → ${hoursToHm(shiftRow.now)}. Its Availability, Performance and Quality are worked out again, and it may go to OEE Review. The change is logged.`
-            : ""
+        isOpen={!!confirm}
+        variant={confirm?.kind === "delete" ? "danger" : "warning"}
+        title={
+          confirm?.kind === "delete"
+            ? `Delete ${confirm.rows.length} ${confirm.rows.length === 1 ? "entry" : "entries"}?`
+            : confirm?.rows.length === 1
+              ? "Apply the current shift to this entry?"
+              : `Apply the current shift to ${confirm?.rows.length} entries?`
         }
-        confirmText="Apply shift"
-        onCancel={() => setShiftRow(null)}
+        message={
+          !confirm
+            ? ""
+            : confirm.kind === "delete"
+              ? "They are removed from the sheet for good (the audit log keeps a record of each). Entries that are locked are left out."
+              : confirm.rows.length === 1
+                ? `${displayDay(confirm.rows[0].date)} · ${machineName[confirm.rows[0].machine] || confirm.rows[0].operator || "entry"}: Planned Operator Shift ${hoursToHm(confirm.was)} → ${hoursToHm(confirm.now)}. Its Availability, Performance and Quality are worked out again, and it may go to OEE Review. The change is logged.`
+                : "Each one moves onto its process's current Operator Planned Shift. Their Availability, Performance and Quality are worked out again, and some may go to OEE Review. Every change is logged."
+        }
+        confirmText={confirm?.kind === "delete" ? "Delete" : "Apply shift"}
+        onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          const target = shiftRow?.row;
-          setShiftRow(null);
-          if (target) onApplyShift?.(target);
+          const { kind, rows: list } = confirm;
+          setConfirm(null);
+          runBatch(kind, list);
         }}
       />
+
+      {bulkOn && (
+        <BulkActionBar
+          count={selectedRows.length}
+          progress={progress}
+          onClear={clearSelection}
+          actions={[
+            isAdmin && bulk.sheet && { key: "shift", label: "Apply shift", icon: Clock, tone: "amber", count: eligible("shift").length, title: "needs an unlocked entry saved on a different shift from its process's current one", onClick: () => askOrRun("shift") },
+            isAdmin && bulk.unlock && { key: "unlock", label: "Unlock", icon: LockOpen, tone: "blue", count: eligible("unlock").length, title: "needs a locked entry", onClick: () => askOrRun("unlock") },
+            canDelete && bulk.remove && { key: "delete", label: "Delete", icon: Trash2, tone: "rose", count: eligible("delete").length, title: "needs an unlocked entry", onClick: () => askOrRun("delete") },
+          ].filter(Boolean)}
+        />
+      )}
 
       {formulaPopup && (
         <>

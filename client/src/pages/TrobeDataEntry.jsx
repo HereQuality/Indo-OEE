@@ -1,7 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useReviewAccess } from "../hooks/useReviewAccess";
-import { applyEntryShift } from "../api/oeeReview.api";
 import { shiftSettingOf } from "../utils/plannedShift";
 import { entryLinkRange, useOpenEntryFromLink } from "../hooks/useOpenEntryFromLink";
 import { Plus, Search } from "lucide-react";
@@ -255,16 +254,10 @@ const TrobeDataEntry = () => {
   // The process's fixed Operator Planned Shift for a row (null when its hours are typed on each entry),
   // and the Full access button that moves one earlier entry onto it.
   const currentShiftOf = (row) => ((row.machine ? shiftSettingForMachine(row.machine, machines, processes) : null)?.hours ?? null);
-  const [applyingShiftId, setApplyingShiftId] = useState(null);
-  const handleApplyShift = useCallback((row) => {
-    setApplyingShiftId(row._id);
-    applyEntryShift("trobe", row._id)
-      .then((res) => {
-        toast.success(res?.data?.message || "Shift changed");
-        fetchRows();
-      })
-      .catch((err) => toast.error(err?.response?.data?.message || "Could not change this entry's shift"))
-      .finally(() => setApplyingShiftId(null));
+  // Done with a batch of ticked rows (utils in the table): say how it went and reload.
+  const handleBulkDone = useCallback(({ type, message }) => {
+    toast[type](message);
+    fetchRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -959,8 +952,7 @@ const TrobeDataEntry = () => {
                 isAdmin={isAdmin}
                 onUnlock={handleUnlock}
                 currentShiftOf={currentShiftOf}
-                onApplyShift={handleApplyShift}
-                applyingShiftId={applyingShiftId}
+                bulk={{ sheet: "trobe", unlock: unlockTrobeRow, remove: deleteTrobeRow, onDone: handleBulkDone }}
                 unlockingId={unlockingId}
                 fillHeight
               />
