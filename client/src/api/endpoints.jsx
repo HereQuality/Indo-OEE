@@ -160,12 +160,73 @@ export const ENDPOINTS = {
         FILTER_OPTIONS: `${V1}/powder-coating-sheet/filter-options`,
         OCCUPIED: `${V1}/powder-coating-sheet/occupied`,
     },
+    // BEFORE POWDER COATING — not AFTER POWDER COATING's POWDER_SHEET.
+    BPC_SHEET: {
+        BASE: `${V1}/bpc-sheet`,
+        ROW: `${V1}/bpc-sheet/row`,
+        EXTENT: `${V1}/bpc-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/bpc-sheet/filter-options`,
+        OCCUPIED: `${V1}/bpc-sheet/occupied`,
+    },
+    // FINAL ASSEMBLY (sheet key "finalAssembly").
+    FINAL_ASSEMBLY_SHEET: {
+        BASE: `${V1}/final-assembly-sheet`,
+        ROW: `${V1}/final-assembly-sheet/row`,
+        EXTENT: `${V1}/final-assembly-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/final-assembly-sheet/filter-options`,
+        OCCUPIED: `${V1}/final-assembly-sheet/occupied`,
+    },
+    // RAW CASTING — its own sheet, on AFTER POWDER COATING's template.
+    RAW_CASTING_SHEET: {
+        BASE: `${V1}/raw-casting-sheet`,
+        ROW: `${V1}/raw-casting-sheet/row`,
+        EXTENT: `${V1}/raw-casting-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/raw-casting-sheet/filter-options`,
+        OCCUPIED: `${V1}/raw-casting-sheet/occupied`,
+    },
+    // MODULAR FRAME DRILLING — a machine sheet like INJECTION MOULDING.
+    MFD_SHEET: {
+        BASE: `${V1}/mfd-sheet`,
+        ROW: `${V1}/mfd-sheet/row`,
+        EXTENT: `${V1}/mfd-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/mfd-sheet/filter-options`,
+        OCCUPIED: `${V1}/mfd-sheet/occupied`,
+    },
+    // MODULAR FRAME ASSEMBLY — a worker sheet on RAW CASTING's template.
+    MFA_SHEET: {
+        BASE: `${V1}/mfa-sheet`,
+        ROW: `${V1}/mfa-sheet/row`,
+        EXTENT: `${V1}/mfa-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/mfa-sheet/filter-options`,
+        OCCUPIED: `${V1}/mfa-sheet/occupied`,
+    },
     RUBBER_SHEET: {
         BASE: `${V1}/rubber-sheet`,
         ROW: `${V1}/rubber-sheet/row`,
         EXTENT: `${V1}/rubber-sheet/extent`,
         FILTER_OPTIONS: `${V1}/rubber-sheet/filter-options`,
         OCCUPIED: `${V1}/rubber-sheet/occupied`,
+    },
+    PRINTING_SHEET: {
+        BASE: `${V1}/printing-sheet`,
+        ROW: `${V1}/printing-sheet/row`,
+        EXTENT: `${V1}/printing-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/printing-sheet/filter-options`,
+        OCCUPIED: `${V1}/printing-sheet/occupied`,
+    },
+    INJECTION_SHEET: {
+        BASE: `${V1}/injection-sheet`,
+        ROW: `${V1}/injection-sheet/row`,
+        EXTENT: `${V1}/injection-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/injection-sheet/filter-options`,
+        OCCUPIED: `${V1}/injection-sheet/occupied`,
+    },
+    EMBOSSING_SHEET: {
+        BASE: `${V1}/embossing-sheet`,
+        ROW: `${V1}/embossing-sheet/row`,
+        EXTENT: `${V1}/embossing-sheet/extent`,
+        FILTER_OPTIONS: `${V1}/embossing-sheet/filter-options`,
+        OCCUPIED: `${V1}/embossing-sheet/occupied`,
     },
     SPRING_SHEET: {
         BASE: `${V1}/spring-sheet`,

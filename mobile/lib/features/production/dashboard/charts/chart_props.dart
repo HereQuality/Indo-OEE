@@ -55,13 +55,60 @@ class DashboardColors {
       Theme.of(context).brightness == Brightness.dark ? dark : light;
 }
 
+/// What a dashboard calls the thing it is broken down by (web `UNIT_WORDS`):
+/// machines, or workers on a process whose entries are made per worker
+/// (`isWorkerProcess` — RUBBER, After Powder Coating, …). Words only: every
+/// figure is worked out the same way.
+class UnitWords {
+  const UnitWords({required this.byWorker, required this.one, required this.many, required this.mcNo, required this.times});
+  final bool byWorker;
+
+  /// "Machine" / "Worker" — table headings, "By Worker".
+  final String one;
+
+  /// "machines" / "workers" — "All workers".
+  final String many;
+
+  /// The Filters slicer's title ("MC No." / "Worker").
+  final String mcNo;
+
+  /// What an entry's two times are called, for the empty-state hints.
+  final String times;
+
+  static const UnitWords machine =
+      UnitWords(byWorker: false, one: 'Machine', many: 'machines', mcNo: 'MC No.', times: 'machine ON/OFF times');
+  static const UnitWords worker =
+      UnitWords(byWorker: true, one: 'Worker', many: 'workers', mcNo: 'Worker', times: 'working start / end times');
+}
+
 /// `ctx` in the web charts: machine id -> name / sheet order, and whether the
 /// time axis buckets by "date" or "month" (utils/processDashboard.js timeBucket).
 class DashboardCtx {
-  const DashboardCtx({required this.machineName, required this.machineOrder, required this.bucket});
+  const DashboardCtx({
+    required this.machineName,
+    required this.machineOrder,
+    required this.bucket,
+    this.stoppageKeys,
+    this.words = UnitWords.machine,
+    this.causeLabels = const {},
+  });
   final Map<String, String> machineName;
   final Map<String, int> machineOrder;
   final String bucket; // 'date' | 'month'
+
+  /// Machines or workers (web `ctx.words`, `unitWordsFor(process)`): what the
+  /// headings and hints call the thing this dashboard is broken down by.
+  final UnitWords words;
+
+  /// The stoppage causes the process's sheet has (web `ctx.stoppageKeys`,
+  /// `stoppageKeysFor(process)`) — the columns the cause tables always show.
+  /// Null = the shared ten (a machine process, or "All machines").
+  final List<String>? stoppageKeys;
+
+  /// A cause in the process's own sheet wording, where it differs from the
+  /// shared one (web `ctx.causeLabels`, `causeLabelsFor(process)`): BEFORE
+  /// POWDER COATING's bdMechMin reads "B.D. (Breakdown)". Empty = shared words.
+  final Map<String, String> causeLabels;
 }
 
 /// Everything a chart needs. Rows are the JS entry objects as maps.

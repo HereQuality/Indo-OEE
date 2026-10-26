@@ -26,6 +26,13 @@ const MACHINE_WORDS = { who: "Machine", canMake: "this machine can make", shift:
 export const WORKER_WORDS = { who: "Worker", canMake: "this worker can inspect", shift: "Inspection Working Hours" };
 // RUBBER's worker makes pieces, within a Worker Shift Time.
 export const RUBBER_WORDS = { who: "Worker", canMake: "this worker can make", shift: "Worker Shift Time" };
+// BEFORE POWDER COATING is kept per operator, within a Machine Shift Time (its sheet's words).
+export const BPC_WORDS = { who: "Operator", canMake: "this operator can make", shift: "Machine Shift Time" };
+// FINAL ASSEMBLY's worker assembles pieces within the Assembly Working Hours.
+export const FA_WORDS = { who: "Worker", canMake: "this worker can assemble", shift: "Assembly Working Hours" };
+// PRINTING is kept per operator too, within its Machine Shift Time (its sheet's words).
+// `times`: what its two time boxes are called, when that isn't Start / End.
+export const PRINTING_WORDS = { who: "Operator", canMake: "this operator can make", shift: "Machine Shift Time", times: "Machine ON / OFF" };
 const whoRow = (machine, words) => (machine ? [{ label: words.who, value: machine }] : []);
 
 export const qtyNotice = ({ calc, entered, label = "OK + Rejected", machine = "", words = MACHINE_WORDS }) => [
@@ -36,10 +43,12 @@ export const qtyNotice = ({ calc, entered, label = "OK + Rejected", machine = ""
       ...whoRow(machine, words),
       { label: words.shift, value: `${hoursToHm(calc.shiftHours)} hr` },
       { label: "Time per piece", value: `${fmtNum(calc.totalCycleSec)} sec` },
+      // A sheet whose Ideal takes Lunch / Tea out (MODULAR FRAME DRILLING) says how much.
+      ...(calc.idealLunchMin > 0 ? [{ label: "Less Lunch / Tea", value: `${fmtNum(calc.idealLunchMin)} min` }] : []),
       { label: "Ideal Quantity (most possible)", value: fmtNum(calc.idealQty) },
       { label, value: fmtNum(entered), highlight: true },
     ],
-    hint: `Check the quantity, the time per piece, or the ${words === MACHINE_WORDS ? "Machine ON / OFF" : "Start / End"} Time.`,
+    hint: `Check the quantity, the time per piece, or the ${words.times || (words === MACHINE_WORDS ? "Machine ON / OFF" : "Start / End")} Time.`,
   },
 ];
 
@@ -52,7 +61,7 @@ export const stoppageNotice = ({ limitMin, totalMin, machine = "", words = MACHI
       { label: words.shift, value: `${limitMin} min` },
       { label: "Total stoppage", value: `${fmtNum(totalMin)} min`, highlight: true },
     ],
-    hint: `Check the stoppage minutes, or the ${words === MACHINE_WORDS ? "Machine ON / OFF" : "Start / End"} Time.`,
+    hint: `Check the stoppage minutes, or the ${words.times || (words === MACHINE_WORDS ? "Machine ON / OFF" : "Start / End")} Time.`,
   },
 ];
 

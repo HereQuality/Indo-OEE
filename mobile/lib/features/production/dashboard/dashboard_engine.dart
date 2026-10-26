@@ -33,8 +33,13 @@ import 'dart:ui' as ui;
 
 import 'package:collection/collection.dart' show mergeSort;
 
-import '../shared/production_sheet_calc.dart' show dayCalc, displayDay, fmtNum, fmtPct, rowCalc, stoppageFields;
-import 'charts/chart_props.dart' show DashboardCtx;
+import '../shared/production_sheet_calc.dart' show dayCalc, displayDay, entryDayCalc, fmtNum, fmtPct, rowCalc, stoppageFields;
+import '../processes/bpc/bpc_calc.dart' show bpcStoppageFields, isBpcProcess;
+import '../processes/final_assembly/fa_calc.dart' show faIdleFields, isFinalAssemblyProcess;
+import '../processes/printing/printing_calc.dart' show isPrintingProcess, printingExtraStoppageFields, printingStoppageKeys;
+import '../processes/powder_coating/powder_calc.dart' show isPowderCoatingProcess, powderIdleFields;
+import '../processes/rubber/rubber_calc.dart' show isRubberProcess, rubberMinuteKeys;
+import 'charts/chart_props.dart' show DashboardCtx, UnitWords;
 
 // ── Small JS-semantics helpers ─────────────────────────────────────────────
 
@@ -391,6 +396,64 @@ List<Map<String, dynamic>> resolveWidgets(Object? saved, Map<String, Map<String,
   return out;
 }
 
+// ── Wording: machines or workers ───────────────────────────────────────────
+// RUBBER and AFTER POWDER COATING have no machines — each entry's `machine`
+// is its worker — so their dashboards say "Worker" where the others say
+// "MC No." / "Machine", and a catalog entry's `worker` wording stands in for
+// its own. Words only: every figure is worked out exactly as it is for a machine.
+
+/// Web `isWorkerProcess` ([process] is a Process document: `processName`,
+/// `dataEntryMenu`). Another per-worker sheet adds its own test here.
+bool isWorkerProcess(Map<String, dynamic>? process) =>
+    process != null &&
+    (isRubberProcess(process) ||
+        isPowderCoatingProcess(process) ||
+        isBpcProcess(process) ||
+        isFinalAssemblyProcess(process) ||
+        isPrintingProcess(process));
+
+/// Web `unitWordsFor`.
+UnitWords unitWordsFor(Map<String, dynamic>? process) => isWorkerProcess(process) ? UnitWords.worker : UnitWords.machine;
+
+/// Web `worded`: a catalog entry (tile or graph) in the dashboard's own words.
+Map<String, dynamic> worded(Map<String, dynamic> widget, UnitWords? words) {
+  final w = widget['worker'];
+  return (words?.byWorker ?? false) && w is Map ? {...widget, ...Map<String, dynamic>.from(w)} : widget;
+}
+
+/// Web `dimLabel`: a dimension's name as the dashboard says it ("By Worker",
+/// "Worker: …").
+String dimLabel(String dim, [DashboardCtx? ctx]) => dim == 'machine' && ctx != null ? ctx.words.one : _dim(dim).label;
+
+/// Every stoppage cause any sheet records (web CAUSE_FIELDS): the shared ten
+/// plus PRINTING's own three (Ask Query To QC Team, Empty Bag Tugging, Stock
+/// Counting), so Downtime by Cause shows each of them on its own. Each:
+/// `{'key','label'}`, like `stoppageFields`.
+const List<Map<String, dynamic>> causeFields = [...stoppageFields, ...printingExtraStoppageFields];
+
+/// The stoppage causes a process's sheet actually has (web `stoppageKeysFor`),
+/// for the cause tables' columns: PRINTING's thirteen (its own three, then the
+/// ten); every other process (and "All machines", null) the shared ten. [process]
+/// is a Process document (`processName`, `dataEntryMenu`).
+List<String> stoppageKeysFor(Map<String, dynamic>? process) {
+  // RUBBER: no B.D. Mech. / B.D. Ele. (a worker has no machine to break down).
+  if (isRubberProcess(process)) return rubberMinuteKeys;
+  // After Powder Coating: Lunch / Tea and Other only.
+  if (isPowderCoatingProcess(process)) return [for (final f in powderIdleFields) f.$1];
+  // BEFORE POWDER COATING: Setup, B.D. (Breakdown) (bdMechMin), Lunch, Other.
+  if (isBpcProcess(process)) return [for (final f in bpcStoppageFields) f.$1];
+  // FINAL ASSEMBLY: Lunch / Tea and Other only.
+  if (isFinalAssemblyProcess(process)) return [for (final f in faIdleFields) f.$1];
+  if (process != null && isPrintingProcess(process)) return printingStoppageKeys;
+  return [for (final f in stoppageFields) f['key'] as String];
+}
+
+/// A cause in the process's own sheet wording, where it differs from the shared
+/// one (web `causeLabelsFor`): BEFORE POWDER COATING keeps its B.D. (Breakdown)
+/// minutes in bdMechMin. Feeds `DashboardCtx.causeLabels` → [causeLabel].
+Map<String, String> causeLabelsFor(Map<String, dynamic>? process) =>
+    isBpcProcess(process) ? const {'bdMechMin': 'B.D. (Breakdown) (min)'} : const {};
+
 // ── Stoppage groups (Breakdown & Stoppage by Machine) ──────────────────────
 // Ten causes is more series than a stacked bar can carry, so they are folded
 // into four fixed groups; Downtime by Cause keeps the full ten.
@@ -402,20 +465,38 @@ const List<Map<String, dynamic>> stoppageGroups = [
   {
     'key': 'other',
     'label': 'Other stoppages',
-    'fields': ['plannedDownMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'noPowerMin', 'otherMin'],
+    'fields': [
+      'plannedDownMin',
+      'noManPowerMin',
+      'materialShiftingMin',
+      'noMaterialMin',
+      'noPowerMin',
+      'otherMin',
+      // PRINTING's own three.
+      'askQueryQcMin',
+      'emptyBagTuggingMin',
+      'stockCountingMin',
+    ],
   },
 ];
 
-/// Label of a stoppage cause without its " (min)" suffix; the key itself if unknown.
-String causeLabel(String key) {
-  String? label;
-  for (final f in stoppageFields) {
-    if (f['key'] == key) {
-      label = f['label'] as String?;
-      break;
+final RegExp _minSuffix = RegExp(r' \(min\)$', caseSensitive: false);
+
+/// Label of a stoppage cause without its " (min)" suffix; the key itself if
+/// unknown. [labels] is a process's own wording where it differs from the
+/// shared one (web `causeLabel(key, labels)`).
+String causeLabel(String key, [Map<String, String>? labels]) {
+  String? label = labels?[key];
+  if (!_truthy(label)) {
+    label = null;
+    for (final f in causeFields) {
+      if (f['key'] == key) {
+        label = f['label'] as String?;
+        break;
+      }
     }
   }
-  return (_truthy(label) ? label! : key).replaceFirst(' (min)', '');
+  return (_truthy(label) ? label! : key).replaceFirst(_minSuffix, '');
 }
 
 // ── Dimensions (what a row can be sliced / cross-filtered by) ──────────────
@@ -720,7 +801,7 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
   var shiftHours = 0.0, effectiveHours = 0.0, plannedShiftHours = 0.0;
   var downtimeMin = 0.0, unreportedMin = 0.0, unutilizedDays = 0.0;
   final setupEff = <double>[];
-  final downtimeByCause = <String, double>{for (final f in stoppageFields) f['key'] as String: 0.0};
+  final downtimeByCause = <String, double>{for (final f in causeFields) f['key'] as String: 0.0};
   final rejectByReason = <String, double>{};
   final byMachineDay = <String, List<Map<String, dynamic>>>{};
   // Availability / Performance / Quality: the minutes and pieces behind each
@@ -754,7 +835,7 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
     downtimeMin += _n(c['totalStoppageMin']);
     final se = c['setupEfficiency'];
     if (_isFin(se)) setupEff.add((se as num).toDouble());
-    for (final f in stoppageFields) {
+    for (final f in causeFields) {
       final k = f['key'] as String;
       downtimeByCause[k] = downtimeByCause[k]! + _n(_toNumber(row[k]));
     }
@@ -771,22 +852,32 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
   // machine-day — dayCalc gives every entry of that day the same value — so
   // each day counts once: a day saved as three entries isn't weighed three
   // times in the averages, nor its Unreported Time added up three times.
+  //
+  // A per-entry sheet (calcMode "perEntry", set by the server's dashboard feed —
+  // INJECTION MOULDING, PRINTING, BEFORE POWDER COATING) works every entry out
+  // on its own, as its paper sheet does (entryDayCalc): there each ENTRY's
+  // figures count — OEE averaged over entries, Unreported added up over them.
+  // On Process Master's lock entryDayCalc combines the day instead (every entry
+  // then carries the same day figure), so such a day still counts once.
   final oee = <String, List<double>>{'oeeLosses': [], 'oeeLunch': [], 'oeeLunchCot': []};
   final unutilizedList = <double>[];
   for (final group in byMachineDay.values) {
-    final days = dayCalc(group);
+    final perEntry = group.first['calcMode'] == 'perEntry';
+    final days = perEntry ? entryDayCalc(group, lossesExceptLunch: group.first['lossesExceptLunch'] == true) : dayCalc(group);
     if (days.isEmpty) continue;
-    final d = days.first;
-    final ur = d['unreportedMin'];
-    if (_isFin(ur)) unreportedMin += (ur as num).toDouble();
-    final un = d['unutilized'];
-    if (_isFin(un)) {
-      unutilizedDays += (un as num).toDouble();
-      unutilizedList.add(un.toDouble());
-    }
-    for (final e in oee.entries) {
-      final v = d[e.key];
-      if (_isFin(v)) e.value.add((v as num).toDouble());
+    final counted = perEntry && !group.any((r) => r['plannedLocked'] == true) ? days : days.take(1);
+    for (final d in counted) {
+      final ur = d['unreportedMin'];
+      if (_isFin(ur)) unreportedMin += (ur as num).toDouble();
+      final un = d['unutilized'];
+      if (_isFin(un)) {
+        unutilizedDays += (un as num).toDouble();
+        unutilizedList.add(un.toDouble());
+      }
+      for (final e in oee.entries) {
+        final v = d[e.key];
+        if (_isFin(v)) e.value.add((v as num).toDouble());
+      }
     }
   }
 

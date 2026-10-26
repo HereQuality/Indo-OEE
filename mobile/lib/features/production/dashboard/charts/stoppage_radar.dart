@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../dashboard_engine.dart' as eng;
-import '../../shared/production_sheet_calc.dart' show stoppageFields;
 import 'chart_data.dart';
 import 'chart_kit.dart';
 import 'chart_props.dart';
@@ -14,7 +13,7 @@ import 'stoppage_treemap.dart' show TileTipLayout;
 
 /// Downtime by Cause (min) (charts.jsx `RunTimeByMachine`): every stoppage
 /// cause on one radar - a spoke per cause, the further out the more minutes
-/// lost (all ten causes, none folded into "Other"). The table view adds each
+/// lost (every cause, PRINTING's own three included, none folded into "Other"). The table view adds each
 /// machine's split with its effective run time beside it. Touch a spoke's dot
 /// (or its label) for the exact minutes.
 class StoppageRadarChart extends StatefulWidget {
@@ -38,8 +37,11 @@ class _StoppageRadarChartState extends State<StoppageRadarChart> {
     if (p.view == ChartView.table) {
       final machines = _machineMemo.get(rows, p.ctx, 'machine', () => machineSummaryRows(rows, p.ctx));
       if (machines.isEmpty) return const ChartEmpty('No entries for this period.');
+      // The causes this process's sheet has, plus any other carrying minutes
+      // (charts.jsx `causeColumns`) — PRINTING's own three among them.
+      final causeCols = causeColumns(p.ctx, [for (final g in machines) g.summary]);
       return MiniTable(
-        columns: ['Machine', 'Effective Run Time', for (final f in stoppageFields) '${eng.causeLabel(f['key'] as String)} (min)'],
+        columns: [p.ctx.words.one, 'Effective Run Time', for (final f in causeCols) '${eng.causeLabel(f['key'] as String, p.ctx.causeLabels)} (min)'],
         selected: p.filters['machine'] ?? const <String>[],
         onRowClick: (k) => p.onToggle('machine', k),
         rows: [
@@ -47,13 +49,13 @@ class _StoppageRadarChartState extends State<StoppageRadarChart> {
             MiniRow(g.key, [
               g.label,
               eng.formatExact('hours', pick(g.summary, 'effectiveHours')),
-              for (final f in stoppageFields) eng.formatExact('qty', _cause(g.summary, f['key'] as String)),
+              for (final f in causeCols) eng.formatExact('qty', _cause(g.summary, f['key'] as String)),
             ]),
         ],
         colors: c,
       );
     }
-    final causes = _memo.get(rows, p.ctx, 'machine', () => stoppageCauses(rows));
+    final causes = _memo.get(rows, p.ctx, 'machine', () => stoppageCauses(rows, p.ctx));
     // A radar needs at least three spokes; with fewer causes the bars read better.
     if (causes.length < 3) {
       return HBars(

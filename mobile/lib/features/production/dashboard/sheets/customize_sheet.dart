@@ -4,6 +4,7 @@ import 'package:flutter/semantics.dart';
 
 import '../../../../core/api/api_client.dart' show ApiException;
 import '../../../../core/utils/alerts.dart';
+import '../charts/chart_props.dart' show UnitWords;
 import '../dashboard_engine.dart' as eng;
 import 'sheet_kit.dart';
 import 'widget_previews.dart';
@@ -25,24 +26,29 @@ Future<void> showCustomizeSheet(
   required List<String> stats,
   required List<String> charts,
   required Future<void> Function(List<String> stats, List<String> charts) onSave,
+  UnitWords words = UnitWords.machine,
 }) {
   return showSheet<void>(
     context,
     isDismissible: false,
     // Dragging a row's handle must never fight the sheet's own swipe-to-close.
     enableDrag: false,
-    builder: (ctx) => FullHeightSheet(child: CustomizeSheet(stats: stats, charts: charts, onSave: onSave)),
+    builder: (ctx) => FullHeightSheet(child: CustomizeSheet(stats: stats, charts: charts, onSave: onSave, words: words)),
   );
 }
 
 enum _Kind { stat, chart }
 
 class CustomizeSheet extends StatefulWidget {
-  const CustomizeSheet({super.key, required this.stats, required this.charts, required this.onSave});
+  const CustomizeSheet({super.key, required this.stats, required this.charts, required this.onSave, this.words = UnitWords.machine});
 
   final List<String> stats;
   final List<String> charts;
   final Future<void> Function(List<String> stats, List<String> charts) onSave;
+
+  /// The dashboard's own words: the cards are named the way it shows them —
+  /// "by Worker" on a worker-based process (web WidgetPicker `words`).
+  final UnitWords words;
 
   @override
   State<CustomizeSheet> createState() => _CustomizeSheetState();
@@ -67,7 +73,8 @@ class _CustomizeSheetState extends State<CustomizeSheet> {
 
   bool get _dirty => !listEquals(_stats, _initialStats) || !listEquals(_charts, _initialCharts);
 
-  List<Map<String, dynamic>> _catalog(_Kind k) => k == _Kind.chart ? eng.chartCatalog : eng.statCatalog;
+  List<Map<String, dynamic>> _catalog(_Kind k) =>
+      [for (final w in k == _Kind.chart ? eng.chartCatalog : eng.statCatalog) eng.worded(w, widget.words)];
   List<String> _selected(_Kind k) => k == _Kind.chart ? _charts : _stats;
   void _set(_Kind k, List<String> v) => k == _Kind.chart ? _charts = v : _stats = v;
 
@@ -320,7 +327,7 @@ class _CustomizeSheetState extends State<CustomizeSheet> {
             ),
             itemBuilder: (context, i) {
               final key = selected[i];
-              final item = lookup[key]!;
+              final item = eng.worded(lookup[key]!, widget.words);
               return Padding(
                 key: ValueKey('${kind.name}:$key'),
                 padding: const EdgeInsets.only(bottom: 8),

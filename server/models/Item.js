@@ -69,6 +69,12 @@ const RIVET_PROCESS_TYPES = ["Rivet", "Clamp"];
 // client/src/utils/pressSheet.js.
 const PRESS_OPERATIONS = ["Bending", "Tapping", "Blank"];
 
+// A MODULAR FRAME DRILLING part's Process — the sheet's own "Process" column,
+// in its own words (DRILL/CHAM = drilling and chamfering), the same shape as
+// PRESS_OPERATIONS above. Kept in step with MFD_OPERATIONS in
+// client/src/utils/mfdSheet.js.
+const MFD_OPERATIONS = ["DRILLING", "TAPPING", "DRILL/CHAM"];
+
 // An SPM part's own three reference figures — No. of Holes in One Piece, No.
 // of Piece in One Cycle, Stroke Required for One Piece. Not part of any
 // formula (nobody has given us the rule connecting them to Ideal Quantity
@@ -143,6 +149,10 @@ const ItemSchema = new mongoose.Schema(
     // RIVET parts: which kind of work this part is (Rivet or Clamp) — a
     // required dropdown, independent of the entry's own Process box.
     rivetProcessType: { type: String, trim: true, maxlength: 40, default: "" },
+    // MODULAR FRAME DRILLING parts: their Process (DRILLING, TAPPING, …) — a
+    // required dropdown there, copied onto the entry with Drawing No., No. of
+    // Holes and Stroke Required (SPM's reference fields above).
+    mfdOperation: { type: String, trim: true, maxlength: 40, default: "" },
     // Superseded by the eight named fields above; kept only so items saved
     // before they existed don't lose their Op 1…Op 5 cycle times.
     cycleOpsSec: {
@@ -168,4 +178,5 @@ module.exports.SPM_OP_FIELDS = SPM_OP_FIELDS;
 module.exports.RIVET_OP_FIELDS = RIVET_OP_FIELDS;
 module.exports.RIVET_PROCESS_TYPES = RIVET_PROCESS_TYPES;
 module.exports.PRESS_OPERATIONS = PRESS_OPERATIONS;
+module.exports.MFD_OPERATIONS = MFD_OPERATIONS;
 module.exports.SPM_REFERENCE_FIELDS = SPM_REFERENCE_FIELDS;

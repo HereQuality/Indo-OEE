@@ -79,6 +79,25 @@ const NoticeWords machineWords = NoticeWords(who: 'Machine', canMake: 'this mach
 const NoticeWords workerWords =
     NoticeWords(who: 'Worker', canMake: 'this worker can inspect', shift: 'Inspection Working Hours', timeName: 'Start / End');
 
+/// RUBBER's worker makes pieces, within a Worker Shift Time (web `RUBBER_WORDS`).
+const NoticeWords rubberWords =
+    NoticeWords(who: 'Worker', canMake: 'this worker can make', shift: 'Worker Shift Time', timeName: 'Start / End');
+
+/// BEFORE POWDER COATING is kept per operator, within a Machine Shift Time (web
+/// `BPC_WORDS`; it names no `times`, so the hint reads "Start / End" as the web's does).
+const NoticeWords bpcWords =
+    NoticeWords(who: 'Operator', canMake: 'this operator can make', shift: 'Machine Shift Time', timeName: 'Start / End');
+
+/// PRINTING is kept per operator too, within its Machine Shift Time; its two
+/// time boxes are Machine ON / OFF (web `PRINTING_WORDS`, `times`).
+const NoticeWords printingWords =
+    NoticeWords(who: 'Operator', canMake: 'this operator can make', shift: 'Machine Shift Time', timeName: 'Machine ON / OFF');
+
+/// FINAL ASSEMBLY's worker assembles pieces, within Assembly Working Hours (web
+/// `FA_WORDS`; no `times`, so the hint reads "Start / End").
+const NoticeWords faWords =
+    NoticeWords(who: 'Worker', canMake: 'this worker can assemble', shift: 'Assembly Working Hours', timeName: 'Start / End');
+
 double _n(Object? v) {
   if (v == null || v == '') return 0;
   final x = jsToNumber(v);
@@ -102,6 +121,9 @@ EntryNotice qtyNotice({
         ..._who(machine, words),
         NoticeDetail(words.shift, '${hoursToHm(calc['shiftHours'])} hr'),
         NoticeDetail('Time per piece', '${fmtNum(calc['totalCycleSec'])} sec'),
+        // A sheet whose Ideal takes Lunch / Tea out (MODULAR FRAME DRILLING) says how much.
+        if (calc['idealLunchMin'] is num && (calc['idealLunchMin'] as num) > 0)
+          NoticeDetail('Less Lunch / Tea', '${fmtNum(calc['idealLunchMin'])} min'),
         NoticeDetail('Ideal Quantity (most possible)', fmtNum(calc['idealQty'])),
         NoticeDetail(label, fmtNum(entered), highlight: true),
       ],

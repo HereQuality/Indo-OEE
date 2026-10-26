@@ -128,6 +128,7 @@ List<SheetDay> buildSheetDays({
   required Map<String, String> machineName,
   required int Function(String machineId) rankOf,
   List<String> searchKeys = const ['itemName', 'operator', 'drawingNo'],
+  bool byMachineOn = false,
 }) {
   String nameOf(String id) => machineName[id] ?? '—';
 
@@ -142,6 +143,15 @@ List<SheetDay> buildSheetDays({
       // one machine's entries together (else its card would be split in two).
       final byId = '${a['machine']}'.compareTo('${b['machine']}');
       if (byId != 0) return byId;
+      if (byMachineOn) {
+        // An unusable time reads last, like the web's "99:99".
+        String onOf(Map<String, dynamic> r) {
+          final t = '${r['machineOnTime'] ?? ''}';
+          return RegExp(r'^\d{2}:\d{2}$').hasMatch(t) ? t : '99:99';
+        }
+        final byOn = onOf(a).compareTo(onOf(b));
+        if (byOn != 0) return byOn;
+      }
       return slotOf(a['slot']).compareTo(slotOf(b['slot']));
     });
 

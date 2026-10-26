@@ -12,6 +12,7 @@ const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
+const InjectionEntry = require("../models/InjectionEntry");
 const { deleteMachine, updateMachine, listMachineByParams } = require("./machine.controller");
 const { machineNamesFor } = require("../utils/machineNames");
 
@@ -25,6 +26,11 @@ const call = async (handler, req) => {
 
 // Every sheet whose entries are made on a machine.
 const ENTRY_MODELS = { ProductionEntry, VmcEntry, SpmEntry, RivetEntry, PressEntry, ContactEntry, TrobeEntry, SpringEntry };
+ENTRY_MODELS.InjectionEntry = InjectionEntry;
+ENTRY_MODELS.EmbossingEntry = require("../models/EmbossingEntry");
+ENTRY_MODELS.MfdEntry = require("../models/MfdEntry");
+// PRINTING is kept per operator, but an entry may name its machine as MC No.
+ENTRY_MODELS.PrintingEntry = require("../models/PrintingEntry");
 
 // One machine, with `entries` CNC entries, `vmcEntries` VMC entries and `others`
 // ({ SpmEntry: 2, … }) entries on the other sheets pointing at it.
@@ -173,4 +179,50 @@ test("machineNamesFor names active, inactive and deleted machines alike", async 
   } finally {
     Machine.find = orig;
   }
+});
+
+test("INJECTION MOULDING entries count among the kept entries too", async () => {
+  await withModels({ machine: { machineName: "IM-1", isActive: false, isDeleted: false }, others: { InjectionEntry: 3 } }, async (seen) => {
+    const res = await call(deleteMachine, {});
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /Its 3 data entries are kept as they were\./);
+    assert.equal(seen.entryWrites, 0, "no entry is touched");
+  });
+});
+
+test("EMBOSSING entries count among the kept entries too", async () => {
+  await withModels({ machine: { machineName: "M/c -6/c", isActive: false, isDeleted: false }, others: { EmbossingEntry: 5 } }, async (seen) => {
+    const res = await call(deleteMachine, {});
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /Its 5 data entries are kept as they were\./);
+    assert.equal(seen.entryWrites, 0, "no entry is touched");
+  });
+});
+
+test("MODULAR FRAME DRILLING entries count among the kept entries too", async () => {
+  await withModels({ machine: { machineName: "4/B", isActive: false, isDeleted: false }, others: { MfdEntry: 4 } }, async (seen) => {
+    const res = await call(deleteMachine, {});
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.match(res.payload.message, /Its 4 data entries are kept as they were\./);
+    assert.equal(seen.entryWrites, 0, "no entry is touched");
+  });
+});
+
+test("PRINTING entries that name the machine as their MC No. count among the kept entries", async () => {
+  const PrintingEntry = require("../models/PrintingEntry");
+  await withModels({ machine: { machineName: "PR-1", isActive: false, isDeleted: false }, others: { PrintingEntry: 2 } }, async (seen) => {
+    // Counted by its MC No. field — a PRINTING entry's row key is its operator.
+    let asked = null;
+    const counted = PrintingEntry.countDocuments;
+    PrintingEntry.countDocuments = async (q) => ((asked = q), 2);
+    try {
+      const res = await call(deleteMachine, {});
+      assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+      assert.match(res.payload.message, /Its 2 data entries are kept as they were\./);
+      assert.deepEqual(asked, { mcMachine: ID });
+      assert.equal(seen.entryWrites, 0, "no entry is touched");
+    } finally {
+      PrintingEntry.countDocuments = counted;
+    }
+  });
 });

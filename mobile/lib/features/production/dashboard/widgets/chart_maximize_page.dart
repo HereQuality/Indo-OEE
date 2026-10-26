@@ -17,7 +17,11 @@ class ChartMaximizePage extends StatefulWidget {
     this.onDrill,
     required this.builder,
     this.refresh,
+    this.unit = 'machine',
   });
+
+  /// "machine" / "worker": what the drill button says it breaks down by.
+  final String unit;
 
   final String title;
   final String? hint;
@@ -38,6 +42,7 @@ class ChartMaximizePage extends StatefulWidget {
     VoidCallback? onDrill,
     required ChartBodyBuilder builder,
     Listenable? refresh,
+    String unit = 'machine',
   }) =>
       Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -49,6 +54,7 @@ class ChartMaximizePage extends StatefulWidget {
             onDrill: onDrill,
             builder: builder,
             refresh: refresh,
+            unit: unit,
           ),
         ),
       );
@@ -78,7 +84,7 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
         ),
         actions: [
           if (!widget.tableOnly) ViewToggleButton(view: _view, onChanged: (v) => setState(() => _view = v)),
-          if (widget.onDrill != null) DrillButton(onPressed: widget.onDrill!),
+          if (widget.onDrill != null) DrillButton(onPressed: widget.onDrill!, unit: widget.unit),
           const SizedBox(width: 4),
         ],
       ),

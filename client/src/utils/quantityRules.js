@@ -52,15 +52,17 @@ export const validateQuantities = (v, calc, errors, { capByIdeal = true } = {}) 
 // Form values for a saved record's quantities. A record saved before Actual
 // existed has only OK and Rejected: Actual is their sum, and its rejected
 // pieces go against its single reason (or none) so editing it loses nothing.
-export const quantityFormValues = (row) => {
+// `reasons`: the sheet's own reject reasons (BEFORE POWDER COATING has its
+// own — utils/bpcSheet.js); every other sheet leaves it out: the CNC list.
+export const quantityFormValues = (row, reasons = REJECT_REASONS) => {
   const ok = num(row.okQty);
   const rej = num(row.rejectedQty);
   const stored = num(row.actualQty);
   const actual = isNum(stored) ? stored : isNum(ok) || isNum(rej) ? (ok || 0) + (rej || 0) : "";
   const split = (() => {
     const s = row.rejectBreakdown;
-    if (s && Object.keys(s).length) return Object.fromEntries(Object.entries(s).filter(([r]) => REJECT_REASONS.includes(r)));
-    return row.rejectReason && REJECT_REASONS.includes(row.rejectReason) && isNum(rej) && rej > 0 ? { [row.rejectReason]: rej } : {};
+    if (s && Object.keys(s).length) return Object.fromEntries(Object.entries(s).filter(([r]) => reasons.includes(r)));
+    return row.rejectReason && reasons.includes(row.rejectReason) && isNum(rej) && rej > 0 ? { [row.rejectReason]: rej } : {};
   })();
   return { actualQty: actual, rejectBreakdown: split };
 };

@@ -1,8 +1,15 @@
+import '../processes/bpc/bpc_spec.dart';
 import '../processes/cnc/cnc_spec.dart';
 import '../processes/contact/contact_spec.dart';
+import '../processes/embossing/embossing_spec.dart';
+import '../processes/final_assembly/final_assembly_spec.dart';
+import '../processes/injection/injection_spec.dart';
+import '../processes/mfd/mfd_spec.dart';
 import '../processes/powder_coating/powder_spec.dart';
 import '../processes/press/press_spec.dart';
+import '../processes/printing/printing_spec.dart';
 import '../processes/rivet/rivet_spec.dart';
+import '../processes/rubber/rubber_spec.dart';
 import '../processes/spm/spm_spec.dart';
 import '../processes/spring/spring_spec.dart';
 import '../processes/trobe/trobe_spec.dart';
@@ -26,6 +33,13 @@ class ProcessRegistry {
     trobeSpec,
     springSpec,
     powderCoatingSpec,
+    rubberSpec,
+    printingSpec,
+    injectionSpec,
+    bpcSpec,
+    mfdSpec,
+    embossingSpec,
+    finalAssemblySpec,
   ];
 
   static ProcessSpec? byKey(String key) {

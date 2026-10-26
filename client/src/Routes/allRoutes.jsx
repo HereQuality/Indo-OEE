@@ -57,6 +57,14 @@ const TrobeDataEntry = lazyWithRetry(() => import("../pages/TrobeDataEntry"));
 const SpringDataEntry = lazyWithRetry(() => import("../pages/SpringDataEntry"));
 const PowderCoatingDataEntry = lazyWithRetry(() => import("../pages/PowderCoatingDataEntry"));
 const RubberDataEntry = lazyWithRetry(() => import("../pages/RubberDataEntry"));
+const InjectionDataEntry = lazyWithRetry(() => import("../pages/InjectionDataEntry"));
+const EmbossingDataEntry = lazyWithRetry(() => import("../pages/EmbossingDataEntry"));
+const PrintingDataEntry = lazyWithRetry(() => import("../pages/PrintingDataEntry"));
+const BeforePowderCoatingDataEntry = lazyWithRetry(() => import("../pages/BeforePowderCoatingDataEntry"));
+const FinalAssemblyDataEntry = lazyWithRetry(() => import("../pages/FinalAssemblyDataEntry"));
+const RawCastingDataEntry = lazyWithRetry(() => import("../pages/RawCastingDataEntry"));
+const ModularFrameDrillingDataEntry = lazyWithRetry(() => import("../pages/ModularFrameDrillingDataEntry"));
+const ModularFrameAssemblyDataEntry = lazyWithRetry(() => import("../pages/ModularFrameAssemblyDataEntry"));
 const ProductionDashboardPage = lazyWithRetry(() => import("../pages/ProductionDashboardPage"));
 const MachineMaster = lazyWithRetry(() => import("../pages/MachineMaster"));
 const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
@@ -144,6 +152,14 @@ const protectedRoutes = [
   { path: "/production/spring-data-entry", component: <SpringDataEntry /> },
   { path: "/production/powder-coating-data-entry", component: <PowderCoatingDataEntry /> },
   { path: "/production/rubber-data-entry", component: <RubberDataEntry /> },
+  { path: "/production/injection-moulding-data-entry", component: <InjectionDataEntry /> },
+  { path: "/production/embossing-data-entry", component: <EmbossingDataEntry /> },
+  { path: "/production/printing-data-entry", component: <PrintingDataEntry /> },
+  { path: "/production/before-powder-coating-data-entry", component: <BeforePowderCoatingDataEntry /> },
+  { path: "/production/final-assembly-data-entry", component: <FinalAssemblyDataEntry /> },
+  { path: "/production/raw-casting-data-entry", component: <RawCastingDataEntry /> },
+  { path: "/production/modular-frame-drilling-data-entry", component: <ModularFrameDrillingDataEntry /> },
+  { path: "/production/modular-frame-assembly-data-entry", component: <ModularFrameAssemblyDataEntry /> },
   // Old URL, kept working for anyone with it bookmarked or pinned.
   { path: "/production/data-entry", component: <ProductionSheet /> },
   { path: "/production/dashboard", component: <ProductionDashboardPage /> },

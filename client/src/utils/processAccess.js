@@ -26,8 +26,23 @@ const PAGE_BY_NAME = [
   [/\bcontact\b/i, "/hqepl/production/contact-data-entry"],
   [/\btrobe\b/i, "/hqepl/production/trobe-data-entry"],
   [/\bspring\b/i, "/hqepl/production/spring-data-entry"],
+  // Before AFTER POWDER COATING's pattern, which "BEFORE POWDER COATING" also matches.
+  [/before\s*powder\s*coating/i, "/hqepl/production/before-powder-coating-data-entry"],
   [/powder\s*coating/i, "/hqepl/production/powder-coating-data-entry"],
   [/\brubber\b/i, "/hqepl/production/rubber-data-entry"],
+  // FINAL ASSEMBLY — the whole name, so MODULAR FRAME ASSEMBLY is never taken for it.
+  [/\bfinal\s*assembly\b/i, "/hqepl/production/final-assembly-data-entry"],
+  [/\binjection\b/i, "/hqepl/production/injection-moulding-data-entry"],
+  [/\bembossing\b/i, "/hqepl/production/embossing-data-entry"],
+  [/\bprinting\b/i, "/hqepl/production/printing-data-entry"],
+  // RAW CASTING — no other pattern above matches it, nor this one any other name.
+  [/\braw\s*casting\b/i, "/hqepl/production/raw-casting-data-entry"],
+  // MODULAR FRAME DRILLING — the whole name, so neither "DRILLING" alone nor any
+  // other process is ever taken for it (utils/mfdSheet.js isMfdProcess).
+  [/\bmodular\s*frame\s*drilling\b/i, "/hqepl/production/modular-frame-drilling-data-entry"],
+  // MODULAR FRAME ASSEMBLY — the whole name, so it is never MODULAR FRAME
+  // DRILLING's or FINAL ASSEMBLY's page, nor theirs this one (utils/mfaSheet.js isMfaProcess).
+  [/\bmodular\s*frame\s*assembly\b/i, "/hqepl/production/modular-frame-assembly-data-entry"],
 ];
 
 export const dataEntryPageOf = (process) =>

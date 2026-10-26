@@ -161,13 +161,17 @@ class KindBadge extends StatelessWidget {
 
 /// Opens the breakdown for the card's measure.
 class DrillButton extends StatelessWidget {
-  const DrillButton({super.key, required this.onPressed});
+  const DrillButton({super.key, required this.onPressed, this.unit = 'machine'});
   final VoidCallback onPressed;
+
+  /// What the dashboard is broken down by — "machine", or "worker" on a
+  /// worker-based process (web WidgetCard `unit`).
+  final String unit;
 
   @override
   Widget build(BuildContext context) => CardIconButton(
         icon: Icons.account_tree_outlined,
-        tooltip: 'Break down by machine, operator, part, date',
+        tooltip: 'Break down by $unit, operator, part, date',
         onPressed: onPressed,
       );
 }
@@ -195,9 +199,13 @@ class WidgetCard extends StatelessWidget {
     this.fixedHeader = false,
     this.preview,
     this.tone,
+    this.unit = 'machine',
   });
 
   static const double _denseBelow = 340;
+
+  /// "machine" / "worker": what the drill button says it breaks down by.
+  final String unit;
 
   final String title;
   final String? hint;
@@ -243,7 +251,7 @@ class WidgetCard extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!tableOnly) ViewToggleButton(view: view, onChanged: onViewChanged, labels: labelled),
-        if (onDrill != null) DrillButton(onPressed: drill),
+        if (onDrill != null) DrillButton(onPressed: drill, unit: unit),
         CardIconButton(icon: Icons.open_in_full_rounded, tooltip: 'Maximize', onPressed: maximize),
       ],
     );

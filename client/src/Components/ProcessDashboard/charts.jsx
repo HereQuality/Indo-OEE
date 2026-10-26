@@ -5,11 +5,10 @@ import {
   ReferenceLine, ResponsiveContainer, Tooltip, Treemap, XAxis, YAxis,
 } from "recharts";
 import {
-  DIMENSIONS, FORMATS, STOPPAGE_GROUPS, causeLabel, compareMachines, formatExact,
+  CAUSE_FIELDS, DIMENSIONS, FORMATS, STOPPAGE_GROUPS, causeLabel, compareMachines, formatExact,
   reasonMeasure, summarize, summarizeBy,
 } from "../../utils/processDashboard";
 import { axisProps, markOpacity, tooltipProps } from "./chartTheme";
-import { STOPPAGE_FIELDS } from "../../utils/productionSheet";
 
 /**
  * Components/ProcessDashboard/charts.jsx
@@ -44,7 +43,7 @@ const timesOf = (ctx) => ctx.words?.times || "machine ON/OFF times";
 // has (ctx.stoppageKeys — no B.D. Mech. / Ele. on RUBBER), plus any other
 // that does carry minutes, so a column never hides time the totals include.
 const causeColumns = (ctx, groups) =>
-  STOPPAGE_FIELDS.filter((f) => !ctx.stoppageKeys || ctx.stoppageKeys.includes(f.key) || groups.some((g) => g.summary.downtimeByCause[f.key]));
+  CAUSE_FIELDS.filter((f) => !ctx.stoppageKeys || ctx.stoppageKeys.includes(f.key) || groups.some((g) => g.summary.downtimeByCause[f.key]));
 
 export const Empty = ({ children }) => (
   <div className="d-flex align-items-center justify-content-center h-100 text-muted small text-center px-3">{children}</div>
@@ -442,7 +441,7 @@ const OkRejectedTrend = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
 // One hue per machine (white text sits on all of them); a machine keeps its
 // colour by its place in the sheet order, so filtering never repaints it.
 const MACHINE_HUES = ["#2f6fe0", "#1e2a8a", "#d4682f", "#5b1a7a", "#17855f", "#a8700a", "#b02a5b", "#3a7f8c"];
-const shortCause = (key) => causeLabel(key).replace(/Lunch\/Tea\/Wash room etc\./, "Lunch / Tea");
+const shortCause = (key, ctx) => causeLabel(key, ctx?.causeLabels).replace(/Lunch\/Tea\/Wash room etc\./, "Lunch / Tea");
 
 // Machine block → one tile per stoppage cause inside it, area = minutes.
 const StoppageTile = ({ x, y, width, height, depth, name, value, parentName, first, color, nodeKey, selected, onSelect, c }) => {
@@ -506,8 +505,8 @@ const DowntimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
     const color = MACHINE_HUES[i % MACHINE_HUES.length];
     return {
       name: g.label, nodeKey: g.key, color,
-      children: STOPPAGE_FIELDS
-        .map((f) => ({ name: shortCause(f.key), value: g.summary.downtimeByCause[f.key] || 0, parentName: g.label, color, nodeKey: g.key }))
+      children: CAUSE_FIELDS
+        .map((f) => ({ name: shortCause(f.key, ctx), value: g.summary.downtimeByCause[f.key] || 0, parentName: g.label, color, nodeKey: g.key }))
         .filter((d) => d.value > 0)
         .sort((x, y) => y.value - x.value)
         .map((d, k) => ({ ...d, first: k === 0 })),
@@ -548,11 +547,11 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, ...rest })
   const rows = rowsFor("machine");
   const causes = useMemo(() => {
     const total = summarize(rows).downtimeByCause;
-    return STOPPAGE_FIELDS
-      .map((f) => ({ key: f.key, label: shortCause(f.key), value: total[f.key] || 0 }))
+    return CAUSE_FIELDS
+      .map((f) => ({ key: f.key, label: shortCause(f.key, ctx), value: total[f.key] || 0 }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [rows]);
+  }, [rows, ctx]);
   const machines = useMemo(
     () => summarizeBy(rows, "machine", ctx).sort(compareMachines(ctx)),
     [rows, ctx],
@@ -562,7 +561,7 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, ...rest })
     const causeFields = causeColumns(ctx, machines);
     return (
       <MiniTable
-        columns={[unitOf(ctx), "Effective Run Time", ...causeFields.map((f) => `${causeLabel(f.key)} (min)`)]}
+        columns={[unitOf(ctx), "Effective Run Time", ...causeFields.map((f) => `${causeLabel(f.key, ctx.causeLabels)} (min)`)]}
         selected={filters.machine}
         onRowClick={(k) => onToggle("machine", k)}
         rows={machines.map((g) => ({

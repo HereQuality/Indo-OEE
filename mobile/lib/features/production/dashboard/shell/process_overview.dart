@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../dashboard_engine.dart' as eng show isWorkerProcess;
 import '../data/dashboard_models.dart';
 import '../widgets/dash_card.dart';
 
 String machineCountText(int count) => '$count machine${count == 1 ? '' : 's'}';
+
+/// RUBBER / After Powder Coating have no machines (their entries are made per
+/// worker), so "0 machines" would be wrong — they're named for what they count
+/// by (web ProcessOverview `processSubtitle`).
+String processSubtitle(ProcessInfo p) => eng.isWorkerProcess(p.toJson()) ? 'Per worker' : machineCountText(p.machines.length);
 
 /// The dashboard's landing content: every process as a tile, then "All
 /// machines" (port of ProcessOverview.jsx). Deliberately a plain menu — it
@@ -46,7 +52,7 @@ class ProcessOverview extends StatelessWidget {
               for (final p in processes)
                 ProcessTile(
                   title: p.name,
-                  subtitle: machineCountText(p.machines.length),
+                  subtitle: processSubtitle(p),
                   detail: _machinePreview(p.machines),
                   icon: Icons.precision_manufacturing_outlined,
                   onTap: () => onOpen(p.id),

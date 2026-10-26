@@ -17,7 +17,8 @@ String hmStr(Object? v) {
 String pctStr(Object? v) => dash(fmtPct(v));
 
 /// A typed figure: blank reads as a dash, not as a 0 nobody typed.
-String minStr(Object? v) => (v == null || v == '') ? '—' : dash(fmtNum(jsToNumber(v)));
+/// Web `min`: text that isn't a number reads as nothing, not a dash.
+String minStr(Object? v) => (v == null || v == '') ? '—' : fmtNum(jsToNumber(v));
 
 /// The downtime figures read better as 0 than a dash — they add up into Total
 /// Stoppage. Display only: the formulas already treat blank as 0.

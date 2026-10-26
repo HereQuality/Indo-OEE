@@ -18,6 +18,18 @@
 
 import '../../shared/production_sheet_calc.dart';
 
+/// Which sheet a process's data entry happens on is the page it is linked to in
+/// Process Master (its "Data Entry Page"). A process not linked to any page yet
+/// is taken as After Powder Coating if it is named so — BEFORE POWDER COATING
+/// is a different process (web `isPowderCoatingProcess`).
+bool isPowderCoatingProcess(Map<String, dynamic>? process) {
+  final page = jsString(process?['dataEntryMenu'] ?? '');
+  if (page.isNotEmpty) return RegExp(r'/powder-coating-data-entry/?$').hasMatch(page);
+  final name = jsString(process?['processName'] ?? '');
+  return RegExp(r'powder\s*coating', caseSensitive: false).hasMatch(name) &&
+      !RegExp(r'before\s*powder', caseSensitive: false).hasMatch(name);
+}
+
 /// The sheet's Types of defect / rework, in its own order (key, label).
 const List<(String, String)> powderDefectFields = [
   ('lessCoatingQty', 'Less Powder Coating'),

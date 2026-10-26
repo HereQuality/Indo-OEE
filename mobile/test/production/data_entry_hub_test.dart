@@ -7,6 +7,7 @@ import 'package:indo/app/routes.dart';
 import 'package:indo/core/widgets/states.dart';
 import 'package:indo/features/production/data_entry_hub/data_entry_hub_screen.dart';
 import 'package:indo/features/production/processes/cnc/cnc_spec.dart';
+import 'package:indo/features/production/processes/rubber/rubber_spec.dart';
 import 'package:indo/features/production/processes/vmc/vmc_spec.dart';
 import 'package:indo/features/production/production_dashboard_screen.dart';
 import 'package:indo/features/production/production_sheet_screen.dart';
@@ -43,6 +44,13 @@ void main() {
           'machines': <Object>[],
         },
         {'_id': 'p4', 'processName': 'ROLL', 'machines': <Object>[]},
+        // A page the phone has no screen for (RUBBER has one now).
+        {
+          '_id': 'p5',
+          'processName': 'BUFFING',
+          'dataEntryMenu': '/hqepl/production/buffing-data-entry',
+          'machines': <Object>[],
+        },
       ];
 
   final menus = [
@@ -50,6 +58,7 @@ void main() {
       MenuItem(id: 'mv', name: 'VMC', url: '/hqepl/production/vmc-data-entry'),
       MenuItem(id: 'mp', name: 'PRESS', url: '/hqepl/production/press-data-entry'),
       MenuItem(id: 'mr', name: 'RUBBER', url: '/hqepl/production/rubber-data-entry'),
+      MenuItem(id: 'mb', name: 'BUFFING', url: '/hqepl/production/buffing-data-entry'),
       MenuItem(id: 'md', name: 'Dashboard', url: '/hqepl/production/dashboard'),
     ]),
   ];
@@ -59,7 +68,7 @@ void main() {
   FakeApi setup({List<Map<String, dynamic>>? procs}) {
     final api = FakeApi.install();
     installDashboardApi(api, processes: procs ?? processes());
-    for (final spec in [vmcSpec, cncSpec]) {
+    for (final spec in [vmcSpec, cncSpec, rubberSpec]) {
       api.on('GET', spec.api.list, (_) => {
             'isOk': true,
             'data': <Object>[],
@@ -97,7 +106,10 @@ void main() {
     expect(find.text('2 machines'), findsOneWidget);
     expect(find.text('1 machine'), findsOneWidget);
     expect(card('PRESS'), findsOneWidget);
+    // RUBBER is kept per worker: it has no machines to count.
     expect(card('RUBBER'), findsOneWidget);
+    expect(find.text('Per worker'), findsOneWidget);
+    expect(card('BUFFING'), findsOneWidget);
     expect(find.text('Not in the app yet'), findsOneWidget);
     expect(card('ROLL'), findsOneWidget);
     expect(find.text('Not linked to a page'), findsOneWidget);
@@ -110,20 +122,32 @@ void main() {
     expect(card('VMC'), findsOneWidget);
     expect(card('PRESS'), findsNothing);
     expect(card('RUBBER'), findsNothing);
+    expect(card('BUFFING'), findsNothing);
     expect(card('ROLL'), findsNothing); // unlinked: hidden from non-admins
     expect(find.text('Not linked to a page'), findsNothing);
   });
 
   testWidgets('a process the phone has no screen for is listed disabled', (tester) async {
     final api = setup();
-    await pumpHub(tester, roles: [view('mv'), view('mr')]);
-    expect(card('RUBBER'), findsOneWidget);
+    await pumpHub(tester, roles: [view('mv'), view('mb')]);
+    expect(card('BUFFING'), findsOneWidget);
     expect(find.text('Not in the app yet'), findsOneWidget);
-    await tester.tap(card('RUBBER'));
+    await tester.tap(card('BUFFING'));
     await tester.pumpAndSettle();
     expect(find.byType(ProductionSheetScreen), findsNothing);
     expect(find.byType(DataEntryHubScreen), findsOneWidget);
     expect(api.misses, isEmpty);
+  });
+
+  testWidgets('RUBBER opens its own screen', (tester) async {
+    final api = setup();
+    await pumpHub(tester, roles: [view('mr')]);
+    expect(find.text('Not in the app yet'), findsNothing);
+    await tester.tap(card('RUBBER'));
+    await tester.pumpAndSettle();
+    final screen = tester.widget<ProductionSheetScreen>(find.byType(ProductionSheetScreen));
+    expect(screen.spec, same(rubberSpec));
+    expect(api.called('GET', rubberSpec.api.list), isNotEmpty);
   });
 
   testWidgets('tapping a card opens that process\'s screen (its list is fetched); Back returns to the hub', (tester) async {
@@ -230,7 +254,7 @@ void main() {
 
     testWidgets('the tab is hidden when the person can open no data-entry page', (tester) async {
       setup();
-      await pumpShell(tester, admin: false, roles: [view('md'), view('mr')]);
+      await pumpShell(tester, admin: false, roles: [view('md'), view('mb')]);
       expect(find.byType(NavigationBar), findsNothing); // a single tab: no bar
       expect(find.byType(ProductionDashboardScreen), findsOneWidget);
       expect(find.byType(DataEntryHubScreen), findsNothing);

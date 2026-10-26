@@ -309,8 +309,17 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                   onPressed: allTaken ? null : _add,
                   style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
                   icon: const Icon(Icons.add_rounded, size: 20),
-                  label: Text('Add another ${widget.spec.machineNoun}'),
+                  label: Text(widget.spec.addAnotherLabel),
                 ),
+                if (widget.spec.addAnotherNote != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      widget.spec.addAnotherNote!,
+                      key: const ValueKey('entry-add/note'),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
                 if (allTaken)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),

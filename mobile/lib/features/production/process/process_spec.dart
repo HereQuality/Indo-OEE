@@ -154,11 +154,44 @@ abstract class ProcessSpec {
   /// separate operator (the worker IS the row key): off there.
   bool get checksOperatorClash => true;
 
+  /// Whether one machine's (worker's) entries on a date may not overlap in time
+  /// (web `overlapErrors`). PRINTING turns it off: one operator may run two
+  /// jobs at once, as its paper sheet does.
+  bool get checksTimeOverlap => true;
+
+  /// The most entries one machine (worker) may have on a date, said on the box
+  /// as soon as the date is full (web `slotsFullErrors(…, { max })`); null =
+  /// left to the server's refusal on Save (today's behaviour).
+  int? get maxEntriesPerDay => null;
+
+  /// What a collapsed block with no row key yet says, and its "+" tooltip then
+  /// (web: "Select a machine — its entry fields open automatically" / "Select a
+  /// machine first"). A person's sheet says it its own way ("Select an operator
+  /// — their entry fields open automatically").
+  String get selectMachinePrompt => 'Select a $machineNoun — its entry fields open automatically';
+  String get selectMachineFirst => 'Select a $machineNoun first';
+
+  /// The "Add another …" button under the blocks, and the note beside it
+  /// (null = none).
+  String get addAnotherLabel => 'Add another $machineNoun';
+  String? get addAnotherNote => null;
+
+  /// How the time-overlap message names this sheet's two time boxes and its
+  /// row key (web `overlapErrors(…, { words })`): "Machine ON Time … for this
+  /// machine" by default; a worker sheet says its own ("Working Start Time …
+  /// for this worker").
+  rules.TimeWords get timeWords => rules.machineTimeWords;
+
   /// The name to show for a saved row whose machine (worker) is no longer
   /// offered; null = a generic "Noun (no longer active)".
   String? savedMachineName(Json row) => null;
 
   /// Row fields the list's search box looks in, and its placeholder.
+  /// Whether a machine's entries on a date read in Machine ON order (then
+  /// slot) rather than slot order — MODULAR FRAME DRILLING, whose entries may
+  /// overlap in time (web `sortedRows`).
+  bool get entriesByMachineOn => false;
+
   List<String> get searchKeys => const ['itemName', 'operator', 'drawingNo'];
   String get searchHint => 'Search part, operator, drawing no…';
 

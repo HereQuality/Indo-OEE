@@ -165,16 +165,17 @@ const dayText = (iso) => {
 // its own saved date and machine (edit) is one of those entries, not a new
 // one. Earlier blocks of the same form count too: they're saved first.
 // `who(machineId)` names the row key the way the server does ("This machine",
-// or the worker's name). { machine | date: message } per block.
-export const slotsFullErrors = (entries, occupied = {}, { editSlot = null, saved = null, who = () => "This machine" } = {}) =>
+// or the worker's name). `max`: a sheet that takes more entries a day
+// (BEFORE POWDER COATING) passes its own. { machine | date: message } per block.
+export const slotsFullErrors = (entries, occupied = {}, { editSlot = null, saved = null, who = () => "This machine", max = MAX_ENTRIES_PER_DAY } = {}) =>
   entries.map((v, i) => {
     if (blank(v.machine) || blank(v.date)) return {};
     if (saved && v.date === saved.date && v.machine === saved.machine) return {};
     const taken =
       (occupied[`${v.machine}|${v.date}`] || []).filter((o) => !isEditedRow(o, v, editSlot, saved)).length +
       entries.filter((o, j) => j < i && o.machine === v.machine && o.date === v.date).length;
-    if (taken < MAX_ENTRIES_PER_DAY) return {};
-    const full = `${who(v.machine)} already has ${MAX_ENTRIES_PER_DAY} entries on ${dayText(v.date)}`;
+    if (taken < max) return {};
+    const full = `${who(v.machine)} already has ${max} entries on ${dayText(v.date)}`;
     // An edited row is moved by its Date (its machine stays locked); a new one
     // is placed by its Machine / Worker.
     return saved ? { date: `${full} — can't move this entry there` } : { machine: `${full} — edit one of them instead` };

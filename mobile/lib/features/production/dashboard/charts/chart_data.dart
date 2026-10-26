@@ -1,6 +1,5 @@
 import 'package:flutter/painting.dart' show Color;
 
-import '../../shared/production_sheet_calc.dart' show stoppageFields;
 import '../dashboard_engine.dart' as eng;
 import 'chart_props.dart';
 import 'hbars.dart' show BarDatum;
@@ -124,6 +123,11 @@ const List<OeeSeries> utilSeries = [
   OeeSeries('unutilized', 'Unutilized machine time', 'Unutilized machine time', tone: 'downtime'),
 ];
 
+/// The same on a worker-based process (web `UTIL_SERIES_WORKER`).
+const List<OeeSeries> utilSeriesWorker = [
+  OeeSeries('unutilized', 'Unutilized time', 'Unutilized time', tone: 'downtime'),
+];
+
 List<TimePoint> oeeTrend(Rows rows, String dim, DashboardCtx ctx, [List<OeeSeries> series = oeeSeries]) {
   final out = <TimePoint>[];
   for (final g in eng.summarizeBy(rows, dim, ctx)) {
@@ -150,20 +154,40 @@ List<TimePoint> okRejectedTrend(Rows rows, String dim, DashboardCtx ctx) {
 
 // ── Stoppages by cause (radar) and by machine (nested treemap) ─────────────
 
-/// charts.jsx `shortCause`: the cause label with the long lunch wording folded.
-String shortCause(String key) => eng.causeLabel(key).replaceFirst(RegExp(r'Lunch/Tea/Wash room etc\.'), 'Lunch / Tea');
+/// charts.jsx `shortCause`: the cause label with the long lunch wording folded,
+/// in the process's own words where it has them ([DashboardCtx.causeLabels]).
+String shortCause(String key, [DashboardCtx? ctx]) =>
+    eng.causeLabel(key, ctx?.causeLabels).replaceFirst(RegExp(r'Lunch/Tea/Wash room etc\.'), 'Lunch / Tea');
 
-/// RunTimeByMachine (radar): minutes lost per stoppage cause over [rows], all
-/// ten causes (none folded into "Other"), largest first, zero causes dropped.
-List<BarDatum> stoppageCauses(Rows rows) {
+/// RunTimeByMachine (radar): minutes lost per stoppage cause over [rows], every
+/// cause (none folded into "Other" — PRINTING's own three included), largest
+/// first, zero causes dropped.
+List<BarDatum> stoppageCauses(Rows rows, [DashboardCtx? ctx]) {
   final total = eng.summarize(rows)['downtimeByCause'];
   final out = <BarDatum>[];
-  for (final f in stoppageFields) {
+  for (final f in eng.causeFields) {
     final key = f['key'] as String;
     final v = total is Map ? (_num(total[key]) ?? 0.0) : 0.0;
-    if (v > 0) out.add(BarDatum(key, shortCause(key), v));
+    if (v > 0) out.add(BarDatum(key, shortCause(key, ctx), v));
   }
   return sortedStable(out, (a, b) => b.value.compareTo(a.value));
+}
+
+/// charts.jsx `causeColumns`: the causes a cause table lists — the ones the
+/// process's sheet has ([DashboardCtx.stoppageKeys]; the shared ten when not
+/// given), plus any other that does carry minutes in one of [summaries], so a
+/// column never hides time the totals include.
+List<Map<String, dynamic>> causeColumns(DashboardCtx ctx, Iterable<Map<String, dynamic>> summaries) {
+  final keys = ctx.stoppageKeys ?? eng.stoppageKeysFor(null);
+  bool carries(String key) => summaries.any((s) {
+        final by = s['downtimeByCause'];
+        final v = by is Map ? _num(by[key]) : null;
+        return v != null && v != 0;
+      });
+  return [
+    for (final f in eng.causeFields)
+      if (keys.contains(f['key']) || carries(f['key'] as String)) f,
+  ];
 }
 
 /// One machine of the B.D. Backup treemap: its causes, largest first.
@@ -203,8 +227,8 @@ List<StoppageMachine> stoppageMachines(Rows rows, DashboardCtx ctx) {
         final s = m['summary'] as Map<String, dynamic>;
         final by = s['downtimeByCause'];
         final causes = <(String, String, double)>[
-          for (final f in stoppageFields)
-            if (by is Map && (_num(by[f['key']]) ?? 0) > 0) (f['key'] as String, shortCause(f['key'] as String), _num(by[f['key']])!),
+          for (final f in eng.causeFields)
+            if (by is Map && (_num(by[f['key']]) ?? 0) > 0) (f['key'] as String, shortCause(f['key'] as String, ctx), _num(by[f['key']])!),
         ];
         return StoppageMachine('${m['key']}', '${m['label']}', s, sortedStable(causes, (a, b) => b.$3.compareTo(a.$3)));
       }(),

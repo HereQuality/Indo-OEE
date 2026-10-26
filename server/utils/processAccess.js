@@ -24,8 +24,24 @@ const PAGE_BY_NAME = [
   [/\bcontact\b/i, "/production/contact-data-entry"],
   [/\btrobe\b/i, "/production/trobe-data-entry"],
   [/\bspring\b/i, "/production/spring-data-entry"],
+  // Before AFTER POWDER COATING's pattern, which "BEFORE POWDER COATING" also matches.
+  [/before\s*powder\s*coating/i, "/production/before-powder-coating-data-entry"],
   [/powder\s*coating/i, "/production/powder-coating-data-entry"],
   [/\brubber\b/i, "/production/rubber-data-entry"],
+  // FINAL ASSEMBLY — the whole name, so MODULAR FRAME ASSEMBLY (or any other
+  // "… ASSEMBLY") is never taken for it, nor it for them.
+  [/\bfinal\s*assembly\b/i, "/production/final-assembly-data-entry"],
+  [/\bprinting\b/i, "/production/printing-data-entry"],
+  [/\binjection\b/i, "/production/injection-moulding-data-entry"],
+  [/\bembossing\b/i, "/production/embossing-data-entry"],
+  // RAW CASTING — no other pattern above matches it, nor this one any other name.
+  [/\braw\s*casting\b/i, "/production/raw-casting-data-entry"],
+  // MODULAR FRAME DRILLING — the whole name, so neither "DRILLING" alone nor any
+  // other process is ever taken for it.
+  [/\bmodular\s*frame\s*drilling\b/i, "/production/modular-frame-drilling-data-entry"],
+  // MODULAR FRAME ASSEMBLY — the whole name, so it is never MODULAR FRAME
+  // DRILLING's or FINAL ASSEMBLY's page, nor theirs this one.
+  [/\bmodular\s*frame\s*assembly\b/i, "/production/modular-frame-assembly-data-entry"],
 ];
 
 const trimPath = (p) => String(p || "").split("?")[0].replace(/\/+$/, "");

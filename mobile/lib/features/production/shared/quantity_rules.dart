@@ -77,7 +77,10 @@ String _numText(Object? v) {
 /// `rejectBreakdown` (reason -> text). A record saved before Actual existed has
 /// only OK and Rejected: Actual is their sum, and its rejected pieces go against
 /// its single reason (or none) so editing it loses nothing.
-Map<String, dynamic> quantityFormValues(Map<String, dynamic> row) {
+///
+/// [reasons]: the sheet's own reject reasons (Before Powder Coating has its own
+/// — `bpcRejectReasons`); every other sheet leaves it out: the CNC list.
+Map<String, dynamic> quantityFormValues(Map<String, dynamic> row, [List<String> reasons = rejectReasons]) {
   final ok = jsNumber(row['okQty']);
   final rej = jsNumber(row['rejectedQty']);
   final stored = jsNumber(row['actualQty']);
@@ -93,11 +96,11 @@ Map<String, dynamic> quantityFormValues(Map<String, dynamic> row) {
   final s = row['rejectBreakdown'];
   if (s is Map && s.isNotEmpty) {
     for (final e in s.entries) {
-      if (rejectReasons.contains(e.key)) split['${e.key}'] = _numText(e.value);
+      if (reasons.contains(e.key)) split['${e.key}'] = _numText(e.value);
     }
   } else {
     final reason = row['rejectReason'];
-    if (reason is String && rejectReasons.contains(reason) && isNum(rej) && rej! > 0) {
+    if (reason is String && reasons.contains(reason) && isNum(rej) && rej! > 0) {
       split[reason] = _numText(rej);
     }
   }

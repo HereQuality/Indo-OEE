@@ -35,6 +35,14 @@ const SHEETS = [
   ["SPRING FOR PINS", require("../models/SpringEntry"), "machine"],
   ["AFTER POWDER COATING", require("../models/PowderCoatingEntry"), "process"],
   ["RUBBER", require("../models/RubberEntry"), "process"],
+  ["INJECTION MOULDING", require("../models/InjectionEntry"), "machine"],
+  ["EMBOSSING", require("../models/EmbossingEntry"), "machine"],
+  ["BEFORE POWDER COATING", require("../models/BeforePowderCoatingEntry"), "process"],
+  ["FINAL ASSEMBLY", require("../models/FinalAssemblyEntry"), "process"],
+  ["PRINTING", require("../models/PrintingEntry"), "process"],
+  ["RAW CASTING", require("../models/RawCastingEntry"), "process"],
+  ["MODULAR FRAME DRILLING", require("../models/MfdEntry"), "machine"],
+  ["MODULAR FRAME ASSEMBLY", require("../models/MfaEntry"), "process"],
 ];
 
 async function run() {

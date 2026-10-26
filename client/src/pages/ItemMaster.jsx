@@ -23,6 +23,14 @@ import { isTrobeProcess } from "../utils/trobeSheet";
 import { isSpringProcess } from "../utils/springSheet";
 import { isPowderCoatingProcess } from "../utils/powderCoatingSheet";
 import { isRubberProcess } from "../utils/rubberSheet";
+import { isInjectionProcess } from "../utils/injectionSheet";
+import { isEmbossingProcess } from "../utils/embossingSheet";
+import { isBpcProcess } from "../utils/bpcSheet";
+import { isFinalAssemblyProcess } from "../utils/finalAssemblySheet";
+import { isPrintingProcess } from "../utils/printingSheet";
+import { isRawCastingProcess } from "../utils/rawCastingSheet";
+import { MFA_LABELS, isMfaProcess } from "../utils/mfaSheet";
+import { MFD_OPERATIONS, isMfdProcess } from "../utils/mfdSheet";
 import NumberInput from "../Components/Production/NumberInput";
 import ItemHistoryModal from "../Components/Production/ItemHistoryModal";
 
@@ -59,14 +67,20 @@ const showSec = (n) => (n === "" || n === null || n === undefined || !Number.isF
 
 // SPRING FOR PINS and AFTER POWDER COATING call their one typed-in time what
 // their own data entry sheet calls it; every other process says Total Cycle Time.
+// (BEFORE POWDER COATING says Standard Time per Piece too.)
+// (INJECTION MOULDING says Standard Time per Piece too.)
 const cycleTimeName = (process) =>
-  isSpringProcess(process)
+  isSpringProcess(process) || isBpcProcess(process) || isFinalAssemblyProcess(process) || isInjectionProcess(process) || isEmbossingProcess(process) || isPrintingProcess(process)
     ? "Standard Time per Piece"
-    : isPowderCoatingProcess(process)
+    : isPowderCoatingProcess(process) || isRawCastingProcess(process)
       ? "Standard Inspection Time per Piece"
-      : "Total Cycle Time";
+      : isMfaProcess(process)
+        ? MFA_LABELS.cycle
+        : "Total Cycle Time";
+// (RAW CASTING is an inspection sheet too: Standard Inspection Time per Piece;
+// MODULAR FRAME ASSEMBLY words its own, MFA_LABELS in utils/mfaSheet.js.)
 const cycleTimeLabel = (process) =>
-  isSpringProcess(process) || isPowderCoatingProcess(process) ? `${cycleTimeName(process)} (Sec)` : "Total Cycle Time (sec)";
+  isSpringProcess(process) || isPowderCoatingProcess(process) || isBpcProcess(process) || isFinalAssemblyProcess(process) || isInjectionProcess(process) || isEmbossingProcess(process) || isPrintingProcess(process) || isRawCastingProcess(process) || isMfaProcess(process) ? `${cycleTimeName(process)} (Sec)` : "Total Cycle Time (sec)";
 
 const initialState = {
   itemName: "",
@@ -83,6 +97,8 @@ const initialState = {
   pcsPerStandardTime: "",
   rivetProcessType: "",
   pressOperation: "",
+  // MODULAR FRAME DRILLING parts: their Process (DRILLING, TAPPING, …).
+  mfdOperation: "",
   ...emptyOps(),
   ...emptySpmOps(),
   ...emptySpmReference(),
@@ -138,6 +154,8 @@ const ItemMaster = () => {
   const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
   const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
   const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
+  // MODULAR FRAME DRILLING: Process, No. of Holes, Stroke Required and a typed Total Cycle Time.
+  const isMfd = useMemo(() => isMfdProcess(selectedProcess), [selectedProcess]);
   // TROBE, SPRING FOR PINS, AFTER POWDER COATING and RUBBER parts work the same way as
   // Contact ones: one Total Cycle Time (for After Powder Coating, its Standard
   // Inspection Time per Piece), typed straight in.
@@ -146,7 +164,14 @@ const ItemMaster = () => {
       isContactProcess(selectedProcess) ||
       isTrobeProcess(selectedProcess) ||
       isSpringProcess(selectedProcess) ||
+      isInjectionProcess(selectedProcess) ||
+      isEmbossingProcess(selectedProcess) ||
       isPowderCoatingProcess(selectedProcess) ||
+      isBpcProcess(selectedProcess) ||
+      isFinalAssemblyProcess(selectedProcess) ||
+      isPrintingProcess(selectedProcess) ||
+      isRawCastingProcess(selectedProcess) ||
+      isMfaProcess(selectedProcess) ||
       isRubberProcess(selectedProcess),
     [selectedProcess],
   );
@@ -208,6 +233,7 @@ const ItemMaster = () => {
           pcsPerStandardTime: it.pcsPerStandardTime ?? "",
           rivetProcessType: it.rivetProcessType || "",
           pressOperation: it.pressOperation || "",
+          mfdOperation: it.mfdOperation || "",
           ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
           ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, it[f.key] ?? ""])),
@@ -297,11 +323,30 @@ const ItemMaster = () => {
       else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerStandardTime = "Must be a whole number, 1 or more";
       if (!v.pressOperation) errors.pressOperation = "Operation is required";
     }
+    // A MODULAR FRAME DRILLING part's Process, No. of Holes and Stroke Required
+    // are shown on every entry it's picked on, and its Total Cycle Time fills
+    // in each entry's own (still changeable there for the day).
+    if (isMfd) {
+      if (!v.mfdOperation) errors.mfdOperation = "Process is required";
+      for (const [key, label] of [
+        ["noOfHoles", "No. of Holes in One Piece"],
+        ["strokeRequired", "Stroke Required for One Piece"],
+      ]) {
+        if (v[key] === "" || v[key] === null || v[key] === undefined) errors[key] = `${label} is required`;
+        else if (!Number.isInteger(Number(v[key])) || Number(v[key]) < 0) errors[key] = "Must be a whole number, 0 or more";
+      }
+      const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
+      if (v.totalCycleSec === "") errors.totalCycleSec = "Total Cycle Time is required";
+      else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
+    }
     // A Contact part has no operation breakdown — its Total Cycle Time is
     // typed straight in here and drives every Contact Data Entry row.
     if (isContact) {
       const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
-      if (v.totalCycleSec === "") errors.totalCycleSec = `${cycleTimeName(selectedProcess)} is required`;
+      // FINAL ASSEMBLY: optional — PACKING has none.
+      if (v.totalCycleSec === "") {
+        if (!isFinalAssemblyProcess(selectedProcess)) errors.totalCycleSec = `${cycleTimeName(selectedProcess)} is required`;
+      }
       else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
     }
     return errors;
@@ -415,6 +460,21 @@ const ItemMaster = () => {
                   ...noRivetProcessType,
                   pressOperation: values.pressOperation,
                 }
+              : isMfd
+                ? {
+                    ...noProgram,
+                    ...noPress,
+                    totalCycleSec: num(values.totalCycleSec),
+                    ...noCycleOps,
+                    ...noSpmOps,
+                    // No. of Holes / Stroke Required are SPM's own reference fields, reused.
+                    ...noSpmReference,
+                    noOfHoles: num(values.noOfHoles),
+                    strokeRequired: num(values.strokeRequired),
+                    ...noRivetOps,
+                    ...noRivetProcessType,
+                    ...noPressOperation,
+                  }
               : isContact
                 ? {
                     ...noProgram,
@@ -435,6 +495,9 @@ const ItemMaster = () => {
       itemName: values.itemName.trim(),
       drawingNo: values.drawingNo.trim(),
       ...cycleFields,
+      // MODULAR FRAME DRILLING's Process belongs to its parts only (kept as is
+      // for a process this page couldn't look up, like the boxes above).
+      mfdOperation: isMfd ? values.mfdOperation : unknownProcess ? undefined : null,
     };
 
     setIsLoading(true);
@@ -500,7 +563,9 @@ const ItemMaster = () => {
   // that process's own name for the time; across processes it stays generic.
   const filteredProcess = processes.find((p) => p._id === processFilter);
   const cycleColumn =
-    isSpringProcess(filteredProcess) || isPowderCoatingProcess(filteredProcess) ? cycleTimeLabel(filteredProcess) : "Total Cycle (sec)";
+    isSpringProcess(filteredProcess) || isPowderCoatingProcess(filteredProcess) || isBpcProcess(filteredProcess) || isFinalAssemblyProcess(filteredProcess) || isInjectionProcess(filteredProcess) || isEmbossingProcess(filteredProcess) || isPrintingProcess(filteredProcess) || isRawCastingProcess(filteredProcess) || isMfaProcess(filteredProcess)
+      ? cycleTimeLabel(filteredProcess)
+      : "Total Cycle (sec)";
 
   const col = [
     // Numbered on from the previous page rather than starting at 1 again.
@@ -873,6 +938,56 @@ const ItemMaster = () => {
                 </Col>
                 </Row>
               </>
+            ) : isMfd ? (
+              // A MODULAR FRAME DRILLING part: its Process (a required dropdown,
+              // like PRESS's Operation), No. of Holes and Stroke Required (SPM's
+              // reference fields) — shown on every entry it's picked on — and a
+              // Total Cycle Time typed straight in, which fills in each entry's own.
+              <>
+                <div className="form-floating mb-3">
+                  <Input type="select" name="mfdOperation" value={values.mfdOperation} onChange={handleChange}>
+                    <option value="">Select process</option>
+                    {MFD_OPERATIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </Input>
+                  <Label>
+                    Process <span className="text-danger">*</span>
+                  </Label>
+                  {isSubmit && formErrors.mfdOperation && <p className="text-danger">{formErrors.mfdOperation}</p>}
+                </div>
+                <Row className="g-2 align-items-end mb-1">
+                  {[
+                    ["noOfHoles", "No. of Holes in One Piece"],
+                    ["strokeRequired", "Stroke Required for One Piece"],
+                  ].map(([key, label]) => (
+                    <Col key={key} xs={12} md={6}>
+                      <div className="form-floating">
+                        <NumberInput name={key} value={values[key]} onChange={handleChange} decimals={false} placeholder=" " />
+                        <Label>
+                          {label} <span className="text-danger">*</span>
+                        </Label>
+                      </div>
+                      {isSubmit && formErrors[key] && <p className="text-danger mb-0 small mt-1">{formErrors[key]}</p>}
+                    </Col>
+                  ))}
+                  <Col xs={12} className="mt-3">
+                    <div className="form-floating">
+                      <NumberInput name="totalCycleSec" value={values.totalCycleSec} onChange={handleChange} placeholder=" " />
+                      <Label>
+                        Total Cycle Time (Sec) <span className="text-danger">*</span>
+                      </Label>
+                    </div>
+                    {isSubmit && formErrors.totalCycleSec ? (
+                      <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>
+                    ) : (
+                      <p className="text-muted mb-0 small mt-1">Filled in on each entry — can be changed there for the day.</p>
+                    )}
+                  </Col>
+                </Row>
+              </>
             ) : isContact ? (
               // A Contact part has no operation breakdown — Total Cycle Time is
               // typed straight in, and fills in every Contact Data Entry row the
@@ -880,7 +995,7 @@ const ItemMaster = () => {
               <div className="form-floating mb-1">
                 <NumberInput name="totalCycleSec" value={values.totalCycleSec} onChange={handleChange} placeholder=" " />
                 <Label>
-                  {cycleTimeLabel(selectedProcess)} <span className="text-danger">*</span>
+                  {cycleTimeLabel(selectedProcess)} {!isFinalAssemblyProcess(selectedProcess) && <span className="text-danger">*</span>}
                 </Label>
                 {isSubmit && formErrors.totalCycleSec ? (
                   <p className="text-danger mb-0 small mt-1">{formErrors.totalCycleSec}</p>

@@ -12,6 +12,14 @@ const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
 const PowderCoatingEntry = require("../models/PowderCoatingEntry");
 const RubberEntry = require("../models/RubberEntry");
+const InjectionEntry = require("../models/InjectionEntry");
+const EmbossingEntry = require("../models/EmbossingEntry");
+const PrintingEntry = require("../models/PrintingEntry");
+const BeforePowderCoatingEntry = require("../models/BeforePowderCoatingEntry");
+const FinalAssemblyEntry = require("../models/FinalAssemblyEntry");
+const RawCastingEntry = require("../models/RawCastingEntry");
+const MfdEntry = require("../models/MfdEntry");
+const MfaEntry = require("../models/MfaEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
 const { isAdminUser, actorOf } = require("../utils/adminAccess");
@@ -299,6 +307,44 @@ const DASHBOARD_SHEETS = [
   { Model: PowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total" } },
   // RUBBER is per worker too; its Effective Working Time counts OK Qty, like CNC.
   { Model: RubberEntry, cycleSec: null, byProcess: true },
+  // INJECTION MOULDING is a machine sheet: Effective Machine Run Time counts
+  // TOTAL QTY like SPRING FOR PINS, and each entry is worked out on its own
+  // (calcMode "perEntry", see client entryDayCalc).
+  { Model: InjectionEntry, cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  // EMBOSSING: the same as INJECTION MOULDING (a machine sheet, TOTAL QTY, per entry).
+  { Model: EmbossingEntry, cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  // PRINTING is per operator (byProcess; its optional MC No. is mcMachine, not
+  // the row key). Effective Machine Run Time counts TOTAL QTY like SPRING FOR
+  // PINS; each entry is worked out on its own (calcMode "perEntry", see client
+  // entryDayCalc); its three own downtime columns count as stoppage too.
+  {
+    Model: PrintingEntry,
+    cycleSec: null,
+    byProcess: true,
+    extra: { runQtyBasis: "total", calcMode: "perEntry", extraStoppageKeys: PrintingEntry.PRINTING_EXTRA_STOPPAGE_KEYS },
+  },
+  // BEFORE POWDER COATING is per operator (byProcess); Effective Machine Run
+  // Time counts TOTAL QTY like SPRING FOR PINS; each entry is worked out on its
+  // own (calcMode "perEntry", see client entryDayCalc), and its OEE considering
+  // losses takes every stoppage off except Lunch.
+  { Model: BeforePowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry", lossesExceptLunch: true } },
+  // FINAL ASSEMBLY is per worker (byProcess); Effective Time counts TOTAL QTY
+  // like AFTER POWDER COATING, and each entry is worked out on its own.
+  { Model: FinalAssemblyEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  // RAW CASTING is per worker (byProcess), on AFTER POWDER COATING's template:
+  // Ideal Inspection Time counts TOTAL QTY, and each entry is worked out on its
+  // own (calcMode "perEntry", see client entryDayCalc). Its Types of Defects are
+  // its rejectBreakdown, so Rejection by Reason names them.
+  { Model: RawCastingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  // MODULAR FRAME DRILLING is a machine sheet: its cycle is the entry's own
+  // Total Cycle Time (CYCLE_SEC.mfd), Effective Machine Run Time counts OK Qty
+  // like CNC, and each entry is worked out on its own (calcMode "perEntry",
+  // see client entryDayCalc).
+  { Model: MfdEntry, cycleSec: CYCLE_SEC.mfd, extra: { calcMode: "perEntry" } },
+  // MODULAR FRAME ASSEMBLY is per worker (byProcess), on RAW CASTING's template:
+  // Ideal Assembly Time counts TOTAL QTY, and each entry is worked out on its
+  // own (calcMode "perEntry", see client entryDayCalc).
+  { Model: MfaEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
 ];
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]

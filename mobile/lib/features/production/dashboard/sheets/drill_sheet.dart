@@ -187,7 +187,11 @@ class _DrillSheetState extends State<DrillSheet> {
                   extent: tabsExtent,
                   child: Align(
                     child: ChipTabs<String>(
-                      items: [for (final tab in _tabs) TabItem(tab, tab == 'records' ? 'Entries' : 'By ${_dimLabel[tab]}')],
+                      // "By Worker" on a worker-based process (web `dimLabel`).
+                      items: [
+                        for (final tab in _tabs)
+                          TabItem(tab, tab == 'records' ? 'Entries' : 'By ${tab == 'machine' ? widget.ctx.words.one : _dimLabel[tab]}'),
+                      ],
                       selected: _tab,
                       onSelected: (v) => setState(() => _tab = v),
                     ),

@@ -28,7 +28,18 @@ const labelClass = "form-label small text-muted mb-1";
 // boxes go two to a row, and one to a row on a phone.
 // `capByIdeal` false leaves Actual uncapped (RUBBER, which sends over-Ideal
 // entries to OEE Review instead). `notice` is passed to qtyNotice (machine / words).
-export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, capByIdeal = true, notice: noticeOpts = {} }) => {
+// `labels` names the three boxes the sheet's own way (BEFORE POWDER COATING:
+// TOTAL QTY / OK QTY / Rejected QTY); left out, they read as on the CNC form.
+export const ProductionMasterFields = ({
+  values,
+  calc,
+  err,
+  onChange,
+  md = 3,
+  capByIdeal = true,
+  notice: noticeOpts = {},
+  labels: { actual: actualLabel = "Actual Quantity", ok: okLabel = "OK Quantity", rejected: rejectedLabel = "Rejected" } = {},
+}) => {
   const { warning, notice } = useAlert();
   const actualTyped = values.actualQty !== "" && Number.isFinite(Number(values.actualQty));
   return (
@@ -36,7 +47,7 @@ export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, ca
       <Col xs={12} sm={6} lg={md}>
         <div className="mb-1" data-field="actualQty">
           <Label className={labelClass}>
-            Actual Quantity <span className="text-danger">*</span>
+            {actualLabel} <span className="text-danger">*</span>
           </Label>
           <NumberInput
             name="actualQty"
@@ -45,7 +56,7 @@ export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, ca
             decimals={false}
             invalid={!!err("actualQty")}
             {...(capByIdeal
-              ? { max: calc.idealQty, onExceedMax: (max, typed) => notice(...qtyNotice({ calc, entered: typed, label: "Actual Quantity", ...noticeOpts })) }
+              ? { max: calc.idealQty, onExceedMax: (max, typed) => notice(...qtyNotice({ calc, entered: typed, label: actualLabel, ...noticeOpts })) }
               : {})}
           />
           {err("actualQty") && <p className="text-danger mb-0 small mt-1">{err("actualQty")}</p>}
@@ -54,7 +65,7 @@ export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, ca
       <Col xs={12} sm={6} lg={md}>
         <div className="mb-1" data-field="okQty">
           <Label className={labelClass}>
-            OK Quantity <span className="text-danger">*</span>
+            {okLabel} <span className="text-danger">*</span>
           </Label>
           <NumberInput
             name="okQty"
@@ -63,14 +74,14 @@ export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, ca
             decimals={false}
             invalid={!!err("okQty")}
             max={actualTyped ? Number(values.actualQty) : capByIdeal ? calc.idealQty : undefined}
-            onExceedMax={(max) => warning(`OK Quantity can't be more than Actual Quantity (${fmtNum(max)})`)}
+            onExceedMax={(max) => warning(`${okLabel} can't be more than ${actualLabel} (${fmtNum(max)})`)}
           />
           {err("okQty") && <p className="text-danger mb-0 small mt-1">{err("okQty")}</p>}
         </div>
       </Col>
       <Col xs={12} sm={6} lg={md}>
-        <div className="mb-1" title="Actual Quantity − OK Quantity, so OK + Rejected = Actual">
-          <Label className={labelClass}>Rejected</Label>
+        <div className="mb-1" title={`${actualLabel} − ${okLabel}, so OK + Rejected = ${actualLabel}`}>
+          <Label className={labelClass}>{rejectedLabel}</Label>
           <Input type="text" bsSize="sm" value={fmtNum(calc.rejectedQty) ?? ""} readOnly disabled className="bg-light" />
         </div>
       </Col>
@@ -78,7 +89,8 @@ export const ProductionMasterFields = ({ values, calc, err, onChange, md = 3, ca
   );
 };
 
-export const RejectionMasterFields = ({ values, calc, err, index, onChange, onRejectChange }) => {
+// `reasons`: the sheet's own reject reasons (BEFORE POWDER COATING has its own); the CNC list otherwise.
+export const RejectionMasterFields = ({ values, calc, err, index, onChange, onRejectChange, reasons = REJECT_REASONS }) => {
   const { warning } = useAlert();
   const splitTotal = useMemo(() => Object.values(cleanSplit(values.rejectBreakdown)).reduce((sum, v) => sum + v, 0), [values.rejectBreakdown]);
   const rejected = calc.rejectedQty || 0;
@@ -90,7 +102,7 @@ export const RejectionMasterFields = ({ values, calc, err, index, onChange, onRe
     <>
       <div data-field="rejectBreakdown">
         <Row className="g-1">
-          {REJECT_REASONS.map((reason) => (
+          {reasons.map((reason) => (
             <Col xs={12} sm={6} lg={4} key={reason}>
               <div className="mb-2">
                 <Label className={labelClass}>{reason}</Label>

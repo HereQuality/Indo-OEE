@@ -610,7 +610,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
                       key: _keyFor(_anchorKeys, day.date),
                       child: SizedBox(
                         height: _headerExtent,
-                        child: SheetDayHeader(day: day, calendar: _c.calendar, now: now),
+                        child: SheetDayHeader(day: day, calendar: _c.calendar, now: now, noun: widget.spec.machineNoun),
                       ),
                     ),
                   );

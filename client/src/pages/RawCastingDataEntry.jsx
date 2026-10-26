@@ -1,0 +1,1060 @@
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { useReviewAccess } from "../hooks/useReviewAccess";
+import { shiftSettingOf } from "../utils/plannedShift";
+import { entryLinkRange, useOpenEntryFromLink } from "../hooks/useOpenEntryFromLink";
+import { Plus, Search } from "lucide-react";
+import {
+  Card,
+  CardBody,
+  CardHeader,
+  Container,
+  Input,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+} from "reactstrap";
+import DeleteModal from "../Components/Common/DeleteModal";
+import FormsFooter from "../Components/Common/FormAddFooter";
+import FormUpdateFooter from "../Components/Common/FormUpdateFooter";
+import ProductionEntriesTable, { emptyEntriesText } from "../Components/Production/ProductionEntriesTable";
+import { RAW_CASTING_COLUMNS } from "../Components/Production/rawCastingColumns";
+import RawCastingEntryForm from "../Components/Production/RawCastingEntryForm";
+import NumberInput from "../Components/Production/NumberInput";
+import FilterPanel from "../Components/ProcessDashboard/FilterPanel";
+import "../Components/ProcessDashboard/processDashboard.css";
+import { useAlert } from "../context/AlertContext";
+import { MenuContext } from "../context/MenuContext";
+import { useProcesses } from "../hooks/useProcesses";
+import { useItems } from "../hooks/useItems";
+import { useMachineOperators } from "../hooks/useMachineOperators";
+import { useVendors } from "../hooks/useVendors";
+import { anyVendorFor, vendorsForProcess } from "../utils/vendorsFor";
+import {
+  deleteRawCastingRow,
+  getRawCastingExtent,
+  getRawCastingFilterOptions,
+  getRawCastingOccupiedTimes,
+  getRawCastingSheet,
+  saveRawCastingRow,
+  unlockRawCastingRow,
+} from "../api/rawCastingSheet.api";
+import { isoDay, sortByMachineOn } from "../utils/productionSheet";
+import {
+  RAW_CASTING_DEFECTS,
+  RAW_CASTING_FORMULAS,
+  RAW_CASTING_MAX_ENTRIES_PER_DAY,
+  isStatusOnly,
+  rawCastingDayCalc,
+  rawCastingRowCalc,
+} from "../utils/rawCastingSheet";
+import { firstRawCastingError, validateRawCastingEntry } from "../utils/rawCastingValidation";
+import { WORKER_WORDS, firstOverLimit } from "../utils/limitNotice";
+import { bookedRanges, cleanSplit, isTimeRuleMessage, slotsFullErrors } from "../utils/entryValidation";
+import { guardEscape } from "../utils/modalEscape";
+import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
+import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
+import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
+import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../utils/shiftHours";
+import { shiftSettingForMachine } from "../utils/plannedShift";
+
+/**
+ * RAW CASTING Data Entry — that inspection sheet's records (sheet key
+ * "rawCasting"; its own process), and one form per record.
+ *
+ * PowderCoatingDataEntry's twin — the same list with its filters and paging,
+ * the same Add/Edit form behaviour, the same two-working-day lock and Super
+ * Admin unlock — kept per WORKER: the sheet has no machine. A record is keyed
+ * by (date, worker, entry no.), up to RAW_CASTING_MAX_ENTRIES_PER_DAY a day,
+ * and one worker's entries may overlap (the paper has MANJU 10:10–16:30 and
+ * 16:10–18:50), so there's no overlap rule — only "the date is full". The
+ * worker's id sits in each row's `machine` (the API maps it), so the shared
+ * table groups by worker the way it groups every other sheet by machine. The
+ * worker stays locked while editing, because changing it would move the record
+ * to a different key. Every entry's Unreported Time and two Productivity
+ * figures are its own (rawCastingDayCalc → entryDayCalc), as on the paper —
+ * combined across the day only while Process Master fixes the shift.
+ *
+ * The figures live in utils/rawCastingSheet.js and the rules in
+ * utils/rawCastingValidation.js, so the form's grey boxes, the table and the
+ * Save button can't disagree.
+ */
+
+const TEXT_FIELDS = ["workingStatus", "itemName", "challanNo", "otherActivity", "remarks", "otherMinRemark"];
+const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
+const NUMBER_FIELDS = ["totalCycleSec", "actualQty", "otherActivityMin", "plannedOperatorShiftHours", "lunchMin", "otherMin"];
+
+// Add-entry drafts: typing gets saved to localStorage the moment the form is
+// closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
+// Reopening "Add Entry" within a minute brings it back; after that (or on a
+// successful Save) it's gone, so the form doesn't come back stale hours later.
+const DRAFT_KEY = "rawCastingEntryDraft";
+const DRAFT_TTL_MS = 60 * 1000;
+
+const hasDefects = (v) => Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null);
+
+const hasAnyEntryData = (list) =>
+  list.some((v) => {
+    if (v.machine) return true;
+    if (hasDefects(v)) return true;
+    return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
+  });
+
+const loadDraft = () => {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.entries?.length || Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
+      window.localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return parsed.entries;
+  } catch {
+    return null;
+  }
+};
+
+const saveDraft = (entries) => {
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ entries, savedAt: Date.now() }));
+  } catch {
+    // localStorage unavailable (private mode, quota) — the draft is just skipped.
+  }
+};
+
+const clearDraft = () => {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const emptyEntry = () => ({
+  date: isoDay(new Date()),
+  // The worker's id — this sheet's row key, kept where every sheet keeps it.
+  machine: "",
+  // Reasons For Not Working — any of the shared list, on a Non Working day.
+  machineStatus: [],
+  // Working (default) or Non Working — see utils/productionSheet.js.
+  workingMode: "Working",
+  // Assigned on save from the worker's free slots for that date; kept in the
+  // values only because an edited record has to save back to its own slot.
+  slot: 1,
+  item: "",
+  vendor: "",
+  vendorName: "",
+  // Types of Defects: { defect: qty } over this sheet's own three.
+  rejectBreakdown: {},
+  ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
+  ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
+  ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
+});
+
+// A saved record -> form values ("" for anything unset, so inputs stay controlled).
+const toFormValues = (row) => ({
+  ...emptyEntry(),
+  ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
+  item: row.item || "",
+  vendor: row.vendor || "",
+  slot: row.slot,
+  // Only this sheet's own defect names, as the boxes show them.
+  rejectBreakdown: Object.fromEntries(RAW_CASTING_DEFECTS.filter((d) => row.rejectBreakdown?.[d] != null).map((d) => [d, String(row.rejectBreakdown[d])])),
+  // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
+  plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
+});
+
+// A status-only day (ABSENT, SUNDAY, …) or Non Working day keeps just its
+// status and Remarks — anything typed in the hidden inspection boxes before the
+// status was picked is sent blank, so it's never saved.
+const STATUS_ONLY_KEPT = ["workingStatus", "workingMode", "machineStatus", "remarks"];
+const toPayload = (v, isEdit, processId) => {
+  const body = toFullPayload(v, isEdit, processId);
+  if (!isStatusOnly(v) && v.workingMode !== "Non Working") return body;
+  return Object.fromEntries(
+    Object.entries(body).map(([k, val]) =>
+      ["_id", "date", "machine", "process", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : k === "rejectBreakdown" ? {} : ""],
+    ),
+  );
+};
+
+// Form values -> request body. "" tells the server to unset that field.
+const toFullPayload = (v, isEdit, processId) => ({
+  // Tells the server which exact document this edit belongs to, so changing
+  // the Date moves that document instead of leaving it behind and quietly
+  // creating a second one (see saveRow's _id lookup) — absent on a new entry.
+  ...(isEdit && v._id ? { _id: v._id } : {}),
+  date: v.date,
+  // The worker (the API sends it as `worker`), and the process this page is
+  // linked to — a new entry belongs to it; an edit keeps its own.
+  machine: v.machine,
+  process: processId,
+  vendor: v.vendor || "",
+  // Reasons belong to a Non Working day only; a Working entry carries none.
+  machineStatus: v.workingMode === "Non Working" ? v.machineStatus || [] : [],
+  workingMode: v.workingMode || "Working",
+  // An edited record saves back to its own slot; a new one asks the server for
+  // the worker's next free slot on that date, since only the server can see
+  // every entry — the page may be filtered to one worker.
+  slot: isEdit ? Number(v.slot) : "auto",
+  item: v.item || null,
+  ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+  // A remark only belongs to an "Other" idle time still in use — once that figure
+  // goes back to zero the remark is cleared with it.
+  otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
+  ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
+  ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // Types of Defects, blanks and zeros dropped. OK QTY and Total Defects are
+  // never sent — the server works them out from TOTAL QTY and these.
+  rejectBreakdown: cleanSplit(v.rejectBreakdown),
+  // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
+  plannedOperatorShiftHours: (() => {
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
+    return hours === null ? "" : hmToWireHours(hours);
+  })(),
+  // Lunch is optional on the form; the server wants a 0 rather than nothing.
+  lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
+});
+
+// The part's Standard Inspection Time, as an entry carries it — only as a
+// starting value, editable for the day — so a later change to the master never
+// rewrites saved records.
+const withPart = (v, it) => ({
+  ...v,
+  item: it._id,
+  itemName: it.itemName,
+  totalCycleSec: it.totalCycleSec ?? "",
+});
+
+const RawCastingDataEntry = () => {
+  const toast = useAlert();
+  const { currentPagePermissions, isAdmin: isSuperAdmin } = useContext(MenuContext) || {};
+  // Super Admin or a Full access role — the people who can unlock a locked entry.
+  const { canReview } = useReviewAccess();
+  const isAdmin = !!isSuperAdmin || canReview;
+  const canCreate = currentPagePermissions ? !!currentPagePermissions.create : true;
+  const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
+  const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
+
+  // ── Entry lock (2 working days) ───────────────────────────────────────
+  // Preview only — see utils/workingDays.js's file comment. The server
+  // (rawCastingSheet.controller.js) re-checks this against the real date
+  // on every Save/Delete/Unlock. A row already carrying an active
+  // `unlockedUntil` (Super Admin granted it, see handleUnlock below) is
+  // never locked here, for anyone — that's the whole point of unlocking it.
+  const [holidays, setHolidays] = useState([]);
+  const [weeklyOffDays, setWeeklyOffDays] = useState([0]);
+  useEffect(() => {
+    getCompanyHolidays().then((res) => setHolidays(res?.data?.data || [])).catch(() => setHolidays([]));
+    getWeeklyOff().then((res) => setWeeklyOffDays(res?.data?.data?.weeklyOffDays || [0])).catch(() => {});
+  }, []);
+  // The window counts from when the row was actually saved (createdAt), not
+  // its own Date — a catch-up entry for an old date gets its own fresh
+  // 2 working days starting from today, the moment it's created (see the
+  // server's matching comment on checkNotLocked).
+  const lockInfo = useCallback(
+    (row) => {
+      if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
+      // A row without a usable createdAt can't be dated, so it isn't shown as
+      // locked (rather than worked out from "NaN-NaN-NaN") — Save is still checked.
+      const created = row.createdAt ? new Date(row.createdAt) : null;
+      if (!created || Number.isNaN(created.getTime())) return "";
+      // Both days in UTC, as the server's own check counts them (utils/workingDays.js
+      // toISO) — a local day would show a row saved after midnight IST as
+      // editable a day longer than Save allows.
+      const asOf = new Date().toISOString().slice(0, 10);
+      const deadline = getLockDeadline(created.toISOString().slice(0, 10), weeklyOffDays, holidays, LOCK_WORKING_DAYS);
+      if (asOf <= deadline) return "";
+      const [y, m, d] = deadline.split("-");
+      return `Locked — saved more than ${LOCK_WORKING_DAYS} working days ago (editable through ${d}/${m}/${y})`;
+    },
+    [weeklyOffDays, holidays],
+  );
+
+  // The process's fixed Operator Planned Shift for a row (null when its hours are typed on each entry),
+  // and the Full access button that moves one earlier entry onto it.
+  const currentShiftOf = (row) => ((row.process ? shiftSettingOf(processes.find((p) => String(p._id) === String(row.process))) : null)?.hours ?? null);
+  // Done with a batch of ticked rows (utils in the table): say how it went and reload.
+  const handleBulkDone = useCallback(({ type, message }) => {
+    toast[type](message);
+    fetchRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [unlockingId, setUnlockingId] = useState(null);
+  const handleUnlock = useCallback(
+    (row) => {
+      setUnlockingId(row._id);
+      unlockRawCastingRow(row._id)
+        .then((res) => {
+          toast.success(res?.data?.message || "Unlocked for 24 hours");
+          fetchRows();
+        })
+        .catch((err) => toast.error(err?.response?.data?.message || "Could not unlock this entry"))
+        .finally(() => setUnlockingId(null));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // One Filters button holds everything that slices the sheet — period
+  // (date range / month / year), Worker, Item — the same panel
+  // the process dashboards use, so both pages behave alike. Search stays its
+  // own field beside it, since it searches text the panel can't multi-select.
+  const [range, setRange] = useState(() => entryLinkRange(defaultEntryRange));
+  const [baseRange, setBaseRange] = useState(range);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [fromDate, toDate] = range;
+
+  // Paginated by date on the server, not in the browser — each page's own
+  // request only ever returns that page's rows (PAGE_SIZE_DAYS distinct
+  // dates), never the whole selected range at once. See getSheet in
+  // rawCastingSheet.controller.js for the matching server-side paging.
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDays, setTotalDays] = useState(0);
+  // Blank by default — the field shows the current page only as a
+  // placeholder hint, not a real value sitting there to be typed over.
+  const [goTo, setGoTo] = useState("");
+
+  const { data: processes = [] } = useProcesses();
+  const { data: items = [] } = useItems();
+  const { data: operators = [] } = useMachineOperators();
+  const { data: vendors = [] } = useVendors();
+
+  // Whichever process (Production › Processes) names *this* page as its own
+  // Data Entry Page — matched on the route path with any role-slug prefix
+  // stripped, the same way Layout.jsx matches the sidebar's current-page
+  // title, so it doesn't matter which role's slug the URL happens to carry.
+  // Exactly one match is the process every new entry here belongs to (and
+  // narrows the Worker picker to its workers); none (not linked yet) or more
+  // than one (misconfigured) can't be saved to — see handleSave.
+  const location = useLocation();
+  const lockedProcess = useMemo(() => {
+    const stripSlug = (p) => p.replace(/^\/[^/]+/, "");
+    const here = stripSlug(location.pathname);
+    const owners = processes.filter((p) => p.dataEntryMenu && stripSlug(p.dataEntryMenu) === here);
+    return owners.length === 1 ? owners[0] : null;
+  }, [processes, location.pathname]);
+
+  // Only the vendors ticked for this process in Vendor Master — none, and the
+  // form doesn't show its Vendor Name box at all.
+  const processVendors = useMemo(() => vendorsForProcess(vendors, lockedProcess?._id), [vendors, lockedProcess]);
+
+  // This sheet's workers: active Operator Master names assigned to this page's
+  // process, plus any not given a process yet — what the Worker Name box offers.
+  const workers = useMemo(
+    () =>
+      operators.filter(
+        (o) =>
+          o.isActive !== false &&
+          (!lockedProcess || !o.processes?.length || o.processes.some((p) => String(p._id || p) === String(lockedProcess._id))),
+      ),
+    [operators, lockedProcess],
+  );
+  // The shared helpers look a row key up in a list of machines; here each
+  // worker stands in as a "machine" of this page's process — which is how the
+  // process's Operator Planned Shift lock reaches them.
+  const workerMachines = useMemo(
+    () => workers.map((w) => ({ _id: w._id, machineName: w.name, process: lockedProcess?._id || null })),
+    [workers, lockedProcess],
+  );
+
+  // Parts follow the same scoping: with this page linked to a process,
+  // its Part Name box offers that process's parts (Production › Items) — plus any
+  // part not given a process yet, so nothing this page has always offered
+  // disappears while parts are being classified. Not linked: every part.
+  const scopedItems = useMemo(
+    () => (lockedProcess ? items.filter((it) => !it.process || String(it.process) === String(lockedProcess._id)) : items),
+    [items, lockedProcess],
+  );
+
+  // null = closed, "add" | "edit"
+  const [modalMode, setModalMode] = useState(null);
+  // One entry per worker block in the form; adding starts with a single block.
+  const [entries, setEntries] = useState(() => [emptyEntry()]);
+  const [isSubmit, setIsSubmit] = useState(false);
+  // Set by a failed Save: the first incomplete entry and field, for the form to
+  // scroll to. The nonce makes pressing Save again scroll again.
+  const [focusTarget, setFocusTarget] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // What each worker in the form already has on its date, keyed "worker|date"
+  // — asked of the server once per pair while the form is open, for the "date
+  // is full" check and the "already entered" hint (overlapping times are fine
+  // on this sheet). `editing` is the row being edited (its slot is not
+  // "another" entry; its loaded times decide whether the time rules apply — an
+  // old row that already breaks them stays editable).
+  const [occupied, setOccupied] = useState({});
+  const occupiedAsked = useRef(new Set());
+  const [editing, setEditing] = useState(null);
+  const resetOccupied = useCallback(() => {
+    occupiedAsked.current.clear();
+    setOccupied({});
+  }, []);
+
+  const [removeId, setRemoveId] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Worker names by id (under `machineName`, the name every sheet's table and
+  // filters read row keys by). The server sends the names of every worker the
+  // loaded rows mention — a worker deactivated since still has one; the live
+  // Operator Master list wins for the workers it has, being the freshest.
+  const [serverMachineNames, setServerMachineNames] = useState({});
+  const machineName = useMemo(
+    () => ({ ...serverMachineNames, ...Object.fromEntries(operators.map((o) => [o._id, o.name])) }),
+    [operators, serverMachineNames],
+  );
+  // Editing a row whose worker is no longer offered (deactivated, or moved to
+  // another process since) still shows that name in the locked Worker box.
+  const formWorkers = useMemo(
+    () =>
+      modalMode === "edit" && editing?.machine && !workers.some((w) => w._id === editing.machine)
+        ? [...workers, { _id: editing.machine, name: machineName[editing.machine] || "—" }]
+        : workers,
+    [modalMode, editing, workers, machineName],
+  );
+  // Workers list alphabetically; one no longer offered ranks after the rest.
+  const machineRank = useMemo(() => Object.fromEntries(workers.map((w, i) => [w._id, i])), [workers]);
+  const rankOf = useCallback((id) => machineRank[id] ?? Number.MAX_SAFE_INTEGER, [machineRank]);
+
+  // ── Load ───────────────────────────────────────────────────────────────
+  // Only Worker narrows what's actually fetched — Item still
+  // narrow the browser's *view* of a page's rows (applyFilters below), same
+  // as before — but both narrow which *dates* the server pages through, so
+  // paging a filtered view never lands on a date with nothing matching.
+  // Whatever page is asked for, only that page's rows come over the wire —
+  // the full date range is never fetched in one request.
+  const validRange = !!fromDate && !!toDate && fromDate <= toDate;
+
+  const fetchRows = useCallback(() => {
+    if (!validRange) return;
+    setLoading(true);
+    getRawCastingSheet({ from: fromDate, to: toDate, page, machine: filters.machine, item: filters.item })
+      .then((res) => {
+        setRows(res.data.data || []);
+        setServerMachineNames((n) => ({ ...n, ...(res.data.machineNames || {}) }));
+        const meta = res.data.meta || {};
+        setTotalPages(Math.max(1, meta.totalPages || 1));
+        setTotalDays(meta.totalDays || 0);
+        // The server clamps an out-of-range page to its own last page —
+        // mirror that back into local state so "Page X of Y" reads right.
+        if (meta.page && meta.page !== page) setPage(meta.page);
+      })
+      .catch((err) => {
+        toast.error(err?.response?.data?.message || "Failed to load entries");
+        setRows([]);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, page, filters.machine, filters.operator, filters.item, validRange]);
+
+  useEffect(() => {
+    if (!validRange) {
+      toast.error("From Date must be on or before To Date");
+      return;
+    }
+    fetchRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, page, filters.machine, filters.operator, filters.item]);
+
+  // The date range this app actually has data in, for the Filters panel's
+  // Year tab — independent of the sheet's own current page.
+  const [extent, setExtent] = useState(null);
+  useEffect(() => {
+    getRawCastingExtent()
+      .then((res) => setExtent(res?.data?.data || null))
+      .catch(() => setExtent(null));
+  }, []);
+
+  // What the Filters panel's Machine/Operator/Item pickers offer: the values
+  // present anywhere in the selected date range (not just this page), plus
+  // anything already picked (so a pick never vanishes from its own list once
+  // the period moves past it). Refetched only when the date range changes —
+  // picking a filter doesn't shrink what the other pickers can offer.
+  const ctx = useMemo(() => ({ machineName }), [machineName]);
+  const [rangeFilterValues, setRangeFilterValues] = useState({ machine: [], operator: [], item: [] });
+  useEffect(() => {
+    if (!validRange) return;
+    getRawCastingFilterOptions({ from: fromDate, to: toDate })
+      .then((res) => {
+        setRangeFilterValues(res?.data?.data || { machine: [], operator: [], item: [] });
+        setServerMachineNames((n) => ({ ...n, ...(res?.data?.machineNames || {}) }));
+      })
+      .catch(() => {});
+  }, [fromDate, toDate, validRange]);
+
+  const filterOptions = useMemo(() => {
+    const options = (dim) =>
+      [...new Set([...(rangeFilterValues[dim] || []), ...filters[dim]])]
+        .map((value) => ({ value, label: DIMENSIONS[dim].text(value, ctx) }))
+        .sort(
+          (a, b) =>
+            (dim === "machine" ? rankOf(a.value) - rankOf(b.value) : 0) ||
+            a.label.localeCompare(b.label, undefined, { numeric: true }),
+        );
+    return { machine: options("machine"), operator: options("operator"), item: options("item") };
+  }, [rangeFilterValues, ctx, filters, rankOf]);
+
+  // Page resets to 1 alongside the filter/range change itself (not in a
+  // separate effect reacting to it) so the two state updates land in the
+  // same render and the sheet fetches page 1 of the new selection exactly
+  // once, instead of once for the old page and again once it's corrected.
+  const onFilterSet = useCallback((dim, values) => {
+    setFilters((f) => ({ ...f, [dim]: values }));
+    setPage(1);
+    setGoTo("");
+  }, []);
+  const onRangeChange = useCallback((next) => {
+    setRange(next);
+    setPage(1);
+    setGoTo("");
+  }, []);
+  const isDefaultRange = range.join() === baseRange.join();
+  const filtersActive = !isDefaultRange || hasFilters(filters);
+  const clearAll = () => {
+    setFilters(EMPTY_FILTERS);
+    const fresh = defaultEntryRange();
+    setBaseRange(fresh);
+    setRange(fresh);
+    setPage(1);
+    setGoTo("");
+  };
+
+  // This page's own rows only — Operator/Item still narrow the view here
+  // (Machine was already narrowed server-side), same applyFilters the
+  // process dashboards use.
+  const filteredRows = useMemo(() => applyFilters(rows, filters), [rows, filters]);
+
+  const sortedRows = useMemo(
+    () =>
+      [...filteredRows].sort(
+        (a, b) =>
+          b.date.localeCompare(a.date) ||
+          rankOf(a.machine) - rankOf(b.machine) ||
+          (machineName[a.machine] || "").localeCompare(machineName[b.machine] || "", undefined, { numeric: true }) ||
+          a.slot - b.slot,
+      ),
+    [filteredRows, machineName, rankOf],
+  );
+
+  // A page that isn't there (0, or past the last) goes to the nearest one
+  // that is, and says so, instead of quietly doing nothing.
+  const goToPage = () => {
+    if (goTo === "") return;
+    const n = Number(goTo);
+    if (!Number.isInteger(n)) {
+      toast.warning(`Enter a page number from 1 to ${totalPages}.`);
+    } else if (n < 1 || n > totalPages) {
+      const nearest = Math.min(Math.max(n, 1), totalPages);
+      toast.warning(`There's no page ${n} — showing page ${nearest} of ${totalPages}.`);
+      setPage(nearest);
+    } else {
+      setPage(n);
+    }
+    setGoTo("");
+  };
+
+  // rawCastingDayCalc hands back one result per row — each entry's own
+  // Unreported Time and two Productivity figures (the worker's whole date only
+  // on Process Master's fixed shift) — keyed by that record's own id.
+  const dayResultByKey = useMemo(() => {
+    const groups = {};
+    for (const r of rows) (groups[`${r.machine}|${r.date}`] ||= []).push(r);
+    const out = {};
+    for (const group of Object.values(groups)) {
+      // The day formulas sort by Start Time internally; sorted the same way
+      // here (via the same helper, not a second copy of the logic) so result
+      // i still lines up with sorted[i].
+      const sorted = sortByMachineOn(group);
+      const results = rawCastingDayCalc(sorted);
+      sorted.forEach((r, i) => {
+        out[r._id] = results[i];
+      });
+    }
+    return out;
+  }, [rows]);
+
+  // ── Form ───────────────────────────────────────────────────────────────
+  // Every block's problems, worked out live from what's typed — the form shows
+  // them once Save has been pressed, and Save itself stays inactive until there
+  // are none (see canSave).
+  useEffect(() => {
+    if (!modalMode) return;
+    for (const v of entries) {
+      if (!v.machine || !/^\d{4}-\d{2}-\d{2}$/.test(v.date || "")) continue;
+      const key = `${v.machine}|${v.date}`;
+      if (occupiedAsked.current.has(key)) continue;
+      occupiedAsked.current.add(key);
+      getRawCastingOccupiedTimes({ date: v.date, machine: v.machine })
+        .then((res) => setOccupied((o) => ({ ...o, [key]: res.data.data || [] })))
+        // Save is still checked by the server. Look again in a while — not on
+        // every keystroke while the lookup keeps failing.
+        .catch(() => setTimeout(() => occupiedAsked.current.delete(key), 15000));
+    }
+    // `occupied` is a dependency so that clearing it (after a failed save) asks again
+    // at once; pairs already asked are skipped, so this cannot loop.
+  }, [modalMode, entries, occupied]);
+
+  const errorsList = useMemo(() => {
+    const saved = editing?.saved || null;
+    // A worker who already has the most entries a date takes — the server's own
+    // refusal, said on the box. Overlapping times are allowed on this sheet.
+    const full = slotsFullErrors(entries, occupied, {
+      editSlot: editing?.slot ?? null,
+      saved,
+      who: (id) => machineName[id] || "This worker",
+      max: RAW_CASTING_MAX_ENTRIES_PER_DAY,
+    });
+    return entries.map((v, i) => ({ ...full[i], ...validateRawCastingEntry(v, { saved }) }));
+  }, [entries, occupied, editing, machineName]);
+  // Warn the moment a pick creates (or changes) a time-rule problem — not only
+  // when Save is pressed. Nothing repeats while the problem stays as it was.
+  const timeWarned = useRef({});
+  useEffect(() => {
+    if (!modalMode) {
+      timeWarned.current = {};
+      return;
+    }
+    errorsList.forEach((errs, i) => {
+      const message = [errs.machineOnTime, errs.machineOffTime, errs.plannedOperatorShiftHours].find(isTimeRuleMessage);
+      if (message && timeWarned.current[i] !== message) toast.warning(message);
+      if (message) timeWarned.current[i] = message;
+      else delete timeWarned.current[i];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorsList, modalMode]);
+
+  // Operator Planned Shift from this page's process (Process Master), reached
+  // through each block's worker: a new entry takes that process's hours; an edited
+  // one keeps the shift it was saved with. Either way the box is read-only —
+  // and the server enforces the same on Save (server/utils/plannedShift.js).
+  const plannedLocks = useMemo(
+    () =>
+      entries.map((v) => {
+        const setting = shiftSettingForMachine(v.machine, workerMachines, processes);
+        if (!setting) return null;
+        const kept = modalMode === "edit" && editing?.savedPlanned !== null && editing?.savedPlanned !== undefined;
+        return { ...setting, fromEntry: kept };
+      }),
+    [entries, workerMachines, processes, modalMode, editing],
+  );
+  useEffect(() => {
+    if (!modalMode) return;
+    setEntries((list) => {
+      let changed = false;
+      const next = list.map((v, i) => {
+        const lock = plannedLocks[i];
+        if (!lock || lock.fromEntry) return v;
+        const want = hoursToShiftInput(lock.hours);
+        if (v.plannedOperatorShiftHours === want) return v;
+        changed = true;
+        return { ...v, plannedOperatorShiftHours: want };
+      });
+      return changed ? next : list;
+    });
+  }, [modalMode, plannedLocks]);
+
+  const bookedList = useMemo(
+    () => entries.map((v) => bookedRanges(v, occupied, editing?.slot ?? null, editing?.saved || null)),
+    [entries, occupied, editing],
+  );
+  const incompleteCount = errorsList.filter((e) => Object.keys(e).length).length;
+  const canSave = incompleteCount === 0;
+
+  // discardDraft: true after a successful Save — that data's in the database
+  // now, so there's nothing left worth keeping a temporary copy of.
+  const closeModal = (discardDraft = false) => {
+    if (modalMode === "add") {
+      if (!discardDraft && hasAnyEntryData(entries)) saveDraft(entries);
+      else clearDraft();
+    }
+    setModalMode(null);
+    setEntries([emptyEntry()]);
+    setEditing(null);
+    resetOccupied();
+    setFocusTarget(null);
+    setIsSubmit(false);
+  };
+
+  const openAdd = () => {
+    // A draft saved before a field existed lacks it — fill those in as blank.
+    const draft = loadDraft()?.map((d) => ({ ...emptyEntry(), ...d }));
+    // Only pre-fills the worker when the Filters panel narrows to exactly
+    // one — with several ticked there's no single worker to default to.
+    setEntries(draft || [{ ...emptyEntry(), machine: filters.machine.length === 1 ? filters.machine[0] : "" }]);
+    setEditing(null);
+    resetOccupied();
+    setFocusTarget(null);
+    setIsSubmit(false);
+    setModalMode("add");
+  };
+
+  // The "Clear form" button in the Add Entry modal — wipes every block back
+  // to blank and drops the saved draft, so a bad start doesn't linger.
+  const clearForm = () => {
+    if (!window.confirm("Clear everything typed in this form? This can't be undone.")) return;
+    clearDraft();
+    setEntries([emptyEntry()]);
+    setFocusTarget(null);
+    setIsSubmit(false);
+  };
+
+  const openEdit = (row) => {
+    setEntries([toFormValues(row)]);
+    setEditing({ slot: row.slot, machine: row.machine, savedPlanned: row.plannedOperatorShiftHours ?? null, saved: { date: row.date, machine: row.machine, machineOnTime: row.machineOnTime, machineOffTime: row.machineOffTime, operator: row.operator } });
+    resetOccupied();
+    setFocusTarget(null);
+    setIsSubmit(false);
+    setModalMode("edit");
+  };
+
+  // "?entry=<id>&date=…" (OEE Review, an OEE notification) opens that entry's edit form.
+  useOpenEntryFromLink({
+    rows,
+    loading,
+    range,
+    onRangeChange,
+    openEdit,
+    blockedReason: (row) => (!canEdit ? "You don't have permission to edit entries on this page." : lockInfo(row)),
+  });
+
+  const handleChange = useCallback((index, name, value) => {
+    setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
+  }, []);
+
+  // One of the three Types of Defects boxes.
+  const handleDefectChange = useCallback((index, defect, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [defect]: value } } : v)),
+    );
+  }, []);
+
+  // A new block copies the date from the block above it — the whole form is
+  // normally one day's work — but nothing else.
+  const handleAddBlock = useCallback(() => {
+    setEntries((list) => [...list, { ...emptyEntry(), date: list[list.length - 1]?.date || isoDay(new Date()) }]);
+  }, []);
+
+  const handleRemoveBlock = useCallback((index) => {
+    setEntries((list) => (list.length > 1 ? list.filter((_, i) => i !== index) : list));
+  }, []);
+
+  // Picking an item copies its Standard Inspection Time onto the form — still
+  // editable, so a later change to the master never rewrites saved records.
+  const handleItemSelect = useCallback(
+    (index, itemId) => {
+      setEntries((list) =>
+        list.map((v, i) => {
+          if (i !== index) return v;
+          if (!itemId) return { ...v, item: "", itemName: "", totalCycleSec: "" };
+          const it = items.find((item) => item._id === itemId);
+          if (!it) return { ...v, item: "" };
+          return withPart(v, it);
+        }),
+      );
+    },
+    [items],
+  );
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (isSaving) return;
+    setIsSubmit(true);
+
+    // Nothing is saved while any block is incomplete — the button only looks
+    // inactive so it can still be pressed, and pressing it opens the first
+    // incomplete block and scrolls to its first missing field.
+    const first = firstRawCastingError(errorsList);
+    if (first) {
+      // Idle Time + Other Activity past the working hours pops up why, with the
+      // figures, before Save takes the operator to it. Quantity has no such
+      // limit here (qtyKey null): TOTAL QTY may beat Ideal and go to OEE Review.
+      const over = firstOverLimit(entries, errorsList, rawCastingRowCalc, { qtyKey: null, words: WORKER_WORDS, machineName });
+      if (over) await toast.notice(...over.notice);
+      setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
+      return;
+    }
+
+    // A new entry belongs to the process this page is linked to; with none (or
+    // two) linked in Process Master there's nowhere to save it.
+    if (!lockedProcess) {
+      toast.error("Link this page to the RAW CASTING process in Process Master (Data Entry Page) before adding entries.");
+      return;
+    }
+
+    setIsSaving(true);
+    // Saved one after another rather than in parallel, so a mid-way failure
+    // leaves a clear "saved the first N". Those are dropped from the form as
+    // they go, so pressing Save again after fixing the failed one can't add
+    // them a second time.
+    const savedIndexes = new Set();
+    try {
+      for (const [i, v] of entries.entries()) {
+        await saveRawCastingRow(toPayload(v, modalMode === "edit", lockedProcess._id));
+        savedIndexes.add(i);
+      }
+      const saved = savedIndexes.size;
+      if (modalMode === "edit") toast.success("Entry updated successfully!");
+      else toast.success(saved === 1 ? "Entry added successfully!" : `${saved} entries added successfully!`);
+      closeModal(true);
+      fetchRows();
+    } catch (err) {
+      const reason = err?.response?.data?.message || "Failed to save. Please try again.";
+      resetOccupied(); // something may have changed under us — re-read what is booked
+      if (savedIndexes.size) {
+        setEntries((list) => list.filter((_, i) => !savedIndexes.has(i)));
+        setFocusTarget(null);
+        toast.error(`${savedIndexes.size} saved, then: ${reason} The rest are still in the form.`);
+        fetchRows();
+      } else {
+        toast.error(reason);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = (e) => {
+    e.preventDefault();
+    setIsDeleting(true);
+    deleteRawCastingRow(removeId)
+      .then((res) => {
+        setDeleteOpen(false);
+        toast.success(res?.data?.message || "Entry deleted successfully!");
+        fetchRows();
+      })
+      .catch((err) => {
+        setDeleteOpen(false);
+        toast.error(err?.response?.data?.message || "Failed to delete the entry. Please try again.");
+      })
+      .finally(() => setIsDeleting(false));
+  };
+
+  const fmtShort = (iso) => {
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
+  const periodLabel = useMemo(() => `${fmtShort(fromDate)} – ${fmtShort(toDate)}`, [fromDate, toDate]);
+
+  // Search matches Item Name, Worker or Vendor — only within this
+  // page's own loaded rows, not the whole selection (see the `extent` state
+  // above and getProductionExtent for what covers the full range).
+  // The Vendor Name column shows on a process that uses vendors (Vendor
+  // Master), or while any loaded entry names one.
+  const showVendorColumn = useMemo(
+    () => anyVendorFor(vendors, lockedProcess ? [lockedProcess._id] : []) || sortedRows.some((r) => r.vendorName),
+    [vendors, lockedProcess, sortedRows],
+  );
+
+  const searchedRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sortedRows;
+    return sortedRows.filter((r) => [r.itemName, r.operator, r.vendorName].some((v) => String(v || "").toLowerCase().includes(q)));
+  }, [sortedRows, search]);
+
+  document.title = `RAW CASTING Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
+
+  return (
+    <React.Fragment>
+      {/* This page fills the exact height the layout hands it and scrolls
+          only inside the table (see the `min-h-0`/`h-100` chain below and
+          `fillHeight` on ProductionEntriesTable) — without that chain, a
+          flex child's default min-height:auto keeps it from shrinking below
+          its content size, so the table would grow past the viewport and
+          the whole page would scroll underneath its own internal scrollbar. */}
+      <div className="page-content pd-root h-100 d-flex flex-column" style={{ minHeight: 0 }}>
+        <Container fluid className="d-flex flex-column flex-grow-1" style={{ minHeight: 0 }}>
+          <Card className="mb-0 d-flex flex-column flex-grow-1" style={{ minHeight: 0 }}>
+            <CardHeader>
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <h5 className="mb-0 fs-6 fw-semibold">RAW CASTING Data Entry</h5>
+
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                  <div style={{ position: "relative" }}>
+                    <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: "#9ca3af", pointerEvents: "none" }} />
+                    <Input
+                      type="search"
+                      placeholder="Search item, worker, vendor…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      style={{ width: "220px", paddingLeft: 32 }}
+                      bsSize="sm"
+                    />
+                  </div>
+                  <FilterPanel
+                    range={range}
+                    onRangeChange={onRangeChange}
+                    extent={extent}
+                    filters={filters}
+                    onFilterSet={onFilterSet}
+                    options={filterOptions}
+                    active={filtersActive}
+                    onClearAll={clearAll}
+                    labels={{ machine: ["Worker Name", "All workers"], operator: null, item: ["Item", "All items"] }}
+                  />
+                  {canCreate && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary d-inline-flex align-items-center gap-1"
+                      onClick={openAdd}
+                    >
+                      <Plus size={15} /> Add Entry
+                    </button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-bottom">
+              <span className="small text-muted">
+                Page {page} of {totalPages}
+              </span>
+              <div className="d-flex flex-wrap align-items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  style={{ minWidth: "84px" }}
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  style={{ minWidth: "84px" }}
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+                <span className="small text-muted ms-2">Go to</span>
+                <NumberInput
+                  name="goTo"
+                  decimals={false}
+                  maxLength={4}
+                  max={totalPages}
+                  placeholder={String(page)}
+                  value={goTo}
+                  onChange={(e) => setGoTo(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && goToPage()}
+                  style={{ width: "64px" }}
+                />
+                <button type="button" className="btn btn-sm btn-primary" onClick={goToPage}>
+                  Go
+                </button>
+              </div>
+            </div>
+            <CardBody className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
+              <ProductionEntriesTable
+                rows={searchedRows}
+                showVendor={showVendorColumn}
+                machineName={machineName}
+                dayResultByKey={dayResultByKey}
+                columns={RAW_CASTING_COLUMNS}
+                formulas={RAW_CASTING_FORMULAS}
+                calcRow={rawCastingRowCalc}
+                loading={loading}
+                emptyText={emptyEntriesText({
+                  sheet: "RAW CASTING",
+                  period: periodLabel,
+                  search,
+                  searchedOut: !!search.trim() && sortedRows.length > 0,
+                  filtered: hasFilters(filters),
+                })}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                onEdit={openEdit}
+                onDelete={(r) => {
+                  setRemoveId(r._id);
+                  setDeleteOpen(true);
+                }}
+                lockInfo={lockInfo}
+                isAdmin={isAdmin}
+                onUnlock={handleUnlock}
+                currentShiftOf={currentShiftOf}
+                bulk={{ sheet: "rawCasting", unlock: unlockRawCastingRow, remove: deleteRawCastingRow, onDone: handleBulkDone }}
+                unlockingId={unlockingId}
+                fillHeight
+              />
+            </CardBody>
+          </Card>
+        </Container>
+      </div>
+
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(() => closeModal())} centered backdrop="static" size="xl" scrollable>
+        <ModalHeader className="p-3 border-bottom" toggle={() => closeModal()}>
+          <div className="d-flex align-items-center gap-2">
+            <span>{modalMode === "edit" ? "Update RAW CASTING Entry" : "Add RAW CASTING Entry"}</span>
+            {modalMode === "add" && hasAnyEntryData(entries) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger ms-2"
+                onClick={clearForm}
+              >
+                Clear form
+              </button>
+            )}
+          </div>
+        </ModalHeader>
+        <form noValidate onSubmit={handleSave}>
+          {/* The form is far taller than the viewport. An explicit height here
+              rather than relying on Bootstrap's .modal-dialog-scrollable, so the
+              body scrolls and the Save/Cancel footer stays reachable. */}
+          <ModalBody style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+            <RawCastingEntryForm
+              entries={entries}
+              errors={errorsList}
+              isSubmit={isSubmit}
+              focusTarget={focusTarget}
+              workers={formWorkers}
+              items={scopedItems}
+              vendors={processVendors}
+              isEdit={modalMode === "edit"}
+              booked={bookedList}
+              plannedLocks={plannedLocks}
+              onChange={handleChange}
+              onDefectChange={handleDefectChange}
+              onItemSelect={handleItemSelect}
+              onAdd={handleAddBlock}
+              onRemove={handleRemoveBlock}
+            />
+          </ModalBody>
+          <ModalFooter>
+            {isSubmit && !canSave && (
+              <span className="text-danger small me-auto" role="status">
+                {entries.length === 1
+                  ? "This entry is incomplete — fix the highlighted fields to save."
+                  : `${incompleteCount} of ${entries.length} entries are incomplete — fix the highlighted fields to save.`}
+              </span>
+            )}
+            {modalMode === "edit" ? (
+              <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={() => closeModal()} isLoading={isSaving} isSaveBlocked={!canSave} />
+            ) : (
+              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={() => closeModal()} isLoading={isSaving} isSaveBlocked={!canSave} />
+            )}
+          </ModalFooter>
+        </form>
+      </Modal>
+
+      <DeleteModal
+        show={deleteOpen}
+        handleDelete={handleDelete}
+        toggle={(e) => {
+          e?.preventDefault?.();
+          setDeleteOpen(false);
+        }}
+        setmodal_delete={setDeleteOpen}
+        disabled={isDeleting}
+      />
+    </React.Fragment>
+  );
+};
+
+export default RawCastingDataEntry;

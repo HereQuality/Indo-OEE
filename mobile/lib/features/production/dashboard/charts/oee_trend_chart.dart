@@ -22,7 +22,7 @@ class OeeTrendChart extends StatelessWidget {
   Widget build(BuildContext context) => PctTrendChart(
         props: props,
         series: oeeSeries,
-        emptyText: 'Needs machine ON/OFF times and OK quantity.',
+        emptyText: 'Needs ${props.ctx.words.times} and OK quantity.',
         semanticName: 'OEE over time',
       );
 }
@@ -37,9 +37,10 @@ class UnutilizedTrendChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) => PctTrendChart(
         props: props,
-        series: utilSeries,
-        emptyText: 'Needs machine ON/OFF times.',
-        semanticName: 'Unutilized machine time over time',
+        // A worker-based process says "Unutilized time" (web UTIL_SERIES_WORKER).
+        series: props.ctx.words.byWorker ? utilSeriesWorker : utilSeries,
+        emptyText: 'Needs ${props.ctx.words.times}.',
+        semanticName: props.ctx.words.byWorker ? 'Unutilized time over time' : 'Unutilized machine time over time',
         fit: true,
         area: true,
       );

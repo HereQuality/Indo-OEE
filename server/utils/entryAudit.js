@@ -31,7 +31,13 @@ const { createNotificationForMany } = require("../services/notification.service"
  * save goes through, the same rule ItemLog follows.
  */
 
-const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE", spring: "SPRING FOR PINS", powder: "AFTER POWDER COATING", rubber: "RUBBER" };
+const SHEET_LABELS = { cnc: "CNC", vmc: "VMC", spm: "SPM", rivet: "RIVET", press: "PRESS", contact: "CONTACT", trobe: "TROBE", spring: "SPRING FOR PINS", powder: "AFTER POWDER COATING", rubber: "RUBBER", injection: "INJECTION MOULDING", embossing: "EMBOSSING", bpc: "BEFORE POWDER COATING", printing: "PRINTING", rawCasting: "RAW CASTING" };
+// MODULAR FRAME DRILLING (sheet key "mfd").
+SHEET_LABELS.mfd = "MODULAR FRAME DRILLING";
+// FINAL ASSEMBLY (sheet key "finalAssembly").
+SHEET_LABELS.finalAssembly = "FINAL ASSEMBLY";
+// MODULAR FRAME ASSEMBLY (sheet key "mfa").
+SHEET_LABELS.mfa = "MODULAR FRAME ASSEMBLY";
 
 const STOPPAGE_LABELS = {
   plannedDownMin: "Planned Down Time (min)",
@@ -95,6 +101,30 @@ const FIELD_LABELS = {
 // worker's start / end, not a machine's ON / OFF.
 const SHEET_FIELD_LABELS = {
   spring: { totalCycleSec: "Standard Time per Piece (sec)" },
+  // INJECTION MOULDING, in its paper sheet's own words.
+  injection: {
+    workingMode: "Working Status",
+    machineStatus: "Reasons For Not Working",
+    itemName: "Item Name",
+    totalCycleSec: "Standard Time per Piece (sec)",
+    actualQty: "TOTAL QTY",
+    okQty: "OK QTY",
+    rejectedQty: "Rejected QTY",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    remarks: "Reason/Remarks for Rejection/Rework",
+  },
+  // EMBOSSING — the same paper columns as INJECTION MOULDING.
+  embossing: {
+    workingMode: "Working Status",
+    machineStatus: "Reasons For Not Working",
+    itemName: "Item Name",
+    totalCycleSec: "Standard Time per Piece (sec)",
+    actualQty: "TOTAL QTY",
+    okQty: "OK QTY",
+    rejectedQty: "Rejected QTY",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    remarks: "Remarks",
+  },
   rubber: {
     machineOnTime: "Working Start Time",
     machineOffTime: "Working End Time",
@@ -111,9 +141,102 @@ const SHEET_FIELD_LABELS = {
     otherActivityMin: "Time in Other Activity (min)",
     lunchMin: "Lunch / Tea / Washroom etc (min)",
   },
+  // BEFORE POWDER COATING is kept per operator (the worker field), in its
+  // paper sheet's own words; its B.D. (Breakdown) box is stored as bdMechMin.
+  bpc: {
+    worker: "Operator",
+    itemName: "Item Name",
+    totalCycleSec: "Standard Time per Piece (sec)",
+    actualQty: "TOTAL QTY",
+    okQty: "OK QTY",
+    rejectedQty: "Rejected QTY",
+    bdMechMin: "B.D. (Breakdown) (min)",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    remarks: "Reason/Remarks",
+  },
+  // PRINTING is kept per operator (the worker field); its MC No. is optional
+  // and logged by name. Its paper sheet's own words, its three own downtime
+  // columns included.
+  printing: {
+    worker: "Operator",
+    mcName: "MC No.",
+    itemName: "Item Name",
+    workingMode: "Working Status",
+    machineStatus: "Reasons For Not Working",
+    totalCycleSec: "Standard Time per Piece (sec)",
+    actualQty: "TOTAL QTY",
+    okQty: "OK QTY",
+    rejectedQty: "Rejected QTY",
+    askQueryQcMin: "Ask Query To QC Team (min)",
+    emptyBagTuggingMin: "Empty Bag Tugging (min)",
+    stockCountingMin: "Stock Counting (min)",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    remarks: "Reason/Remarks for Rejection/Rework",
+  },
+  // RAW CASTING is a worker sheet on AFTER POWDER COATING's template; its
+  // Types of Defects are its Rejection Master split, Total Defects its rejectedQty.
+  rawCasting: {
+    itemName: "Item Name",
+    challanNo: "Challan No.",
+    workingMode: "Working Status",
+    machineStatus: "Reasons For Not Working",
+    totalCycleSec: "Standard Inspection Time per Piece (sec)",
+    machineOnTime: "Inspection Start Time",
+    machineOffTime: "Inspection End Time",
+    actualQty: "TOTAL QTY",
+    okQty: "OK QTY",
+    rejectedQty: "Total Defects",
+    rejectBreakdown: "Types of Defects",
+    otherActivity: "Other Activity Carried Out",
+    otherActivityMin: "Time consume in Other Activity (min)",
+    lunchMin: "Lunch / Tea / Washroom etc (min)",
+    remarks: "Reason/Remarks for Rejection",
+  },
 };
 
-const fieldLabel = (sheet, field) => SHEET_FIELD_LABELS[sheet]?.[field] || FIELD_LABELS[field] || field;
+// MODULAR FRAME DRILLING, in its paper sheet's own words. Its "Process" column
+// (DRILLING, TAPPING, …) is the Part's, stored as `operation`.
+SHEET_FIELD_LABELS.mfd = {
+  machine: "MC NO.",
+  workingMode: "Working Status",
+  machineStatus: "Reasons For Not Working",
+  operation: "Process",
+  totalCycleSec: "Total Cycle Time (sec)",
+  machineOnTime: "Machine Time ON",
+  machineOffTime: "Machine Time OFF",
+  settingOnTime: "Setting Time ON",
+  settingOffTime: "Setting Time OFF",
+  okQty: "ACTUAL OK Quantity",
+  plannedDownMin: "Planned downtime (min)",
+  setupMin: "Set-up Time (min)",
+  noManPowerMin: "No Manpower (min)",
+  lunchMin: "Lunch / Tea / Washroom etc (min)",
+  otherMin: "Others (min)",
+  remarks: "REMARKS",
+};
+
+// FINAL ASSEMBLY words its fields in one place, its model (FA_LABELS).
+SHEET_FIELD_LABELS.finalAssembly = require("../models/FinalAssemblyEntry").FA_LABELS;
+
+// MODULAR FRAME ASSEMBLY: a worker sheet on RAW CASTING's template; its timing
+// columns are worded in one place, its model (MFA_LABELS).
+const { MFA_LABELS } = require("../models/MfaEntry");
+SHEET_FIELD_LABELS.mfa = {
+  itemName: "Item Name",
+  workingMode: "Working Status",
+  machineStatus: "Reasons For Not Working",
+  totalCycleSec: `${MFA_LABELS.cycle} (sec)`,
+  machineOnTime: MFA_LABELS.start,
+  machineOffTime: MFA_LABELS.end,
+  actualQty: "TOTAL QTY",
+  okQty: "OK QTY",
+  rejectedQty: "Rejected QTY",
+  otherActivity: "Other Activity Carried Out",
+  otherActivityMin: "Time consume in Other Activity (min)",
+  lunchMin: "Lunch / Tea / Washroom etc (min)",
+};
+
+const fieldLabel =(sheet, field) => SHEET_FIELD_LABELS[sheet]?.[field] || FIELD_LABELS[field] || field;
 
 const isBlank = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "") || (Array.isArray(v) && !v.length);
 

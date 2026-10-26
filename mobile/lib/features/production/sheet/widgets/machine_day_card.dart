@@ -56,6 +56,10 @@ class MachineDayCard extends StatelessWidget {
     final tone = MachineColors.of(controller.machineOf(group.machineId), group.rank);
     final first = group.entries.first;
     final oee = controller.dayOf(first)['oeeLosses'];
+    // A sheet that works every entry out on its own (BEFORE POWDER COATING — the
+    // web's entryDayCalc) has no one figure for the day: the chip shows only
+    // while the day's entries share it (always, on a sheet that combines the day).
+    final oneDayOee = {for (final e in group.entries) pctStr(controller.dayOf(e)['oeeLosses'])}.length == 1;
     var ok = 0.0;
     var actual = 0.0;
     var anyOk = false;
@@ -122,8 +126,10 @@ class MachineDayCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        _OeeChip(value: oee),
+                        if (oneDayOee) ...[
+                          const SizedBox(width: 8),
+                          _OeeChip(value: oee),
+                        ],
                       ],
                     ),
                   ),

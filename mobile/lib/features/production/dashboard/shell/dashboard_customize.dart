@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../dashboard_engine.dart' as eng show unitWordsFor;
 import '../data/processes_controller.dart';
 import '../sheets/customize_sheet.dart';
 
@@ -16,5 +17,6 @@ Future<void> openDashboardCustomize(
     stats: [for (final s in processes.statsFor(processId)) s['key'] as String],
     charts: [for (final c in processes.chartsFor(processId)) c['key'] as String],
     onSave: (stats, charts) => processes.saveWidgets(processId, stats, charts),
+    words: eng.unitWordsFor(processId == null ? null : processes.byId(processId)?.toJson()),
   );
 }

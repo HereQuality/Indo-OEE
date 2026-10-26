@@ -30,6 +30,13 @@ const plannedMinOf = (e) => {
 };
 
 const PLANNED_STOP_KEYS = ["lunchMin", "plannedDownMin"];
+// Downtime columns a sheet has beyond the shared ten (STOPPAGE_KEYS), by sheet —
+// they take time out of Operating Time like the rest. PRINTING: Ask Query To QC
+// Team, Empty Bag Tugging, Stock Counting (models/PrintingEntry.js; the client
+// counts the same keys through row.extraStoppageKeys, utils/printingSheet.js).
+const EXTRA_STOPPAGE_KEYS = {
+  printing: require("../models/PrintingEntry").PRINTING_EXTRA_STOPPAGE_KEYS,
+};
 const METRICS = ["availability", "performance", "quality"];
 const METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
 
@@ -94,6 +101,23 @@ const CYCLE_SEC = {
   spring: (e) => num(e.totalCycleSec),
   powder: (e) => num(e.totalCycleSec),
   rubber: (e) => num(e.totalCycleSec),
+  // INJECTION MOULDING: Standard Time per Piece.
+  injection: (e) => num(e.totalCycleSec),
+  // EMBOSSING: Standard Time per Piece.
+  embossing: (e) => num(e.totalCycleSec),
+  // PRINTING: Standard Time per Piece.
+  printing: (e) => num(e.totalCycleSec),
+  // BEFORE POWDER COATING: Standard Time per Piece.
+  bpc: (e) => num(e.totalCycleSec),
+  // FINAL ASSEMBLY: Standard Time per Piece — optional (PACKING has none: no Performance).
+  finalAssembly: (e) => num(e.totalCycleSec),
+  // RAW CASTING: Standard Inspection Time per Piece.
+  rawCasting: (e) => num(e.totalCycleSec),
+  // MODULAR FRAME DRILLING: the entry's own Total Cycle Time (prefilled from the
+  // Part, editable) — the same figure its IDEAL Quantity and Effective use.
+  mfd: (e) => num(e.totalCycleSec),
+  // MODULAR FRAME ASSEMBLY: Standard Assembly Time per Piece.
+  mfa: (e) => num(e.totalCycleSec),
 };
 
 // { availability, performance, quality } as fractions (1 = 100%), each null
@@ -114,7 +138,12 @@ const entryMetrics = (sheet, e) => {
   // Time spent on other work (After Powder Coating's Other Activity) isn't
   // idle, but it isn't inspecting either — so it's out of Operating Time too.
   // Only that sheet's rows carry it; on every other sheet it's 0.
-  const operatingMin = shiftMin - sumOrZero(STOPPAGE_KEYS.map((k) => num(e[k]))) - (num(e.otherActivityMin) || 0);
+  // A sheet's own downtime columns beyond the shared ten (EXTRA_STOPPAGE_KEYS)
+  // are stoppage like the rest.
+  const operatingMin =
+    shiftMin -
+    sumOrZero([...STOPPAGE_KEYS, ...(EXTRA_STOPPAGE_KEYS[sheet] || [])].map((k) => num(e[k]))) -
+    (num(e.otherActivityMin) || 0);
   const idealRunSec = isNum(cycle) && cycle > 0 && isNum(totalQty) ? cycle * totalQty : null;
 
   out.availability = plannedProdMin > 0 ? operatingMin / plannedProdMin : null;
@@ -127,4 +156,4 @@ const entryMetrics = (sheet, e) => {
 const metricsOver100 = (m) =>
   METRICS.filter((k) => isNum(m?.[k]) && m[k] > 1 + 1e-9).map((k) => ({ metric: k, value: m[k] }));
 
-module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, METRIC_LABELS, CYCLE_SEC };
+module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, METRIC_LABELS, CYCLE_SEC, EXTRA_STOPPAGE_KEYS };

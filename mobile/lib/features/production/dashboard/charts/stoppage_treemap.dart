@@ -36,7 +36,7 @@ class _DowntimeByMachineChartState extends State<DowntimeByMachineChart> {
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: ['Machine', for (final g in eng.stoppageGroups) '${g['label']} (min)'],
+        columns: [p.ctx.words.one, for (final g in eng.stoppageGroups) '${g['label']} (min)'],
         rows: [
           for (final m in machines)
             MiniRow(m.key, [m.label, for (final g in eng.stoppageGroups) eng.formatExact('qty', m.groupTotal(g))]),

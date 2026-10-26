@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../shared/limit_notice.dart';
 import '../shared/planned_shift.dart' show ShiftSetting;
-import '../shared/production_entry_validation.dart' show isTimeRuleMessage;
+import '../shared/production_entry_validation.dart' show isLiveMessage;
 import '../shared/production_sheet_calc.dart' show normalizeTime;
 import 'entry_fields.dart';
 import 'entry_layout.dart' show EntryLineCard;
@@ -114,12 +114,13 @@ class EntryLineContext {
   /// A stored value as the text a box shows.
   String text(String field) => entryText(values[field]);
 
-  /// [field]'s error message as it should show right now: the time rules at
-  /// once, everything else only after Save was pressed.
+  /// [field]'s error message as it should show right now: the live ones (the
+  /// time rules, a full date — web `isLiveMessage`) at once, everything else
+  /// only after Save was pressed.
   String? err(String field) {
     final e = errors[field];
     if (e == null || e.isEmpty) return null;
-    return (isSubmit || isTimeRuleMessage(e)) ? e : null;
+    return (isSubmit || isLiveMessage(e)) ? e : null;
   }
 
   /// Whether any of [fields] has an error to show ("Check this line").

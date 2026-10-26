@@ -153,7 +153,8 @@ class MachineSummaryChart extends StatefulWidget {
   State<MachineSummaryChart> createState() => _MachineSummaryChartState();
 }
 
-/// (label, hint) of every column, as in charts.jsx SUMMARY_COLUMNS.
+/// (label, hint) of every column, as in charts.jsx `summaryColumns(ctx)` — in
+/// a machine dashboard's words; see [summaryColumnsFor].
 const List<(String, String?)> summaryColumns = [
   ('Machine', null),
   ('Actual', 'Actual quantity produced'),
@@ -169,10 +170,22 @@ const List<(String, String?)> summaryColumns = [
   ('OEE · Lunch + Setup Time', "OEE not considering losses, but lunch and setup time — averaged over the machine's days"),
 ];
 
+/// [summaryColumns] in the dashboard's own words ("Worker", "per worker-day").
+List<(String, String?)> summaryColumnsFor(UnitWords words) {
+  if (!words.byWorker) return summaryColumns;
+  final unit = words.one.toLowerCase();
+  return [
+    (words.one, null),
+    for (final c in summaryColumns.skip(1).take(7)) c,
+    ('Unreported', 'Planned shift − $unit shift − downtime, per $unit-day'),
+    ('OEE · Losses', "OEE considering losses — averaged over the $unit's days"),
+    ('OEE · Lunch', "OEE not considering losses, but lunch — averaged over the $unit's days"),
+    ('OEE · Lunch + Setup Time', "OEE not considering losses, but lunch and setup time — averaged over the $unit's days"),
+  ];
+}
+
 class _MachineSummaryChartState extends State<MachineSummaryChart> {
   final _memo = DataMemo<List<MiniRow>>();
-  final List<String> _columns = [for (final c in summaryColumns) c.$1];
-  final List<String?> _hints = [for (final c in summaryColumns) c.$2];
 
   @override
   Widget build(BuildContext context) {
@@ -200,8 +213,8 @@ class _MachineSummaryChartState extends State<MachineSummaryChart> {
     });
     if (data.isEmpty) return const ChartEmpty('No entries for this period.');
     return MiniTable(
-      columns: _columns,
-      hints: _hints,
+      columns: [for (final c in summaryColumnsFor(p.ctx.words)) c.$1],
+      hints: [for (final c in summaryColumnsFor(p.ctx.words)) c.$2],
       rows: data,
       selected: p.filters['machine'] ?? const <String>[],
       onRowClick: (k) => p.onToggle('machine', k),

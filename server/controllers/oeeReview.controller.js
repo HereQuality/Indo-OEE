@@ -9,6 +9,14 @@ const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
 const PowderCoatingEntry = require("../models/PowderCoatingEntry");
 const RubberEntry = require("../models/RubberEntry");
+const InjectionEntry = require("../models/InjectionEntry");
+const EmbossingEntry = require("../models/EmbossingEntry");
+const BeforePowderCoatingEntry = require("../models/BeforePowderCoatingEntry");
+const FinalAssemblyEntry = require("../models/FinalAssemblyEntry");
+const PrintingEntry = require("../models/PrintingEntry");
+const RawCastingEntry = require("../models/RawCastingEntry");
+const MfdEntry = require("../models/MfdEntry");
+const MfaEntry = require("../models/MfaEntry");
 const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
@@ -29,6 +37,22 @@ const { createNotification } = require("../services/notification.service");
  * requireAdmin). Figures are shown exactly as saved — never capped.
  */
 const MODELS = { cnc: ProductionEntry, vmc: VmcEntry, spm: SpmEntry, rivet: RivetEntry, press: PressEntry, contact: ContactEntry, trobe: TrobeEntry, spring: SpringEntry, powder: PowderCoatingEntry, rubber: RubberEntry };
+// INJECTION MOULDING is a machine sheet, like SPRING FOR PINS.
+MODELS.injection = InjectionEntry;
+// EMBOSSING is a machine sheet too.
+MODELS.embossing = EmbossingEntry;
+// BEFORE POWDER COATING (per operator, like RUBBER — keyOf reads its worker).
+MODELS.bpc = BeforePowderCoatingEntry;
+// FINAL ASSEMBLY (per worker — keyOf reads its worker).
+MODELS.finalAssembly = FinalAssemblyEntry;
+// PRINTING is per operator too (worker in the machine's place, its own process).
+MODELS.printing = PrintingEntry;
+// RAW CASTING is per worker too (AFTER POWDER COATING's template, its own process).
+MODELS.rawCasting = RawCastingEntry;
+// MODULAR FRAME DRILLING is a machine sheet, like INJECTION MOULDING.
+MODELS.mfd = MfdEntry;
+// MODULAR FRAME ASSEMBLY is per worker (RAW CASTING's template, its own process).
+MODELS.mfa = MfaEntry;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const parseDay = (s) => {
   if (!DATE_RE.test(String(s || ""))) return null;

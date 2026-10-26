@@ -9,8 +9,12 @@ const { REJECT_REASONS } = require("./ProductionEntry");
  * rejected pieces split across REJECT_REASONS) — the CNC sheet's own, spread
  * into every other machine sheet's schema so the sheets can't drift apart.
  * okQty / rejectedQty stay declared in each sheet's own schema.
+ *
+ * A sheet with reject reasons of its own (BEFORE POWDER COATING: Blow Holes
+ * Casting, …) spreads rejectFieldsFor(itsReasons) instead; `rejectFields` is
+ * the CNC list, what every other sheet uses.
  */
-module.exports.rejectFields = {
+const rejectFieldsFor = (reasons) => ({
   // Entered with OK Quantity; Rejected is derived from the two on every save
   // (utils/rejectSplit.js), so the three can never disagree. Absent on entries
   // saved before this existed — they read as OK + Rejected.
@@ -24,10 +28,13 @@ module.exports.rejectFields = {
     of: { type: Number, min: [0, "Rejected quantity cannot be negative"] },
     default: undefined,
     validate: {
-      validator: (m) => !m || [...m.keys()].every((k) => REJECT_REASONS.includes(k)),
+      validator: (m) => !m || [...m.keys()].every((k) => reasons.includes(k)),
       message: "Unknown reject reason",
     },
   },
   // Why "Other" was used — required whenever the split has pieces against it.
   rejectOtherRemark: { type: String, trim: true, maxlength: 300, default: "" },
-};
+});
+
+module.exports.rejectFieldsFor = rejectFieldsFor;
+module.exports.rejectFields = rejectFieldsFor(REJECT_REASONS);

@@ -9,7 +9,7 @@ import { useInvalidateProcesses } from "../../hooks/useProcesses";
 import {
   CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, DIMENSIONS, EMPTY_FILTERS, FORMATS, MAX_RANGE_DAYS, STATS_BY_KEY,
   applyFilters, compareMachines, defaultRange, describeRange, dimLabel, hasFilters, quickRangeKey, QUICK_RANGES, rangeDays, resolveWidgets,
-  statMeasure, stoppageKeysFor, summarize, timeBucket, toggleFilter, unitWordsFor, worded,
+  causeLabelsFor, statMeasure, stoppageKeysFor, summarize, timeBucket, toggleFilter, unitWordsFor, worded,
 } from "../../utils/processDashboard";
 import { THEME } from "./chartTheme";
 import { CHART_COMPONENTS, TABLE_ONLY } from "./charts";
@@ -81,6 +81,7 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
   const [from, to] = range;
   const words = unitWordsFor(process);
   const stoppageKeys = useMemo(() => stoppageKeysFor(process), [process]);
+  const causeLabels = useMemo(() => causeLabelsFor(process), [process]);
 
   useEffect(() => {
     if (!from || !to || to < from) return undefined;
@@ -120,8 +121,9 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
       bucket: timeBucket(rows),
       words,
       stoppageKeys,
+      causeLabels,
     }),
-    [machines, rows, entryMachineNames, words, stoppageKeys],
+    [machines, rows, entryMachineNames, words, stoppageKeys, causeLabels],
   );
 
   // rowsFor(dim): everything filtered except `dim` itself — see applyFilters.

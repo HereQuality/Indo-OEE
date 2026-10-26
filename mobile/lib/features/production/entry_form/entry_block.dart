@@ -7,7 +7,7 @@ import '../../../core/widgets/form_widgets.dart';
 import '../process/process_spec.dart';
 import '../shared/planned_shift.dart' show ShiftSetting;
 import '../processes/cnc/cnc_spec.dart' show cncSpec;
-import '../shared/production_entry_validation.dart' show isTimeRuleMessage;
+import '../shared/production_entry_validation.dart' show isLiveMessage;
 import 'entry_fields.dart';
 import 'entry_form_logic.dart';
 import 'entry_form_toast.dart';
@@ -216,8 +216,9 @@ class EntryBlockState extends State<EntryBlock> {
     final e = widget.errors[key];
     if (e == null || e.isEmpty) return null;
     // The time rules (OFF after ON, no overlap) show as soon as the times are
-    // picked; everything else waits until Save has been pressed.
-    return (widget.isSubmit || isTimeRuleMessage(e)) ? e : null;
+    // picked, and a full date as soon as it's there (web `isLiveMessage`);
+    // everything else waits until Save has been pressed.
+    return (widget.isSubmit || isLiveMessage(e)) ? e : null;
   }
 
   void _set(String name, dynamic value) => widget.onChange(_i, name, value);
@@ -344,7 +345,7 @@ class EntryBlockState extends State<EntryBlock> {
             !hasMachine
                 ? (w.machines.isEmpty && widget.spec.noMachinesMessage != null
                     ? widget.spec.noMachinesMessage!
-                    : 'Select a ${widget.spec.machineNoun} — its entry fields open automatically')
+                    : widget.spec.selectMachinePrompt)
                 : hasData
                     ? 'Entry filled in — press + to reopen it'
                     : "Press + to fill this ${widget.spec.machineNoun}'s entry",
@@ -378,7 +379,7 @@ class EntryBlockState extends State<EntryBlock> {
               const SizedBox(width: 8),
               IconButton.filled(
                 key: ValueKey('entry$_i/expand'),
-                tooltip: hasMachine ? 'Open the entry fields' : 'Select a ${widget.spec.machineNoun} first',
+                tooltip: hasMachine ? 'Open the entry fields' : widget.spec.selectMachineFirst,
                 onPressed: hasMachine ? () => widget.onExpand(_i) : null,
                 icon: const Icon(Icons.add_rounded),
                 style: IconButton.styleFrom(minimumSize: const Size(44, 44)),

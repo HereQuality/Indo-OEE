@@ -259,7 +259,7 @@ export default function Layout({ children }) {
                     })}
                   >
                     <DynamicIcon name={group.icon} size={18} className="shrink-0" />
-                    {!sidebarCollapsed && <span className="truncate">{group.groupName}</span>}
+                    {!sidebarCollapsed && <span className="min-w-0 break-words leading-snug">{group.groupName}</span>}
                     {group.url && group.url.replace(/\/$/, "").endsWith("/support") && unreadTicketCount > 0 && (
                       <span
                         title={`${unreadTicketCount} unread`}
@@ -348,7 +348,8 @@ export default function Layout({ children }) {
                                 {menu.icon ? (
                                   <DynamicIcon name={menu.icon} size={16} className="shrink-0" />
                                 ) : null}
-                                <span className="truncate">{menu.name}</span>
+                                {/* Long names (BEFORE POWDER COATING) wrap onto a second line instead of being cut off. */}
+                                <span className="min-w-0 break-words leading-snug">{menu.name}</span>
                               </NavLink>
                             ))}
                           </div>

@@ -136,6 +136,7 @@ class _ProductionDashboardScreenState extends State<ProductionDashboardScreen> w
         () => DashboardController(
           repo: _repo,
           processId: id,
+          process: id == null ? null : _processes.byId(id),
           machines: _processes.machines,
           scopeProcessIds: id == null ? _processes.scopeProcessIds : null,
         )..load(),

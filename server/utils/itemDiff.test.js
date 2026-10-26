@@ -120,3 +120,42 @@ test("SPRING FOR PINS and AFTER POWDER COATING name the cycle time as their form
   // A deleted part is named by the process it was in.
   assert.equal(diffItem(part({ process: POWDER }), {}, procNames).find((c) => c.field === "totalCycleSec").label, "Standard Inspection Time per Piece (Sec)");
 });
+
+test("BEFORE POWDER COATING names its cycle time Standard Time per Piece — not AFTER POWDER COATING's", () => {
+  const BPC = "64b0c0ffee0000000000eeee";
+  const procNames = { ...names, [BPC]: "BEFORE POWDER COATING" };
+  const label = (pages = {}) =>
+    diffItem(part({ process: BPC }), part({ process: BPC, totalCycleSec: 27 }), procNames, pages).find((c) => c.field === "totalCycleSec").label;
+  assert.equal(label(), "Standard Time per Piece (Sec)");
+  assert.equal(label({ [BPC]: "/hqepl/production/before-powder-coating-data-entry" }), "Standard Time per Piece (Sec)");
+});
+
+test("PRINTING names its cycle time Standard Time per Piece, as its sheet does", () => {
+  const PRINTING = "64b0c0ffee0000000000ffff";
+  const procNames = { ...names, [PRINTING]: "PRINTING" };
+  const label = (pages = {}) =>
+    diffItem(part({ process: PRINTING }), part({ process: PRINTING, totalCycleSec: 21 }), procNames, pages).find((c) => c.field === "totalCycleSec").label;
+  assert.equal(label(), "Standard Time per Piece (Sec)");
+  assert.equal(label({ [PRINTING]: "/hqepl/production/printing-data-entry" }), "Standard Time per Piece (Sec)");
+});
+
+test("RAW CASTING names its cycle time Standard Inspection Time per Piece, as its sheet does", () => {
+  const RAW = "64b0c0ffee0000000000abcd";
+  const procNames = { ...names, [RAW]: "RAW CASTING" };
+  const label = (pages = {}) =>
+    diffItem(part({ process: RAW }), part({ process: RAW, totalCycleSec: 30 }), procNames, pages).find((c) => c.field === "totalCycleSec").label;
+  assert.equal(label(), "Standard Inspection Time per Piece (Sec)");
+  assert.equal(label({ [RAW]: "/hqepl/production/raw-casting-data-entry" }), "Standard Inspection Time per Piece (Sec)");
+  // Linked to another page, the page decides.
+  assert.equal(label({ [RAW]: "/hqepl/production/cnc-data-entry" }), "Total Cycle Time (sec)");
+});
+
+test("MODULAR FRAME ASSEMBLY names its cycle time Standard Assembly Time per Piece — not MODULAR FRAME DRILLING's", () => {
+  const MFA = "64b0c0ffee0000000000abce";
+  const procNames = { ...names, [MFA]: "MODULAR FRAME ASSEMBLY" };
+  const label = (pages = {}) =>
+    diffItem(part({ process: MFA }), part({ process: MFA, totalCycleSec: 80 }), procNames, pages).find((c) => c.field === "totalCycleSec").label;
+  assert.equal(label(), "Standard Assembly Time per Piece (Sec)");
+  assert.equal(label({ [MFA]: "/hqepl/production/modular-frame-assembly-data-entry" }), "Standard Assembly Time per Piece (Sec)");
+  assert.notEqual(label({ [MFA]: "/hqepl/production/modular-frame-drilling-data-entry" }), "Standard Assembly Time per Piece (Sec)");
+});

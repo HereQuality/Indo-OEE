@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/production_sheet_calc.dart' show displayDay;
+import '../charts/chart_props.dart' show UnitWords;
 import '../dashboard_engine.dart' show monthLabel;
 import 'sheet_kit.dart';
 
@@ -21,11 +22,12 @@ Future<void> showFilterSheet(
   required Map<String, List<String>> filters,
   required void Function(String dim, List<String> values) onFilterSet,
   required VoidCallback onClearAll,
+  UnitWords words = UnitWords.machine,
 }) {
   return showSheet<void>(
     context,
     builder: (ctx) => FullHeightSheet(
-      child: FilterSheet(options: options, filters: filters, onFilterSet: onFilterSet, onClearAll: onClearAll),
+      child: FilterSheet(options: options, filters: filters, onFilterSet: onFilterSet, onClearAll: onClearAll, words: words),
     ),
   );
 }
@@ -50,12 +52,22 @@ final ButtonStyle _quietButton = TextButton.styleFrom(
 bool _sameSet(List<String> a, List<String> b) => a.length == b.length && a.toSet().containsAll(b);
 
 class FilterSheet extends StatefulWidget {
-  const FilterSheet({super.key, required this.options, required this.filters, required this.onFilterSet, required this.onClearAll});
+  const FilterSheet({
+    super.key,
+    required this.options,
+    required this.filters,
+    required this.onFilterSet,
+    required this.onClearAll,
+    this.words = UnitWords.machine,
+  });
 
   final Map<String, List<Map<String, String>>> options;
   final Map<String, List<String>> filters;
   final void Function(String dim, List<String> values) onFilterSet;
   final VoidCallback onClearAll;
+
+  /// A worker-based process slices by "Worker" / "All workers" (web FilterPanel `labels`).
+  final UnitWords words;
 
   @override
   State<FilterSheet> createState() => _FilterSheetState();
@@ -68,6 +80,9 @@ class _FilterSheetState extends State<FilterSheet> {
   final Map<String, String> _queries = {};
   final TextEditingController _search = TextEditingController();
   String _tab = 'machine';
+
+  String _label(String dim) => dim == 'machine' && widget.words.byWorker ? widget.words.mcNo : _dimLabel[dim]!;
+  String _allOf(String dim) => dim == 'machine' && widget.words.byWorker ? 'All ${widget.words.many}' : '${_allLabel[dim]}';
   bool _clearedAll = false;
 
   @override
@@ -202,7 +217,7 @@ class _FilterSheetState extends State<FilterSheet> {
         Padding(
           padding: const EdgeInsets.fromLTRB(kSheetGutter, 2, kSheetGutter, 8),
           child: SegmentedTabs<String>(
-            items: [for (final d in _pickDims) TabItem(d, _dimLabel[d]!, count: _sel[d]!.length)],
+            items: [for (final d in _pickDims) TabItem(d, _label(d), count: _sel[d]!.length)],
             selected: _tab,
             onSelected: _switchTab,
           ),
@@ -235,7 +250,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       itemBuilder: (context, i) {
                         final (dim, value) = picks[i];
                         return _SelectionChip(
-                          label: '${_dimLabel[dim]}: ${_textOf(dim, value)}',
+                          label: '${_label(dim)}: ${_textOf(dim, value)}',
                           onRemove: () => _toggle(dim, value),
                         );
                       },
@@ -290,7 +305,7 @@ class _FilterSheetState extends State<FilterSheet> {
             onChanged: (v) => setState(() => _queries[_tab] = v),
             style: const TextStyle(fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search ${_dimLabel[_tab]!.toLowerCase()}',
+              hintText: 'Search ${_label(_tab).toLowerCase()}',
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               prefixIcon: const Icon(Icons.search_rounded, size: 20),
@@ -347,7 +362,7 @@ class _FilterSheetState extends State<FilterSheet> {
     if (all.isEmpty) {
       return [
         SliverToBoxAdapter(
-          child: _Empty(icon: Icons.filter_alt_off_outlined, title: 'Nothing in this period', body: '${_allLabel[_tab]} appear here once the period has entries.'),
+          child: _Empty(icon: Icons.filter_alt_off_outlined, title: 'Nothing in this period', body: '${_allOf(_tab)} appear here once the period has entries.'),
         ),
       ];
     }

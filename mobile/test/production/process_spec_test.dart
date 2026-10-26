@@ -103,6 +103,13 @@ void main() {
         'trobe': '/production/trobe-data-entry',
         'spring': '/production/spring-data-entry',
         'powder-coating': '/production/powder-coating-data-entry',
+        'rubber': '/production/rubber-data-entry',
+        'printing': '/production/printing-data-entry',
+        'injection': '/production/injection-moulding-data-entry',
+        'bpc': '/production/before-powder-coating-data-entry',
+        'mfd': '/production/modular-frame-drilling-data-entry',
+        'embossing': '/production/embossing-data-entry',
+        'final-assembly': '/production/final-assembly-data-entry',
       };
       expect(ProcessRegistry.all.map((s) => s.key).toSet(), pages.keys.toSet());
       pages.forEach((key, path) {

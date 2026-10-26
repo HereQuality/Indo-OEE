@@ -235,7 +235,10 @@ export function rowCalc(row) {
   // actually typed, regardless of whether Operator is filled in. A
   // supervisor who logs downtime minutes without yet picking an Operator
   // shouldn't see that real data thrown away.
-  const totalStoppageMin = sumOrZero(STOPPAGE_FIELDS.map((f) => num(row[f.key])));
+  // A sheet with downtime columns of its own beyond these ten (Printing's Ask
+  // Query To QC Team / Empty Bag Tugging / Stock Counting) lists their keys in
+  // row.extraStoppageKeys (set by its adapter), so they count here too.
+  const totalStoppageMin = sumOrZero([...STOPPAGE_FIELDS.map((f) => f.key), ...(row.extraStoppageKeys || [])].map((k) => num(row[k])));
 
   // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600.
   // Pure math off two typed values, same as Machine Shift Time above — shown
@@ -347,7 +350,10 @@ export function sortByMachineOn(rows) {
     .map((x) => x.r);
 }
 
-export function dayCalc(rows) {
+// `lossesExceptLunch`: OEE considering losses takes every stoppage off the time
+// available EXCEPT Lunch / Rest (Before Powder Coating's sheet — its other two
+// OEE columns don't exist, and its lunch-only one is oeeLunch below).
+export function dayCalc(rows, { lossesExceptLunch = false } = {}) {
   const list = sortByMachineOn(rows);
   const calcs = list.map(rowCalc);
 
@@ -429,7 +435,9 @@ export function dayCalc(rows) {
         }),
       ) + lockedDay.hours * 60
     : null;
-  const dayOeeLosses = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
+  const dayOeeLosses = dayHasShift
+    ? ratio(dayEffectiveH, dayAvailH - (lossesExceptLunch ? dayStoppageMin - dayLunchMin : dayStoppageMin) / 60)
+    : null;
   const dayOeeLunch = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
   // (Named …Cot — the key saved dashboards use — though the column now reads "Setup Time".)
   const dayOeeLunchCot = dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null;
@@ -489,6 +497,22 @@ export function dayCalc(rows) {
       gapMin,
     };
   });
+}
+
+// The sheets that work every entry out on its own — Printing, Injection Moulding
+// and Before Powder Coating. Their paper sheets have no Planned Operator Shift
+// column and give each row its own OEE / Unreported Time on that row's Machine
+// Shift; typed here as the entry's Planned Operator Shift (= its Machine Shift on
+// the paper), each entry's figures come from that entry alone — checked against
+// 51 real rows of the three sheets (utils/paperSheets.test.mjs): exact. A Planned
+// that came from Process Master's lock is the machine's (or worker's) whole day
+// instead, so a day with any locked entry is combined once, as on every other
+// sheet (dayCalc). One result per row, in sortByMachineOn order, like dayCalc.
+export function entryDayCalc(rows, options = {}) {
+  const list = sortByMachineOn(rows);
+  const day = dayCalc(list, options);
+  if (list.some((r) => r.plannedLocked === true)) return day;
+  return list.map((r, i) => ({ ...dayCalc([r], options)[0], gapMin: day[i].gapMin }));
 }
 
 // Every remark an entry carries, labelled and in form order: the two the form

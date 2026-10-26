@@ -11,7 +11,7 @@ import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/limit_notice.dart' show qtyNotice;
+import '../../shared/limit_notice.dart' show NoticeWords, machineWords, qtyNotice;
 import '../../shared/production_sheet_calc.dart';
 
 final List<String> _line2 = ['itemName', 'vendor', ...entryCycleOpKeys];
@@ -123,11 +123,37 @@ Widget _opTile(EntryLineContext c, Map<String, dynamic> f, Map<String, dynamic>?
   );
 }
 
+/// How a sheet names the three Production Master boxes (web QuantityMaster.jsx
+/// `labels`): Before Powder Coating says TOTAL QTY / OK QTY / Rejected QTY.
+/// Left out, they read as on the CNC form. [okShort] is how the phone-only
+/// hints call OK ("… so OK can only be 0").
+class QtyLabels {
+  const QtyLabels({this.actual = 'Actual Quantity', this.ok = 'OK Quantity', this.rejected = 'Rejected', this.okShort = 'OK'});
+  final String actual;
+  final String ok;
+  final String rejected;
+  final String okShort;
+}
+
 /// The web's Production Master: Actual Quantity and OK Quantity (typed) and the
 /// grey Rejected — nothing else. Ideal Quantity is not a box: it only caps Actual
 /// (past it the web's popup, or a toast, shows the figures).
-Widget quantityLine(EntryLineContext c) {
+///
+/// The web ProductionMasterFields' options: [labels] names the boxes the sheet's
+/// own way; [capByIdeal] false leaves Actual uncapped (an over-Ideal entry goes
+/// to OEE Review instead) and OK capped only by a typed Actual; [words] words
+/// the quantity popup. [moreCells] (a sheet's grey Ideal / Effective boxes) sit
+/// in their own row under the three, above the over-100% banner.
+Widget quantityLine(
+  EntryLineContext c, {
+  QtyLabels labels = const QtyLabels(),
+  bool capByIdeal = true,
+  NoticeWords words = machineWords,
+  List<EntryCell> moreCells = const [],
+}) {
   final m = c.metrics;
+  // Web: `max={actualTyped ? Number(actualQty) : capByIdeal ? calc.idealQty : undefined}`.
+  final okMax = capByIdeal ? m.okMax : (isBlankValue(c.values['actualQty']) ? null : entryNum(c.values['actualQty']));
   return EntryLineCard(
     title: 'Production Master',
     icon: Icons.inventory_2_outlined,
@@ -138,45 +164,51 @@ Widget quantityLine(EntryLineContext c) {
         maxCols: 3,
         cells: [
           EntryCell(
-            label: 'Actual Quantity',
+            label: labels.actual,
             required: true,
             error: c.err('actualQty'),
             // Phone-only: says why the box takes nothing (the web raises a popup when you type).
-            hint: c.locked('actualQty', m.idealQty)
+            hint: capByIdeal && c.locked('actualQty', m.idealQty)
                 ? 'Ideal Quantity is 0, so Actual can only be 0 — check the Machine ON/OFF times and the Part.'
                 : null,
             child: c.keyed(
               'actualQty',
               c.numBox(
                 'actualQty',
-                max: m.idealQty,
-                label: 'Actual Quantity',
+                max: capByIdeal ? m.idealQty : null,
+                label: labels.actual,
                 // Past Ideal Quantity: the web's popup with the figures (a toast without popups).
-                onExceedTyped: c.onLimit(
-                  (typed) => qtyNotice(calc: m.calc, entered: typed, label: 'Actual Quantity'),
-                  (max) => "Actual Quantity can't be more than Ideal Quantity (${fmtNum(max)})",
-                ),
+                onExceedTyped: capByIdeal
+                    ? c.onLimit(
+                        (typed) => qtyNotice(calc: m.calc, entered: typed, label: labels.actual, words: words),
+                        (max) => "${labels.actual} can't be more than Ideal Quantity (${fmtNum(max)})",
+                      )
+                    : null,
               ),
             ),
           ),
           EntryCell(
-            label: 'OK Quantity',
+            label: labels.ok,
             required: true,
             error: c.err('okQty'),
-            hint: c.locked('okQty', m.okMax) ? 'Actual Quantity is 0, so OK can only be 0.' : null,
+            hint: c.locked('okQty', okMax) ? '${labels.actual} is 0, so ${labels.okShort} can only be 0.' : null,
             child: c.keyed(
               'okQty',
               c.numBox(
                 'okQty',
-                max: m.okMax,
-                label: 'OK Quantity',
-                onExceed: (max) => EntryFormToast.warn("OK Quantity can't be more than Actual Quantity (${fmtNum(max)})"),
+                max: okMax,
+                label: labels.ok,
+                onExceed: (max) => EntryFormToast.warn("${labels.ok} can't be more than ${labels.actual} (${fmtNum(max)})"),
               ),
             ),
           ),
-          EntryCell(label: 'Rejected', child: c.calcBox('rejectedQty', entryFmt(m.calc['rejectedQty']), 'Rejected')),
+          EntryCell(label: labels.rejected, child: c.calcBox('rejectedQty', entryFmt(m.calc['rejectedQty']), labels.rejected)),
         ],
       ),
+      if (moreCells.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        EntryGrid(maxCols: 3, cells: moreCells),
+      ],
       // Availability / Performance / Quality above 100% -> goes to Admin review.
       oeeCheck(c),
     ],
@@ -184,7 +216,11 @@ Widget quantityLine(EntryLineContext c) {
 }
 
 /// The Rejection Master split: one box per reason, which have to add up to Rejected.
-Widget rejectLine(EntryLineContext c) {
+///
+/// [reasons]: the sheet's own reject reasons (web RejectionMasterFields
+/// `reasons` — Before Powder Coating has its own); left out, the CNC list.
+/// [labels] only words the phone-only hint under boxes that can't take a figure yet.
+Widget rejectLine(EntryLineContext c, {List<String> reasons = rejectReasons, QtyLabels labels = const QtyLabels()}) {
   final m = c.metrics;
   final s = c.theme.colorScheme;
   final split = c.values['rejectBreakdown'];
@@ -207,32 +243,32 @@ Widget rejectLine(EntryLineContext c) {
             EntryGrid(
               maxCols: 3,
               cells: [
-                for (var r = 0; r < rejectReasons.length; r++)
+                for (var r = 0; r < reasons.length; r++)
                   EntryCell(
-                    label: rejectReasons[r],
+                    label: reasons[r],
                     child: EntryTextField(
-                      key: ValueKey('entry${c.index}/reject/${rejectReasons[r]}'),
-                      value: entryText(split is Map ? split[rejectReasons[r]] : null),
+                      key: ValueKey('entry${c.index}/reject/${reasons[r]}'),
+                      value: entryText(split is Map ? split[reasons[r]] : null),
                       numeric: true,
                       decimals: false,
                       // The first box is where a failed Save puts the cursor.
                       focusNode: r == 0 ? c.nodeFor('rejectBreakdown') : null,
                       invalid: splitErr != null && m.splitMismatch,
-                      max: m.rejectRoom(rejectReasons[r]),
-                      semanticsLabel: rejectReasons[r],
+                      max: m.rejectRoom(reasons[r]),
+                      semanticsLabel: reasons[r],
                       onExceedMax: (max) => EntryFormToast.warn(
                         m.rejected == 0
                             ? 'Rejected Quantity is 0 (Actual − OK), so there is nothing to split.'
-                            : 'Only ${jsNumStr(max)} of the ${jsNumStr(m.rejected)} rejected pieces are left for “${rejectReasons[r]}” — the boxes can\'t add up to more than Rejected.',
+                            : 'Only ${jsNumStr(max)} of the ${jsNumStr(m.rejected)} rejected pieces are left for “${reasons[r]}” — the boxes can\'t add up to more than Rejected.',
                       ),
-                      onChanged: (t) => c.onRejectChange(c.index, rejectReasons[r], t),
+                      onChanged: (t) => c.onRejectChange(c.index, reasons[r], t),
                     ),
                   ),
               ],
             ),
             // Phone-only: why some Rejection Master boxes can take no figure yet.
-            if (rejectReasons.any((r) => EntryTextField.capLocks(entryText(split is Map ? split[r] : null), m.rejectRoom(r))))
-              EntryHintText(m.rejectLockReason),
+            if (reasons.any((r) => EntryTextField.capLocks(entryText(split is Map ? split[r] : null), m.rejectRoom(r))))
+              EntryHintText(_rejectLockReason(m, labels)),
             const SizedBox(height: 8),
             // The split has to account for every rejected piece, so the
             // running total sits next to the figure it must match.
@@ -286,4 +322,15 @@ Widget rejectLine(EntryLineContext c) {
       ],
     ],
   );
+}
+
+/// Why the Rejection Master boxes can't take a figure yet, in the sheet's own
+/// words ([EntryMetrics.rejectLockReason] on a form that keeps the CNC labels).
+String _rejectLockReason(EntryMetrics m, QtyLabels labels) {
+  if (labels.actual == const QtyLabels().actual && labels.ok == const QtyLabels().ok) return m.rejectLockReason;
+  if (!m.rejectedKnown) {
+    return 'Enter ${labels.actual} and ${labels.ok} first — a reject quantity can only be entered once some pieces are rejected (${labels.actual} more than ${labels.ok}).';
+  }
+  if (m.rejected <= 0) return 'Nothing to reject — ${labels.actual} and ${labels.ok} are equal.';
+  return m.rejectLockReason;
 }

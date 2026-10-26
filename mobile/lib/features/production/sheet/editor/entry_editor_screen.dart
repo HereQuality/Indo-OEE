@@ -191,12 +191,33 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     // not "another entry", and an old row that already breaks the time rules
     // stays editable until its times are changed.
     final saved = _savedTimes;
-    final overlap = overlapErrors(
+    final overlap = !widget.spec.checksTimeOverlap
+        ? [for (final _ in _entries) const <String, String>{}]
+        : overlapErrors(
       _entries,
       _occupied,
       editSlot: _editSlot,
       saved: saved,
+      words: widget.spec.timeWords,
     );
+    // A machine (operator) that already has the most entries that date — the
+    // server's own refusal, said on the box (specs with `maxEntriesPerDay`).
+    final maxEntries = widget.spec.maxEntriesPerDay;
+    final full = maxEntries == null
+        ? [for (final _ in _entries) const <String, String>{}]
+        : slotsFullErrors(
+            _entries,
+            _occupied,
+            editSlot: _editSlot,
+            saved: saved,
+            max: maxEntries,
+            who: (id) {
+              for (final m in _machinesForForm) {
+                if ('${m['_id']}' == id) return '${m['machineName'] ?? ''}'.isEmpty ? 'This ${widget.spec.machineNoun}' : '${m['machineName']}';
+              }
+              return 'This ${widget.spec.machineNoun}';
+            },
+          );
     final operatorClash = !widget.spec.checksOperatorClash
         ? [for (final _ in _entries) const <String, String>{}]
         : operatorOverlapErrors(
@@ -220,6 +241,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
         {
           ...operatorClash[i],
           ...overlap[i],
+          ...full[i],
           ...widget.spec.validateEntry(_entries[i], saved: saved),
         },
     ];

@@ -82,6 +82,21 @@ const DATA_ENTRY_MENUS = [
   { menuName: "SPRING FOR PINS", menuUrl: "/hqepl/production/spring-data-entry", sequence: 8, icon: "ClipboardList" },
   { menuName: "AFTER POWDER COATING", menuUrl: "/hqepl/production/powder-coating-data-entry", sequence: 9, icon: "ClipboardList" },
   { menuName: "RUBBER", menuUrl: "/hqepl/production/rubber-data-entry", sequence: 10, icon: "ClipboardList" },
+  // Kept per operator (MC No. optional) — like RUBBER.
+  { menuName: "PRINTING", menuUrl: "/hqepl/production/printing-data-entry", sequence: 11, icon: "ClipboardList" },
+  { menuName: "INJECTION MOULDING", menuUrl: "/hqepl/production/injection-moulding-data-entry", sequence: 12, icon: "ClipboardList" },
+  // A different process from AFTER POWDER COATING (sequence 9).
+  { menuName: "BEFORE POWDER COATING", menuUrl: "/hqepl/production/before-powder-coating-data-entry", sequence: 13, icon: "ClipboardList" },
+  // An inspection sheet kept per worker, like AFTER POWDER COATING.
+  { menuName: "RAW CASTING", menuUrl: "/hqepl/production/raw-casting-data-entry", sequence: 14, icon: "ClipboardList" },
+  // A machine sheet like INJECTION MOULDING — see seed/seedMfdProcess.js.
+  { menuName: "MODULAR FRAME DRILLING", menuUrl: "/hqepl/production/modular-frame-drilling-data-entry", sequence: 15, icon: "ClipboardList" },
+  // A worker sheet on RAW CASTING's template — see seed/seedMfaProcess.js.
+  { menuName: "MODULAR FRAME ASSEMBLY", menuUrl: "/hqepl/production/modular-frame-assembly-data-entry", sequence: 16, icon: "ClipboardList" },
+  // A machine sheet like INJECTION MOULDING (TOTAL may beat Ideal) — see seed/seedEmbossingProcess.js.
+  { menuName: "EMBOSSING", menuUrl: "/hqepl/production/embossing-data-entry", sequence: 17, icon: "ClipboardList" },
+  // A worker sheet on AFTER POWDER COATING's template — see seed/seedFinalAssemblyProcess.js.
+  { menuName: "FINAL ASSEMBLY", menuUrl: "/hqepl/production/final-assembly-data-entry", sequence: 18, icon: "ClipboardList" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

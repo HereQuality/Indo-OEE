@@ -25,7 +25,9 @@ import { WORKING_STATUSES, dayCalc, rowCalc } from "./productionSheet";
 export const isPowderCoatingProcess = (process) => {
   const page = process?.dataEntryMenu || "";
   if (page) return /\/powder-coating-data-entry\/?$/.test(page);
-  return /powder\s*coating/i.test(process?.processName || "");
+  // BEFORE POWDER COATING is a different process (utils/bpcSheet.js).
+  const name = process?.processName || "";
+  return /powder\s*coating/i.test(name) && !/before\s*powder/i.test(name);
 };
 
 // Every Working Status but PRESENT is a day the worker didn't inspect — such an

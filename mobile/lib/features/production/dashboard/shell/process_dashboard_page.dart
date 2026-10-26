@@ -85,7 +85,13 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
     super.initState();
     final given = widget.controller;
     _ownsCtl = given == null;
-    _ctl = given ?? DashboardController(repo: widget.repo, processId: widget.processId, machines: widget.processes.machines);
+    _ctl = given ??
+        DashboardController(
+          repo: widget.repo,
+          processId: widget.processId,
+          process: widget.processId == null ? null : widget.processes.byId(widget.processId!),
+          machines: widget.processes.machines,
+        );
     if (_ownsCtl) {
       widget.processes.addListener(_onProcesses);
       _ctl.load();
@@ -138,6 +144,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
       filters: _ctl.filters,
       onFilterSet: _ctl.setFilter,
       onClearAll: _ctl.clearAll,
+      words: _ctl.words,
     );
   }
 
@@ -168,8 +175,10 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
         final process = id == null ? null : widget.processes.byId(id);
         if (id != null && process == null) return const _MissingProcess();
 
-        final stats = widget.processes.statsFor(id);
-        final charts = widget.processes.chartsFor(id);
+        // In the dashboard's own words: "Worker" on a worker-based process (web `worded`).
+        final words = _ctl.words;
+        final stats = [for (final w in widget.processes.statsFor(id)) eng.worded(w, words)];
+        final charts = [for (final w in widget.processes.chartsFor(id)) eng.worded(w, words)];
         final selector = widget.selector?.call(tablet);
 
         final Widget header = tablet
@@ -281,7 +290,8 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
               name: process?.name,
               period: _ctl.periodLabel,
               extent: _ctl.extent,
-              noMachines: process != null && process.machines.isEmpty,
+              // A worker-based process never has machines — its entries come per worker.
+              noMachines: process != null && !_ctl.words.byWorker && process.machines.isEmpty,
               onChangePeriod: _openRange,
             ),
           ),
@@ -365,7 +375,8 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
         SummaryLine('Produced', f('totalQty', 'qty')),
         SummaryLine('OK rate', f('okPct', 'pct')),
         SummaryLine('Downtime', f('downtimeMin', 'minutes')),
-        SummaryLine('Machines ran', total > 0 ? '$ran of $total' : '$ran'),
+        // A worker-based process has no machines: it counts the workers with entries.
+        _ctl.words.byWorker ? SummaryLine('Workers', '$ran') : SummaryLine('Machines ran', total > 0 ? '$ran of $total' : '$ran'),
       ],
       onTap: () {
         HapticFeedback.lightImpact();
@@ -380,7 +391,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
     final hint = w['hint'] as String?;
     final tableOnly = _tableOnly.contains(key);
     final measureKey = w['measure'] as String?;
-    final measureStat = measureKey == null ? null : eng.statsByKey[measureKey];
+    final measureStat = measureKey == null || eng.statsByKey[measureKey] == null ? null : eng.worded(eng.statsByKey[measureKey]!, _ctl.words);
     VoidCallback? onDrill(BuildContext c) => measureStat == null ? null : () => _drill(c, eng.statMeasure(measureStat));
 
     return WidgetCard(
@@ -394,12 +405,14 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
       onViewChanged: (v) => setState(() => _ctl.chartViews[key] = v),
       tableOnly: tableOnly,
       onDrill: onDrill(context),
+      unit: _ctl.words.one.toLowerCase(),
       onMaximize: () => ChartMaximizePage.open(
         context,
         title: title,
         hint: hint,
         tableOnly: tableOnly,
         onDrill: onDrill(context),
+        unit: _ctl.words.one.toLowerCase(),
         refresh: _ctl,
         builder: (c, view, expanded) => _chart(c, w, view, expanded),
       ),

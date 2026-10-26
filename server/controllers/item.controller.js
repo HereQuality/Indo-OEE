@@ -10,6 +10,7 @@ const {
   RIVET_OP_FIELDS,
   RIVET_PROCESS_TYPES,
   PRESS_OPERATIONS,
+  MFD_OPERATIONS,
 } = require("../models/Item");
 const { diffItem, updateAction, partLabel } = require("../utils/itemDiff");
 
@@ -85,6 +86,9 @@ const pickRivetProcessType = (body) => (body.rivetProcessType !== undefined ? { 
 // A PRESS part's Operation choice — same shape as pickRivetProcessType above.
 const pickPressOperation = (body) => (body.pressOperation !== undefined ? { pressOperation: body.pressOperation } : {});
 
+// A MODULAR FRAME DRILLING part's Process — same shape as pickPressOperation above.
+const pickMfdOperation = (body) => (body.mfdOperation !== undefined ? { mfdOperation: body.mfdOperation } : {});
+
 // `process` is only touched when the request actually sends it, so a form that
 // doesn't know about processes can't clear the link by accident; "" (the "Not
 // in any process" choice) clears it.
@@ -101,6 +105,7 @@ const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive, process
   ...pickRivetOps(body),
   ...pickRivetProcessType(body),
   ...pickPressOperation(body),
+  ...pickMfdOperation(body),
   ...(process !== undefined ? { process: process || null } : {}),
   isActive,
 });
@@ -123,6 +128,13 @@ const rivetProcessTypeError = (rivetProcessType) => {
 const pressOperationError = (pressOperation) => {
   if (!pressOperation) return null;
   if (!PRESS_OPERATIONS.includes(pressOperation)) return `"${pressOperation}" is not a valid Operation`;
+  return null;
+};
+
+// A MODULAR FRAME DRILLING part's Process box has to be one of its listed choices.
+const mfdOperationError = (mfdOperation) => {
+  if (!mfdOperation) return null;
+  if (!MFD_OPERATIONS.includes(mfdOperation)) return `"${mfdOperation}" is not a valid Process`;
   return null;
 };
 
@@ -168,6 +180,8 @@ exports.createItem = async (req, res) => {
     if (badRivetProcessType) return res.status(400).json({ isOk: false, message: badRivetProcessType });
     const badPressOperation = pressOperationError(req.body.pressOperation);
     if (badPressOperation) return res.status(400).json({ isOk: false, message: badPressOperation });
+    const badMfdOperation = mfdOperationError(req.body.mfdOperation);
+    if (badMfdOperation) return res.status(400).json({ isOk: false, message: badMfdOperation });
     const item = await Item.create(pickItem(req.body, req.body));
     await recordItemLog(req, "create", {}, item);
     res.status(201).json({ isOk: true, data: item, message: "Item created successfully" });
@@ -185,6 +199,8 @@ exports.updateItem = async (req, res) => {
     if (badRivetProcessType) return res.status(400).json({ isOk: false, message: badRivetProcessType });
     const badPressOperation = pressOperationError(req.body.pressOperation);
     if (badPressOperation) return res.status(400).json({ isOk: false, message: badPressOperation });
+    const badMfdOperation = mfdOperationError(req.body.mfdOperation);
+    if (badMfdOperation) return res.status(400).json({ isOk: false, message: badMfdOperation });
     // The part as it was, to work out afterwards what this save changed.
     const before = await Item.findById(req.params.itemId);
     if (!before) return res.status(404).json({ isOk: false, message: "Item not found" });

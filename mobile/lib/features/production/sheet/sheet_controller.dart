@@ -203,6 +203,7 @@ class SheetController extends ChangeNotifier {
         machineName: machineName,
         rankOf: rankOf,
         searchKeys: spec.searchKeys,
+        byMachineOn: spec.entriesByMachineOn,
       );
 
   /// dayCalc figures of an entry (Unutilized, Unreported, the three OEEs, gap).

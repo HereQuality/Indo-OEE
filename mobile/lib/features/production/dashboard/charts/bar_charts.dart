@@ -29,11 +29,11 @@ class _OeeByMachineChartState extends State<OeeByMachineChart> {
           for (final d in dimBars(rows, 'machine', p.ctx, (s) => pct100(s['oeeLosses']), sort: 'machine', positiveOnly: false))
             TimePoint(d.key, d.label, [d.value]),
         ]);
-    if (data.isEmpty) return const ChartEmpty('Needs machine ON/OFF times and OK quantity.');
+    if (data.isEmpty) return ChartEmpty('Needs ${p.ctx.words.times} and OK quantity.');
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: const ['Machine', 'OEE'],
+        columns: [p.ctx.words.one, 'OEE'],
         rows: [for (final d in data) MiniRow(d.key, [d.label, '${d.values.first!.toStringAsFixed(2)}%'])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),
@@ -141,7 +141,7 @@ class _RunTimeByMachineBarsChartState extends State<RunTimeByMachineBarsChart> {
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: const ['Machine', 'Effective Run Time'],
+        columns: [p.ctx.words.one, 'Effective Run Time'],
         rows: [for (final d in data) MiniRow(d.key, [d.label, eng.formatExact('hours', d.values.first)])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),

@@ -24,7 +24,22 @@ const STATUS_INACTIVE = "Inactive";
 const TOTAL_CYCLE_LABEL = "Total Cycle Time (sec)";
 const CYCLE_LABELS = [
   { page: /\/spring-data-entry\/?$/, name: /\bspring\b/i, label: "Standard Time per Piece (Sec)" },
+  // INJECTION MOULDING (utils/injectionSheet.js).
+  { page: /\/injection-moulding-data-entry\/?$/, name: /\binjection\b/i, label: "Standard Time per Piece (Sec)" },
+  // EMBOSSING (utils/embossingSheet.js).
+  { page: /\/embossing-data-entry\/?$/, name: /\bembossing\b/i, label: "Standard Time per Piece (Sec)" },
+  // PRINTING (utils/printingSheet.js).
+  { page: /\/printing-data-entry\/?$/, name: /\bprinting\b/i, label: "Standard Time per Piece (Sec)" },
+  // BEFORE POWDER COATING (utils/bpcSheet.js) — ahead of AFTER POWDER COATING,
+  // whose name pattern it also matches.
+  { page: /\/before-powder-coating-data-entry\/?$/, name: /before\s*powder\s*coating/i, label: "Standard Time per Piece (Sec)" },
+  // FINAL ASSEMBLY (utils/finalAssemblySheet.js) — optional there (PACKING has none).
+  { page: /\/final-assembly-data-entry\/?$/, name: /\bfinal\s*assembly\b/i, label: "Standard Time per Piece (Sec)" },
   { page: /\/powder-coating-data-entry\/?$/, name: /powder\s*coating/i, label: "Standard Inspection Time per Piece (Sec)" },
+  // RAW CASTING (utils/rawCastingSheet.js) — an inspection sheet like AFTER POWDER COATING.
+  { page: /\/raw-casting-data-entry\/?$/, name: /\braw\s*casting\b/i, label: "Standard Inspection Time per Piece (Sec)" },
+  // MODULAR FRAME ASSEMBLY (utils/mfaSheet.js) — worded in its model (MFA_LABELS).
+  { page: /\/modular-frame-assembly-data-entry\/?$/, name: /\bmodular\s*frame\s*assembly\b/i, label: `${require("../models/MfaEntry").MFA_LABELS.cycle} (Sec)` },
 ];
 const cycleLabel = (processId, processNames, processPages) => {
   const page = processPages[processId] || "";

@@ -18,10 +18,14 @@ String relativeDay(String iso, DateTime now) {
 /// Today / Yesterday / Weekly off / holiday tag, and how many machines and
 /// entries it holds. (The Table view shows the date in its own column.)
 class SheetDayHeader extends StatelessWidget {
-  const SheetDayHeader({super.key, required this.day, required this.calendar, required this.now});
+  const SheetDayHeader({super.key, required this.day, required this.calendar, required this.now, this.noun = 'machine'});
   final SheetDay day;
   final WorkingCalendar calendar;
   final DateTime now;
+
+  /// What the page's row key is called ("machine"; an operator sheet's
+  /// "operator") — the spec's `machineNoun`.
+  final String noun;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +35,7 @@ class SheetDayHeader extends StatelessWidget {
     final tag = holiday ?? (calendar.isWeeklyOff(day.date) ? 'Weekly off' : '');
     final machines = day.machines.length;
     final entries = day.entryCount;
-    final meta = '$machines ${machines == 1 ? 'machine' : 'machines'} · $entries ${entries == 1 ? 'entry' : 'entries'}';
+    final meta = '$machines ${machines == 1 ? noun : '${noun}s'} · $entries ${entries == 1 ? 'entry' : 'entries'}';
     // The header has a fixed height, so it stops growing past 1.3x text.
     final scale = MediaQuery.textScalerOf(context);
     return MediaQuery(

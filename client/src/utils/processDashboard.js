@@ -11,11 +11,16 @@
  * with the sheet. OEE is a per-machine-per-day figure, so it is averaged over
  * machine-day pairs, never over entries.
  */
-import { STOPPAGE_FIELDS, dayCalc, displayDay, fmtNum, fmtPct, rowCalc } from "./productionSheet";
+import { STOPPAGE_FIELDS, dayCalc, displayDay, entryDayCalc, fmtNum, fmtPct, rowCalc } from "./productionSheet";
 import { RUBBER_STOPPAGE_FIELDS, isRubberProcess } from "./rubberSheet";
 import { POWDER_IDLE_FIELDS, isPowderCoatingProcess } from "./powderCoatingSheet";
+import { BPC_STOPPAGE_FIELDS, isBpcProcess } from "./bpcSheet";
+import { FA_IDLE_FIELDS, isFinalAssemblyProcess } from "./finalAssemblySheet";
+import { PRINTING_EXTRA_STOPPAGE_FIELDS, PRINTING_STOPPAGE_FIELDS, isPrintingProcess } from "./printingSheet";
+import { RAW_CASTING_IDLE_FIELDS, isRawCastingProcess } from "./rawCastingSheet";
+import { MFA_IDLE_FIELDS, isMfaProcess } from "./mfaSheet";
 
-const n = (v) => (Number.isFinite(v) ? v : 0);
+const n =(v) => (Number.isFinite(v) ? v : 0);
 const mean = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
 
 // ── Formats ────────────────────────────────────────────────────────────────
@@ -106,7 +111,7 @@ export const resolveWidgets = (saved, lookup, defaults) =>
 // their dashboards say "Worker" where the others say "MC No." / "Machine",
 // and a catalog entry's `worker` wording stands in for its own. Words only:
 // every figure is worked out exactly as it is for a machine.
-export const isWorkerProcess = (process) => !!process && (isRubberProcess(process) || isPowderCoatingProcess(process));
+export const isWorkerProcess = (process) => !!process && (isRubberProcess(process) || isPowderCoatingProcess(process) || isBpcProcess(process) || isFinalAssemblyProcess(process) || isPrintingProcess(process) || isRawCastingProcess(process) || isMfaProcess(process));
 
 export const UNIT_WORDS = {
   machine: { byWorker: false, one: "Machine", many: "machines", mcNo: "MC No.", times: "machine ON/OFF times" },
@@ -127,8 +132,27 @@ export const dimLabel = (dim, ctx) => (dim === "machine" && ctx?.words ? ctx.wor
 export const stoppageKeysFor = (process) => {
   if (isRubberProcess(process)) return RUBBER_STOPPAGE_FIELDS.map((f) => f.key);
   if (isPowderCoatingProcess(process)) return POWDER_IDLE_FIELDS.map((f) => f.key);
+  // BEFORE POWDER COATING: Setup, B.D. (Breakdown) (bdMechMin), Lunch, Other.
+  if (isBpcProcess(process)) return BPC_STOPPAGE_FIELDS.map((f) => f.key);
+  // FINAL ASSEMBLY: Lunch / Tea and Other only, as AFTER POWDER COATING.
+  if (isFinalAssemblyProcess(process)) return FA_IDLE_FIELDS.map((f) => f.key);
+  // PRINTING: its own three (Ask Query To QC Team, Empty Bag Tugging, Stock
+  // Counting) + the ten.
+  if (isPrintingProcess(process)) return PRINTING_STOPPAGE_FIELDS.map((f) => f.key);
+  // RAW CASTING: Lunch / Tea and Other only, as AFTER POWDER COATING.
+  if (isRawCastingProcess(process)) return RAW_CASTING_IDLE_FIELDS.map((f) => f.key);
+  // MODULAR FRAME ASSEMBLY: Lunch / Tea and Other only, as RAW CASTING.
+  if (isMfaProcess(process)) return MFA_IDLE_FIELDS.map((f) => f.key);
   return STOPPAGE_FIELDS.map((f) => f.key);
 };
+
+// Every stoppage cause any sheet records: the shared ten plus PRINTING's own
+// three, so Downtime by Cause shows each of them on its own.
+export const CAUSE_FIELDS = [...STOPPAGE_FIELDS, ...PRINTING_EXTRA_STOPPAGE_FIELDS];
+
+// A cause in the process's own sheet wording, where it differs from the shared
+// one: BEFORE POWDER COATING keeps its B.D. (Breakdown) minutes in bdMechMin.
+export const causeLabelsFor = (process) => (isBpcProcess(process) ? { bdMechMin: "B.D. (Breakdown) (min)" } : {});
 
 // ── Stoppage groups (Breakdown & Stoppage by Machine) ──────────────────────
 // Ten causes is more series than a stacked bar can carry, so they are folded
@@ -137,10 +161,10 @@ export const STOPPAGE_GROUPS = [
   { key: "breakdown", label: "Breakdown (Mech + Ele)", fields: ["bdMechMin", "bdEleMin"] },
   { key: "setup", label: "Setup", fields: ["setupMin"] },
   { key: "lunch", label: "Lunch / Tea", fields: ["lunchMin"] },
-  { key: "other", label: "Other stoppages", fields: ["plannedDownMin", "noManPowerMin", "materialShiftingMin", "noMaterialMin", "noPowerMin", "otherMin"] },
+  { key: "other", label: "Other stoppages", fields: ["plannedDownMin", "noManPowerMin", "materialShiftingMin", "noMaterialMin", "noPowerMin", "otherMin", ...PRINTING_EXTRA_STOPPAGE_FIELDS.map((f) => f.key)] },
 ];
 
-export const causeLabel = (key) => (STOPPAGE_FIELDS.find((f) => f.key === key)?.label || key).replace(" (min)", "");
+export const causeLabel = (key, labels) => (labels?.[key] || CAUSE_FIELDS.find((f) => f.key === key)?.label || key).replace(/ \(min\)$/i, "");
 
 // ── Dimensions (what a row can be sliced / cross-filtered by) ──────────────
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -231,7 +255,7 @@ export function summarize(rows) {
     downtimeMin: 0, unreportedMin: 0, unutilizedDays: 0, entries: rows.length,
   };
   const setupEff = [];
-  const downtimeByCause = Object.fromEntries(STOPPAGE_FIELDS.map((f) => [f.key, 0]));
+  const downtimeByCause = Object.fromEntries(CAUSE_FIELDS.map((f) => [f.key, 0]));
   const rejectByReason = {};
   const byMachineDay = new Map();
   // Availability / Performance / Quality: the minutes and pieces behind each
@@ -264,7 +288,7 @@ export function summarize(rows) {
     s.plannedShiftHours += n(Number(row.plannedOperatorShiftHours));
     s.downtimeMin += n(c.totalStoppageMin);
     if (Number.isFinite(c.setupEfficiency)) setupEff.push(c.setupEfficiency);
-    for (const f of STOPPAGE_FIELDS) downtimeByCause[f.key] += n(Number(row[f.key]));
+    for (const f of CAUSE_FIELDS) downtimeByCause[f.key] += n(Number(row[f.key]));
     if (n(c.rejectedQty) > 0) {
       for (const [reason, q] of rejectSplit(row, c.rejectedQty)) rejectByReason[reason] = (rejectByReason[reason] || 0) + q;
     }
@@ -277,14 +301,25 @@ export function summarize(rows) {
   // machine-day — dayCalc gives every entry of that day the same value — so
   // each day counts once: a day saved as three entries isn't weighed three
   // times in the averages, nor its Unreported Time added up three times.
+  //
+  // A per-entry sheet (calcMode "perEntry", set by the server — INJECTION
+  // MOULDING, PRINTING, BEFORE POWDER COATING) works every entry out on its
+  // own, as its paper sheet does (entryDayCalc): there each ENTRY's figures
+  // count — OEE averaged over entries, Unreported added up over them. On
+  // Process Master's 12 h lock entryDayCalc combines the day instead (every
+  // entry then carries the same day figure), so such a day still counts once.
   const oee = { oeeLosses: [], oeeLunch: [], oeeLunchCot: [] };
   const unutilizedList = [];
   for (const group of byMachineDay.values()) {
-    const d = dayCalc(group)[0];
-    if (!d) continue;
-    if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
-    if (Number.isFinite(d.unutilized)) { s.unutilizedDays += d.unutilized; unutilizedList.push(d.unutilized); }
-    for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
+    const perEntry = group[0]?.calcMode === "perEntry";
+    const results = perEntry ? entryDayCalc(group, { lossesExceptLunch: group[0].lossesExceptLunch === true }) : dayCalc(group);
+    const counted = perEntry && !group.some((r) => r.plannedLocked === true) ? results : results.slice(0, 1);
+    for (const d of counted) {
+      if (!d) continue;
+      if (Number.isFinite(d.unreportedMin)) s.unreportedMin += d.unreportedMin;
+      if (Number.isFinite(d.unutilized)) { s.unutilizedDays += d.unutilized; unutilizedList.push(d.unutilized); }
+      for (const k of Object.keys(oee)) if (Number.isFinite(d[k])) oee[k].push(d[k]);
+    }
   }
 
   return {

@@ -86,7 +86,7 @@ void main() {
     },
   );
 
-  testWidgets('e2e_admin: all 10 processes in the hub; RUBBER is disabled', (
+  testWidgets('e2e_admin: all 10 processes in the hub; RUBBER (no page linked) is disabled', (
     t,
   ) async {
     await launchAndSignIn(
@@ -110,8 +110,8 @@ void main() {
       'AFTER POWDER COATING',
       'RUBBER',
     });
-    // RUBBER: no entry screen. The seed gives it no Data Entry page, so the card reads "Not linked to a page"
-    // (it reads "Not in the app yet" when a page is linked that the phone has no screen for).
+    // RUBBER has its entry screen in the app now, but the seed gives it no Data Entry page, so the card
+    // reads "Not linked to a page" and opens nothing (link it in Process Master and it opens RUBBER Data Entry).
     final rubber = find.descendant(
       of: find.byType(HubCard),
       matching: find.text('RUBBER'),
@@ -120,7 +120,7 @@ void main() {
       find.descendant(
         of: find.byType(HubCard),
         matching: find.textContaining(
-          RegExp('Not in the app yet|Not linked to a page'),
+          RegExp('Not linked to a page'),
         ),
       ),
       findsOneWidget,
@@ -132,7 +132,7 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('sheet-add')),
       findsNothing,
-      reason: 'tapping RUBBER opens nothing',
+      reason: 'tapping RUBBER, with no page linked, opens nothing',
     );
     expect(find.byType(HubCard), findsWidgets);
     await shot(t, 'scope_admin_hub');

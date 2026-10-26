@@ -446,7 +446,8 @@ void main() {
       expect(s['machineDays'], 1.0);
       expect(s['downtimeByCause'], isA<Map<String, double>>());
       expect(s['rejectByReason'], {'Tool Mark': 10.0});
-      expect((s['downtimeByCause'] as Map).keys, hasLength(10));
+      // The shared ten plus PRINTING's own three (CAUSE_FIELDS).
+      expect((s['downtimeByCause'] as Map).keys, hasLength(13));
     });
 
     test('rejectByReason falls back to the single reason, then "Not specified"', () {

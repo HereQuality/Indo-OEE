@@ -26,12 +26,30 @@ export const SHEET_PATHS = {
   spring: "/hqepl/production/spring-data-entry",
   powder: "/hqepl/production/powder-coating-data-entry",
   rubber: "/hqepl/production/rubber-data-entry",
+  injection: "/hqepl/production/injection-moulding-data-entry",
+  embossing: "/hqepl/production/embossing-data-entry",
+  bpc: "/hqepl/production/before-powder-coating-data-entry",
+  finalAssembly: "/hqepl/production/final-assembly-data-entry",
+  printing: "/hqepl/production/printing-data-entry",
+  rawCasting: "/hqepl/production/raw-casting-data-entry",
+  mfd: "/hqepl/production/modular-frame-drilling-data-entry",
+  mfa: "/hqepl/production/modular-frame-assembly-data-entry",
 };
 
 // RUBBER and After Powder Coating have no machines: their entries are made
 // per worker, and the review row carries the worker where the others carry
 // the machine (server keyOf — entry.machine ?? entry.worker).
 const WORKER_SHEETS = new Set(["rubber", "powder"]);
+// BEFORE POWDER COATING is kept per operator too.
+WORKER_SHEETS.add("bpc");
+// FINAL ASSEMBLY is kept per worker too.
+WORKER_SHEETS.add("finalAssembly");
+// PRINTING is kept per operator too (its MC No. is optional, never the row key).
+WORKER_SHEETS.add("printing");
+// RAW CASTING is kept per worker (AFTER POWDER COATING's template).
+WORKER_SHEETS.add("rawCasting");
+// MODULAR FRAME ASSEMBLY is kept per worker (RAW CASTING's template).
+WORKER_SHEETS.add("mfa");
 export const isWorkerSheet = (sheet) => WORKER_SHEETS.has(sheet);
 
 export const REVIEW_STYLE = {

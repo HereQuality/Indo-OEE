@@ -26,6 +26,7 @@ class DashboardController extends ChangeNotifier {
     this.processId,
     this.machines = const [],
     this.scopeProcessIds,
+    this.process,
   }) : range = eng.defaultRange() {
     baseRange = range;
   }
@@ -34,6 +35,11 @@ class DashboardController extends ChangeNotifier {
 
   /// Null = "All machines".
   final String? processId;
+
+  /// The process document of [processId] (null for "All machines" or when not
+  /// known): what decides its sheet's own stoppage causes (`ctx.stoppageKeys`,
+  /// web `stoppageKeysFor(process)`).
+  final ProcessInfo? process;
 
   /// For "All machines" only: the processes this person may see. Null = every
   /// machine (an admin); a list = just those processes' entries.
@@ -151,7 +157,18 @@ class DashboardController extends ChangeNotifier {
         },
         machineOrder: {for (var i = 0; i < machines.length; i++) machineId(machines[i]): i},
         bucket: eng.timeBucket(rows),
+        stoppageKeys: process == null ? null : eng.stoppageKeysFor({'processName': process!.name, 'dataEntryMenu': process!.dataEntryMenu}),
+        // "Worker" where the others say "Machine" (web `unitWordsFor(process)`).
+        words: words,
+        // A cause in the sheet's own words (web `causeLabelsFor(process)`).
+        causeLabels: process == null
+            ? const {}
+            : eng.causeLabelsFor({'processName': process!.name, 'dataEntryMenu': process!.dataEntryMenu}),
       );
+
+  /// Machines or workers: how this dashboard words what it is broken down by.
+  UnitWords get words =>
+      eng.unitWordsFor(process == null ? null : {'processName': process!.name, 'dataEntryMenu': process!.dataEntryMenu});
 
   /// rowsFor(dim): everything filtered except [dim] itself — see applyFilters.
   /// null = the fully filtered rows.
@@ -199,7 +216,11 @@ class DashboardController extends ChangeNotifier {
   List<ActiveFilter> get activeFilters => [
         for (final e in filters.entries)
           for (final v in e.value)
-            ActiveFilter(e.key, v, '${eng.dimensions[e.key]?.label ?? e.key}: ${eng.dimensions[e.key]?.text(v, ctx) ?? v}'),
+            ActiveFilter(
+              e.key,
+              v,
+              '${eng.dimensions.containsKey(e.key) ? eng.dimLabel(e.key, ctx) : e.key}: ${eng.dimensions[e.key]?.text(v, ctx) ?? v}',
+            ),
       ];
 
   int get activeFilterCount => filters.values.fold(0, (n, v) => n + v.length);

@@ -48,6 +48,14 @@ const trobeSheetRoutes = require("./trobeSheet.routes");
 const springSheetRoutes = require("./springSheet.routes");
 const powderCoatingSheetRoutes = require("./powderCoatingSheet.routes");
 const rubberSheetRoutes = require("./rubberSheet.routes");
+const injectionSheetRoutes = require("./injectionSheet.routes");
+const embossingSheetRoutes = require("./embossingSheet.routes");
+const printingSheetRoutes = require("./printingSheet.routes");
+const bpcSheetRoutes = require("./bpcSheet.routes");
+const finalAssemblySheetRoutes = require("./finalAssemblySheet.routes");
+const rawCastingSheetRoutes = require("./rawCastingSheet.routes");
+const mfdSheetRoutes = require("./mfdSheet.routes");
+const mfaSheetRoutes = require("./mfaSheet.routes");
 const oeeReviewRoutes = require("./oeeReview.routes");
 const processRoutes = require("./process.routes");
 const maintenanceRoutes = require("./maintenance.routes");
@@ -81,6 +89,17 @@ router.use("/trobe-sheet", trobeSheetRoutes);
 router.use("/spring-sheet", springSheetRoutes);
 router.use("/powder-coating-sheet", powderCoatingSheetRoutes);
 router.use("/rubber-sheet", rubberSheetRoutes);
+router.use("/injection-sheet", injectionSheetRoutes);
+router.use("/embossing-sheet", embossingSheetRoutes);
+router.use("/printing-sheet", printingSheetRoutes);
+// BEFORE POWDER COATING (not AFTER POWDER COATING's /powder-coating-sheet).
+router.use("/bpc-sheet", bpcSheetRoutes);
+router.use("/final-assembly-sheet", finalAssemblySheetRoutes);
+router.use("/raw-casting-sheet", rawCastingSheetRoutes);
+// MODULAR FRAME DRILLING.
+router.use("/mfd-sheet", mfdSheetRoutes);
+// MODULAR FRAME ASSEMBLY.
+router.use("/mfa-sheet", mfaSheetRoutes);
 router.use("/oee-review", oeeReviewRoutes);
 router.use("/processes", processRoutes);
 router.use("/maintenance", maintenanceRoutes);

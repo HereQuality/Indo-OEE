@@ -410,3 +410,23 @@ optional (hidden on some pages) uses `SheetCol.shownWhen: (env) => …` — `She
 * `partPickOptions` (`entry_form/part_options.dart`): parts with a process first, the rest under
   "Not in any process"; the search matches part name or Drawing No. only; "Drawing No.: x" line.
 * VMC's list search also matches `workOrderNo` (`searchKeys`/`searchHint`).
+
+## Per-person sheets and their entry rules (After Powder Coating, RUBBER, PRINTING, …)
+
+A sheet kept per worker / operator puts the person's id in `machine` (`scopeMachines` builds
+`{_id, machineName, process}` from Operator Master; `SheetApi.segment(…, machineParam: 'worker')`).
+Hooks on `ProcessSpec` for the rules that differ (all default to the CNC behaviour):
+
+| hook | what it switches | PRINTING |
+|---|---|---|
+| `checksTimeOverlap` | web `overlapErrors` (one row key's entries on a date can't overlap) | `false` — one operator may run two jobs at once |
+| `maxEntriesPerDay` | web `slotsFullErrors(…, { max })`: "X already has N entries on dd/mm/yyyy" on the box at once (`isLiveMessage`) | `8` |
+| `uniqueMachinePerDate` | "— already added" in the picker, "Add another" off once every one is in | `false` |
+| `addAnotherLabel` / `addAnotherNote` | the button under the blocks and the note beside it | "Add another entry" + the web's note |
+| `selectMachinePrompt` / `selectMachineFirst` | the collapsed block's prompt and "+" tooltip | "Select an operator — …" |
+
+A row key that is not a machine can still carry a machine of its own (PRINTING's optional MC No.:
+`mcMachine` + the saved `mcName`); load the list through `extraReference` (`{'machines': Endpoints.machines}`)
+and scope it to the page's process in the lines. The dashboard's cause lists come from
+`dashboard_engine.dart` `causeFields` (the shared ten + PRINTING's own three) and `stoppageKeysFor(process)`
+(`DashboardCtx.stoppageKeys`, the columns a cause table always shows).

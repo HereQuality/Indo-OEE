@@ -4,6 +4,7 @@ import '../../entry_form/entry_line_context.dart';
 import '../../process/process_spec.dart';
 import '../../shared/limit_notice.dart' as limit show firstOverLimit, workerWords;
 import '../../shared/limit_notice.dart' show OverLimit;
+import '../../shared/production_entry_validation.dart' show TimeWords;
 import '../../shared/production_sheet_calc.dart' as calc;
 import '../../sheet/sheet_model.dart';
 import '../../sheet/table/sheet_columns.dart';
@@ -67,6 +68,10 @@ class PowderCoatingSpec extends ProcessSpec {
   bool get uniqueMachinePerDate => true;
   @override
   bool get checksOperatorClash => false;
+
+  // A worker's own Start / End, not a machine's ON / OFF (POWDER_TIME_WORDS).
+  @override
+  TimeWords get timeWords => const TimeWords(start: 'Inspection Start Time', end: 'Inspection End Time', owner: 'this worker');
   @override
   String? savedMachineName(Json row) {
     final name = row['operator'];

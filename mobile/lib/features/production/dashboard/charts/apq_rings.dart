@@ -8,7 +8,7 @@ import 'chart_kit.dart';
 import 'chart_props.dart';
 import 'oee_trend_chart.dart';
 
-const String _apqEmpty = "Needs machine ON/OFF times, Planned Operator Shift, a part's cycle time and quantities.";
+String _apqEmpty(DashboardCtx ctx) => "Needs ${ctx.words.times}, Planned Operator Shift, a part's cycle time and quantities.";
 
 /// The red the web marks an over-100% figure with (an entry held for Admin review).
 const Color kOverHundred = Color(0xFFE34948);
@@ -35,7 +35,7 @@ class _ApqRingsChartState extends State<ApqRingsChart> {
       return PctTrendChart(
         props: p,
         series: apqSeries,
-        emptyText: _apqEmpty,
+        emptyText: _apqEmpty(p.ctx),
         semanticName: 'Availability, performance and quality over time',
         ceiling: true,
       );
@@ -47,7 +47,7 @@ class _ApqRingsChartState extends State<ApqRingsChart> {
       for (var i = 0; i < apqSeries.length; i++)
         _Ring(apqSeries[i].label, c.series[i], pct100(sum[apqSeries[i].key])),
     ];
-    if (items.every((d) => d.value == null)) return const ChartEmpty(_apqEmpty);
+    if (items.every((d) => d.value == null)) return ChartEmpty(_apqEmpty(p.ctx));
 
     return ChartTextScope(
       child: Semantics(

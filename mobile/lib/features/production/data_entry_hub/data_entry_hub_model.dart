@@ -2,6 +2,7 @@ import '../../../app/page_access.dart';
 import '../../../app/routes.dart';
 import '../../../models/app_user.dart';
 import '../../../providers/menu_provider.dart';
+import '../dashboard/dashboard_engine.dart' show isWorkerProcess;
 import '../dashboard/data/dashboard_models.dart';
 import '../process/process_registry.dart';
 
@@ -29,10 +30,15 @@ class HubEntry {
 
   String get machinesText => machineCount == 1 ? '1 machine' : '$machineCount machines';
 
+  /// A process whose entries are made per worker (RUBBER, After Powder
+  /// Coating, …) has no machines: "0 machines" would be wrong, so it is named
+  /// for what it counts by, as the dashboards' process tiles do.
+  String get countText => isWorkerProcess(process.toJson()) ? 'Per worker' : machinesText;
+
   String get subtitle => switch (block) {
         HubBlock.notInApp => 'Not in the app yet',
         HubBlock.notLinked => 'Not linked to a page',
-        null => machinesText,
+        null => countText,
       };
 }
 

@@ -65,11 +65,11 @@ class _UnreportedByMachineChartState extends State<UnreportedByMachineChart> {
     final dim = p.ctx.bucket;
     final rows = p.rowsFor(null);
     final panels = _memo.get(rows, p.ctx, dim, () => unreportedPanels(rows, dim, p.ctx));
-    if (panels.isEmpty) return const ChartEmpty('Needs machine ON/OFF times.');
+    if (panels.isEmpty) return ChartEmpty('Needs ${p.ctx.words.times}.');
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: const ['Machine', 'Unreported time'],
+        columns: [p.ctx.words.one, 'Unreported time'],
         rows: [for (final m in panels) MiniRow(m.key, [m.label, eng.formatExact('minutes', m.total)])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),

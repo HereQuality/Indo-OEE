@@ -120,12 +120,65 @@ String fmt12Minutes(int minutes) {
 /// Save is pressed like the other messages ("is required" and the like).
 /// (The Planned Operator Shift being shorter than the Machine Shift, and an
 /// operator already being on another machine then, speak up the same way.)
+/// "End before Start" is matched in every sheet's own words ("Machine OFF Time
+/// must be after Machine ON Time", "Working End Time must be after Working Start
+/// Time", …) — web `isEndBeforeStartMessage`.
 bool isTimeRuleMessage(String? message) =>
     message != null &&
-    (message.startsWith('Machine OFF Time must be after') ||
+    (message.contains(' Time must be after ') ||
         message.contains('overlaps another entry') ||
         message.contains('is already on machine') ||
         message.startsWith("Planned Operator Shift can't be less than"));
+
+final RegExp _slotsFullRe = RegExp(r' already has \d+ entries on ');
+
+/// What a box shows before Save is pressed (web `isLiveMessage`): the time
+/// rules above, a typed time that isn't one, and a machine (operator) whose
+/// date is already full ([slotsFullErrors]).
+bool isLiveMessage(String? message) =>
+    isTimeRuleMessage(message) ||
+    (message != null && (message == 'Enter a valid time' || _slotsFullRe.hasMatch(message)));
+
+/// Web `slotsFullErrors`: the server's "already has N entries" refusal, said on
+/// the box as soon as the machine (operator) and date are picked instead of only
+/// after Save. A block counts the machine's saved entries on its date and the
+/// blocks above it in the same form. An edited row is moved by its Date (its
+/// machine stays locked): the message goes on `date`; a new one on `machine`.
+/// [who] names the row key ("This machine" when unknown).
+List<Map<String, String>> slotsFullErrors(
+  List<Map<String, dynamic>> entries,
+  OccupiedTimes occupied, {
+  int? editSlot,
+  Map<String, dynamic>? saved,
+  String Function(String id)? who,
+  int max = 3,
+}) {
+  String dayText(Object? iso) {
+    final p = jsString(iso).split('-');
+    String at(int i) => i < p.length ? p[i] : 'undefined';
+    return '${at(2)}/${at(1)}/${at(0)}';
+  }
+
+  return [
+    for (var i = 0; i < entries.length; i++)
+      () {
+        final v = entries[i];
+        if (isBlank(v['machine']) || isBlank(v['date'])) return const <String, String>{};
+        if (saved != null && v['date'] == saved['date'] && v['machine'] == saved['machine']) return const <String, String>{};
+        final mine = occupied['${v['machine']}|${v['date']}'] ?? const <Map<String, dynamic>>[];
+        var taken = mine.where((o) => !_isEditedRow(o, v, editSlot, saved)).length;
+        for (var j = 0; j < i; j++) {
+          if (entries[j]['machine'] == v['machine'] && entries[j]['date'] == v['date']) taken++;
+        }
+        if (taken < max) return const <String, String>{};
+        final name = who == null ? 'This machine' : who('${v['machine']}');
+        final full = '$name already has $max entries on ${dayText(v['date'])}';
+        return saved != null
+            ? {'date': "$full — can't move this entry there"}
+            : {'machine': '$full — edit one of them instead'};
+      }(),
+  ];
+}
 
 /// The stretch of the day an entry occupies, in minutes.
 class TimeSpan {
@@ -205,6 +258,18 @@ List<String> bookedRanges(
     ?timeInterval(o['machineOnTime'], o['machineOffTime'])?.text,
 ];
 
+/// How the overlap message names a sheet's two time boxes and its row key
+/// (web `MACHINE_TIME_WORDS`; a worker sheet passes its own, e.g.
+/// `RUBBER_TIME_WORDS`).
+class TimeWords {
+  const TimeWords({required this.start, required this.end, required this.owner});
+  final String start;
+  final String end;
+  final String owner;
+}
+
+const TimeWords machineTimeWords = TimeWords(start: 'Machine ON Time', end: 'Machine OFF Time', owner: 'this machine');
+
 /// Overlap problems for every block: `{machineOnTime | machineOffTime: message}`.
 /// Each block is checked against the machine's saved entries on its date AND
 /// against the other blocks of the same form (same machine, same date).
@@ -213,6 +278,7 @@ List<Map<String, String>> overlapErrors(
   OccupiedTimes occupied, {
   int? editSlot,
   Map<String, dynamic>? saved,
+  TimeWords words = machineTimeWords,
 }) {
   Map<String, String> forBlock(int i) {
     final v = entries[i];
@@ -245,7 +311,7 @@ List<Map<String, String>> overlapErrors(
     final startInside = hit.containsStart(mine);
     return {
       startInside ? 'machineOnTime' : 'machineOffTime':
-          '${startInside ? 'Machine ON Time' : 'Machine OFF Time'} overlaps another entry for this machine on this date (${hit.text})',
+          '${startInside ? words.start : words.end} overlaps another entry for ${words.owner} on this date (${hit.text})',
     };
   }
 

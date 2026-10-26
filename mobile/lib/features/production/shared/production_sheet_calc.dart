@@ -397,8 +397,16 @@ Map<String, dynamic> rowCalc(Map<String, dynamic>? row) {
   final double? rej = (isNum(actual) && isNum(ok)) ? _max0(actual! - ok!) : jsNumber(row['rejectedQty']);
   final double totalProduced = isNum(actual) ? actual! : _or0(ok) + _or0(rej);
 
-  // 7) Total Stoppage = sum of the ten stoppage columns, whatever is typed.
-  final totalStoppageMin = _sumOrZero([for (final f in stoppageFields) jsNumber(row[f['key']])]);
+  // 7) Total Stoppage = sum of the ten stoppage columns, whatever is typed. A sheet
+  // with downtime columns of its own beyond these ten (Printing's Ask Query To QC
+  // Team / Empty Bag Tugging / Stock Counting) lists their keys in
+  // row['extraStoppageKeys'] (set by its adapter), so they count here too.
+  final extraRaw = row['extraStoppageKeys'];
+  final totalStoppageMin = _sumOrZero([
+    for (final f in stoppageFields) jsNumber(row[f['key']]),
+    if (extraRaw is Iterable)
+      for (final k in extraRaw) jsNumber(row[k]),
+  ]);
 
   // 8) Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600. A sheet
   // whose own rule counts every piece run (SPRING FOR PINS: OK + Rejected) marks
@@ -534,7 +542,11 @@ class _SortRow {
 /// productivity, productivityLunch (all combined across the day, so every entry
 /// of that machine/date shows the same number) and gapMin (clock gap to the next
 /// row's Machine ON, never below 0; null for the last row).
-List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
+///
+/// [lossesExceptLunch]: OEE considering losses takes every stoppage off the time
+/// available EXCEPT Lunch / Rest (Before Powder Coating's sheet — its other two
+/// OEE columns don't exist, and its lunch-only one is oeeLunch).
+List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows, {bool lossesExceptLunch = false}) {
   final list = sortByMachineOn(rows);
   final calcs = list.map(rowCalc).toList();
 
@@ -595,7 +607,9 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
           ]) +
           lockedHours * 60
       : null;
-  final double? dayOeeLosses = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
+  final double? dayOeeLosses = dayHasShift
+      ? _ratio(dayEffectiveH, dayAvailH - (lossesExceptLunch ? dayStoppageMin - dayLunchMin : dayStoppageMin) / 60)
+      : null;
   final double? dayOeeLunch = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;
   // Named …Cot — the key saved dashboards use — though the column reads "Setup Time".
   final double? dayOeeLunchCot =
@@ -638,6 +652,25 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
     });
   }
   return out;
+}
+
+/// The sheets that work every entry out on its own — Printing, Injection
+/// Moulding and Before Powder Coating. Their paper sheets give each row its own
+/// OEE / Unreported Time on that row's Machine Shift; typed as the entry's
+/// Planned Operator Shift (= its Machine Shift on the paper), each entry's
+/// figures come from that entry alone. A Planned that came from Process
+/// Master's lock is the machine's (or worker's) whole day instead, so a day with
+/// any locked entry is combined once, as on every other sheet ([dayCalc]). One
+/// result per row, in [sortByMachineOn] order, like [dayCalc]. Mirrors the web's
+/// entryDayCalc (client/src/utils/productionSheet.js).
+List<Map<String, dynamic>> entryDayCalc(Iterable<Map<String, dynamic>?>? rows, {bool lossesExceptLunch = false}) {
+  final list = sortByMachineOn(rows);
+  final day = dayCalc(list, lossesExceptLunch: lossesExceptLunch);
+  if (list.any((r) => r['plannedLocked'] == true)) return day;
+  return [
+    for (var i = 0; i < list.length; i++)
+      {...dayCalc([list[i]], lossesExceptLunch: lossesExceptLunch)[0], 'gapMin': day[i]['gapMin']},
+  ];
 }
 
 /// Every remark an entry carries, labelled and in form order: the Other-reject

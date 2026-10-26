@@ -7,6 +7,8 @@ const PressEntry = require("../models/PressEntry");
 const ContactEntry = require("../models/ContactEntry");
 const TrobeEntry = require("../models/TrobeEntry");
 const SpringEntry = require("../models/SpringEntry");
+const InjectionEntry = require("../models/InjectionEntry");
+const PrintingEntry = require("../models/PrintingEntry");
 const { compareBySequence, sortMachines } = require("../utils/machineOrder");
 
 // `process` is only touched when the request actually sends it, so a form
@@ -30,6 +32,15 @@ const isSuperAdmin = (req) => req.user?.roleType === "SuperAdmin";
 // Every sheet whose entries are made on a machine (After Powder Coating and
 // RUBBER have a worker instead), for the count of entries a deleted machine keeps.
 const MACHINE_ENTRY_MODELS = [ProductionEntry, VmcEntry, SpmEntry, RivetEntry, PressEntry, ContactEntry, TrobeEntry, SpringEntry];
+// INJECTION MOULDING is made on a machine too.
+MACHINE_ENTRY_MODELS.push(InjectionEntry);
+// So is EMBOSSING.
+MACHINE_ENTRY_MODELS.push(require("../models/EmbossingEntry"));
+// So is MODULAR FRAME DRILLING.
+MACHINE_ENTRY_MODELS.push(require("../models/MfdEntry"));
+// Sheets kept per operator whose entries may still name a machine — PRINTING's
+// optional MC No. — with the field that holds it.
+const MC_ENTRY_MODELS = [[PrintingEntry, "mcMachine"]];
 
 // Sequence is Super Admin-only: everyone else neither sets it nor sees it.
 const present = (req, machine) => {
@@ -145,7 +156,10 @@ exports.deleteMachine = async (req, res) => {
     await machine.save();
     await placeMachine(null);
 
-    const counts = await Promise.all(MACHINE_ENTRY_MODELS.map((Model) => Model.countDocuments({ machine: machineId })));
+    const counts = await Promise.all([
+      ...MACHINE_ENTRY_MODELS.map((Model) => Model.countDocuments({ machine: machineId })),
+      ...MC_ENTRY_MODELS.map(([Model, field]) => Model.countDocuments({ [field]: machineId })),
+    ]);
     const kept = counts.reduce((sum, n) => sum + n, 0);
     res.status(200).json({
       isOk: true,
