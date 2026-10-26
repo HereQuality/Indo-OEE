@@ -1,6 +1,7 @@
 import '../../sheet/editor/entry_editor_logic.dart' show numText;
 import '../../sheet/sheet_model.dart' show Json;
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/quantity_rules.dart';
 import '../../shared/shift_hours.dart';
 import 'spm_calc.dart';
 import 'spm_validation.dart';
@@ -15,7 +16,7 @@ import 'spm_validation.dart';
 /// loaded from the server as numbers, the phone shows them as their text);
 /// `excludedOps` and `machineStatus` are lists.
 
-const List<String> spmTextFields = ['operator', 'itemName', 'drawingNo', 'remarks', 'otherMinRemark'];
+const List<String> spmTextFields = ['operator', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark'];
 const List<String> spmTimeFields = ['machineOnTime', 'machineOffTime'];
 
 /// Every field sent as a number (blank stays '' so the server unsets it).
@@ -28,8 +29,8 @@ final List<String> spmNumberFields = [
   'unloadingCleaningSec',
   'otherOperationsSec',
   'totalCycleSec',
+  'actualQty',
   'okQty',
-  'rejectedQty',
   'plannedOperatorShiftHours',
   ...spmStoppageKeys,
 ];
@@ -54,6 +55,8 @@ Json spmEmptyEntry({DateTime? now}) => <String, dynamic>{
       for (final k in spmTextFields) k: '',
       for (final k in spmTimeFields) k: '',
       for (final k in spmNumberFields) k: '',
+      // Rejection Master: {reason: qty}, typed per reason; has to add up to Rejected (Actual − OK).
+      'rejectBreakdown': <String, dynamic>{},
     };
 
 bool _blank(Object? v) => v == null || v == '';
@@ -71,8 +74,10 @@ Json spmToFormValues(Json row, {DateTime? now}) {
   }
   out['item'] = jsTruthy(row['item']) ? row['item'] : '';
   out['slot'] = row['slot'];
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
-  out['plannedOperatorShiftHours'] = hoursToHmInput(row['plannedOperatorShiftHours']);
+  // Actual Quantity and the Rejection Master split (an older entry has neither: Actual = OK + Rejected).
+  out.addAll(quantityFormValues(row));
+  // A stored shift is decimal hours; the box shows it as typed (5 h 20 min -> "5.33").
+  out['plannedOperatorShiftHours'] = hoursToShiftInput(row['plannedOperatorShiftHours']);
   return out;
 }
 
@@ -96,7 +101,7 @@ Json spmToPayload(Json v, {required bool isEdit}) {
   final nonWorking = v['workingMode'] == 'Non Working';
   final status = v['machineStatus'];
   final ops = v['excludedOps'];
-  final planned = parseHm(v['plannedOperatorShiftHours']).hours;
+  final planned = parseShiftHours(v['plannedOperatorShiftHours']).hours;
   return <String, dynamic>{
     // Tells the server which document an edit belongs to, so changing Date or
     // Machine No. moves it instead of creating a second one.
@@ -118,7 +123,9 @@ Json spmToPayload(Json v, {required bool isEdit}) {
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? _text(v['otherMinRemark']) : '',
     for (final k in spmTimeFields) k: v[k] ?? '',
     for (final k in spmNumberFields) k: _numberOut(v, k),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // The Rejection Master split and its "Other" remark. rejectedQty is never sent: the server derives it (Actual − OK).
+    ...rejectPayload(v, _wire),
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': planned == null ? '' : _wire(hmToWireHours(planned)),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.
     'lunchMin': _blank(v['lunchMin']) ? 0 : _numberOut(v, 'lunchMin'),
@@ -135,6 +142,7 @@ Object? _slotOut(Json v) {
 /// True when any block carries something worth keeping as a draft.
 bool spmHasAnyEntryData(List<Json> list) => list.any((v) {
       if (jsTruthy(v['machine'])) return true;
+      if (hasRejectData(v)) return true;
       return [...spmTextFields, ...spmTimeFields, ...spmNumberFields].any((k) => !_blank(v[k]));
     });
 
@@ -147,8 +155,9 @@ final List<String> _dataKeys = [
   'strokeRequired',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   ...spmDowntimeKeys,
@@ -160,10 +169,12 @@ final List<String> _dataKeys = [
 /// tint, the remove confirmation).
 bool spmEntryHasData(Json v) {
   if (v['workingMode'] == 'Non Working') return true;
+  final split = v['rejectBreakdown'];
   return _dataKeys.any((k) {
-    final x = v[k];
-    return x is List ? x.isNotEmpty : !_blank(x);
-  });
+        final x = v[k];
+        return x is List ? x.isNotEmpty : !_blank(x);
+      }) ||
+      (split is Map && split.values.any((n) => !_blank(n)));
 }
 
 /// Picking a Part copies its master values onto the block (web `withPart`): Drawing

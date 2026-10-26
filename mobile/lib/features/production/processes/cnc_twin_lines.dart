@@ -9,8 +9,8 @@ import '../entry_form/entry_line_context.dart';
 import '../entry_form/entry_number_input.dart';
 import '../entry_form/machine_status.dart';
 import '../entry_form/web_parity_lines.dart';
-import '../shared/limit_notice.dart' show qtyNotice;
 import '../shared/production_sheet_calc.dart';
+import 'cnc/cnc_lines.dart' as cnc show quantityLine, rejectLine;
 import 'cnc_twin_calc.dart';
 import 'cnc_twin_style.dart';
 
@@ -21,7 +21,6 @@ const List<String> _line1 = [
   'workingMode',
   'machineStatus',
 ];
-const List<String> _line5 = ['okQty', 'rejectedQty'];
 
 /// The downtime boxes of the three forms, in order: key + label (web
 /// `DOWNTIME_BOXES` — unlike CNC's, Planned Downtime is a box here).
@@ -45,8 +44,9 @@ bool _statusOnly(Map<String, dynamic> v) =>
 
 /// The Contact / Trobe / Spring entry form (ports of {Contact,Trobe,Spring}
 /// EntryForm.jsx — one component on the web, one here): the shared lines with
-/// this sheet's own Date…Status, Part, Production (OK + Rejected) and Idle /
-/// Downtime cards.
+/// this sheet's own Date…Status, Part and Idle / Downtime cards, and the CNC
+/// form's own Production Master (Actual + OK typed, Rejected = Actual − OK) and
+/// Rejection Master (the rejected pieces split by reason) cards.
 class CncTwinLines extends EntryLines {
   const CncTwinLines(this.style);
 
@@ -58,22 +58,26 @@ class CncTwinLines extends EntryLines {
     if (!_statusOnly(c.values)) ...[
       partLine(c, style),
       timeLine(c),
-      quantityLine(c, style),
+      cnc.quantityLine(c),
     ],
   ];
 
   @override
   List<Widget> right(EntryLineContext c) => [
-    if (!_statusOnly(c.values)) ...[shiftLine(c), twinDowntimeLine(c, style)],
+    if (!_statusOnly(c.values)) ...[
+      cnc.rejectLine(c),
+      shiftLine(c),
+      twinDowntimeLine(c, style),
+    ],
     twinRemarksLine(c, style),
   ];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) => [
     if (entryText(v['itemName']).isNotEmpty) entryText(v['itemName']),
+    if (entryText(v['actualQty']).isNotEmpty)
+      'Actual ${entryText(v['actualQty'])}',
     if (entryText(v['okQty']).isNotEmpty) 'OK ${entryText(v['okQty'])}',
-    if (entryText(v['rejectedQty']).isNotEmpty)
-      'Rejected ${entryText(v['rejectedQty'])}',
   ].join(' · ');
 }
 
@@ -209,73 +213,6 @@ Widget partLine(EntryLineContext c, TwinStyle style) {
           ?vendorCell(c),
         ],
       ),
-    ],
-  );
-}
-
-/// Actual OK Quantity and Rejected Quantity — both typed, together capped at
-/// Ideal Quantity (each box may take what the other leaves). Typing past the
-/// cap raises the web's quantity popup (OK + Rejected against Ideal Quantity).
-Widget quantityLine(EntryLineContext c, TwinStyle style) {
-  final m = c.metrics;
-  final ideal = m.idealQty;
-  double? room(String other) => ideal == null
-      ? null
-      : (ideal - (entryNum(c.values[other]) ?? 0)).clamp(0.0, double.infinity);
-  // A blocked keystroke: what was typed plus what the other box holds, against Ideal.
-  void Function(double, double) exceed(String other) => c.onLimit(
-    (typed) => qtyNotice(
-      calc: m.calc,
-      entered: typed + (entryNum(c.values[other]) ?? 0),
-    ),
-    (_) =>
-        "OK + Rejected can't be more than Ideal Quantity (${fmtNum(ideal)}) — as per calculation, this machine can make at most ${fmtNum(ideal)} pieces in this shift.",
-  );
-  return EntryLineCard(
-    title: 'Production (Qty)',
-    icon: Icons.inventory_2_outlined,
-    hasError: c.lineHasError(_line5),
-    children: [
-      EntryGrid(
-        cells: [
-          EntryCell(
-            label: 'Actual OK Quantity',
-            required: true,
-            error: c.err('okQty'),
-            hint: c.locked('okQty', room('rejectedQty'))
-                ? 'Ideal Quantity is used up, so OK can only be 0.'
-                : null,
-            child: c.keyed(
-              'okQty',
-              c.numBox(
-                'okQty',
-                max: room('rejectedQty'),
-                label: 'Actual OK Quantity',
-                onExceedTyped: exceed('rejectedQty'),
-              ),
-            ),
-          ),
-          EntryCell(
-            label: 'Rejected Quantity',
-            required: true,
-            error: c.err('rejectedQty'),
-            hint: c.locked('rejectedQty', room('okQty'))
-                ? 'Ideal Quantity is used up, so Rejected can only be 0.'
-                : null,
-            child: c.keyed(
-              'rejectedQty',
-              c.numBox(
-                'rejectedQty',
-                max: room('okQty'),
-                label: 'Rejected Quantity',
-                onExceedTyped: exceed('okQty'),
-              ),
-            ),
-          ),
-        ],
-      ),
-      // Availability / Performance / Quality above 100% -> goes to Admin review.
-      oeeCheck(c),
     ],
   );
 }

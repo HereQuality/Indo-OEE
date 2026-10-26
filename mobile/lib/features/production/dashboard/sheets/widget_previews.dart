@@ -6,8 +6,8 @@ import '../charts/chart_props.dart';
 import 'sheet_kit.dart';
 
 /// Port of client/src/Components/ProcessDashboard/WidgetPreview.jsx: the little
-/// example picture on each option of the Customize sheet, so "B.D. Backup" or
-/// "Unreported Time by MC No." can be recognised before it is switched on.
+/// example picture on each option of the Customize sheet, so "Downtime by Machine (min)" or
+/// "Unreported Time by Machine (min)" can be recognised before it is switched on.
 /// These are sketches of the chart's shape in the dashboard's own series
 /// colours (light / dark aware) - not real data.
 

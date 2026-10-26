@@ -1,5 +1,5 @@
 // Golden parity for the pieces added when the web's figures grew past the
-// original CNC port: formula texts, Non Working, metricsOver100, the H.MM
+// original CNC port: formula texts, Non Working, metricsOver100, the decimal-hours
 // helpers and the new constants. Fixtures: tool/gen_golden.mjs (the real JS).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/features/production/shared/production_sheet_calc.dart';
@@ -42,24 +42,23 @@ void main() {
     }
   });
 
-  group('golden: shift hours (H.MM)', () {
+  group('golden: shift hours (decimal hours)', () {
     final f = loadFixture('shift_hours.json') as Map;
 
-    test('hoursToHm / hoursToHmInput', () {
+    test('hoursToHm / hoursToShiftInput', () {
       for (final c in f['hoursToHm'] as List) {
         expect(hoursToHm((c as Map)['h']), c['out'], reason: 'hoursToHm ${c['h']}');
       }
-      for (final c in f['hoursToHmInput'] as List) {
-        expect(hoursToHmInput((c as Map)['h']), c['out'], reason: 'hoursToHmInput ${c['h']}');
+      for (final c in f['hoursToShiftInput'] as List) {
+        expect(hoursToShiftInput((c as Map)['h']), c['out'], reason: 'hoursToShiftInput ${c['h']}');
       }
     });
 
-    test('parseHm', () {
-      for (final c in f['parseHm'] as List) {
-        final got = parseHm((c as Map)['t']);
+    test('parseShiftHours', () {
+      for (final c in f['parseShiftHours'] as List) {
+        final got = parseShiftHours((c as Map)['t']);
         final want = c['out'] as Map;
-        expect(got.hours, want['hours'], reason: 'parseHm ${c['t']}');
-        expect(got.minutesTooBig, want['minutesTooBig'], reason: 'parseHm ${c['t']}');
+        expect(got.hours, want['hours'], reason: 'parseShiftHours ${c['t']}');
       }
     });
 

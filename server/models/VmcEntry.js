@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { entryCommonFields } = require("./entryCommon");
 const { STOPPAGE_KEYS } = require("./ProductionEntry");
+const { rejectFields } = require("./rejectFields");
 
 /**
  * models/VmcEntry.js
@@ -65,6 +66,8 @@ const VmcEntrySchema = new mongoose.Schema(
 
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
+    // Actual Quantity + the Rejection Master split (rejectedQty above = Actual − OK).
+    ...rejectFields,
 
     plannedOperatorShiftHours: { type: Number, min: [0, "Planned Operator Shift Time cannot be negative"], max: 24 },
 

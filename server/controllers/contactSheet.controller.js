@@ -10,6 +10,7 @@ const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
+const { applyQuantities, rejectOtherError, hasSplit } = require("../utils/rejectSplit");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
 
 /**
@@ -22,8 +23,9 @@ const { checkNotLocked, parseDay, parseList } = require("./productionSheet.contr
  * its own columns: the plain CNC column set (Working Status, Setting ON/OFF
  * Time included) with Total Cycle Time prefilled from the Part but this
  * entry's own (editable) figure — no operation breakdown, no excludedOps —
- * and Actual OK/Rejected Quantity both typed directly, same as RIVET (no
- * reject reason split). Any Working Status but PRESENT makes the entry
+ * the CNC sheet's Production Master (Actual + OK Quantity typed, Rejected =
+ * Actual − OK) and Rejection Master (the rejected pieces split by reason).
+ * Any Working Status but PRESENT makes the entry
  * status-only (see saveRow).
  */
 
@@ -34,11 +36,12 @@ const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 const PAGE_SIZE_DAYS = 10;
 const MAX_RANGE_DAYS = 366 * 5;
 
-const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_KEYS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "otherMinRemark", "rejectReason", "rejectOtherRemark"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
-const NUMBER_KEYS = ["totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+// rejectedQty is not here — it is derived from actualQty − okQty (applyQuantities), never taken from the client.
+const NUMBER_KEYS = ["totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 // What a status-only entry (ABSENT, SUNDAY, M/C OFF, …) never carries.
-const PRODUCTION_KEYS = ["itemName", "drawingNo", "otherMinRemark", ...TIME_KEYS, ...NUMBER_KEYS];
+const PRODUCTION_KEYS = ["itemName", "drawingNo", "otherMinRemark", "rejectReason", "rejectOtherRemark", ...TIME_KEYS, ...NUMBER_KEYS];
 
 const isStatusOnly = (body) => NON_WORKING_STATUSES.includes(String(body?.workingStatus ?? "").trim());
 
@@ -77,6 +80,8 @@ const buildFields = (body) => {
       set[k] = n;
     }
   }
+  // Rejected = Actual − OK, and the per-reason split (utils/rejectSplit.js).
+  applyQuantities(body, set, unset);
   if (body.item !== undefined) {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
@@ -101,14 +106,15 @@ const buildFields = (body) => {
 
 // This sheet's key in the audit log, and the fields whose old → new values it records.
 const SHEET = "contact";
-const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode"])];
+const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode", "rejectBreakdown"])];
 
 const isRowEmpty = (doc) =>
   doc.workingMode !== "Non Working" &&
   !(doc.machineStatus || []).length &&
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
-  NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null);
+  [...NUMBER_KEYS, "rejectedQty"].every((k) => doc[k] === undefined || doc[k] === null) &&
+  !hasSplit(doc);
 
 const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 
@@ -133,8 +139,8 @@ const REQUIRED_FIELDS = [
   ["totalCycleSec", "Total Cycle Time"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
-  ["okQty", "Actual OK Quantity"],
-  ["rejectedQty", "Rejected Quantity"],
+  ["actualQty", "Actual Quantity"],
+  ["okQty", "OK Quantity"],
   ["plannedOperatorShiftHours", "Planned Operator Shift"],
 ];
 
@@ -150,7 +156,8 @@ const hm = (hours) => {
 const entryRuleError = (body, existing = null) => {
   // A Non Working entry records only the day, machine, operator, reason and remarks.
   if (isNonWorking(body)) return null;
-  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && !(body.machineStatus || []).length) return null;
+  const everyBlank = [...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && !(body.machineStatus || []).length;
+  if (everyBlank && !Object.keys(body.rejectBreakdown || {}).length) return null;
   // A status-only day (ABSENT, SUNDAY, M/C OFF, …) needs nothing beyond its
   // Date, Machine (both checked in saveRow) and the status itself.
   if (isStatusOnly(body)) return null;
@@ -163,6 +170,8 @@ const entryRuleError = (body, existing = null) => {
   if (!(cycleSec > 0)) return "Total Cycle Time must be more than 0";
 
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));
+  const otherError = rejectOtherError(body);
+  if (otherError) return otherError;
   if (minutesOf("otherMin") > 0 && isBlank(body.otherMinRemark)) {
     return "A remark is required when Others downtime is entered";
   }
@@ -176,8 +185,8 @@ const entryRuleError = (body, existing = null) => {
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
   // The most the shift could make: floor(shift seconds ÷ cycle seconds).
   const ideal = Math.floor((shiftMin * 60) / cycleSec);
-  if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
-    return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+  if (Number(body.actualQty) > ideal) {
+    return `Actual Quantity (${Number(body.actualQty)}) can't be more than Ideal Quantity (${ideal})`;
   }
 
   const plannedMin = Math.round(Number(body.plannedOperatorShiftHours) * 60);
@@ -304,7 +313,7 @@ exports.saveRow = async (req, res) => {
     // A status-only entry never keeps production figures, whatever the
     // request carried — blanking them here unsets anything saved before.
     if (isStatusOnly(req.body)) {
-      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), item: null, vendor: null };
+      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), rejectBreakdown: {}, item: null, vendor: null };
     }
     const { date, machine, slot, _id } = req.body;
     const day = parseDay(date);

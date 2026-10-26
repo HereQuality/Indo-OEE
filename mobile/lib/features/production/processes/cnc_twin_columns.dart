@@ -5,7 +5,8 @@ import '../shared/production_sheet_calc.dart';
 import 'cnc_twin_style.dart';
 
 /// The Contact / Trobe / Spring tables (client/src/Components/Production/
-/// {contact,trobe,spring}Columns.jsx), in their sheet order. The Vendor Name
+/// {contact,trobe,spring}Columns.jsx), in their sheet order. Rejected Quantity
+/// (Actual − OK) and the stoppage opened as [open] says break down. The Vendor Name
 /// column shows (as on the web) only on a page that uses vendors.
 SheetColumns twinColumns(Set<String> open, TwinStyle style) {
   final spring = style.spring;
@@ -94,6 +95,36 @@ SheetColumns twinColumns(Set<String> open, TwinStyle style) {
     text: (d) => hmStr(d.row['plannedOperatorShiftHours']),
   );
 
+  // Rejected = Actual − OK (calculated); opens into the Rejection Master split,
+  // the "Other" figure carrying its remark.
+  void addRejected(List<SheetCol> out) => addExpandable(
+    open,
+    SheetCol(
+      key: 'rejectedQty',
+      label: spring ? 'Rejected Qty' : 'Rejected Quantity',
+      width: spring ? 132 : 148,
+      tone: ColTone.calc,
+      formulaKey: 'rejectedQty',
+      text: (d) => nStr(d.calc['rejectedQty']),
+    ),
+    'rejectedQty',
+    spring ? 'Rejected Qty' : 'Rejected Quantity',
+    [
+      for (final reason in rejectReasons)
+        sheetSubCol(
+          reason,
+          reason,
+          (d) {
+            final b = d.row['rejectBreakdown'];
+            return minStr(b is Map ? b[reason] : null);
+          },
+          width: reason == 'Other' ? 124 : 100,
+          remarkKind: reason == 'Other' ? 'reject' : null,
+        ),
+    ],
+    out,
+  );
+
   final mid = <SheetCol>[];
   if (spring) {
     mid.addAll([
@@ -118,13 +149,9 @@ SheetColumns twinColumns(Set<String> open, TwinStyle style) {
         width: 88,
         text: (d) => minStr(d.row['okQty']),
       ),
-      SheetCol(
-        key: 'rejectedQty',
-        label: 'Rejected Qty',
-        width: 96,
-        formulaKey: 'rejectedQty',
-        text: (d) => minStr(d.row['rejectedQty']),
-      ),
+    ]);
+    addRejected(mid);
+    mid.addAll([
       SheetCol(
         key: 'pctOk',
         label: 'OK Quantity (%)',
@@ -165,18 +192,21 @@ SheetColumns twinColumns(Set<String> open, TwinStyle style) {
       idealCol(),
       idealPerHourCol(),
       SheetCol(
+        key: 'actualQty',
+        label: 'Actual Quantity',
+        width: 92,
+        tone: ColTone.calc,
+        text: (d) => nStr(d.calc['actualQty']),
+      ),
+      SheetCol(
         key: 'okQty',
         label: 'Actual OK Quantity',
         width: 100,
         text: (d) => minStr(d.row['okQty']),
       ),
-      SheetCol(
-        key: 'rejectedQty',
-        label: 'Rejected Quantity',
-        width: 100,
-        formulaKey: 'rejectedQty',
-        text: (d) => minStr(d.row['rejectedQty']),
-      ),
+    ]);
+    addRejected(mid);
+    mid.addAll([
       SheetCol(
         key: 'pctOk',
         label: '% OK Quantity',
@@ -304,7 +334,10 @@ SheetColumns twinColumns(Set<String> open, TwinStyle style) {
   return SheetColumns(
     left: [for (final c in left) fitSheetColumn(c)],
     middle: [for (final c in mid) fitSheetColumn(c)],
-    // Only the stoppage breakdown opens on these tables.
-    expandSummary: const {'downtime': 'totalStoppage'},
+  
+    expandSummary: const {
+      'rejectedQty': 'rejectedQty',
+      'downtime': 'totalStoppage',
+    },
   );
 }

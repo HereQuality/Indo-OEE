@@ -89,7 +89,7 @@ class _HBarsChartState extends State<_HBarsChart> {
   }
 }
 
-/// Effective Machine Run Time (Hour) by Operator.
+/// Effective Run Time by Operator (hr).
 class RunTimeByOperatorChart extends StatelessWidget {
   const RunTimeByOperatorChart({super.key, required this.props});
   final DashboardChartProps props;
@@ -102,12 +102,12 @@ class RunTimeByOperatorChart extends StatelessWidget {
         color: (c) => c.ok,
         format: 'hours',
         dimLabel: 'Operator',
-        valueLabel: 'Effective run time',
+        valueLabel: 'Effective Run Time',
         emptyText: 'Needs cycle time and OK quantity.',
       );
 }
 
-/// Operator v/s OK QTY %.
+/// OK Quantity % by Operator.
 class OkPctByOperatorChart extends StatelessWidget {
   const OkPctByOperatorChart({super.key, required this.props});
   final DashboardChartProps props;
@@ -120,13 +120,13 @@ class OkPctByOperatorChart extends StatelessWidget {
         color: (c) => c.ok,
         format: 'pct',
         dimLabel: 'Operator',
-        valueLabel: '% OK quantity',
+        valueLabel: 'OK Quantity %',
         emptyText: 'No quantities entered.',
         positiveOnly: false,
       );
 }
 
-/// OK QTY by Part.
+/// OK Quantity by Part.
 class OutputByItemChart extends StatelessWidget {
   const OutputByItemChart({super.key, required this.props});
   final DashboardChartProps props;
@@ -139,12 +139,12 @@ class OutputByItemChart extends StatelessWidget {
         color: (c) => c.ok,
         format: 'qty',
         dimLabel: 'Part',
-        valueLabel: 'OK quantity',
+        valueLabel: 'OK Quantity',
         emptyText: 'No OK quantity entered.',
       );
 }
 
-/// MC No. Summary: one row per machine, always a table.
+/// Machine Performance Summary: one row per machine, always a table.
 class MachineSummaryChart extends StatefulWidget {
   const MachineSummaryChart({super.key, required this.props});
   final DashboardChartProps props;

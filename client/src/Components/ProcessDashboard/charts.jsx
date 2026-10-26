@@ -145,7 +145,7 @@ const RunTimeByOperator = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   const data = useDimBars(rowsFor("operator"), "operator", ctx, (s) => s.effectiveHours);
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="hours" selected={filters.operator} onSelect={(k) => onToggle("operator", k)}
-      dimLabel="Operator" valueLabel="Effective run time" emptyText="Needs cycle time and OK quantity." />
+      dimLabel="Operator" valueLabel="Effective Run Time" emptyText="Needs cycle time and OK quantity." />
   );
 };
 
@@ -153,7 +153,7 @@ const OkPctByOperator = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   const data = useDimBars(rowsFor("operator"), "operator", ctx, (s) => s.okPct, { positiveOnly: false });
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="pct" selected={filters.operator} onSelect={(k) => onToggle("operator", k)}
-      dimLabel="Operator" valueLabel="% OK quantity" emptyText="No quantities entered." />
+      dimLabel="Operator" valueLabel="OK Quantity %" emptyText="No quantities entered." />
   );
 };
 
@@ -161,7 +161,7 @@ const OutputByItem = ({ rowsFor, ctx, c, filters, onToggle, ...rest }) => {
   const data = useDimBars(rowsFor("item"), "item", ctx, (s) => s.okQty);
   return (
     <HBars {...rest} data={data} c={c} color={c.ok} format="qty" selected={filters.item} onSelect={(k) => onToggle("item", k)}
-      dimLabel="Part" valueLabel="OK quantity" emptyText="No OK quantity entered." />
+      dimLabel="Part" valueLabel="OK Quantity" emptyText="No OK quantity entered." />
   );
 };
 
@@ -219,7 +219,7 @@ const OeeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   if (!data.length) return <Empty>Needs {timesOf(ctx)} and OK quantity.</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={[unitOf(ctx), "OEE considering losses"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+      <MiniTable columns={[unitOf(ctx), "OEE"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={data.map((d) => ({ key: d.key, cells: [d.label, `${d.value.toFixed(2)}%`] }))} />
     );
   }
@@ -245,7 +245,7 @@ const RunTimeByMachineBars = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
   if (!data.length) return <Empty>Needs cycle time and OK quantity.</Empty>;
   if (view === "table") {
     return (
-      <MiniTable columns={[unitOf(ctx), "Effective run time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
+      <MiniTable columns={[unitOf(ctx), "Effective Run Time"]} selected={filters.machine} onRowClick={(k) => onToggle("machine", k)}
         rows={data.map((d) => ({ key: d.key, cells: [d.label, formatExact("hours", d.value)] }))} />
     );
   }
@@ -255,7 +255,7 @@ const RunTimeByMachineBars = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
         <CartesianGrid stroke={c.grid} vertical={false} />
         <XAxis dataKey="label" {...axisProps(c)} />
         <YAxis unit=" hr" {...axisProps(c)} />
-        <Tooltip {...tooltipProps(c)} formatter={(v) => [formatExact("hours", v), "Effective run time"]} />
+        <Tooltip {...tooltipProps(c)} formatter={(v) => [formatExact("hours", v), "Effective Run Time"]} />
         <Bar isAnimationActive={false} dataKey="value" fill={c.ok} radius={[4, 4, 0, 0]} maxBarSize={38} onClick={(d) => onToggle("machine", clickedKey(d))} style={{ cursor: "pointer" }}>
           {data.map((d) => <Cell key={d.key} fillOpacity={markOpacity(filters.machine, d.key)} />)}
           <LabelList dataKey="value" position="top" fill={c.axis} fontSize={11} formatter={(v) => v.toFixed(1)} />
@@ -266,9 +266,9 @@ const RunTimeByMachineBars = ({ rowsFor, ctx, c, filters, onToggle, view }) => {
 };
 
 const OEE_SERIES = [
-  { key: "oeeLosses", label: "Considering losses" },
-  { key: "oeeLunch", label: "Not considering losses, but lunch" },
-  { key: "oeeLunchCot", label: "Not considering losses, but lunch & setup time" },
+  { key: "oeeLosses", label: "Considering Losses" },
+  { key: "oeeLunch", label: "Excl. Losses (Lunch Only)" },
+  { key: "oeeLunchCot", label: "Excl. Losses (Lunch + Setup)" },
 ];
 
 // The three OEE components — each the entries' minutes and pieces added up
@@ -562,7 +562,7 @@ const RunTimeByMachine = ({ rowsFor, ctx, c, filters, onToggle, view, ...rest })
     const causeFields = causeColumns(ctx, machines);
     return (
       <MiniTable
-        columns={[unitOf(ctx), "Effective run time", ...causeFields.map((f) => `${causeLabel(f.key)} (min)`)]}
+        columns={[unitOf(ctx), "Effective Run Time", ...causeFields.map((f) => `${causeLabel(f.key)} (min)`)]}
         selected={filters.machine}
         onRowClick={(k) => onToggle("machine", k)}
         rows={machines.map((g) => ({

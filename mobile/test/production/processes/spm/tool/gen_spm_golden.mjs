@@ -22,7 +22,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { isoDay, sortByMachineOn, STOPPAGE_FIELDS } from "../../../../../../client/src/utils/productionSheet.js";
+import { isoDay, sortByMachineOn, STOPPAGE_FIELDS, REJECT_REASONS } from "../../../../../../client/src/utils/productionSheet.js";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../../../../../../client/src/utils/quantityRules.js";
 import {
   SPM_FORMULAS,
   SPM_OP_FIELDS,
@@ -33,7 +34,7 @@ import {
   spmRowCalc,
 } from "../../../../../../client/src/utils/spmSheet.js";
 import { SPM_DOWNTIME_KEYS, SPM_FIELD_ORDER, firstSpmError, validateSpmEntry } from "../../../../../../client/src/utils/spmValidation.js";
-import { hmToWireHours, hoursToHmInput, parseHm } from "../../../../../../client/src/utils/shiftHours.js";
+import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../../../../../../client/src/utils/shiftHours.js";
 import { stoppageLimitMin, withDecimalPlanned } from "../../../../../../client/src/utils/entryValidation.js";
 
 let vendorSeq = 0;
@@ -56,6 +57,25 @@ const SCALE = Number(process.env.SCALE || 1);
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chance = (p) => rnd() < p;
 const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+
+// A Rejection Master split of exactly `total` pieces over random reasons (as the form's boxes hold it: strings).
+const splitOf = (total) => {
+  const out = {};
+  let left = total;
+  while (left > 0) {
+    const reason = pick(REJECT_REASONS);
+    const n = chance(0.5) ? left : int(1, left);
+    out[reason] = String(Number(out[reason] || 0) + n);
+    left -= n;
+  }
+  return out;
+};
+// Junk split boxes: blanks, zeros, negatives, text, numbers, unknown reasons.
+const junkSplit = () => {
+  const out = {};
+  for (const r of [...REJECT_REASONS, "Nonsense"]) if (chance(0.25)) out[r] = pick(["", "0", "3", "10", 5, "-2", "abc", "  ", "2.5", 0]);
+  return out;
+};
 
 function enc(v) {
   if (v === undefined) return { $u: 1 };
@@ -118,9 +138,19 @@ function spmRow(id, hostile) {
   for (const k of REFS) row[k] = H && chance(0.3) ? pick(NUMS) : int(1, 8);
   if (chance(0.45)) row.excludedOps = OPS.filter(() => chance(0.4));
   else if (H && chance(0.2)) row.excludedOps = pick([null, [], ["nope"], ["processSec", "processSec"]]);
-  row.okQty = H && chance(0.4) ? pick(QTY) : String(int(0, 700));
-  row.rejectedQty = H && chance(0.4) ? pick(QTY) : String(int(0, 30));
-  if (H && chance(0.1)) row.actualQty = pick(QTY);
+  const okN = int(0, 700);
+  const rejN = int(0, 30);
+  row.okQty = H && chance(0.4) ? pick(QTY) : String(okN);
+  if (chance(0.7)) {
+    // Production Master: Actual and OK typed, the rejected pieces split by reason.
+    row.actualQty = H && chance(0.2) ? pick(QTY) : String(okN + rejN);
+    if (chance(0.8)) row.rejectBreakdown = H && chance(0.3) ? junkSplit() : splitOf(rejN);
+    if (row.rejectBreakdown?.Other && chance(0.7)) row.rejectOtherRemark = pick(["burr", " tool broke ", ""]);
+  } else {
+    // An entry saved before Actual existed: OK + Rejected, one reason.
+    row.rejectedQty = H && chance(0.4) ? pick(QTY) : String(rejN);
+    if (chance(0.5)) row.rejectReason = pick(REJECT_REASONS);
+  }
   row.plannedOperatorShiftHours = H && chance(0.4) ? pick(PLANNED_DEC) : pick([8, 8.5, 9, 12, 4, 9.5, 11]);
   for (const k of STOP_KEYS) {
     if (chance(0.5)) row[k] = H && chance(0.4) ? pick(MINS) : String(int(0, 40));
@@ -159,13 +189,15 @@ for (let i = 0; i < nDays; i += 1) {
 }
 write("day_calc.json", dayCases);
 
-// ── validation (form values: typed fields are strings, planned is H.MM) ─────
+// ── validation (form values: typed fields are strings, planned is decimal hours) ─────
 function formValues(hostile) {
   const H = hostile;
   const shifts = [["06:00", "14:00"], ["08:00", "16:00"], ["22:00", "06:00"], ["07:30", "15:45"], ["09:00", "09:00"], ["10:00", "09:00"], ["00:00", "23:59"]];
   const [on, off] = pick(shifts);
   const ops = { loadingSec: int(1, 12), processSec: int(1, 40), unloadingCleaningSec: int(0, 10), otherOperationsSec: int(0, 6) };
   const total = ops.loadingSec + ops.processSec + ops.unloadingCleaningSec + ops.otherOperationsSec;
+  const okN = int(0, 520);
+  const rejN = int(0, 30);
   const v = {
     date: H && chance(0.2) ? pick(DATES) : "2026-10-02",
     machine: H && chance(0.15) ? pick(["", undefined, " "]) : "m1",
@@ -185,11 +217,15 @@ function formValues(hostile) {
     machineOnTime: H && chance(0.3) ? pick([...TIMES_OK, ...TIMES_BAD]) : on,
     machineOffTime: H && chance(0.3) ? pick([...TIMES_OK, ...TIMES_BAD]) : off,
     totalCycleSec: H && chance(0.25) ? pick(["", undefined, "0", "abc", "-5"]) : String(total),
-    okQty: H && chance(0.4) ? pick(QTY) : String(int(0, 520)),
-    rejectedQty: H && chance(0.4) ? pick(QTY) : String(int(0, 30)),
-    plannedOperatorShiftHours: H && chance(0.55) ? pick(PLANNED_TYPED) : pick(["8", "8.30", "9", "10", "8.00", "8.15", "12"]),
+    okQty: H && chance(0.4) ? pick(QTY) : String(okN),
+    actualQty: H && chance(0.4) ? pick(QTY) : String(okN + rejN),
+    rejectBreakdown: H && chance(0.3) ? junkSplit() : chance(0.8) ? splitOf(rejN) : chance(0.5) ? {} : splitOf(rejN + int(1, 5)),
+    plannedOperatorShiftHours: H && chance(0.55) ? pick(PLANNED_TYPED) : pick(["8", "8.5", "9", "10", "8.00", "5.33", "12"]),
   };
+  if (v.rejectBreakdown.Other && chance(0.6)) v.rejectOtherRemark = pick(["burr", " ", "x"]);
   for (const k of OPS) v[k] = H && chance(0.2) ? pick(SECS) : String(ops[k]);
+  // a Part with no operation times at all (and so no cycle to fall back on)
+  if (H && chance(0.15)) for (const k of OPS) v[k] = pick(["", undefined]);
   for (const k of REFS) v[k] = H && chance(0.25) ? pick(["", undefined, "abc", " ", "0"]) : String(int(1, 6));
   for (const k of STOP_KEYS) {
     if (k === "otherMin") v[k] = chance(0.25) ? String(int(1, 30)) : pick(["", "0"]);
@@ -238,7 +274,7 @@ write("stoppage_limit.json", limitCases);
 const SPM_OP_KEYS = OPS;
 const SPM_REFERENCE_KEYS = REFS;
 const STOPPAGE_KEYS = STOP_KEYS;
-const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = [
   "noOfHoles",
@@ -249,8 +285,8 @@ const NUMBER_FIELDS = [
   "unloadingCleaningSec",
   "otherOperationsSec",
   "totalCycleSec",
+  "actualQty",
   "okQty",
-  "rejectedQty",
   "plannedOperatorShiftHours",
   ...STOPPAGE_KEYS,
 ];
@@ -258,6 +294,7 @@ const NUMBER_FIELDS = [
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -275,6 +312,8 @@ const emptyEntry = (day) => ({
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
+  // Rejection Master: { reason: qty } — typed per reason, must add up to Rejected (Actual − OK).
+  rejectBreakdown: {},
 });
 
 const toFormValues = (row, day) => ({
@@ -282,7 +321,9 @@ const toFormValues = (row, day) => ({
   ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
   item: row.item || "",
   slot: row.slot,
-  plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
+  // Actual Quantity and the Rejection Master split (an older entry has neither: Actual = OK + Rejected).
+  ...quantityFormValues(row),
+  plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
 
 const toPayload = (v, isEdit) => ({
@@ -299,8 +340,10 @@ const toPayload = (v, isEdit) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // The Rejection Master split and its "Other" remark. rejectedQty is never sent: the server derives it (Actual − OK).
+  ...rejectPayload(v),
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
@@ -330,14 +373,17 @@ const LINE_FIELDS = [
   ["date", "machine", "operator", "machineStatus"],
   ["itemName", "noOfHoles", "piecesPerCycle", "strokeRequired"],
   ["machineOnTime", "machineOffTime"],
-  ["okQty", "rejectedQty"],
+  ["actualQty", "okQty"],
+  ["rejectBreakdown", "rejectOtherRemark"],
   ["plannedOperatorShiftHours", "lunchMin"],
   [...SPM_DOWNTIME_KEYS, "stoppageTotal", "otherMinRemark"],
   ["remarks"],
 ];
-const DATA_KEYS = LINE_FIELDS.flat().filter((k) => !["date", "machine", "stoppageTotal"].includes(k));
+const DATA_KEYS = LINE_FIELDS.flat().filter((k) => !["date", "machine", "stoppageTotal", "rejectBreakdown"].includes(k));
 const hasData = (v) =>
-  v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
+  v.workingMode === "Non Working" ||
+  DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null)) ||
+  Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null);
 
 // JSON.stringify -> parse is exactly what goes over the wire (NaN -> null).
 const wire = (o) => JSON.parse(JSON.stringify(o));
@@ -346,6 +392,10 @@ const TYPED = [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS];
 const asText = (o) => {
   const out = { ...o };
   for (const k of TYPED) if (k !== "plannedOperatorShiftHours" && out[k] !== undefined && out[k] !== null && typeof out[k] !== "string") out[k] = String(out[k]);
+  // ...and so are the Rejection Master boxes.
+  if (out.rejectBreakdown && typeof out.rejectBreakdown === "object") {
+    out.rejectBreakdown = Object.fromEntries(Object.entries(out.rejectBreakdown).map(([r, n]) => [r, typeof n === "number" ? String(n) : n]));
+  }
   return out;
 };
 

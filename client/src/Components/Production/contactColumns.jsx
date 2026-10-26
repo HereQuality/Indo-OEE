@@ -1,5 +1,5 @@
 import React from "react";
-import { STOPPAGE_FIELDS, displayDay, remarkParts } from "../../utils/productionSheet";
+import { STOPPAGE_FIELDS, REJECT_REASONS, displayDay, remarkParts } from "../../utils/productionSheet";
 import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
@@ -45,8 +45,24 @@ export const CONTACT_COLUMNS = [
   { key: "shift", label: "Machine Shift Time (hr:min)", get: (r, c) => hm(c.shiftHours), align: "text-center", tone: "calc" },
   { key: "idealQty", label: "Ideal Quantity", get: (r, c) => n(c.idealQty), align: "text-center", tone: "calc" },
   { key: "idealQtyPerHour", label: "Ideal Quantity/Hours", get: (r, c) => n(c.idealQtyPerHour), align: "text-center", tone: "calc" },
+  { key: "actualQty", label: "Actual Quantity", get: (r, c) => n(c.actualQty), align: "text-center", tone: "calc" },
   { key: "okQty", label: "Actual OK Quantity", get: (r) => min(r.okQty), align: "text-center" },
-  { key: "rejectedQty", label: "Rejected Quantity", get: (r) => min(r.rejectedQty), align: "text-center" },
+  {
+    // Rejected = Actual − OK (calc); expands to the Rejection Master split, "Other" carrying its remark.
+    key: "rejectedQty",
+    label: "Rejected Quantity",
+    expandable: true,
+    summary: { key: "rejectedQty", label: "Rejected Quantity", get: (r, c) => n(c.rejectedQty), align: "text-center", tone: "calc" },
+    columns: REJECT_REASONS.map((reason) => ({
+      key: reason,
+      label: reason,
+      get: (r) => {
+        const value = min(r.rejectBreakdown?.[reason]);
+        return reason === "Other" ? <WithRemark value={value} row={r} kind="reject" /> : value;
+      },
+      align: "text-center",
+    })),
+  },
   { key: "pctOk", label: "% OK Quantity", get: (r, c) => pct(c.pctOk), align: "text-center", tone: "calc" },
   { key: "plannedShift", label: "Planned Operator Shift Time (hr:min)", get: (r) => hm(r.plannedOperatorShiftHours), align: "text-center" },
   {

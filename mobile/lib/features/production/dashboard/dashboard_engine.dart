@@ -305,7 +305,7 @@ String formatExact(String format, num? v) {
 }
 
 // ── Catalog: KPI tiles ─────────────────────────────────────────────────────
-/// Each: {'key','label','hint','format', 'tone'? ('ok'|'reject'|'downtime'), 'example'}.
+/// Each: {'key','label','hint','format', 'tone'? ('ok'|'reject'|'downtime'), 'example', 'worker'? (label / hint a worker-based process shows instead; wording only)}.
 const List<Map<String, dynamic>> statCatalog = [
   {'key': 'totalQty', 'label': 'Total QTY', 'hint': 'Actual quantity produced', 'format': 'qty', 'example': '1.43M'},
   {'key': 'okQty', 'label': 'OK QTY', 'hint': 'Pieces that passed', 'format': 'qty', 'tone': 'ok', 'example': '269K'},
@@ -319,14 +319,14 @@ const List<Map<String, dynamic>> statCatalog = [
   {'key': 'oeeAvailability', 'label': 'Availability', 'hint': 'Operating Time ÷ Planned Production Time', 'format': 'pct', 'example': '86.96%'},
   {'key': 'oeePerformance', 'label': 'Performance', 'hint': 'Cycle time × pieces ÷ Operating Time', 'format': 'pct', 'example': '83.33%'},
   {'key': 'oeeQuality', 'label': 'Quality', 'hint': 'OK ÷ (OK + Rejected)', 'format': 'pct', 'tone': 'ok', 'example': '98.00%'},
-  {'key': 'oeeLosses', 'label': 'OEE Considering Losses', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '96.42%'},
-  {'key': 'oeeLunch', 'label': 'OEE NOT Considering Losses, But Lunch', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '91.10%'},
+  {'key': 'oeeLosses', 'label': 'OEE Considering Losses', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '96.42%', 'worker': {'hint': 'Averaged per worker-day'}},
+  {'key': 'oeeLunch', 'label': 'OEE NOT Considering Losses, But Lunch', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '91.10%', 'worker': {'hint': 'Averaged per worker-day'}},
   // Key kept as oeeLunchCot: it is what a process's saved dashboard stores, so renaming it would drop the tile.
-  {'key': 'oeeLunchCot', 'label': 'OEE NOT Considering Losses, But Lunch & Setup Time', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '93.85%'},
-  {'key': 'effectiveHours', 'label': 'Effective Machine Run Time', 'hint': 'OK × cycle time', 'format': 'hours', 'example': '7,281 hr'},
-  {'key': 'shiftHours', 'label': 'Machine Shift Time', 'hint': 'Machine OFF − ON', 'format': 'hours', 'example': '8,120 hr'},
+  {'key': 'oeeLunchCot', 'label': 'OEE NOT Considering Losses, But Lunch & Setup Time', 'hint': 'Averaged per machine-day', 'format': 'pct', 'example': '93.85%', 'worker': {'hint': 'Averaged per worker-day'}},
+  {'key': 'effectiveHours', 'label': 'Effective Machine Run Time', 'hint': 'OK × cycle time', 'format': 'hours', 'example': '7,281 hr', 'worker': {'label': 'Effective Working Time'}},
+  {'key': 'shiftHours', 'label': 'Machine Shift Time', 'hint': 'Machine OFF − ON', 'format': 'hours', 'example': '8,120 hr', 'worker': {'label': 'Worker Shift Time', 'hint': 'Working end − start'}},
   {'key': 'downtimeMin', 'label': 'Total Downtime', 'hint': 'All stoppage causes', 'format': 'minutes', 'tone': 'downtime', 'example': '5,160 min'},
-  {'key': 'unutilized', 'label': 'Unutilized Machine Time', 'hint': '(12 − (Shift − Lunch)) ÷ 11 — averaged per entry', 'format': 'pct', 'tone': 'downtime', 'example': '8.33%'},
+  {'key': 'unutilized', 'label': 'Unutilized Machine Time', 'hint': '(12 − (Shift − Lunch)) ÷ 11 — averaged per entry', 'format': 'pct', 'tone': 'downtime', 'example': '8.33%', 'worker': {'label': 'Unutilized Time'}},
 ];
 
 // ── Catalog: graphs ────────────────────────────────────────────────────────
@@ -334,30 +334,30 @@ const List<Map<String, dynamic>> statCatalog = [
 /// 'label','hint','size' ('sm'|'md'|'lg'|'full' = 4/6/8/12 of 12 columns),
 /// 'preview', 'tone'?}.
 const List<Map<String, dynamic>> chartCatalog = [
-  {'key': 'oeeTrend', 'measure': 'oeeLosses', 'label': 'OEE (over time)', 'hint': 'The three OEE figures by date — by month on long ranges.', 'size': 'lg', 'preview': 'lines'},
+  {'key': 'oeeTrend', 'measure': 'oeeLosses', 'label': 'OEE Trend', 'hint': 'The three OEE figures by date — by month on long ranges.', 'size': 'lg', 'preview': 'lines'},
   {
     'key': 'apqTrend',
     'measure': 'oeeAvailability',
-    'label': 'Availability · Performance · Quality',
+    'label': 'OEE Components — Availability, Performance, Quality',
     'hint': 'The three OEE components for the period, as rings. Table view: by date. Over 100% means an entry is held for Admin review.',
     'size': 'md',
     'preview': 'radial',
   },
-  {'key': 'runTimeByOperator', 'measure': 'effectiveHours', 'label': 'Effective Machine Run Time (Hour) by Operator', 'hint': 'Hours of effective run time each operator produced.', 'size': 'sm', 'preview': 'hbars', 'tone': 'ok'},
-  {'key': 'downtimeByMachine', 'measure': 'downtimeMin', 'label': 'B.D. Backup — Stoppage by MC No.', 'hint': 'Minutes lost per machine: breakdown, setup, lunch/tea, other.', 'size': 'md', 'preview': 'nestedTreemap'},
-  {'key': 'runTimeByMachine', 'measure': 'effectiveHours', 'label': 'Stoppages by Cause (Min)', 'hint': 'Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.', 'size': 'md', 'preview': 'radar', 'tone': 'downtime'},
-  {'key': 'runTimeByMachineBars', 'measure': 'effectiveHours', 'label': 'Effective Machine Run Time (Hour) by MC No.', 'hint': 'Hours of effective run time on each machine.', 'size': 'md', 'preview': 'vbars', 'tone': 'ok'},
-  {'key': 'unutilizedTrend', 'measure': 'unutilized', 'label': 'Unutilized Machine Time (over time)', 'hint': 'Unutilized share of the 12-hour day by date — by month on long ranges.', 'size': 'md', 'preview': 'area'},
-  {'key': 'unreportedByMachine', 'measure': 'unreportedMin', 'label': 'Unreported Time (Min) by MC No.', 'hint': 'Minutes not accounted for — one small chart per machine.', 'size': 'md', 'preview': 'multiples'},
-  {'key': 'okRejectedTrend', 'measure': 'okQty', 'label': 'OK vs Rejected QTY (over time)', 'hint': 'Stacked — the full bar is the actual quantity.', 'size': 'md', 'preview': 'stackedTime'},
-  {'key': 'oeeByMachine', 'measure': 'oeeLosses', 'label': 'OEE by MC No.', 'hint': "Considering losses — average of that machine's days.", 'size': 'md', 'preview': 'vbars', 'tone': 'ok'},
-  {'key': 'rejectByReason', 'measure': 'rejectedQty', 'label': 'Rejected QTY by Reason', 'hint': 'Rejected quantity grouped by reject reason.', 'size': 'md', 'preview': 'donut', 'tone': 'reject'},
-  {'key': 'okPctByOperator', 'measure': 'okPct', 'label': 'Operator v/s OK QTY %', 'hint': 'OK ÷ Actual for each operator.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
-  {'key': 'outputByItem', 'measure': 'okQty', 'label': 'OK QTY by Part', 'hint': 'Parts ranked by OK quantity.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
-  {'key': 'machineSummary', 'label': 'MC No. Summary (table)', 'hint': 'One row per machine — quantities, run time, downtime and OEE.', 'size': 'full', 'preview': 'table'},
+  {'key': 'runTimeByOperator', 'measure': 'effectiveHours', 'label': 'Effective Run Time by Operator (hr)', 'hint': 'Hours of effective run time each operator produced.', 'size': 'sm', 'preview': 'hbars', 'tone': 'ok', 'worker': {'label': 'Effective Working Time by Worker (hr)'}},
+  {'key': 'downtimeByMachine', 'measure': 'downtimeMin', 'label': 'Downtime by Machine (min)', 'hint': 'Minutes lost per machine: breakdown, setup, lunch/tea, other.', 'size': 'md', 'preview': 'nestedTreemap', 'worker': {'label': 'Downtime by Worker (min)', 'hint': 'Minutes lost per worker, by stoppage cause.'}},
+  {'key': 'runTimeByMachine', 'measure': 'effectiveHours', 'label': 'Downtime by Cause (min)', 'hint': 'Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.', 'size': 'md', 'preview': 'radar', 'tone': 'downtime', 'worker': {'hint': 'Every stoppage cause on one radar — further out means more minutes lost. Table view: each worker, with their working time.'}},
+  {'key': 'runTimeByMachineBars', 'measure': 'effectiveHours', 'label': 'Effective Run Time by Machine (hr)', 'hint': 'Hours of effective run time on each machine.', 'size': 'md', 'preview': 'vbars', 'tone': 'ok', 'worker': {'label': 'Effective Working Time by Worker (hr)', 'hint': 'Hours of effective working time for each worker.'}},
+  {'key': 'unutilizedTrend', 'measure': 'unutilized', 'label': 'Unutilized Machine Time Trend', 'hint': 'Unutilized share of the 12-hour day by date — by month on long ranges.', 'size': 'md', 'preview': 'area', 'worker': {'label': 'Unutilized Time Trend'}},
+  {'key': 'unreportedByMachine', 'measure': 'unreportedMin', 'label': 'Unreported Time by Machine (min)', 'hint': 'Minutes not accounted for — one small chart per machine.', 'size': 'md', 'preview': 'multiples', 'worker': {'label': 'Unreported Time by Worker (min)', 'hint': 'Minutes not accounted for — one small chart per worker.'}},
+  {'key': 'okRejectedTrend', 'measure': 'okQty', 'label': 'OK vs Rejected Quantity Trend', 'hint': 'Stacked — the full bar is the actual quantity.', 'size': 'md', 'preview': 'stackedTime'},
+  {'key': 'oeeByMachine', 'measure': 'oeeLosses', 'label': 'OEE by Machine', 'hint': "Considering losses — average of that machine's days.", 'size': 'md', 'preview': 'vbars', 'tone': 'ok', 'worker': {'label': 'OEE by Worker', 'hint': "Considering losses — average of that worker's days."}},
+  {'key': 'rejectByReason', 'measure': 'rejectedQty', 'label': 'Rejection by Reason (Qty)', 'hint': 'Rejected quantity grouped by reject reason.', 'size': 'md', 'preview': 'donut', 'tone': 'reject'},
+  {'key': 'okPctByOperator', 'measure': 'okPct', 'label': 'OK Quantity % by Operator', 'hint': 'OK ÷ Actual for each operator.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
+  {'key': 'outputByItem', 'measure': 'okQty', 'label': 'OK Quantity by Part', 'hint': 'Parts ranked by OK quantity.', 'size': 'md', 'preview': 'hbars', 'tone': 'ok'},
+  {'key': 'machineSummary', 'label': 'Machine Performance Summary', 'hint': 'One row per machine — quantities, run time, downtime and OEE.', 'size': 'full', 'preview': 'table', 'worker': {'label': 'Worker Performance Summary', 'hint': 'One row per worker — quantities, working time, downtime and OEE.'}},
 ];
 
-const List<String> defaultStats = ['totalQty', 'okQty', 'rejectedQty', 'okPct', 'oeeLosses', 'oeeLunch', 'effectiveHours', 'downtimeMin', 'unutilized'];
+const List<String> defaultStats = ['totalQty', 'okQty', 'rejectedQty', 'okPct', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'unutilized'];
 const List<String> defaultCharts = [
   'runTimeByOperator',
   'oeeTrend',
@@ -767,24 +767,26 @@ Map<String, dynamic> summarize(List<Map<String, dynamic>> rows) {
     (byMachineDay['${_str(row['machine'])}|${_str(row['date'])}'] ??= []).add(row);
   }
 
-  // dayCalc hands back one result per row of the group (a rolling window
-  // starting at that row), not one shared value for the whole day — so every
-  // row's own figure is added in here, not the day's counted once.
+  // Unreported Time, Unutilized and the three OEE figures are one figure per
+  // machine-day — dayCalc gives every entry of that day the same value — so
+  // each day counts once: a day saved as three entries isn't weighed three
+  // times in the averages, nor its Unreported Time added up three times.
   final oee = <String, List<double>>{'oeeLosses': [], 'oeeLunch': [], 'oeeLunchCot': []};
   final unutilizedList = <double>[];
   for (final group in byMachineDay.values) {
-    for (final d in dayCalc(group)) {
-      final ur = d['unreportedMin'];
-      if (_isFin(ur)) unreportedMin += (ur as num).toDouble();
-      final un = d['unutilized'];
-      if (_isFin(un)) {
-        unutilizedDays += (un as num).toDouble();
-        unutilizedList.add(un.toDouble());
-      }
-      for (final e in oee.entries) {
-        final v = d[e.key];
-        if (_isFin(v)) e.value.add((v as num).toDouble());
-      }
+    final days = dayCalc(group);
+    if (days.isEmpty) continue;
+    final d = days.first;
+    final ur = d['unreportedMin'];
+    if (_isFin(ur)) unreportedMin += (ur as num).toDouble();
+    final un = d['unutilized'];
+    if (_isFin(un)) {
+      unutilizedDays += (un as num).toDouble();
+      unutilizedList.add(un.toDouble());
+    }
+    for (final e in oee.entries) {
+      final v = d[e.key];
+      if (_isFin(v)) e.value.add((v as num).toDouble());
     }
   }
 

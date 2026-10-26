@@ -36,6 +36,8 @@ Map<String, dynamic> _row() => {
       'machineOffTime': '16:00',
       'okQty': 2000,
       'rejectedQty': 100,
+      // From before Actual existed: Actual reads as OK + Rejected, the 100 against this reason.
+      'rejectReason': 'Tool Mark',
       'plannedOperatorShiftHours': 8.5,
       'lunchMin': 30,
       'setupMin': 10,
@@ -86,16 +88,16 @@ void main() {
       'Part, Operation, Setup No.',
       'Standard Time, Product Cycle Time',
       'Machine ON–OFF Time, Machine Shift',
-      'Production (Qty)',
+      'Production Master',
+      'Rejection Master (Qty)',
       'Planned Operator Shift, Lunch / Rest',
       'Downtime / Stoppage (min)',
       'Remarks',
     ]) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
-    expect(find.text('Rejection Master (Qty)'), findsNothing);
-    expect(find.text('Production Master'), findsNothing);
-    for (final label in ['Actual OK Quantity', 'Rejected Quantity', 'Operation', 'Setup No.', 'Product Cycle Time (sec)', 'Planned Downtime (min)', 'Others (min)', 'Lunch / Rest (min)']) {
+    expect(find.text('Production (Qty)'), findsNothing);
+    for (final label in ['Actual Quantity', 'OK Quantity', 'Rejected', 'Dimension Out', 'Operation', 'Setup No.', 'Product Cycle Time (sec)', 'Planned Downtime (min)', 'Others (min)', 'Lunch / Rest (min)']) {
       expect(_label(label), findsWidgets, reason: label);
     }
     expect(_label('Standard Time Taken (min)'), findsWidgets);
@@ -113,26 +115,31 @@ void main() {
     expect(find.text('Operator is required'), findsOneWidget);
     expect(find.text('Part Name is required'), findsOneWidget);
     expect(find.text('Machine ON Time is required'), findsOneWidget);
-    expect(find.text('Actual OK Quantity is required'), findsOneWidget);
-    expect(find.text('Rejected Quantity is required'), findsOneWidget);
+    expect(find.text('Actual Quantity is required'), findsOneWidget);
+    expect(find.text('OK Quantity is required'), findsOneWidget);
     expect(find.text('Planned Operator Shift is required'), findsOneWidget);
     expect(api.called('PUT', pressSpec.api.row), isEmpty);
   });
 
-  testWidgets('a saved row opens with its figures; OK + Rejected is capped at Ideal Quantity', (tester) async {
+  testWidgets('a saved row opens with its figures; Actual is capped at Ideal Quantity and OK at Actual', (tester) async {
     EntryNotices.reset();
     _api();
     await _open(tester, row: _row());
     await tester.pumpAndSettle();
 
-    // Product Cycle Time 2 min x 60 / 10 pcs = 12 s; planned 8.5 h shows as H.MM.
+    // Product Cycle Time 2 min x 60 / 10 pcs = 12 s; planned 8.5 h is typed as 8.5.
     expect(find.text('12'), findsWidgets);
-    expect(find.text('8.30'), findsOneWidget);
+    expect(find.text('8.5'), findsOneWidget);
     expect(find.textContaining('of 480 min allowed'), findsOneWidget);
     expect(find.text('Stoppage Allowed (min)'), findsOneWidget);
+    // An entry from before Actual existed: Actual = 2000 + 100, the 100 rejected on its one reason.
+    String text(String key) => tester.widget<EditableText>(find.descendant(of: _field(key), matching: find.byType(EditableText))).controller.text;
+    expect(text('actualQty'), '2100');
+    expect(text('okQty'), '2000');
+    expect(find.textContaining('Split so far: 100 of 100 rejected'), findsOneWidget);
 
-    // 2000 + 100 typed; Ideal is 2400 so OK may rise to 2300 but no further.
-    await tester.enterText(find.descendant(of: _field('okQty'), matching: find.byType(EditableText)), '2301');
+    // Ideal is 2400, so Actual may rise to 2400 but no further.
+    await tester.enterText(find.descendant(of: _field('actualQty'), matching: find.byType(EditableText)), '2401');
     await tester.pump();
     // The web raises a popup with the figures (limitNotice.js qtyNotice), not a toast.
     await tester.pump();
@@ -140,12 +147,58 @@ void main() {
     expect(find.textContaining('this machine can make at most 2400 pieces in this shift.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('entry-notice/ok')));
     await tester.pumpAndSettle();
-    final ok = tester.widget<EditableText>(find.descendant(of: _field('okQty'), matching: find.byType(EditableText)));
-    expect(ok.controller.text, '2000');
+    expect(text('actualQty'), '2100');
 
+    await tester.enterText(find.descendant(of: _field('actualQty'), matching: find.byType(EditableText)), '2400');
+    await tester.pump();
+    expect(text('actualQty'), '2400');
+
+    // OK can't pass Actual.
+    await tester.enterText(find.descendant(of: _field('okQty'), matching: find.byType(EditableText)), '2401');
+    await tester.pump();
+    expect(text('okQty'), '2000');
     await tester.enterText(find.descendant(of: _field('okQty'), matching: find.byType(EditableText)), '2300');
     await tester.pump();
-    expect(tester.widget<EditableText>(find.descendant(of: _field('okQty'), matching: find.byType(EditableText))).controller.text, '2300');
+    expect(text('okQty'), '2300');
+    // Rejected is now 100 (2400 - 2300), which the 100 on Tool Mark already accounts for.
+    expect(find.textContaining('Split so far: 100 of 100 rejected'), findsOneWidget);
+  });
+
+  testWidgets('the Rejection Master split must add up; Other needs its remark; the payload carries the split', (tester) async {
+    final api = _api();
+    await _open(tester, row: _row());
+    await tester.pumpAndSettle();
+
+    // Raise OK to 2050: Rejected falls to 50 but 100 is still on Tool Mark.
+    await tester.enterText(find.descendant(of: _field('okQty'), matching: find.byType(EditableText)), '2050');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Update'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Split is 50 more than the 50 rejected'), findsOneWidget);
+    expect(api.called('PUT', pressSpec.api.row), isEmpty);
+
+    // Split the 50 between Tool Mark and Other.
+    await tester.enterText(find.descendant(of: find.byKey(const ValueKey('entry0/reject/Tool Mark')), matching: find.byType(EditableText)), '30');
+    await tester.pump();
+    await tester.enterText(find.descendant(of: find.byKey(const ValueKey('entry0/reject/Other')), matching: find.byType(EditableText)), '20');
+    await tester.pumpAndSettle();
+    expect(_label('Remark for “Other” rejection'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Update'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remark is required when "Other" is a reject reason'), findsOneWidget);
+    expect(api.called('PUT', pressSpec.api.row), isEmpty);
+
+    await tester.enterText(find.descendant(of: _field('rejectOtherRemark'), matching: find.byType(EditableText)), ' cracked ');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Update'));
+    await tester.pumpAndSettle();
+    final body = api.called('PUT', pressSpec.api.row).single.body as Map;
+    expect(body['actualQty'], 2100);
+    expect(body['okQty'], 2050);
+    expect(body['rejectBreakdown'], {'Tool Mark': 30, 'Other': 20});
+    expect(body['rejectReason'], 'Tool Mark');
+    expect(body['rejectOtherRemark'], 'cracked');
+    expect(body.containsKey('rejectedQty'), isFalse, reason: 'the server derives Rejected');
   });
 
   testWidgets('stoppage is capped at the Machine Shift, not Planned - Shift', (tester) async {
@@ -201,8 +254,11 @@ void main() {
       'machineOffTime': '16:00',
       'standardTimeMin': 2,
       'pcsPerStandardTime': 10,
+      'actualQty': 2100,
       'okQty': 2000,
-      'rejectedQty': 100,
+      'rejectBreakdown': {'Tool Mark': 100},
+      'rejectReason': 'Tool Mark',
+      'rejectOtherRemark': '',
       'plannedOperatorShiftHours': 8.5,
       'plannedDownMin': '',
       'setupMin': 10,

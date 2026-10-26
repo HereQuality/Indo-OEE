@@ -265,7 +265,7 @@ test("End before Start doesn't also claim the Planned shift is shorter than a wr
   assert.equal(validateRubberEntry(worker({ machineOffTime: "08:00" })).plannedOperatorShiftHours, undefined);
   assert.equal(validatePowderEntry(worker({ machineOffTime: "08:00" })).plannedOperatorShiftHours, undefined);
   assert.equal(validate(block({ machineOffTime: "07:00" })).plannedOperatorShiftHours, undefined);
-  assert.equal(validateVmcEntry({ ...block({ machineOffTime: "07:00" }), rejectedQty: "0" }).plannedOperatorShiftHours, undefined);
+  assert.equal(validateVmcEntry(block({ machineOffTime: "07:00" })).plannedOperatorShiftHours, undefined);
   // With the times in order the rule is as before.
   assert.equal(
     validateRubberEntry(worker({ machineOffTime: "18:00", plannedOperatorShiftHours: "8.00" })).plannedOperatorShiftHours,

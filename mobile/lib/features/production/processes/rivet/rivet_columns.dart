@@ -2,12 +2,13 @@ import '../../sheet/table/shared_columns.dart';
 import '../../sheet/table/sheet_columns.dart';
 import '../../sheet/widgets/sheet_format.dart';
 import '../../sheet/widgets/sheet_style.dart';
-import '../../shared/production_sheet_calc.dart' show displayDay;
+import '../../shared/production_sheet_calc.dart' show displayDay, rejectReasons;
 
 // Port of client/src/Components/Production/rivetColumns.jsx — the RIVET table's
 // columns in the sheet's own order: the CNC set with Process, No. of Holes in
 // One Piece and the four named cycle operations (set on the Part, summing to
-// Total Cycle Time) shown as plain columns; Rejected Quantity is typed here.
+// Total Cycle Time) shown as plain columns; Rejected Quantity is Actual − OK and
+// opens into the Rejection Master split.
 
 /// The sheet's own wording for each downtime column.
 final Map<String, String> rivetDowntimeLabel = {
@@ -109,7 +110,38 @@ SheetColumns rivetColumns(Set<String> open) {
       text: (d) => nStr(d.calc['actualQty']),
     ),
     seconds('okQty', 'Actual OK Quantity', 100),
-    seconds('rejectedQty', 'Rejected Quantity', 100),
+  ];
+
+  // Rejected = Actual − OK (calculated); opens into the Rejection Master split,
+  // the "Other" figure carrying its remark.
+  addExpandable(
+    open,
+    SheetCol(
+      key: 'rejectedQty',
+      label: 'Rejected Quantity',
+      width: 148,
+      tone: ColTone.calc,
+      text: (d) => nStr(d.calc['rejectedQty']),
+    ),
+    'rejectedQty',
+    'Rejected Quantity',
+    [
+      for (final reason in rejectReasons)
+        sheetSubCol(
+          reason,
+          reason,
+          (d) {
+            final b = d.row['rejectBreakdown'];
+            return minStr(b is Map ? b[reason] : null);
+          },
+          width: reason == 'Other' ? 124 : 100,
+          remarkKind: reason == 'Other' ? 'reject' : null,
+        ),
+    ],
+    mid,
+  );
+
+  mid.addAll([
     SheetCol(
       key: 'pctOk',
       label: '% OK Quantity',
@@ -133,7 +165,7 @@ SheetColumns rivetColumns(Set<String> open) {
       merge: ColMerge.machineDay,
       text: (d) => pctStr(d.day['unutilized']),
     ),
-  ];
+  ]);
 
   addExpandable(
     open,
@@ -221,6 +253,6 @@ SheetColumns rivetColumns(Set<String> open) {
   return SheetColumns(
     left: [for (final c in left) fitSheetColumn(c)],
     middle: [for (final c in mid) fitSheetColumn(c)],
-    expandSummary: const {'downtime': 'totalStoppage'},
+    expandSummary: const {'rejectedQty': 'rejectedQty', 'downtime': 'totalStoppage'},
   );
 }

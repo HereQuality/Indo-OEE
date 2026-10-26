@@ -13,15 +13,13 @@ import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/limit_notice.dart' show qtyNotice;
 import '../../shared/production_sheet_calc.dart';
+import '../cnc/cnc_lines.dart' show quantityLine, rejectLine;
 import 'press_calc.dart';
-import 'press_metrics.dart';
 
 const List<String> _line2 = ['itemName', 'operation', 'setupNo', 'vendor'];
 const List<String> _line4 = ['machineOnTime', 'machineOffTime'];
 const List<String> _line3 = ['standardTimeMin', 'pcsPerStandardTime'];
-const List<String> _line5 = ['okQty', 'rejectedQty'];
 
 /// The downtime boxes of the PRESS form: key + label, in order.
 const List<(String, String)> pressDowntimeBoxes = [
@@ -38,7 +36,7 @@ const List<(String, String)> pressDowntimeBoxes = [
 
 /// The PRESS Data Entry form (port of PressEntryForm.jsx), in the web's line
 /// order: Date/Machine/Operator, Part/Operation/Setup No., Standard Time, Machine
-/// ON–OFF, Production (Qty), Planned Operator Shift/Lunch, Downtime, Remarks.
+/// ON–OFF, Production Master, Rejection Master, Planned Operator Shift/Lunch, Downtime, Remarks.
 class PressEntryLines extends EntryLines {
   const PressEntryLines();
 
@@ -50,21 +48,21 @@ class PressEntryLines extends EntryLines {
           pressPartLine(c),
           pressStandardTimeLine(c),
           pressTimeLine(c),
-          pressQuantityLine(c),
+          quantityLine(c),
         ];
 
   // Non Working: the machine did not run, so only the head line and Remarks are asked for.
   @override
   List<Widget> right(EntryLineContext c) =>
-      isNonWorking(c.values) ? [remarksLine(c)] : [shiftLine(c), pressDowntimeLine(c), remarksLine(c)];
+      isNonWorking(c.values) ? [remarksLine(c)] : [rejectLine(c), shiftLine(c), pressDowntimeLine(c), remarksLine(c)];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) => isNonWorking(v)
       ? 'Non Working'
       : [
         if (entryText(v['itemName']).isNotEmpty) entryText(v['itemName']),
+        if (entryText(v['actualQty']).isNotEmpty) 'Actual ${entryText(v['actualQty'])}',
         if (entryText(v['okQty']).isNotEmpty) 'OK ${entryText(v['okQty'])}',
-        if (entryText(v['rejectedQty']).isNotEmpty) 'Rejected ${entryText(v['rejectedQty'])}',
       ].join(' · ');
 }
 
@@ -247,56 +245,6 @@ Widget pressTimeLine(EntryLineContext c) {
       ),
       if (c.booked.isNotEmpty)
         EntryHintText('Already booked for this machine on this date: ${c.booked.join(', ')} — pick a time outside it.'),
-    ],
-  );
-}
-
-/// Actual OK Quantity and Rejected Quantity (both typed): together they can't
-/// beat Ideal Quantity, so each box takes only what the other leaves.
-Widget pressQuantityLine(EntryLineContext c) {
-  final m = c.metrics as PressMetrics;
-  Widget box(String field, String label, String other) {
-    final room = m.qtyRoom(other);
-    return c.keyed(
-      field,
-      c.numBox(
-        field,
-        max: room,
-        label: label,
-        // Past Ideal Quantity: the web's popup (entered = typed + the other box); a toast without popups.
-        onExceedTyped: c.onLimit(
-          (typed) => qtyNotice(calc: m.calc, entered: typed + (jsNumber(c.values[other]) ?? 0)),
-          (_) => m.qtyMessage,
-        ),
-      ),
-    );
-  }
-
-  return EntryLineCard(
-    title: 'Production (Qty)',
-    icon: Icons.inventory_2_outlined,
-    hasError: c.lineHasError(_line5),
-    children: [
-      EntryGrid(
-        cells: [
-          EntryCell(
-            label: 'Actual OK Quantity',
-            required: true,
-            error: c.err('okQty'),
-            hint: c.locked('okQty', m.qtyRoom('rejectedQty')) ? 'Ideal Quantity leaves no room, so OK can only be 0.' : null,
-            child: box('okQty', 'Actual OK Quantity', 'rejectedQty'),
-          ),
-          EntryCell(
-            label: 'Rejected Quantity',
-            required: true,
-            error: c.err('rejectedQty'),
-            hint: c.locked('rejectedQty', m.qtyRoom('okQty')) ? 'Ideal Quantity leaves no room, so Rejected can only be 0.' : null,
-            child: box('rejectedQty', 'Rejected Quantity', 'okQty'),
-          ),
-        ],
-      ),
-      // Availability / Performance / Quality above 100% -> goes to Admin review.
-      oeeCheck(c),
     ],
   );
 }

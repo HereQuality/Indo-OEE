@@ -8,7 +8,7 @@ import 'chart_props.dart';
 import 'mini_table.dart';
 import 'nice_axis.dart';
 
-/// OEE by MC No.: one bar per machine (sheet order), % above each bar.
+/// OEE by Machine: one bar per machine (sheet order), % above each bar.
 class OeeByMachineChart extends StatefulWidget {
   const OeeByMachineChart({super.key, required this.props});
   final DashboardChartProps props;
@@ -33,7 +33,7 @@ class _OeeByMachineChartState extends State<OeeByMachineChart> {
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: const ['Machine', 'OEE considering losses'],
+        columns: const ['Machine', 'OEE'],
         rows: [for (final d in data) MiniRow(d.key, [d.label, '${d.values.first!.toStringAsFixed(2)}%'])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),
@@ -59,7 +59,7 @@ class _OeeByMachineChartState extends State<OeeByMachineChart> {
   }
 }
 
-/// OK vs Rejected QTY over time: stacked bars, the full bar is the actual quantity.
+/// OK vs Rejected Quantity Trend: stacked bars, the full bar is the actual quantity.
 class OkRejectedTrendChart extends StatefulWidget {
   const OkRejectedTrendChart({super.key, required this.props});
   final DashboardChartProps props;
@@ -115,7 +115,7 @@ class _OkRejectedTrendChartState extends State<OkRejectedTrendChart> {
   }
 }
 
-/// Effective Machine Run Time (Hour) by MC No. (charts.jsx `RunTimeByMachineBars`):
+/// Effective Run Time by Machine (hr) (charts.jsx `RunTimeByMachineBars`):
 /// one bar per machine in sheet order, hours above each bar.
 class RunTimeByMachineBarsChart extends StatefulWidget {
   const RunTimeByMachineBarsChart({super.key, required this.props});
@@ -141,7 +141,7 @@ class _RunTimeByMachineBarsChartState extends State<RunTimeByMachineBarsChart> {
     final selected = p.filters['machine'] ?? const <String>[];
     if (p.view == ChartView.table) {
       return MiniTable(
-        columns: const ['Machine', 'Effective run time'],
+        columns: const ['Machine', 'Effective Run Time'],
         rows: [for (final d in data) MiniRow(d.key, [d.label, eng.formatExact('hours', d.values.first)])],
         selected: selected,
         onRowClick: (k) => p.onToggle('machine', k),
@@ -152,7 +152,7 @@ class _RunTimeByMachineBarsChartState extends State<RunTimeByMachineBarsChart> {
       points: data,
       colors: c,
       seriesColors: [c.ok],
-      seriesNames: const ['Effective run time'],
+      seriesNames: const ['Effective Run Time'],
       title: (d) => d.label,
       xTick: (d) => truncateLabel(d.label, 10),
       yText: (v) => '${tickText(v)} hr',

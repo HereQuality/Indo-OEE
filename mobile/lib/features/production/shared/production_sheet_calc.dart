@@ -464,9 +464,9 @@ Map<String, dynamic> _oeeParts({
       'idealRunSec': null,
     };
   }
-  final plannedH = jsNumber(row['plannedOperatorShiftHours']);
+  final plannedMin = _plannedMinOf(row);
   final plannedProdMin =
-      (isNum(plannedH) ? plannedH! * 60 : shiftMin) - _sumOrZero([for (final k in plannedStopKeys) jsNumber(row[k])]);
+      (isNum(plannedMin) ? plannedMin! : shiftMin) - _sumOrZero([for (final k in plannedStopKeys) jsNumber(row[k])]);
   final operatingMin = shiftMin - _or0(totalStoppageMin) - _or0(jsNumber(row['otherActivityMin']));
   final double? idealRunSec = (isNum(cycle) && cycle! > 0 && isNum(totalQty)) ? cycle * totalQty! : null;
   return <String, dynamic>{
@@ -512,6 +512,15 @@ List<Map<String, dynamic>> sortByMachineOn(Iterable<Map<String, dynamic>?>? rows
   return [for (final x in items) x.row];
 }
 
+/// Planned Operator Shift in minutes. It is saved as hours to 6 decimals (6 h 50 min
+/// is 6.833333), so it is taken back to the minute it stands for, to 1/1000 min —
+/// otherwise that rounding leaves Availability a hair over 100%. Mirrors
+/// plannedMinOf in client/src/utils/productionSheet.js.
+double? _plannedMinOf(Map<String, dynamic>? row) {
+  final h = jsNumber(row?['plannedOperatorShiftHours']);
+  return isNum(h) ? jsRound(h! * 60000) / 1000 : null;
+}
+
 class _SortRow {
   const _SortRow(this.row, this.i, this.on);
   final Map<String, dynamic> row;
@@ -531,15 +540,32 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
 
   // Time available for the machine: the operator's Planned Operator Shift (or its
   // Machine Shift, whichever is bigger).
-  final dayAvailH = _sumOrZero([
+  //
+  // A Planned that came from Process Master's lock (plannedLocked, set by the server) is
+  // the machine's whole day, not each entry's: it counts once per date however many
+  // entries share it (never less than those entries' own runs added up). Hours typed on
+  // each entry are that entry's own share and add up.
+  final lockedIdx = <int>{
     for (var i = 0; i < list.length; i++)
-      () {
-        final shift = calcs[i]['shiftHours'] as double?;
-        if (!isNum(shift)) return null;
-        final planned = jsNumber(list[i]['plannedOperatorShiftHours']);
-        return isNum(planned) && planned! > shift! ? planned : shift;
-      }(),
-  ]);
+      if (list[i]['plannedLocked'] == true && isNum(_plannedMinOf(list[i])) && isNum(calcs[i]['shiftHours'])) i,
+  };
+  var lockedHours = 0.0;
+  if (lockedIdx.isNotEmpty) {
+    final planned = lockedIdx.map((i) => _plannedMinOf(list[i])! / 60).reduce((a, b) => a > b ? a : b);
+    final run = _sumOrZero([for (final i in lockedIdx) calcs[i]['shiftHours'] as double?]);
+    lockedHours = planned > run ? planned : run;
+  }
+  final dayAvailH = _sumOrZero([
+        for (var i = 0; i < list.length; i++)
+          () {
+            if (lockedIdx.contains(i)) return null;
+            final shift = calcs[i]['shiftHours'] as double?;
+            if (!isNum(shift)) return null;
+            final plannedMin = _plannedMinOf(list[i]);
+            return isNum(plannedMin) && plannedMin! / 60 > shift! ? plannedMin / 60 : shift;
+          }(),
+      ]) +
+      lockedHours;
   final dayStoppageMin = _sumOrZero(calcs.map((c) => c['totalStoppageMin'] as double?));
   final dayEffectiveH = _sumOrZero(calcs.map((c) => c['effectiveHours'] as double?));
   final dayLunchMin = _sumOrZero(list.map((r) => jsNumber(r['lunchMin'])));
@@ -554,17 +580,20 @@ List<Map<String, dynamic>> dayCalc(Iterable<Map<String, dynamic>?>? rows) {
   // its Machine Shift in Planned's place.
   final double? dayUnreportedMin = dayHasShift
       ? _sumOrZero([
-          for (var i = 0; i < list.length; i++)
-            () {
-              final c = calcs[i];
-              final stop = _or0(c['totalStoppageMin'] as double?) + _or0(jsNumber(list[i]['otherActivityMin']));
-              final effectiveMin = _or0(c['effectiveHours'] as double?) * 60;
-              final planned = jsNumber(list[i]['plannedOperatorShiftHours']);
-              final shiftH = c['shiftHours'] as double?;
-              final double? basisMin = isNum(planned) ? planned! * 60 : (isNum(shiftH) ? shiftH! * 60 : null);
-              return basisMin == null ? -stop : basisMin - effectiveMin - stop;
-            }(),
-        ])
+            for (var i = 0; i < list.length; i++)
+              () {
+                final c = calcs[i];
+                final stop = _or0(c['totalStoppageMin'] as double?) + _or0(jsNumber(list[i]['otherActivityMin']));
+                final effectiveMin = _or0(c['effectiveHours'] as double?) * 60;
+                // A locked Planned counts once for the day, as in dayAvailH above.
+                if (lockedIdx.contains(i)) return -effectiveMin - stop;
+                final plannedMin = _plannedMinOf(list[i]);
+                final shiftH = c['shiftHours'] as double?;
+                final double? basisMin = isNum(plannedMin) ? plannedMin : (isNum(shiftH) ? shiftH! * 60 : null);
+                return basisMin == null ? -stop : basisMin - effectiveMin - stop;
+              }(),
+          ]) +
+          lockedHours * 60
       : null;
   final double? dayOeeLosses = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayStoppageMin / 60) : null;
   final double? dayOeeLunch = dayHasShift ? _ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null;

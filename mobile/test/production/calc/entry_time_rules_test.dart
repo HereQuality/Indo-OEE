@@ -43,7 +43,7 @@ void main() {
 
         expect(diff(overlapErrors(entries, occupied, editSlot: editSlot, saved: saved), c['out']), isNull, reason: 'overlapErrors $why');
         expect(
-          diff([for (final e in entries) bookedRanges(e, occupied, editSlot: editSlot)], c['booked']),
+          diff([for (final e in entries) bookedRanges(e, occupied, editSlot: editSlot, saved: saved)], c['booked']),
           isNull,
           reason: 'bookedRanges $why',
         );
@@ -98,10 +98,14 @@ void main() {
     });
 
     test('an older row keeps saving while its times are untouched', () {
-      final saved = {'machineOnTime': '22:00', 'machineOffTime': '06:00'};
+      // the saved row carries its date and machine too (as the form loads it)
+      final saved = {'date': '2026-09-25', 'machine': 'm1', 'machineOnTime': '22:00', 'machineOffTime': '06:00'};
       final legacy = {'machineOnTime': '22:00', 'machineOffTime': '06:00'};
       expect(offError(legacy, saved: saved), isNull);
       expect(offError({...legacy, 'machineOffTime': '05:00'}, saved: saved), 'Machine OFF Time must be after Machine ON Time');
+      // moved to another date or machine is a change: the exemption stops
+      expect(offError({...legacy, 'date': '2026-09-26'}, saved: saved), 'Machine OFF Time must be after Machine ON Time');
+      expect(offError({...legacy, 'machine': 'm2'}, saved: saved), 'Machine OFF Time must be after Machine ON Time');
     });
   });
 
@@ -143,10 +147,19 @@ void main() {
     });
 
     test('an older overlapping row is left alone while its times are untouched', () {
-      final saved = {'machineOnTime': '10:00', 'machineOffTime': '13:00'};
+      final saved = {'date': '2026-09-25', 'machine': 'm1', 'machineOnTime': '10:00', 'machineOffTime': '13:00'};
       expect(
         overlapErrors([_entry({'machineOnTime': '10:00', 'machineOffTime': '13:00'})], _saved, editSlot: 3, saved: saved),
         [<String, String>{}],
+      );
+      // moved to another date or machine, the same times meet the rules again
+      expect(
+        overlapErrors([_entry({'machineOnTime': '10:00', 'machineOffTime': '13:00'})], _saved, editSlot: 3, saved: {...saved, 'date': '2026-09-24'}).single,
+        isNotEmpty,
+      );
+      expect(
+        overlapErrors([_entry({'machineOnTime': '10:00', 'machineOffTime': '13:00'})], _saved, editSlot: 3, saved: {...saved, 'machine': 'm2'}).single,
+        isNotEmpty,
       );
       final changed = overlapErrors([_entry({'machineOnTime': '10:00', 'machineOffTime': '13:05'})], _saved, editSlot: 3, saved: saved).single;
       expect(changed['machineOnTime'], isNotNull);
@@ -155,6 +168,10 @@ void main() {
     test('bookedRanges lists what the machine has, minus the row being edited', () {
       expect(bookedRanges(_entry(), _saved), ['08:00 – 12:00', '14:00 – 18:00']);
       expect(bookedRanges(_entry(), _saved, editSlot: 1), ['14:00 – 18:00']);
+      // the row is "itself" only on the date and machine it was saved on
+      final savedRow = {'date': '2026-09-25', 'machine': 'm1', 'machineOnTime': '08:00', 'machineOffTime': '12:00'};
+      expect(bookedRanges(_entry(), _saved, editSlot: 1, saved: savedRow), ['14:00 – 18:00']);
+      expect(bookedRanges(_entry(), _saved, editSlot: 1, saved: {...savedRow, 'date': '2026-09-24'}), ['08:00 – 12:00', '14:00 – 18:00']);
       expect(bookedRanges(_entry({'machine': 'm9'}), _saved), isEmpty);
     });
   });

@@ -12,7 +12,7 @@ import 'mini_table.dart';
 import 'nice_axis.dart';
 import 'stoppage_treemap.dart' show TileTipLayout;
 
-/// Stoppages by Cause (Min) (charts.jsx `RunTimeByMachine`): every stoppage
+/// Downtime by Cause (min) (charts.jsx `RunTimeByMachine`): every stoppage
 /// cause on one radar - a spoke per cause, the further out the more minutes
 /// lost (all ten causes, none folded into "Other"). The table view adds each
 /// machine's split with its effective run time beside it. Touch a spoke's dot
@@ -39,7 +39,7 @@ class _StoppageRadarChartState extends State<StoppageRadarChart> {
       final machines = _machineMemo.get(rows, p.ctx, 'machine', () => machineSummaryRows(rows, p.ctx));
       if (machines.isEmpty) return const ChartEmpty('No entries for this period.');
       return MiniTable(
-        columns: ['Machine', 'Effective run time', for (final f in stoppageFields) '${eng.causeLabel(f['key'] as String)} (min)'],
+        columns: ['Machine', 'Effective Run Time', for (final f in stoppageFields) '${eng.causeLabel(f['key'] as String)} (min)'],
         selected: p.filters['machine'] ?? const <String>[],
         onRowClick: (k) => p.onToggle('machine', k),
         rows: [

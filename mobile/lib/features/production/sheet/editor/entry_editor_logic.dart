@@ -91,11 +91,11 @@ Map<String, dynamic> toFormValues(Map<String, dynamic> row, {DateTime? now}) {
     final v = out[k];
     out[k] = v is String ? v : numText(v);
   }
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
+  // A stored shift is decimal hours; the box shows it as typed (5 h 20 min -> "5.33").
   out['plannedOperatorShiftHours'] =
       _isBlankValue(row['plannedOperatorShiftHours'])
       ? ''
-      : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
+      : hoursToShiftInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
   out['machineStatus'] = row['machineStatus'] is List
@@ -183,7 +183,7 @@ Map<String, dynamic> toPayload(Map<String, dynamic> v, {required bool isEdit}) {
         : '',
     for (final k in timeFields) k: _timeOut(v[k]),
     for (final k in numberFields) k: _numberOut(v[k]),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': _plannedOut(v['plannedOperatorShiftHours']),
     // Lunch / Rest is optional on the phone; the server wants a 0 rather than nothing.
     'lunchMin': _isBlankValue(v['lunchMin']) ? 0 : _numberOut(v['lunchMin']),
@@ -198,7 +198,7 @@ String _timeOut(Object? raw) {
 }
 
 Object _plannedOut(Object? v) {
-  final hours = parseHm(v).hours;
+  final hours = parseShiftHours(v).hours;
   return hours == null ? '' : _wire(hmToWireHours(hours));
 }
 

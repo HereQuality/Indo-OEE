@@ -31,7 +31,7 @@ class TwinStyle {
   final TwinWording wording;
 
   /// Spring's own table (no Drawing No., Unutilized or Setup Efficiency; "Idle
-  /// Time"; Total Qty beside OK / Rejected) and its Effective Run Time basis.
+  /// Time"; Total Qty beside OK / Rejected Qty) and its Effective Run Time basis.
   final bool spring;
 
   /// Contact's table has a Working Status column; Trobe's and Spring's do not.

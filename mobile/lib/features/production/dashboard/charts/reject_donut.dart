@@ -10,7 +10,7 @@ import 'hbars.dart' show BarDatum;
 import 'mini_table.dart';
 import 'stoppage_treemap.dart' show TileTipLayout;
 
-/// Rejected QTY by Reason (charts.jsx `RejectByReason`): a donut with the total
+/// Rejection by Reason (Qty) (charts.jsx `RejectByReason`): a donut with the total
 /// in its hole and a list of reasons beside it. A reason is not a dashboard
 /// dimension, so tapping a slice or a row opens that reason's drill-down
 /// instead of cross-filtering. Press and hold a slice for its share.

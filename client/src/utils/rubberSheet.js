@@ -53,7 +53,7 @@ export const RUBBER_FORMULAS = {
   cycle: "Total Cycle Time — filled in from the Part when picked, and can be changed for the day.",
   idealQty: "IDEAL Quantity = Worker Shift Time × 3600 ÷ Total Cycle Time, rounded down.",
   idealQtyPerHour: "IDEAL Quantity / Hour = IDEAL Quantity ÷ Worker Shift Time",
-  rejectedQty: "Rejected Quantity is typed on the form for this entry — it isn't worked out from the other figures.",
+  rejectedQty: "Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.",
   availability:
     "Availability = Operating Time ÷ Planned Production Time, for this entry. Operating Time = Worker Shift Time − every stoppage; Planned Production Time = Planned Operator Shift − Lunch / Tea − Planned downtime (the planned stops). Above 100% (red) sends the entry to Admin review.",
   totalStoppage: "Total stoppage = every stoppage column added up, Lunch / Tea / Washroom included.",

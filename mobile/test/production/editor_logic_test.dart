@@ -89,7 +89,11 @@ void main() {
       final v = toFormValues(row);
       expect(v['actualQty'], '400');
       expect(v['okQty'], '390.5');
-      expect(v['plannedOperatorShiftHours'], '9.00'); // shown as H.MM
+      expect(v['plannedOperatorShiftHours'], '9'); // decimal hours, as on the sheet
+      // 7.5 stays 7.5; 5 h 20 min (5.3333…) shows as 5.33 (to the whole minute)
+      expect(toFormValues({...row, 'plannedOperatorShiftHours': 7.5})['plannedOperatorShiftHours'], '7.5');
+      expect(toFormValues({...row, 'plannedOperatorShiftHours': 16 / 3})['plannedOperatorShiftHours'], '5.33');
+      expect(toFormValues({...row, 'plannedOperatorShiftHours': null})['plannedOperatorShiftHours'], '');
       expect(v['lunchMin'], '0'); // a stored zero is a value, not blank
       expect(v['setupMin'], '');
       expect(v['drawingNo'], '');
@@ -157,8 +161,11 @@ void main() {
     });
 
     test('fractional numbers stay fractional', () {
-      final p = toPayload(validBlock(extra: {'plannedOperatorShiftHours': '8.30', 'okQty': '390.25'}), isEdit: false);
-      expect(p['plannedOperatorShiftHours'], 8.5); // 8 h 30 min, sent as decimal hours
+      final p = toPayload(validBlock(extra: {'plannedOperatorShiftHours': '8.5', 'okQty': '390.25'}), isEdit: false);
+      expect(p['plannedOperatorShiftHours'], 8.5); // typed as decimal hours, sent as they are
+      // 5.33 is 5 h 20 min: taken to the whole minute and sent without float noise
+      expect(toPayload(validBlock(extra: {'plannedOperatorShiftHours': '5.33'}), isEdit: false)['plannedOperatorShiftHours'], 5.333333);
+      expect(toPayload(validBlock(extra: {'plannedOperatorShiftHours': '0.5'}), isEdit: false)['plannedOperatorShiftHours'], 0.5);
       expect(p['okQty'], 390.25);
     });
 

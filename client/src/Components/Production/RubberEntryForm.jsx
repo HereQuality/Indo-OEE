@@ -11,6 +11,7 @@ import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
 import { RUBBER_WORDS, stoppageNotice } from "../../utils/limitNotice";
+import { ProductionMasterFields, RejectionMasterFields } from "./QuantityMaster";
 import { MACHINE_STATUSES, fmtNum, fmtPct, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { RUBBER_STOPPAGE_FIELDS, isStatusOnly, rubberRowCalc } from "../../utils/rubberSheet";
@@ -24,7 +25,7 @@ import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
  * for several in one Save, one block open at a time, Save scrolling to the
  * first incomplete field, grey boxes calculated live, stoppage boxes capped so
  * they can't go past the Worker Shift Time (a popup explains it with its
- * figures). Actual OK + Rejected is NOT capped at IDEAL Quantity: a person can
+ * figures). Actual Quantity is NOT capped at IDEAL Quantity: a person can
  * beat the standard time, and such an entry goes to OEE Review.
  *
  * The worker is this sheet's row key, so there's no separate Operator box;
@@ -83,12 +84,13 @@ const LINES = [
   { id: 1, title: "Date, Worker Name, Working Status", fields: ["date", "machine", "machineStatus"] },
   { id: 2, title: "Part Name, Total Cycle Time", fields: ["itemName", "vendor", "totalCycleSec"] },
   { id: 3, title: "Working Start – End Time, Worker Shift Time", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
+  { id: 5, title: "Production Master", fields: ["actualQty", "okQty"] },
   // Lunch / Tea sits beside Planned Operator Shift on the form, though it is
   // still just one of the stoppage boxes toward the total.
   { id: 7, title: "Planned Operator Shift, Lunch / Tea", fields: ["plannedOperatorShiftHours", "lunchMin"] },
   { id: 8, title: "Stoppage (min)", fields: [...STOPPAGE_BOXES.map((f) => f.key), "stoppageTotal", "otherMinRemark"] },
   { id: 12, title: "Remarks", fields: ["remarks"] },
+  { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
 ];
 
 const findLine = (id) => LINES.find((l) => l.id === id);
@@ -101,9 +103,10 @@ const Line = ({ id, ...rest }) => <FormLine title={findLine(id).title} fields={f
 
 // Everything a block can hold beyond the worker itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
-const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal"].includes(k));
+const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal", "rejectBreakdown"].includes(k));
 
-const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
+const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null)) ||
+  Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null);
 
 const EntryBlock = ({
   values,
@@ -122,6 +125,7 @@ const EntryBlock = ({
   onExpand,
   onChange,
   onItemSelect,
+  onRejectChange,
   onRemove,
   registerRef,
 }) => {
@@ -398,21 +402,19 @@ const EntryBlock = ({
             </Line>
 
             <Line id={5} errors={errors} isSubmit={isSubmit} values={values}>
+              {/* Not capped at IDEAL Quantity: a person can beat the standard time; over-Ideal goes to OEE Review. */}
+              <ProductionMasterFields values={values} calc={calc} err={err} onChange={handle} capByIdeal={false} notice={{ words: RUBBER_WORDS }} />
               <Row className="g-1">
-                <Field label="Actual OK Quantity" required error={err("okQty")} fieldKey="okQty">
-                  <NumberInput name="okQty" value={values.okQty} onChange={handle} decimals={false} invalid={!!err("okQty")} />
-                </Field>
-                <Field label="Rejected Quantity" error={err("rejectedQty")} fieldKey="rejectedQty">
-                  <NumberInput name="rejectedQty" value={values.rejectedQty} onChange={handle} decimals={false} invalid={!!err("rejectedQty")} />
-                </Field>
                 <Calc label="% OK Quantity" value={calc.pctOk === null || calc.pctOk === undefined ? "" : fmtPct(calc.pctOk)} title="OK ÷ (OK + Rejected)" />
-                <Calc label="Effective working Time" value={calc.effectiveHours === null ? "" : `${hoursToHm(calc.effectiveHours)} hr`} title="Actual OK Quantity × Total Cycle Time ÷ 3600" />
-              </Row>
-              <Row className="g-1">
+                <Calc label="Effective working Time" value={calc.effectiveHours === null ? "" : `${hoursToHm(calc.effectiveHours)} hr`} title="OK Quantity × Total Cycle Time ÷ 3600" />
                 <Calc label="IDEAL Quantity" value={fmtNum(calc.idealQty)} cols={{ xs: 6, lg: 3 }} title="Worker Shift Time × 3600 ÷ Total Cycle Time, rounded down" />
                 <Calc label="IDEAL Quantity / Hour" value={fmtNum(calc.idealQtyPerHour)} cols={{ xs: 6, lg: 3 }} />
               </Row>
               <OeeCheck calc={oeeCalc} over={overMetrics} />
+            </Line>
+
+            <Line id={13} errors={errors} isSubmit={isSubmit} values={values} optional>
+              <RejectionMasterFields values={values} calc={calc} err={err} index={index} onChange={handle} onRejectChange={onRejectChange} />
             </Line>
 
             <Line
@@ -531,6 +533,7 @@ const RubberEntryForm = ({
   plannedLocks = [],
   onChange,
   onItemSelect,
+  onRejectChange,
   onAdd,
   onRemove,
 }) => {
@@ -641,6 +644,7 @@ const RubberEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
+          onRejectChange={onRejectChange}
           onRemove={removeBlock}
           registerRef={(el) => {
             blockRefs.current[i] = el;

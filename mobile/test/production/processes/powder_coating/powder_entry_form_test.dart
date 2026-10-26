@@ -143,7 +143,7 @@ Future<void> fillValid(WidgetTester t, {int index = 0, String worker = 'w1'}) as
   f.onChange(index, 'actualQty', '600');
   f.onChange(index, 'lessCoatingQty', '5');
   f.onChange(index, 'dotsQty', '3');
-  f.onChange(index, 'plannedOperatorShiftHours', '8.30');
+  f.onChange(index, 'plannedOperatorShiftHours', '8.5');
   f.onChange(index, 'lunchMin', '30');
   await t.pump();
 }
@@ -246,7 +246,7 @@ void main() {
         'Total Defect / Rework',
         'OK Qty',
         'Time in Other Activity (min)',
-        'Planned Operator Shift (hr.min)',
+        'Planned Operator Shift (hours)',
         'Lunch / Tea / Washroom (min)',
         'Minutes Allowed',
         'Other (min)',
@@ -528,7 +528,7 @@ void main() {
       final v = form(tester).entries.single;
       expect(v['machine'], 'w2');
       expect(v['actualQty'], '600');
-      expect(v['plannedOperatorShiftHours'], '8.30');
+      expect(v['plannedOperatorShiftHours'], '8.5');
       expect(bar(tester).canSave, isTrue);
       await tapSave(tester);
       await tester.pumpAndSettle();

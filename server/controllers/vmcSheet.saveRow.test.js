@@ -83,8 +83,9 @@ const body = (o = {}) => ({
   pcsPerProgram: 2,
   machineOnTime: "09:00",
   machineOffTime: "17:30",
+  actualQty: 164,
   okQty: 160,
-  rejectedQty: 4,
+  rejectBreakdown: { "Tool Mark": 4 },
   plannedOperatorShiftHours: 9.5,
   lunchMin: 30,
   ...o,
@@ -121,13 +122,14 @@ test("a normal entry saves into the lowest free slot", async () => {
     assert.equal(db.saved.length, 1);
     assert.equal(db.saved[0].slot, 1);
     assert.equal(db.saved[0].programTimeMin, 6);
-    assert.equal(db.saved[0].rejectedQty, 4, "Rejected is typed on the VMC sheet and stored as sent");
+    assert.equal(db.saved[0].rejectedQty, 4, "Rejected is derived as Actual − OK and stored");
+    assert.deepEqual(db.saved[0].rejectBreakdown, { "Tool Mark": 4 });
   });
 });
 
 test("required fields are named", async () => {
   // Program Time / pieces come from the Part now, not typed on the entry.
-  await refused({ operator: "", rejectedQty: "" }, /Required: Operator, Rejected Quantity/);
+  await refused({ operator: "", actualQty: "" }, /Required: Operator, Actual Quantity/);
 });
 
 test("OFF must be after ON", async () => {
@@ -139,13 +141,25 @@ test("program time must be more than 0 and pieces a whole number", async () => {
   await refused({ pcsPerProgram: 2.5 }, /whole number/);
 });
 
-test("OK + Rejected can't be more than Ideal Quantity", async () => {
+test("Actual Quantity can't be more than Ideal Quantity", async () => {
   await withDb([], async (db) => {
-    const ok = await call(saveRow, { body: body({ okQty: 166, rejectedQty: 4 }) });
+    const ok = await call(saveRow, { body: body({ actualQty: 170, okQty: 166 }) });
     assert.equal(ok.statusCode, 200, "170 = Ideal is fine");
     assert.equal(db.saved.length, 1);
   });
-  await refused({ okQty: 167, rejectedQty: 4 }, /can't be more than Ideal Quantity \(170\)/);
+  await refused({ actualQty: 171, okQty: 167 }, /Actual Quantity \(171\) can't be more than Ideal Quantity \(170\)/);
+});
+
+test("OK Quantity can't be more than Actual Quantity", async () => {
+  await refused({ actualQty: 100, okQty: 101, rejectBreakdown: {} }, /OK Quantity cannot be more than Actual Quantity/);
+});
+
+test('"Other" in the reject split needs a remark', async () => {
+  await refused({ rejectBreakdown: { Other: 4 } }, /remark is required when "Other"/);
+  await withDb([], async (db) => {
+    const res = await call(saveRow, { body: body({ rejectBreakdown: { Other: 4 }, rejectOtherRemark: "scratched" }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+  });
 });
 
 test("Planned Operator Shift can't be less than the Machine Shift, and stoppage fits what is left", async () => {
@@ -169,7 +183,7 @@ test("Machine not run must be one of the offered reasons", async () => {
 
 test("an entry that overlaps another of the same machine and date is refused with the clash named", async () => {
   await refused(
-    { machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 4, okQty: 10, rejectedQty: 0, lunchMin: 0 },
+    { machineOnTime: "10:00", machineOffTime: "14:00", plannedOperatorShiftHours: 4, actualQty: 10, okQty: 10, rejectBreakdown: {}, lunchMin: 0 },
     /already has an entry from 09:00 – 17:30/,
     [{ slot: 1, machineOnTime: "09:00", machineOffTime: "17:30" }],
   );

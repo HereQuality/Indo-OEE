@@ -42,5 +42,5 @@ export const SPRING_FORMULAS = {
     "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Standard Time per Piece) — the most the shift could make, so OK + Rejected can't be more than this.",
   performance:
     "Performance = Standard Time per Piece × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong time per piece, quantity or stoppage.",
-  rejectedQty: "Rejected Quantity is typed on the form for this entry — it isn't worked out from the other figures.",
+  rejectedQty: "Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.",
 };

@@ -46,6 +46,7 @@ import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionShe
 import { SPRING_FORMULAS, springDayCalc, springRowCalc, isStatusOnly } from "../utils/springSheet";
 import { firstSpringError, validateSpringEntry } from "../utils/springValidation";
 import { firstOverLimit } from "../utils/limitNotice";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../utils/quantityRules";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, slotsFullErrors } from "../utils/entryValidation";
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -71,9 +72,9 @@ import { shiftSettingForMachine } from "../utils/plannedShift";
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "otherMinRemark", "rejectOtherRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
-const NUMBER_FIELDS = ["totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is
 // closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
@@ -85,6 +86,7 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -133,6 +135,8 @@ const emptyEntry = () => ({
   // Vendor Name — offered only when the machine's process has vendors (Vendor Master).
   vendor: "",
   vendorName: "",
+  // Rejection Master: { reason: qty } — the rejected pieces split across the reject reasons.
+  rejectBreakdown: {},
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -144,6 +148,8 @@ const toFormValues = (row) => ({
   ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
   item: row.item || "",
   slot: row.slot,
+  // Actual Quantity and the Rejection Master split (an entry saved before they existed reads as OK + Rejected).
+  ...quantityFormValues(row),
   // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
   plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
@@ -157,7 +163,7 @@ const toPayload = (v, isEdit) => {
   if (!isStatusOnly(v) && v.workingMode !== "Non Working") return body;
   return Object.fromEntries(
     Object.entries(body).map(([k, val]) =>
-      ["_id", "date", "machine", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : ""],
+      ["_id", "date", "machine", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : k === "rejectBreakdown" ? {} : ""],
     ),
   );
 };
@@ -186,6 +192,8 @@ const toFullPayload = (v, isEdit) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // Rejection Master split + its "Other" remark. rejectedQty is never sent — the server works it out (Actual − OK).
+  ...rejectPayload(v),
   // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
   plannedOperatorShiftHours: (() => {
     const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
@@ -717,6 +725,12 @@ const SpringDataEntry = () => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
   }, []);
 
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
+
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
   const handleAddBlock = useCallback(() => {
@@ -757,7 +771,7 @@ const SpringDataEntry = () => {
     if (first) {
       // A quantity or stoppage past what the shift allows pops up why, with
       // the figures, before Save takes the operator to it.
-      const over = firstOverLimit(entries, errorsList, springRowCalc, { machineName });
+      const over = firstOverLimit(entries, errorsList, springRowCalc, { qtyKey: "actualQty", machineName });
       if (over) await toast.notice(...over.notice);
       setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
@@ -995,6 +1009,7 @@ const SpringDataEntry = () => {
               plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

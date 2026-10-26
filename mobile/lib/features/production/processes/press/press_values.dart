@@ -1,4 +1,5 @@
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/quantity_rules.dart';
 import '../../shared/shift_hours.dart';
 import '../../sheet/editor/entry_editor_logic.dart' show numText;
 import '../../sheet/sheet_model.dart';
@@ -8,7 +9,7 @@ import 'press_validation.dart';
 /// toFormValues, toPayload, hasAnyEntryData, withPart. A block is a map with the
 /// web's exact keys; typed fields are Strings ('' = blank).
 
-const List<String> pressTextFields = ['operator', 'itemName', 'operation', 'drawingNo', 'setupNo', 'remarks', 'otherMinRemark'];
+const List<String> pressTextFields = ['operator', 'itemName', 'operation', 'drawingNo', 'setupNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark'];
 const List<String> pressTimeFields = ['machineOnTime', 'machineOffTime'];
 
 /// The ten stoppage keys (`STOPPAGE_FIELDS`).
@@ -18,8 +19,8 @@ final List<String> pressStoppageKeys = [for (final f in stoppageFields) f['key']
 final List<String> pressNumberFields = [
   'standardTimeMin',
   'pcsPerStandardTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
   'plannedOperatorShiftHours',
   ...pressStoppageKeys,
 ];
@@ -42,6 +43,8 @@ Json pressEmptyEntry({DateTime? now}) => <String, dynamic>{
       // Which of Standard Time Taken / No. Piece in Standard Time this entry shows
       // unticked — a per-entry note only, never changes the calculation.
       'excludedOps': <dynamic>[],
+      // { reason: qty } — the Rejection Master split; must add up to Actual − OK.
+      'rejectBreakdown': <String, dynamic>{},
       for (final k in pressTextFields) k: '',
       for (final k in pressTimeFields) k: '',
       for (final k in pressNumberFields) k: '',
@@ -60,12 +63,16 @@ Json pressToFormValues(Json row, {DateTime? now}) {
   }
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
+  // A stored shift is decimal hours; the box shows it as typed (5 h 20 min -> "5.33").
   out['plannedOperatorShiftHours'] = (row['plannedOperatorShiftHours'] == null || row['plannedOperatorShiftHours'] == '')
       ? ''
-      : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
+      : hoursToShiftInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['excludedOps'] = row['excludedOps'] is List ? List<dynamic>.from(row['excludedOps'] as List) : <dynamic>[];
   out['machineStatus'] = row['machineStatus'] is List ? List<dynamic>.from(row['machineStatus'] as List) : <dynamic>[];
+  // Rejected is Actual − OK, worked out live; a record from before Actual existed
+  // reads as OK + Rejected, its rejected pieces against its single reason.
+  out['rejectedQty'] = '';
+  out.addAll(quantityFormValues(row));
   return out;
 }
 
@@ -108,13 +115,16 @@ Json pressToPayload(Json v, {required bool isEdit}) {
     'vendor': jsTruthy(v['vendor']) ? v['vendor'] : null,
     'excludedOps': list(v['excludedOps']),
     for (final k in pressTextFields) k: text(k),
+    // The Rejection Master split (and the remark that goes with "Other").
+    // rejectedQty is deliberately never sent: the server derives it from Actual − OK.
+    ...rejectPayload(v, (n) => _wire(n)),
     // A remark only belongs to an "Others" that is still in use.
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? text('otherMinRemark') : '',
     for (final k in pressTimeFields) k: _timeOut(v[k]),
     for (final k in pressNumberFields) k: _numberOut(v[k]),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': () {
-      final hours = parseHm(v['plannedOperatorShiftHours']).hours;
+      final hours = parseShiftHours(v['plannedOperatorShiftHours']).hours;
       return hours == null ? '' : _wire(hmToWireHours(hours));
     }(),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.
@@ -127,6 +137,7 @@ bool _filled(Object? v) => v != null && v != '';
 /// True when any block carries something worth keeping as a draft.
 bool pressHasAnyEntryData(List<Json> list) => list.any((v) {
       if (jsTruthy(v['machine'])) return true;
+      if (hasRejectData(v)) return true;
       return [...pressTextFields, ...pressTimeFields, ...pressNumberFields].any((k) => _filled(v[k]));
     });
 
@@ -140,8 +151,9 @@ const List<String> _dataKeys = [
   'setupNo',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   ...pressDowntimeKeys,
@@ -153,9 +165,10 @@ const List<String> _dataKeys = [
 bool pressEntryHasData(Json v) {
   if (v['workingMode'] == 'Non Working') return true;
   return _dataKeys.any((k) {
-    final x = v[k];
-    return x is List ? x.isNotEmpty : _filled(x);
-  });
+        final x = v[k];
+        return x is List ? x.isNotEmpty : _filled(x);
+      }) ||
+      hasRejectData(v);
 }
 
 /// `withPart`: the Part's Drawing No. and standard time as an entry carries them
@@ -196,6 +209,9 @@ Json pressNewBlockAfter(List<Json> list, {DateTime? now}) {
 /// values win) and keep the list fields list-shaped.
 Json pressMergeDraftEntry(Json draft, {DateTime? now}) {
   final out = <String, dynamic>{...pressEmptyEntry(now: now), ...draft};
+  out['rejectBreakdown'] = draft['rejectBreakdown'] is Map
+      ? Map<String, dynamic>.from(draft['rejectBreakdown'] as Map)
+      : <String, dynamic>{};
   out['excludedOps'] = draft['excludedOps'] is List ? List<dynamic>.from(draft['excludedOps'] as List) : <dynamic>[];
   out['machineStatus'] = draft['machineStatus'] is List ? List<dynamic>.from(draft['machineStatus'] as List) : <dynamic>[];
   return out;

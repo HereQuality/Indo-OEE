@@ -22,6 +22,18 @@ DetailModel spmDetail(Json row, Json calc, Json day) {
       ];
   final excluded = row['excludedOps'] is List ? (row['excludedOps'] as List).map((e) => '$e').toSet() : <String>{};
 
+  final breakdown = row['rejectBreakdown'] is Map ? Map<String, dynamic>.from(row['rejectBreakdown'] as Map) : <String, dynamic>{};
+  final rejectRows = <DetailRow>[
+    for (final reason in rejectReasons)
+      if (hasValue(breakdown[reason]) || (reason == 'Other' && remarks('reject').isNotEmpty))
+        DetailSubRow(
+          label: reason,
+          value: minStr(breakdown[reason]),
+          remarks: reason == 'Other' ? remarks('reject') : const [],
+          remarkTone: SheetTones.reject,
+          remarkLabel: 'View reject remark',
+        ),
+  ];
   final opRows = <DetailRow>[
     for (final f in spmOpFields)
       if (hasValue(row[f['key']]))
@@ -78,9 +90,10 @@ DetailModel spmDetail(Json row, Json calc, Json day) {
         icon: Icons.inventory_2_outlined,
         rows: [
           DetailMetric(label: 'Ideal Quantity', value: nStr(calc['idealQty']), tone: SheetTones.calc, formulaKey: 'idealQty'),
-          DetailMetric(label: 'Actual Quantity', value: nStr(calc['actualQty'])),
+          DetailMetric(label: 'Actual Quantity', value: nStr(calc['actualQty']), tone: SheetTones.calc),
           DetailMetric(label: 'Actual OK Quantity', value: minStr(v('okQty')), strong: true),
-          DetailMetric(label: 'Rejected Quantity', value: minStr(v('rejectedQty'))),
+          DetailMetric(label: 'Rejected Quantity', value: nStr(calc['rejectedQty']), tone: SheetTones.calc, formulaKey: 'rejectedQty'),
+          ...rejectRows,
           DetailMetric(label: '% OK Quantity', value: pctStr(calc['pctOk']), tone: SheetTones.calc, formulaKey: 'pctOk'),
         ],
       ),

@@ -4,6 +4,9 @@ import 'package:indo/features/production/process/process_spec.dart';
 import 'package:indo/features/production/shared/production_sheet_calc.dart'
     show sortByMachineOn;
 
+import 'package:indo/features/production/shared/production_sheet_calc.dart'
+    show jsNumStr;
+
 import '../calc/golden_support.dart';
 
 Map<String, dynamic> _map(Object? m) => Map<String, dynamic>.from(m as Map);
@@ -108,6 +111,36 @@ void registerTwinParity(ProcessSpec spec, String name) {
           isNull,
           reason: 'case $i ${showCase(c['values'])} edit=${c['isEdit']}',
         );
+      }
+    });
+
+    test('a saved record becomes Actual + the Rejection Master split (quantityFormValues)', () {
+      final q = fx('quantity_form.json') as Map;
+      final cases = q['forms'] as List;
+      expect(cases.length, greaterThan(10));
+      for (var i = 0; i < cases.length; i++) {
+        final c = cases[i] as Map;
+        final row = _map(c['row']);
+        final web = _map(c['out']);
+        final v = spec.toFormValues(row);
+        // The web keeps numbers, the phone keeps the text of a box: same figures.
+        final actual = web['actualQty'];
+        expect(
+          v['actualQty'],
+          actual is num ? jsNumStr(actual) : actual,
+          reason: 'case $i actual ${showCase(c['row'])}',
+        );
+        final webSplit = _map(web['rejectBreakdown']);
+        final split = _map(v['rejectBreakdown']);
+        expect(split.keys.toList(), webSplit.keys.toList(), reason: 'case $i split ${showCase(c['row'])}');
+        for (final e in webSplit.entries) {
+          expect(split[e.key], e.value is num ? jsNumStr(e.value as num) : '${e.value}', reason: 'case $i ${e.key}');
+        }
+      }
+      expect(spec.emptyEntry()['rejectBreakdown'], isEmpty);
+      for (final c in q['hasReject'] as List) {
+        final v = _map((c as Map)['v']);
+        expect(spec.entryHasData({...spec.emptyEntry(), ...v}), c['out'], reason: showCase(c['v']));
       }
     });
 

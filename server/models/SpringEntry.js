@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { entryCommonFields } = require("./entryCommon");
 const { STOPPAGE_KEYS } = require("./ProductionEntry");
+const { rejectFields } = require("./rejectFields");
 
 /**
  * models/SpringEntry.js
@@ -11,8 +12,8 @@ const { STOPPAGE_KEYS } = require("./ProductionEntry");
  * column set (Working Status, Setting ON/OFF Time included) but no named
  * operation breakdown: Total Cycle Time is prefilled from the Part (required
  * there for a Spring part) and editable per entry — no excludedOps, since
- * there's nothing to tick off. A typed Actual OK and Rejected Quantity, same
- * as VMC/SPM/RIVET (no reject reason split). An entry whose Working Status is
+ * there's nothing to tick off. A typed Actual and OK Quantity (Rejected = Actual − OK, split
+ * across reject reasons) as on the CNC sheet. An entry whose Working Status is
  * anything but PRESENT is status-only: just Date, Machine, Working Status and
  * optionally Operator/Remarks.
  *
@@ -69,6 +70,8 @@ const SpringEntrySchema = new mongoose.Schema(
     settingOnTime: { type: String, match: HHMM },
     settingOffTime: { type: String, match: HHMM },
 
+    // Actual Quantity and the Rejection Master split (rejectFields.js); Rejected = Actual − OK.
+    ...rejectFields,
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
 

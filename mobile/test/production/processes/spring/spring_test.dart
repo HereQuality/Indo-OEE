@@ -85,6 +85,19 @@ void main() {
       ]);
     });
 
+    test('Rejected Qty is Actual − OK and opens into the Rejection Master reasons; Total Qty stays', () {
+      final closed = springSpec.columns({}).middle.firstWhere((c) => c.key == 'rejectedQty');
+      expect(closed.label, 'Rejected Qty');
+      expect(closed.formulaKey, 'rejectedQty');
+      final open = springSpec.columns({'rejectedQty'}).middle;
+      final subs = [for (final c in open) if (c.sub) c.key];
+      expect(subs.first, 'Dimension Out');
+      expect(subs.last, 'Other');
+      expect(subs, hasLength(10));
+      expect(springSpec.formulas['rejectedQty'], contains('Actual Quantity − OK Quantity'));
+      expect([for (final c in open) c.key].where((k) => k == 'totalQty'), hasLength(1));
+    });
+
     test('Effective Machine Run Time counts OK + Rejected (runQtyBasis total) and says so', () {
       final row = twinRow();
       final calc = springSpec.rowCalc(row);
@@ -111,7 +124,7 @@ void main() {
       );
     });
 
-    test('a row is shown with the typed OK / Rejected and the OEE figures', () {
+    test('a row is shown with Actual, OK and Rejected (= Actual − OK) and the OEE figures', () {
       final row = {...twinRow(), 'workingStatus': 'PRESENT'};
       final calc = springSpec.rowCalc(row);
       expect(calc['actualQty'], 420);
@@ -134,7 +147,7 @@ void main() {
     });
 
     testWidgets(
-      'the add form shows SPRING FOR PINS\'s cards (no CNC reject split, no operation ticks)',
+      'the add form shows SPRING FOR PINS\'s cards (the CNC Production Master and Rejection Master, no operation ticks)',
       (tester) async {
         await openTwinEditor(tester, springSpec);
         expect(find.text('Add SPRING FOR PINS Entry'), findsOneWidget);
@@ -142,7 +155,8 @@ void main() {
         expect(find.text('Machine Working Status'), findsOneWidget);
         expect(find.text('Item Name, Standard Time per Piece'), findsOneWidget);
         expect(find.text('Machine ON–OFF Time, Machine Shift'), findsOneWidget);
-        expect(find.text('Production (Qty)'), findsOneWidget);
+        expect(find.text('Production Master'), findsOneWidget);
+        expect(find.text('Rejection Master (Qty)'), findsOneWidget);
         expect(
           find.text('Planned Operator Shift, Lunch / Rest'),
           findsOneWidget,
@@ -154,18 +168,23 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Planned Downtime (min)'), findsOneWidget);
+        expect(find.byKey(const ValueKey('entry0/actualQty')), findsOneWidget);
         expect(find.byKey(const ValueKey('entry0/okQty')), findsOneWidget);
+        // Rejected is Actual − OK (greyed), the split is one box per reason.
         expect(
-          find.byKey(const ValueKey('entry0/rejectedQty')),
+          find.byKey(const ValueKey('entry0/calc/rejectedQty')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('entry0/rejectedQty')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('entry0/reject/Tool Mark'), skipOffstage: false),
           findsOneWidget,
         );
         expect(
           find.byKey(const ValueKey('entry0/totalCycleSec')),
           findsOneWidget,
         );
-        // CNC-only cards are not drawn.
-        expect(find.text('Rejection Master (Qty)'), findsNothing);
-        expect(find.text('Actual Quantity'), findsNothing);
+        // The CNC operation ticks are not drawn.
         expect(find.textContaining('Operations in this cycle'), findsNothing);
       },
     );
@@ -179,7 +198,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Item Name, Standard Time per Piece'), findsNothing);
-      expect(find.text('Production (Qty)'), findsNothing);
+      expect(find.text('Production Master'), findsNothing);
+      expect(find.text('Rejection Master (Qty)'), findsNothing);
       expect(
         find.byKey(const ValueKey('entry0/machineStatus/No Manpower')),
         findsOneWidget,
@@ -227,13 +247,15 @@ void main() {
         );
         expect(body['_id'], 'r1');
         expect(body['slot'], 2);
+        expect(body['actualQty'], 420);
         expect(body['okQty'], 400);
-        expect(body['rejectedQty'], 20);
+        expect(body.containsKey('rejectedQty'), isFalse, reason: 'the server derives it');
+        expect(body['rejectBreakdown'], {'Tool Mark': 12, 'Dimension Out': 8});
+        expect(body['rejectReason'], 'Tool Mark');
+        expect(body['rejectOtherRemark'], '');
         expect(body['plannedOperatorShiftHours'], 9);
         expect(body['lunchMin'], 30);
         expect(body['workingMode'], 'Working');
-        expect(body.containsKey('actualQty'), isFalse);
-        expect(body.containsKey('rejectBreakdown'), isFalse);
         expect(api.called('PUT', Endpoints.productionSheetRow), isEmpty);
         expect(popped, [true]);
       },

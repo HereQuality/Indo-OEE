@@ -4,6 +4,7 @@ import '../../process/process_spec.dart';
 import '../../shared/limit_notice.dart' as limit show firstOverLimit;
 import '../../shared/limit_notice.dart' show OverLimit;
 import '../../shared/production_sheet_calc.dart' as calc;
+import '../../shared/quantity_rules.dart' show applyRejectSplitChange;
 import '../../sheet/sheet_model.dart';
 import '../../sheet/table/sheet_columns.dart';
 import 'vmc_calc.dart';
@@ -15,7 +16,7 @@ import 'vmc_values.dart';
 
 /// The VMC Data Entry page (client/src/pages/VmcDataEntry.jsx, utils/vmcSheet.js
 /// and utils/vmcValidation.js). CNC's twin with its cycle time from the Part's
-/// program (Program Time x 60 / pieces per program), OK and Rejected both typed,
+/// program (Program Time x 60 / pieces per program), CNC's Actual / OK quantities and Rejection Master split,
 /// nine downtime boxes and a Working / Non Working status.
 class VmcSpec extends ProcessSpec {
   const VmcSpec();
@@ -47,7 +48,7 @@ class VmcSpec extends ProcessSpec {
   bool get showLimitPopups => true;
   @override
   OverLimit? firstOverLimit(List<Json> blocks, List<Map<String, String>> errors, {Map<String, String> machineNames = const {}}) =>
-      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'okQty', machineName: machineNames);
+      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'actualQty', machineName: machineNames);
 
   @override
   SheetApi get api => SheetApi.segment('vmc-sheet');
@@ -83,6 +84,10 @@ class VmcSpec extends ProcessSpec {
   Json newBlockAfter(List<Json> blocks, {DateTime? now}) => newVmcBlockAfter(blocks, now: now);
   @override
   Json mergeDraftEntry(Json draft, {DateTime? now}) => mergeVmcDraftEntry(draft, now: now);
+
+  // One Rejection Master box changed.
+  @override
+  Json applyRejectChange(Json values, String reason, dynamic value) => applyRejectSplitChange(values, reason, value);
 
   // The web VMC page also searches the Work Order No.
   @override

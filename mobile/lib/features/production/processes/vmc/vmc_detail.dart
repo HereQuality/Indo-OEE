@@ -19,6 +19,18 @@ DetailModel vmcDetail(Json row, Json calc, Json day) {
           if (p['key'] == kind) p,
       ];
 
+  final breakdown = row['rejectBreakdown'] is Map ? Map<String, dynamic>.from(row['rejectBreakdown'] as Map) : <String, dynamic>{};
+  final rejectRows = <DetailRow>[
+    for (final reason in rejectReasons)
+      if (hasValue(breakdown[reason]) || (reason == 'Other' && remarks('reject').isNotEmpty))
+        DetailSubRow(
+          label: reason,
+          value: minStr(breakdown[reason]),
+          remarks: reason == 'Other' ? remarks('reject') : const [],
+          remarkTone: SheetTones.reject,
+          remarkLabel: 'View reject remark',
+        ),
+  ];
   final excluded = row['excludedOps'] is List ? (row['excludedOps'] as List).map((e) => '$e').toSet() : <String>{};
 
   // Program Time / No. of Piece In One Program: a ticked-off one is a per-entry
@@ -71,7 +83,8 @@ DetailModel vmcDetail(Json row, Json calc, Json day) {
           DetailMetric(label: 'Ideal Quantity', value: nStr(calc['idealQty']), tone: SheetTones.calc, formulaKey: 'idealQty'),
           DetailMetric(label: 'Actual Quantity', value: nStr(calc['actualQty']), tone: SheetTones.calc),
           DetailMetric(label: 'Actual OK Quantity', value: minStr(v('okQty')), strong: true),
-          DetailMetric(label: 'Rejected Quantity', value: minStr(v('rejectedQty'))),
+          DetailMetric(label: 'Rejected Quantity', value: nStr(calc['rejectedQty']), tone: SheetTones.calc, formulaKey: 'rejectedQty'),
+          ...rejectRows,
           DetailMetric(label: '% OK Quantity', value: pctStr(calc['pctOk']), tone: SheetTones.calc, formulaKey: 'pctOk'),
         ],
       ),

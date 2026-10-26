@@ -20,10 +20,13 @@ export 'cnc_twin_style.dart' show TwinStyle;
 
 /// The base of Contact, Trobe and Spring. Their web pages feed the plain CNC
 /// formulas (`rowCalc` / `dayCalc` of utils/productionSheet.js, unchanged) but
-/// the FORM is RIVET-shaped, not CNC's: OK and Rejected Quantity are typed
-/// (no Actual Quantity, no reject-reason split), Total Cycle Time is the
-/// entry's own prefilled figure (no named operations), Planned Down Time is a
-/// downtime box, and a Working / Non Working day carries only its status. So
+/// the FORM is RIVET-shaped, not CNC's, apart from the quantities: those are
+/// the CNC form's own Production Master (Actual Quantity, never more than Ideal,
+/// and OK Quantity, never more than Actual, typed; Rejected = Actual − OK) and
+/// Rejection Master (the rejected pieces split across the reject reasons). Total
+/// Cycle Time is the entry's own prefilled figure (no named operations), Planned
+/// Down Time is a downtime box, and a Working / Non Working day carries only its
+/// status. So
 /// this sits next to [CncSpec] (reusing its calc through `shared/`) rather
 /// than extending it. A concrete process names itself and picks its [style].
 abstract class CncTwinSpec extends ProcessSpec {
@@ -69,7 +72,7 @@ abstract class CncTwinSpec extends ProcessSpec {
     blocks,
     errors,
     rowCalc,
-    qtyKey: 'okQty',
+    qtyKey: 'actualQty',
     machineName: machineNames,
   );
 
@@ -80,6 +83,7 @@ abstract class CncTwinSpec extends ProcessSpec {
   List<Json> dayCalc(List<Json> sortedRows) =>
       twinDayCalc(sortedRows, totalBasis: style.spring);
 
+  // okMax, rejectRoom, splitTotal … come from EntryMetrics, as on CNC.
   @override
   EntryMetrics metrics(Json values) => TwinMetrics(values, calcFn: rowCalc);
 
@@ -116,6 +120,19 @@ abstract class CncTwinSpec extends ProcessSpec {
   @override
   Json mergeDraftEntry(Json draft, {DateTime? now}) =>
       twinMergeDraftEntry(draft, now: now);
+
+  /// A Rejection Master box changed.
+  @override
+  Json applyRejectChange(Json values, String reason, dynamic value) {
+    final current = values['rejectBreakdown'];
+    return {
+      ...values,
+      'rejectBreakdown': <String, dynamic>{
+        if (current is Map) ...Map<String, dynamic>.from(current),
+        reason: value,
+      },
+    };
+  }
 
   // ── form ──
   @override

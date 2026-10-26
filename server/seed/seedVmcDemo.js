@@ -60,33 +60,33 @@ const FIRST = { machineOnTime: "09:00", machineOffTime: "17:30", plannedOperator
 const ENTRIES = [
   // ── newest day: four machines ──
   { ago: 1, machine: 0, op: 0, part: "A", ...FIRST,
-    okQty: 160, rejectedQty: 4, setupMin: 20, lunchMin: 30, noMaterialMin: 10, remarks: "Smooth run" },
+    actualQty: 164, okQty: 160, rejectedQty: 4, rejectBreakdown: { "Dimension Out": 4 }, setupMin: 20, lunchMin: 30, noMaterialMin: 10, remarks: "Smooth run" },
   { ago: 1, machine: 1, op: 1, part: "B", ...FIRST,
-    okQty: 480, rejectedQty: 12, lunchMin: 30, bdMechMin: 25 },
+    actualQty: 492, okQty: 480, rejectedQty: 12, rejectBreakdown: { "Tool Mark": 12 }, lunchMin: 30, bdMechMin: 25 },
   { ago: 1, machine: 2, op: 2, part: "C", ...FIRST,
-    okQty: 47, rejectedQty: 2, setupMin: 30, lunchMin: 30 },
+    actualQty: 49, okQty: 47, rejectedQty: 2, rejectBreakdown: { "Surface Finish": 2 }, setupMin: 30, lunchMin: 30 },
   { ago: 1, machine: 3, op: 3, part: "D", ...FIRST,
-    okQty: 190, rejectedQty: 6, lunchMin: 30, noManPowerMin: 15, otherMin: 10, otherMinRemark: "Coolant top-up", remarks: "Waited for fixture" },
+    actualQty: 196, okQty: 190, rejectedQty: 6, rejectBreakdown: { "Setting Mistake": 6 }, lunchMin: 30, noManPowerMin: 15, otherMin: 10, otherMinRemark: "Coolant top-up", remarks: "Waited for fixture" },
 
   // ── the day before: machine 2 also runs an evening shift with another operator ──
   { ago: 2, machine: 0, op: 0, part: "A", ...FIRST,
-    okQty: 163, rejectedQty: 3, lunchMin: 30, materialShiftingMin: 20 },
+    actualQty: 166, okQty: 163, rejectedQty: 3, rejectBreakdown: { "Operator Mistake": 3 }, lunchMin: 30, materialShiftingMin: 20 },
   { ago: 2, machine: 1, op: 1, part: "B", ...FIRST,
-    okQty: 495, rejectedQty: 8, lunchMin: 30, noPowerMin: 20 },
+    actualQty: 503, okQty: 495, rejectedQty: 8, rejectBreakdown: { "Machine Fault": 8 }, lunchMin: 30, noPowerMin: 20 },
   { ago: 2, machine: 1, op: 3, part: "B", machineOnTime: "18:00", machineOffTime: "22:00", plannedOperatorShiftHours: 4.5,
-    okQty: 228, rejectedQty: 4, lunchMin: 15, setupMin: 10, remarks: "Overtime shift" },
+    actualQty: 232, okQty: 228, rejectedQty: 4, rejectBreakdown: { "Dimension Out": 4 }, lunchMin: 15, setupMin: 10, remarks: "Overtime shift" },
   { ago: 2, machine: 3, op: 3, part: "D", ...FIRST,
-    okQty: 196, rejectedQty: 5, setupMin: 15, lunchMin: 30, bdEleMin: 15 },
+    actualQty: 201, okQty: 196, rejectedQty: 5, rejectBreakdown: { "Tool Mark": 5 }, setupMin: 15, lunchMin: 30, bdEleMin: 15 },
 
   // ── earlier ──
   { ago: 3, machine: 0, op: 0, part: "A", ...FIRST,
-    okQty: 158, rejectedQty: 6, lunchMin: 30, plannedDownMin: 20 },
+    actualQty: 164, okQty: 158, rejectedQty: 6, rejectBreakdown: { "Surface Finish": 6 }, lunchMin: 30, plannedDownMin: 20 },
   { ago: 3, machine: 2, op: 2, part: "C", ...FIRST,
-    okQty: 49, rejectedQty: 1, lunchMin: 30, noMaterialMin: 25 },
+    actualQty: 50, okQty: 49, rejectedQty: 1, rejectBreakdown: { "Setting Mistake": 1 }, lunchMin: 30, noMaterialMin: 25 },
   { ago: 4, machine: 1, op: 1, part: "B", ...FIRST,
-    okQty: 470, rejectedQty: 15, lunchMin: 30, setupMin: 20 },
+    actualQty: 485, okQty: 470, rejectedQty: 15, rejectBreakdown: { "Operator Mistake": 15 }, lunchMin: 30, setupMin: 20 },
   { ago: 4, machine: 3, op: 3, part: "D", ...FIRST,
-    okQty: 185, rejectedQty: 7, lunchMin: 30, bdMechMin: 30 },
+    actualQty: 192, okQty: 185, rejectedQty: 7, rejectBreakdown: { "Machine Fault": 7 }, lunchMin: 30, bdMechMin: 30 },
 ];
 
 const utcDay = (s) => new Date(`${s}T00:00:00.000Z`);

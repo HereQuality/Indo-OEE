@@ -14,8 +14,9 @@ const entry = (o = {}) => ({
   pcsPerProgram: "2",
   machineOnTime: "09:00",
   machineOffTime: "17:30",
+  actualQty: "164",
   okQty: "160",
-  rejectedQty: "4",
+  rejectBreakdown: { "Dimension Out": "3", "Tool Mark": "1" },
   plannedOperatorShiftHours: "9.30",
   lunchMin: "30",
   ...o,
@@ -52,16 +53,36 @@ test("a complete entry has no errors", () => {
 
 test("required fields", () => {
   const errors = validateVmcEntry(
-    entry({ operator: "", itemName: "", programTimeMin: "", pcsPerProgram: "", okQty: "", rejectedQty: "", plannedOperatorShiftHours: "" }),
+    entry({ operator: "", itemName: "", programTimeMin: "", pcsPerProgram: "", actualQty: "", okQty: "", plannedOperatorShiftHours: "" }),
   );
-  for (const key of ["operator", "itemName", "programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours"]) {
+  for (const key of ["operator", "itemName", "programTimeMin", "pcsPerProgram", "actualQty", "okQty", "plannedOperatorShiftHours"]) {
     assert.ok(errors[key], `${key} should be required`);
   }
 });
 
-test("OK + Rejected can't be more than Ideal Quantity", () => {
-  assert.equal(validateVmcEntry(entry({ okQty: "166", rejectedQty: "4" })).okQty, undefined, "170 = Ideal is fine");
-  assert.match(validateVmcEntry(entry({ okQty: "167", rejectedQty: "4" })).okQty, /can't be more than Ideal Quantity \(170\)/);
+test("Actual Quantity can't be more than Ideal Quantity", () => {
+  // Ideal 170: Actual 170 is fine (OK 166 + 4 rejected), 171 is not.
+  assert.equal(validateVmcEntry(entry({ actualQty: "170", okQty: "166", rejectBreakdown: { "Tool Mark": "4" } })).actualQty, undefined);
+  assert.match(validateVmcEntry(entry({ actualQty: "171", okQty: "167", rejectBreakdown: { "Tool Mark": "4" } })).actualQty, /can't be more than Ideal Quantity \(170\)/);
+});
+
+test("OK Quantity can't be more than Actual Quantity", () => {
+  assert.match(validateVmcEntry(entry({ actualQty: "100", okQty: "101", rejectBreakdown: {} })).okQty, /can't be more than Actual Quantity \(100\)/);
+  assert.equal(validateVmcEntry(entry({ actualQty: "100", okQty: "100", rejectBreakdown: {} })).okQty, undefined);
+});
+
+test("the Rejection Master split has to add up to Actual − OK", () => {
+  // Rejected = 164 − 160 = 4
+  assert.match(validateVmcEntry(entry({ rejectBreakdown: { "Tool Mark": "3" } })).rejectBreakdown, /1 of 4 rejected piece\(s\) still have no reason/);
+  assert.match(validateVmcEntry(entry({ rejectBreakdown: { "Tool Mark": "3", Broken: "2" } })).rejectBreakdown, /1 more than the 4 rejected/);
+  assert.match(validateVmcEntry(entry({ actualQty: "160", rejectBreakdown: { Broken: "1" } })).rejectBreakdown, /Nothing was rejected/);
+  assert.equal(validateVmcEntry(entry()).rejectBreakdown, undefined);
+});
+
+test('"Other" in the split needs a remark', () => {
+  const other = { rejectBreakdown: { Other: "4" } };
+  assert.ok(validateVmcEntry(entry(other)).rejectOtherRemark);
+  assert.equal(validateVmcEntry(entry({ ...other, rejectOtherRemark: "scratched" })).rejectOtherRemark, undefined);
 });
 
 test("pieces per program is a whole number, program time more than 0", () => {
@@ -101,10 +122,10 @@ test("the full VMC formula set on a worked two-entry day (one overnight)", () =>
   const close = (got, want) => assert.ok(Math.abs(got - want) < 1e-9, `${got} ≠ ${want}`);
   // a: 09:00–13:00 = 4 h, 6 min / 2 pcs → 180 s cycle, Ideal 80; stoppage 15 + 10 + 5 = 30
   const a = entry({ _id: "a", machineOnTime: "09:00", machineOffTime: "13:00", plannedOperatorShiftHours: "4.75",
-    actualQty: "74", okQty: "70", rejectedQty: "", lunchMin: "15", setupMin: "10", noMaterialMin: "5" });
+    actualQty: "74", okQty: "70", lunchMin: "15", setupMin: "10", noMaterialMin: "5" });
   // b: 22:00–02:00 runs past midnight = 4 h, nothing stopped
   const b = entry({ _id: "b", machineOnTime: "22:00", machineOffTime: "02:00", plannedOperatorShiftHours: "4",
-    actualQty: "60", okQty: "60", rejectedQty: "", lunchMin: "", setupMin: "" });
+    actualQty: "60", okQty: "60", lunchMin: "", setupMin: "" });
 
   const ca = vmcRowCalc(a);
   assert.equal(ca.totalCycleSec, 180);

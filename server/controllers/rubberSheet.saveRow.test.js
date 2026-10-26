@@ -86,7 +86,7 @@ const withDb = async (opts, fn) => {
   }
 };
 
-// Sheet row 1 — 07/01/25, SAVITA, 06 pin b/o cheaking: 30 s, 08:10–12:00, 311 OK.
+// Sheet row 1 — 07/01/25, SAVITA, 06 pin b/o cheaking: 30 s, 08:10–12:00, 311 OK, Actual 311.
 const savita = (o = {}) => ({
   date: "2025-01-07",
   worker: WORKER,
@@ -98,8 +98,8 @@ const savita = (o = {}) => ({
   totalCycleSec: 30,
   machineOnTime: "08:10",
   machineOffTime: "12:00",
+  actualQty: 311,
   okQty: 311,
-  rejectedQty: "",
   plannedOperatorShiftHours: 3 + 50 / 60,
   lunchMin: 0,
   ...o,
@@ -107,16 +107,17 @@ const savita = (o = {}) => ({
 
 // Sheet row 2 — 07/01/2025, LEELA, 10 PIN HOOD TOP ENTRY MIN: 22 s, 12:30–13:30, 166 OK.
 const leela = (o = {}) =>
-  savita({ itemName: "10 PIN HOOD TOP ENTRY MIN", totalCycleSec: 22, machineOnTime: "12:30", machineOffTime: "13:30", okQty: 166, plannedOperatorShiftHours: 1, ...o });
+  savita({ itemName: "10 PIN HOOD TOP ENTRY MIN", totalCycleSec: 22, machineOnTime: "12:30", machineOffTime: "13:30", actualQty: 166, okQty: 166, plannedOperatorShiftHours: 1, ...o });
 
-test("sheet row 1 saves as typed — Rejected left blank, no review", async () => {
+test("sheet row 1 saves as typed — Rejected is Actual − OK (0), no review", async () => {
   await withDb({}, async (db) => {
     const res = await call(saveRow, { body: savita() });
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     const doc = db.saved[0];
     assert.equal(doc.slot, 1);
     assert.equal(doc.okQty, 311);
-    assert.equal(doc.rejectedQty, undefined, "blank Rejected is not stored as 0");
+    assert.equal(doc.actualQty, 311);
+    assert.equal(doc.rejectedQty, 0, "Rejected is derived: Actual − OK");
     assert.equal(doc.operator, "SAVITA", "the worker's name is stored");
     assert.equal(doc.review, undefined);
     // 311 × 30 s over 230 min run: Performance 67.61%; nothing lost: Availability 100%.
@@ -153,8 +154,22 @@ const refused = async (body, message) =>
     assert.equal(db.saved.length, 0, "nothing saved");
   });
 
-test("required fields are named; Rejected isn't one of them", async () => {
-  await refused(savita({ itemName: "", okQty: "" }), /^Required: Part Name, Actual OK Quantity$/);
+test("required fields are named — Actual and OK Quantity, not Rejected", async () => {
+  await refused(savita({ itemName: "", actualQty: "", okQty: "" }), /^Required: Part Name, Actual Quantity, OK Quantity$/);
+});
+
+test("Rejected is Actual − OK, never taken from the client; the split is stored", async () => {
+  await withDb({}, async (db) => {
+    const res = await call(saveRow, { body: savita({ actualQty: 311, okQty: 300, rejectedQty: 999, rejectBreakdown: { "Tool Mark": 0, Other: 11 }, rejectOtherRemark: "dented" }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].rejectedQty, 11);
+    assert.deepEqual(db.saved[0].rejectBreakdown, { Other: 11 });
+  });
+});
+
+test("OK can't be more than Actual, and an Other split needs its remark", async () => {
+  await refused(savita({ actualQty: 300, okQty: 311 }), /OK Quantity cannot be more than Actual Quantity/);
+  await refused(savita({ actualQty: 311, okQty: 300, rejectBreakdown: { Other: 11 } }), /remark is required when "Other"/);
 });
 
 test("End after Start, Planned not under the Worker Shift Time, stoppage within it", async () => {

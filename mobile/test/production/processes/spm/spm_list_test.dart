@@ -4,6 +4,7 @@ import 'package:indo/features/production/process/process_spec.dart';
 import 'package:indo/features/production/processes/spm/spm_spec.dart';
 import 'package:indo/features/production/sheet/table/shared_columns.dart' show machineStatusText;
 import 'package:indo/features/production/sheet/table/sheet_columns.dart';
+import 'package:indo/features/production/shared/production_sheet_calc.dart' show rejectReasons;
 
 // The SPM list: endpoints, table columns, day-card figures, detail and remarks.
 
@@ -77,10 +78,13 @@ void main() {
       ['plannedDownMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'lunchMin', 'otherMin'],
     );
     expect(closed.expandSummary['downtime'], 'totalStoppage');
-    // Every calculated column's formula exists, and Rejected is typed (no formula).
+    // Every calculated column's formula exists (Rejected = Actual − OK has one now).
     for (final c in [...closed.left, ...closed.middle, ...open.middle]) {
-      expect(spmSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
+      if (c.formulaKey != null) expect(spmSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
     }
+    // Rejected opens into the Rejection Master reasons, in the web's order.
+    final rej = spmSpec.columns({'rejectedQty'});
+    expect([for (final c in rej.middle) if (c.sub) c.key], rejectReasons);
   });
 
   test('cells read the row, calc and day the way the web columns do', () {
@@ -93,7 +97,7 @@ void main() {
     expect(text('cycle'), '25'); // 30 − the unticked Loading (5)
     expect(text('shift'), '8:00');
     expect(text('idealQty'), '1,152'.replaceAll(',', ''));
-    expect(text('actualQty'), '420'); // OK + Rejected
+    expect(text('actualQty'), '420'); // OK + Rejected (an entry saved before Actual existed)
     expect(text('okQty'), '400');
     expect(text('rejectedQty'), '20');
     expect(text('plannedShift'), '9:00');
@@ -140,5 +144,25 @@ void main() {
     // Web order (CNC's): the review badge sits with the efficiency figures, after Availability / Performance / Quality.
     expect(rows('Efficiency').whereType<DetailMetric>().firstWhere((m) => m.label == 'OEE Review').value, 'Pending review');
     expect(spmSpec.remarkParts(row).map((p) => p['key']), ['downtime', 'general']);
+  });
+
+  test('detail lists Actual, OK, the derived Rejected and its reasons (Other with its remark)', () {
+    final r = {
+      ...row,
+      'actualQty': 420,
+      'okQty': 400,
+      'rejectedQty': null,
+      'rejectBreakdown': {'Tool Mark': 12, 'Other': 8},
+      'rejectOtherRemark': 'burr',
+    };
+    final qty = spmSpec.detail(r, spmSpec.rowCalc(r), const {}).groups.firstWhere((g) => g.title == 'Quantities');
+    final lines = [
+      for (final x in qty.rows)
+        if (x is DetailMetric) '${x.label}=${x.value}' else if (x is DetailSubRow) '  ${x.label}=${x.value}',
+    ];
+    expect(lines, containsAllInOrder(['Actual Quantity=420', 'Actual OK Quantity=400', 'Rejected Quantity=20', '  Tool Mark=12', '  Other=8']));
+    final other = qty.rows.whereType<DetailSubRow>().firstWhere((x) => x.label == 'Other');
+    expect(other.remarks.single['text'], 'burr');
+    expect(spmSpec.remarkParts(r).map((p) => p['key']), contains('reject'));
   });
 }

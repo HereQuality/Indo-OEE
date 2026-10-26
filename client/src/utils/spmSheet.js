@@ -86,10 +86,7 @@ export const spmDayCalc = (rows) => dayCalc((rows || []).map(withCycle));
 
 // The formula popovers for the SPM table's calculated headers: the CNC ones, with
 // the one that reads differently here.
-export const SPM_FORMULAS = (() => {
-  const { rejectedQty: _typedHere, ...shared } = FORMULAS;
-  return {
-    ...shared,
-    cycle: "Total Cycle Time = Loading (Sec) + Process (Sec) + Unloading and Cleaning (Sec) + Other Operations (Sec).",
-  };
-})();
+export const SPM_FORMULAS = {
+  ...FORMULAS,
+  cycle: "Total Cycle Time = Loading (Sec) + Process (Sec) + Unloading and Cleaning (Sec) + Other Operations (Sec).",
+};

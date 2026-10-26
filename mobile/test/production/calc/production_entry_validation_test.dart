@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/features/production/shared/production_entry_validation.dart';
 import 'package:indo/features/production/shared/production_sheet_calc.dart';
-import 'package:indo/features/production/shared/shift_hours.dart';
 
 import 'golden_support.dart';
 
@@ -36,24 +35,13 @@ void main() {
       expect(cases.length, greaterThan(600));
       for (var i = 0; i < cases.length; i++) {
         final c = cases[i] as Map;
-        // The web types Planned Operator Shift as decimal hours; the phone types
-        // H.MM. Feed the phone the same time, and leave out the two fields whose
-        // rules are the phone's own (Lunch / Rest is optional, Planned Operator
-        // Shift is checked against the Machine Shift) — every other message,
-        // and the order of them, is still the web's.
+        // Planned Operator Shift is decimal hours on both sides now, so every
+        // message — and the order of them — is the web's, field for field.
         final v = _m(c['v']);
-        final planned = jsNumber(v['plannedOperatorShiftHours']);
-        if (planned != null && planned > 0 && planned <= 24 && !isBlank(v['plannedOperatorShiftHours'])) {
-          v['plannedOperatorShiftHours'] = hoursToHmInput(planned);
-        }
-        // A planned shift that isn't a usable time is reported on its own field,
-        // so the phone has no stoppage allowance to compare against.
-        final usable = planned != null && planned > 0 && planned <= 24;
-        final own = {'lunchMin', 'plannedOperatorShiftHours', if (!usable) 'stoppageTotal'};
-        final got = {for (final e in validateEntry(v).entries) if (!own.contains(e.key)) e.key: e.value};
-        final want = {for (final e in (c['errors'] as Map).entries) if (!own.contains(e.key)) e.key: e.value};
+        final got = validateEntry(v);
+        final want = Map<String, dynamic>.from(c['errors'] as Map);
         expect(diff(got, want), isNull, reason: 'case $i ${showCase(c['v'])}');
-        expect(got.keys.toList(), [for (final k in c['keys'] as List) if (!own.contains(k)) k], reason: 'key order, case $i ${showCase(c['v'])}');
+        expect(got.keys.toList(), [for (final k in c['keys'] as List) k], reason: 'key order, case $i ${showCase(c['v'])}');
       }
     });
 
@@ -160,21 +148,27 @@ void main() {
       expect(validateEntry(_valid({'rejectBreakdown': {'Dimension Out': '10', 'Other': '0'}})), isEmpty);
     });
 
-    test('Planned Operator Shift is typed H.MM: 0:00 < time <= 24:00, minutes 00-59', () {
+    test('Planned Operator Shift is typed as decimal hours like the sheet: more than 0, at most 24', () {
       const msg = 'Must be more than 0:00 and at most 24:00';
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '0'}))['plannedOperatorShiftHours'], msg);
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '24.30'}))['plannedOperatorShiftHours'], msg);
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': 'abc'}))['plannedOperatorShiftHours'], 'Enter hours and minutes like 8.30');
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '-1'}))['plannedOperatorShiftHours'], 'Enter hours and minutes like 8.30');
-      // 60 minutes to the hour, not 100.
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '8.75'}))['plannedOperatorShiftHours'], 'Minutes must be 00–59 (3.30 means 3 h 30 min)');
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '24', 'lunchMin': '0'})).containsKey('plannedOperatorShiftHours'), isFalse);
-      // a single minute digit is tens of minutes: 8.5 is 8 h 50 min
-      expect(validateEntry(_valid({'plannedOperatorShiftHours': '8.5', 'lunchMin': '0'})).containsKey('plannedOperatorShiftHours'), isFalse);
+      const bad = 'Enter hours as on the sheet, like 8.5 or 5.33';
+      String? planned(String t, [Map<String, dynamic> o = const {}]) =>
+          validateEntry(_valid({'plannedOperatorShiftHours': t, 'lunchMin': '0', ...o}))['plannedOperatorShiftHours'];
+      expect(planned('0'), msg);
+      expect(planned('24.5'), msg);
+      expect(planned('abc'), bad);
+      expect(planned('-1'), bad);
+      expect(planned('8.3.4'), bad);
+      expect(planned('24'), isNull);
+      // 8.5 is 8 h 30 min (not 8 h 50), 5.33 is 5 h 20 min, 0.5 is half an hour
+      expect(planned('8.5'), isNull);
+      expect(planned('8.75'), isNull);
+      expect(planned('5.33', {'machineOnTime': '08:00', 'machineOffTime': '13:20'}), isNull);
+      expect(planned('0.5', {'machineOnTime': '08:00', 'machineOffTime': '08:30'}), isNull);
+      expect(planned(' 8,5 '), isNull, reason: 'a comma is read as the point');
     });
 
     test('Planned Operator Shift can not be less than the Machine Shift', () {
-      // machine ran 8:00, planned 7 h 30 min
+      // machine ran 8:00, planned 7.3 h (7 h 18 min)
       expect(
         validateEntry(_valid({'plannedOperatorShiftHours': '7.30'}))['plannedOperatorShiftHours'],
         "Planned Operator Shift can't be less than the Machine Shift (8:00)",
@@ -223,7 +217,11 @@ void main() {
       final overnight = _valid({'machineOnTime': '22:00', 'machineOffTime': '06:00', 'plannedOperatorShiftHours': '9', 'lunchMin': '20'});
       expect(validateEntry(overnight)['machineOffTime'], 'Machine OFF Time must be after Machine ON Time');
       // …but an older overnight row (22:00 -> 06:00 is 8 h) still saves while its times are untouched.
-      expect(validateEntry(overnight, saved: {'machineOnTime': '22:00', 'machineOffTime': '06:00'}), isEmpty);
+      final savedRow = {'date': overnight['date'], 'machine': overnight['machine'], 'machineOnTime': '22:00', 'machineOffTime': '06:00'};
+      expect(validateEntry(overnight, saved: savedRow), isEmpty);
+      // …until the row is moved to another date or machine
+      expect(validateEntry({...overnight, 'date': '2026-09-29'}, saved: savedRow)['machineOffTime'], 'Machine OFF Time must be after Machine ON Time');
+      expect(validateEntry({...overnight, 'machine': 'm9'}, saved: savedRow)['machineOffTime'], 'Machine OFF Time must be after Machine ON Time');
     });
 
     test('Other downtime needs a remark', () {
@@ -313,17 +311,21 @@ void operatorTests() {
     });
 
     test('the row being edited is not another entry; an older clash stays editable while untouched', () {
+      final savedRow = {'date': '2026-09-28', 'machine': 'm2', 'machineOnTime': '10:00', 'machineOffTime': '14:00'};
       expect(
         operatorOverlapErrors([{...mine, 'machine': 'm1', 'machineOnTime': '09:00', 'machineOffTime': '11:00'}], saved, editing: (machine: 'm1', slot: 1)).single,
         isEmpty,
       );
       expect(
-        operatorOverlapErrors([mine], saved, saved: {'machineOnTime': '10:00', 'machineOffTime': '14:00', 'operator': 'Asha'}).single,
+        operatorOverlapErrors([mine], saved, saved: {...savedRow, 'operator': 'Asha'}).single,
         isEmpty,
       );
+      // ...moving the row to another date or machine brings it back too
+      expect(operatorOverlapErrors([mine], saved, saved: {...savedRow, 'date': '2026-09-27', 'operator': 'Asha'}).single, isNotEmpty);
+      expect(operatorOverlapErrors([mine], saved, saved: {...savedRow, 'machine': 'm3', 'operator': 'Asha'}).single, isNotEmpty);
       // ...but changing the operator or a time brings the rule back
       expect(
-        operatorOverlapErrors([mine], saved, saved: {'machineOnTime': '10:00', 'machineOffTime': '14:00', 'operator': 'Ravi'}).single,
+        operatorOverlapErrors([mine], saved, saved: {...savedRow, 'operator': 'Ravi'}).single,
         isNotEmpty,
       );
     });

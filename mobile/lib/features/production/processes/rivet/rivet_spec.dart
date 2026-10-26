@@ -4,6 +4,7 @@ import '../../process/process_spec.dart';
 import '../../shared/limit_notice.dart' as limit show firstOverLimit;
 import '../../shared/limit_notice.dart' show OverLimit;
 import '../../shared/production_sheet_calc.dart' as calc;
+import '../../shared/quantity_rules.dart' show applyRejectSplitChange;
 import '../../sheet/sheet_model.dart';
 import '../../sheet/table/sheet_columns.dart';
 import 'rivet_calc.dart';
@@ -17,8 +18,9 @@ import 'rivet_values.dart';
 /// The RIVET Data Entry page (client/src/pages/RivetDataEntry.jsx and
 /// utils/rivetSheet.js / rivetValidation.js). SPM's twin: the four named
 /// operations (Loading, Process, Unloading and Cleaning, Other Operations) are
-/// set on the Part and sum to Total Cycle Time; OK and Rejected Quantity are
-/// both typed (no reject-reason split); No. of Holes is a display-only figure.
+/// set on the Part and sum to Total Cycle Time; Actual and OK Quantity are typed
+/// (Rejected = Actual − OK, split across the reject reasons like CNC); No. of
+/// Holes is a display-only figure.
 class RivetSpec extends ProcessSpec {
   const RivetSpec();
 
@@ -46,7 +48,7 @@ class RivetSpec extends ProcessSpec {
   bool get showLimitPopups => true;
   @override
   OverLimit? firstOverLimit(List<Json> blocks, List<Map<String, String>> errors, {Map<String, String> machineNames = const {}}) =>
-      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'okQty', machineName: machineNames);
+      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'actualQty', machineName: machineNames);
 
   @override
   SheetApi get api => SheetApi.segment('rivet-sheet');
@@ -83,6 +85,8 @@ class RivetSpec extends ProcessSpec {
   Json newBlockAfter(List<Json> blocks, {DateTime? now}) => rivetNewBlockAfter(blocks, now: now);
   @override
   Json mergeDraftEntry(Json draft, {DateTime? now}) => rivetMergeDraftEntry(draft, now: now);
+  @override
+  Json applyRejectChange(Json values, String reason, dynamic value) => applyRejectSplitChange(values, reason, value);
 
   // ── form ──
   @override

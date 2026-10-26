@@ -159,7 +159,7 @@ Widget timeLine(EntryLineContext c) {
   );
 }
 
-/// Planned Operator Shift (H.MM), Lunch / Rest and the stoppage allowance.
+/// Planned Operator Shift (hours), Lunch / Rest and the stoppage allowance.
 Widget shiftLine(EntryLineContext c) {
   final m = c.metrics;
   final limit = m.stoppageLimit;
@@ -180,7 +180,7 @@ Widget shiftLine(EntryLineContext c) {
           ? "Can't be less than Machine Shift ($machineHm)."
           : planned != null
           ? '= ${hoursToHm(planned)} hr'
-          : 'Type hours.minutes — 3.30 is 3 h 30 min.',
+          : 'Type hours as on the sheet — 3.5 is 3 h 30 min.',
     ?lockNote,
   ];
   return EntryLineCard(
@@ -201,7 +201,7 @@ Widget shiftLine(EntryLineContext c) {
             label: 'Planned Operator Shift (hr.min)',
             required: true,
             error: c.err('plannedOperatorShiftHours'),
-            // Typed as hours.minutes, 60 to the hour: 3.30 is 3 h 30 min.
+            // Typed as decimal hours like the sheet: 5.33 is 5 h 20 min.
             hint: plannedHint.isEmpty ? null : plannedHint.join('\n'),
             child: c.keyed(
               'plannedOperatorShiftHours',

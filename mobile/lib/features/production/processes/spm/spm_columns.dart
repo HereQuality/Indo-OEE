@@ -88,10 +88,42 @@ SheetColumns spmColumns(Set<String> open) {
     SheetCol(key: 'off', label: 'Machine OFF Time', width: 92, text: (d) => textStr(d.row['machineOffTime'])),
     calcCol('shift', 'Machine Shift Time (hr:min)', (d) => hmStr(d.calc['shiftHours']), width: 104),
     calcCol('idealQty', 'Ideal Quantity', (d) => nStr(d.calc['idealQty']), width: 88),
-    // Actual here is OK + Rejected (calculated, as on the web).
+    // Actual Quantity is typed (OK + Rejected = Actual).
     SheetCol(key: 'actualQty', label: 'Actual Quantity', width: 92, tone: ColTone.calc, text: (d) => nStr(d.calc['actualQty'])),
     SheetCol(key: 'okQty', label: 'Actual OK Quantity', width: 100, text: (d) => minStr(d.row['okQty'])),
-    SheetCol(key: 'rejectedQty', label: 'Rejected Quantity', width: 100, text: (d) => minStr(d.row['rejectedQty'])),
+  ];
+
+  // Rejected = Actual − OK (calculated); opens into the Rejection Master split,
+  // "Other" carrying its remark.
+  addExpandable(
+    open,
+    SheetCol(
+      key: 'rejectedQty',
+      label: 'Rejected Quantity',
+      width: 148,
+      tone: ColTone.calc,
+      formulaKey: 'rejectedQty',
+      text: (d) => nStr(d.calc['rejectedQty']),
+    ),
+    'rejectedQty',
+    'Rejected Quantity',
+    [
+      for (final reason in rejectReasons)
+        sheetSubCol(
+          reason,
+          reason,
+          (d) {
+            final b = d.row['rejectBreakdown'];
+            return minStr(b is Map ? b[reason] : null);
+          },
+          width: reason == 'Other' ? 124 : 100,
+          remarkKind: reason == 'Other' ? 'reject' : null,
+        ),
+    ],
+    mid,
+  );
+
+  mid.addAll([
     calcCol('pctOk', '% OK Quantity', (d) => pctStr(d.calc['pctOk']), width: 88),
     SheetCol(
       key: 'plannedShift',
@@ -110,7 +142,7 @@ SheetColumns spmColumns(Set<String> open) {
       merge: ColMerge.machineDay,
       text: (d) => pctStr(d.day['unutilized']),
     ),
-  ];
+  ]);
 
   addExpandable(
     open,

@@ -75,7 +75,8 @@ class _Launcher extends StatelessWidget {
       );
 }
 
-/// A saved entry for [machine]: 08:00-16:00 on a 60 s part (Ideal 480).
+/// A saved entry for [machine]: 08:00-16:00 on a 60 s part (Ideal 480), Actual
+/// 400 = 390 OK + 10 Rejected (all Tool Mark).
 Map<String, dynamic> _saved({String machine = 'm2', Map<String, dynamic> extra = const {}}) => {
       '_id': 'r1',
       'date': '2026-09-20',
@@ -87,8 +88,10 @@ Map<String, dynamic> _saved({String machine = 'm2', Map<String, dynamic> extra =
       'totalCycleSec': 60,
       'machineOnTime': '08:00',
       'machineOffTime': '16:00',
+      'actualQty': 400,
       'okQty': 390,
       'rejectedQty': 10,
+      'rejectBreakdown': {'Tool Mark': 10},
       'plannedOperatorShiftHours': 9,
       'lunchMin': 30,
       ...extra,
@@ -145,8 +148,9 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
     f.onItemSelect(0, 'i1');
     f.onChange(0, 'machineOnTime', '08:00');
     f.onChange(0, 'machineOffTime', '16:00');
+    f.onChange(0, 'actualQty', '400');
     f.onChange(0, 'okQty', '390');
-    f.onChange(0, 'rejectedQty', '10');
+    f.onRejectChange(0, 'Tool Mark', '10');
     f.onChange(0, 'plannedOperatorShiftHours', planned);
     f.onChange(0, 'lunchMin', '30');
     await t.pump();
@@ -214,7 +218,7 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
       testWidgets('a locked process fills the box, makes it read-only and says why', (tester) async {
         await openEditor(tester);
         await pickMachine(tester, 'm1');
-        expect(form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+        expect(form(tester).entries[0]['plannedOperatorShiftHours'], '8');
         await tester.ensureVisible(box('plannedOperatorShiftHours'));
         expect(tester.widget<TextField>(box('plannedOperatorShiftHours')).enabled, isFalse);
         expect(find.textContaining('Fixed at 8:00 hr — locked in Process Master'), findsOneWidget);
@@ -233,7 +237,7 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
 
       testWidgets('editing keeps the shift the entry was saved with', (tester) async {
         await openEditor(tester, row: _saved(machine: 'm1', extra: {'plannedOperatorShiftHours': 9.5}));
-        expect(form(tester).entries[0]['plannedOperatorShiftHours'], '9.30');
+        expect(form(tester).entries[0]['plannedOperatorShiftHours'], '9.5');
         expect(form(tester).plannedShifts.single!.fromEntry, isTrue);
         await tester.ensureVisible(box('plannedOperatorShiftHours'));
         expect(tester.widget<TextField>(box('plannedOperatorShiftHours')).enabled, isFalse);
@@ -255,7 +259,8 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
         for (final st in ['Machine Breakdown', 'No Manpower', 'No Planning', 'Remarks']) {
           expect(k('entry0/machineStatus/$st'), findsOneWidget, reason: st);
         }
-        expect(find.text('Production (Qty)', skipOffstage: false), findsNothing);
+        expect(find.text('Production Master', skipOffstage: false), findsNothing);
+        expect(find.text('Rejection Master (Qty)', skipOffstage: false), findsNothing);
         expect(find.text('Remarks', skipOffstage: false), findsWidgets, reason: 'the Remarks card stays');
         expect(find.textContaining('the machine did not run', skipOffstage: false), findsOneWidget);
 
@@ -275,6 +280,9 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
         expect(put['operator'], '', reason: 'Operator is optional on a Non Working day');
         expect(put['item'], isNull);
         expect(put['okQty'], '');
+        expect(put['actualQty'], '');
+        expect(put['rejectBreakdown'], <String, dynamic>{});
+        expect(put.containsKey('rejectedQty'), isFalse);
       });
 
       testWidgets('going back to Working drops the Status', (tester) async {
@@ -326,16 +334,15 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
     });
 
     group('limit popups', () {
-      testWidgets('typing Rejected past what Ideal leaves raises the popup (OK + Rejected); one dialog however many keys', (tester) async {
+      testWidgets('typing Actual past Ideal raises the popup (Actual Quantity against Ideal); one dialog however many keys', (tester) async {
         final toasts = <String>[];
         EntryFormToast.sink = toasts.add;
         await openEditor(tester);
         await fillValid(tester);
-        form(tester).onChange(0, 'okQty', '400');
-        form(tester).onChange(0, 'rejectedQty', '');
+        form(tester).onChange(0, 'actualQty', '');
         await tester.pumpAndSettle();
-        await tester.ensureVisible(box('rejectedQty'));
-        await tester.enterText(box('rejectedQty'), '100'); // Ideal 480 - OK 400 = 80 left
+        await tester.ensureVisible(box('actualQty'));
+        await tester.enterText(box('actualQty'), '500'); // Ideal is 480
         await tester.pump();
         await tester.pump();
         expect(k('entry-notice'), findsOneWidget);
@@ -343,12 +350,34 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
         expect(find.textContaining('this machine can make at most 480 pieces'), findsOneWidget);
         expect(find.text('8:00 hr'), findsOneWidget);
         expect(find.text('60 sec'), findsOneWidget);
-        expect(tester.widget<Text>(k('entry-notice/value/OK + Rejected')).data, '500', reason: 'typed + the other box');
+        expect(tester.widget<Text>(k('entry-notice/value/Actual Quantity')).data, '500');
         expect(toasts, isEmpty, reason: 'popup instead of a toast');
         await tester.tap(k('entry-notice/ok'));
         await tester.pumpAndSettle();
         expect(k('entry-notice'), findsNothing);
-        expect(form(tester).entries[0]['rejectedQty'], isNot('100'), reason: 'the box refused the keystroke');
+        expect(form(tester).entries[0]['actualQty'], isNot('500'), reason: 'the box refused the keystroke');
+      });
+
+      testWidgets('OK past Actual is refused with a toast; Rejected is Actual − OK; a reason box takes only what is left', (tester) async {
+        final toasts = <String>[];
+        EntryFormToast.sink = toasts.add;
+        await openEditor(tester);
+        await fillValid(tester); // Actual 400, OK 390, 10 Tool Mark
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(box('okQty'));
+        await tester.enterText(box('okQty'), '401');
+        await tester.pump();
+        expect(toasts.any((t) => t.contains("OK Quantity can't be more than Actual Quantity (400)")), isTrue);
+        expect(form(tester).entries[0]['okQty'], '390');
+        expect(find.descendant(of: k('entry0/calc/rejectedQty'), matching: find.text('10')), findsOneWidget);
+        expect(spec.metrics(form(tester).entries[0]).rejected, 10);
+        // 10 rejected, all given to Tool Mark: nothing left for another reason.
+        final broken = find.descendant(of: k('entry0/reject/Broken'), matching: find.byType(TextField));
+        await tester.ensureVisible(broken);
+        await tester.enterText(broken, '1');
+        await tester.pump();
+        expect(toasts.any((t) => t.contains('Only 0 of the 10 rejected pieces are left')), isTrue);
+        expect(find.textContaining('Split so far: '), findsOneWidget);
       });
 
       testWidgets('typing a downtime past the Machine Shift allowance raises the stoppage popup', (tester) async {
@@ -369,28 +398,27 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
       testWidgets('Save with an over-limit quantity pops why, then moves to the field (nothing is sent)', (tester) async {
         final api = await openEditor(tester);
         await fillValid(tester);
+        form(tester).onChange(0, 'actualQty', '550'); // > Ideal 480, set programmatically
         form(tester).onChange(0, 'okQty', '450');
-        form(tester).onChange(0, 'rejectedQty', '100'); // 550 > Ideal 480, set programmatically
         await tester.pump();
         await save(tester);
         await tester.pumpAndSettle();
         expect(k('entry-notice'), findsOneWidget);
-        expect(tester.widget<Text>(k('entry-notice/value/OK + Rejected')).data, '550');
+        expect(tester.widget<Text>(k('entry-notice/value/Actual Quantity')).data, '550');
         expect(form(tester).focusTarget, isNull, reason: 'focus moves after the popup is closed');
         await tester.tap(k('entry-notice/ok'));
         await tester.pumpAndSettle();
-        expect(form(tester).focusTarget!['field'], 'okQty');
+        expect(form(tester).focusTarget!['field'], 'actualQty');
         expect(api.called('PUT', rowPath), isEmpty);
       });
 
       testWidgets('the popups fit a 360x640 phone at text scale 1.6 (no overflow)', (tester) async {
         await openEditor(tester, size: const Size(360, 640), textScale: 1.6);
         await fillValid(tester);
-        form(tester).onChange(0, 'okQty', '400');
-        form(tester).onChange(0, 'rejectedQty', '');
+        form(tester).onChange(0, 'actualQty', '');
         await tester.pumpAndSettle();
-        await tester.ensureVisible(box('rejectedQty'));
-        await tester.enterText(box('rejectedQty'), '100');
+        await tester.ensureVisible(box('actualQty'));
+        await tester.enterText(box('actualQty'), '500');
         await tester.pump();
         await tester.pump();
         expect(k('entry-notice'), findsOneWidget);

@@ -165,8 +165,9 @@ Future<void> _fillValid(WidgetTester t, _P p, {String machine = 'm2', String pla
   }
   f.onChange(0, 'machineOnTime', '08:00');
   f.onChange(0, 'machineOffTime', '16:00');
+  f.onChange(0, 'actualQty', '320');
   f.onChange(0, 'okQty', '300');
-  f.onChange(0, 'rejectedQty', '20');
+  f.onRejectChange(0, 'Dimension Out', '20');
   f.onChange(0, 'plannedOperatorShiftHours', planned);
   f.onChange(0, 'lunchMin', '30');
   await t.pump();
@@ -189,8 +190,9 @@ Map<String, dynamic> _saved(_P p, String id, {Map<String, dynamic> extra = const
       'drawingNo': p.items.first['drawingNo'],
       'machineOnTime': '08:00',
       'machineOffTime': '16:00',
+      'actualQty': 320,
       'okQty': 300,
-      'rejectedQty': 20,
+      'rejectBreakdown': {'Dimension Out': 20},
       'plannedOperatorShiftHours': 9,
       'lunchMin': 30,
       if (p.spec.key == 'rivet') ...{
@@ -279,7 +281,7 @@ void main() {
       testWidgets('a locked process fills the box, makes it read-only and says why', (tester) async {
         await _openEditor(tester, p);
         await _pickMachine(tester, 'm1');
-        expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+        expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8');
         await tester.ensureVisible(_box('plannedOperatorShiftHours'));
         expect(tester.widget<TextField>(_box('plannedOperatorShiftHours')).enabled, isFalse);
         expect(find.textContaining('Fixed at 8:00 hr — locked in Process Master'), findsOneWidget);
@@ -297,7 +299,7 @@ void main() {
 
       testWidgets('editing keeps the shift the entry was saved with', (tester) async {
         await _openEditor(tester, p, row: _saved(p, 'r1', extra: {'machine': 'm1', 'plannedOperatorShiftHours': 9.5}));
-        expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '9.30');
+        expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '9.5');
         await tester.ensureVisible(_box('plannedOperatorShiftHours'));
         expect(tester.widget<TextField>(_box('plannedOperatorShiftHours')).enabled, isFalse);
         expect(find.textContaining('Kept as this entry was saved'), findsOneWidget);
@@ -319,7 +321,8 @@ void main() {
           expect(_k('entry0/machineStatus/$st'), findsOneWidget, reason: st);
         }
         expect(find.text(p.partCard, skipOffstage: false), findsNothing);
-        expect(find.text('Production (Qty)', skipOffstage: false), findsNothing);
+        expect(find.text('Production Master', skipOffstage: false), findsNothing);
+        expect(find.text('Rejection Master (Qty)', skipOffstage: false), findsNothing);
         expect(find.text('Downtime / Stoppage (min)', skipOffstage: false), findsNothing);
         expect(find.text('Remarks', skipOffstage: false), findsWidgets, reason: 'the Remarks card stays');
         expect(find.textContaining('the machine did not run', skipOffstage: false), findsOneWidget);
@@ -389,15 +392,15 @@ void main() {
     });
 
     group('${p.name}: limit popups', () {
-      testWidgets('typing OK Quantity past Ideal raises the popup with the figures (OK + Rejected); no toast', (tester) async {
+      testWidgets('typing Actual Quantity past Ideal raises the popup with the figures; no toast', (tester) async {
         final toasts = <String>[];
         EntryFormToast.sink = toasts.add;
         await _openEditor(tester, p);
         await _fillValid(tester, p);
         await tester.pumpAndSettle();
-        await tester.ensureVisible(_box('okQty'));
-        final typed = '${p.ideal + 100}'; // Rejected is 20 -> the box already refuses it
-        await tester.enterText(_box('okQty'), typed);
+        await tester.ensureVisible(_box('actualQty'));
+        final typed = '${p.ideal + 100}';
+        await tester.enterText(_box('actualQty'), typed);
         await tester.pump();
         await tester.pump();
         expect(_k('entry-notice'), findsOneWidget);
@@ -405,27 +408,27 @@ void main() {
         expect(find.textContaining('this machine can make at most ${p.ideal} pieces'), findsOneWidget);
         expect(find.text('8:00 hr'), findsOneWidget);
         expect(find.text(p.cycle), findsOneWidget);
-        // The web reports typed + the other box's figure.
-        expect(tester.widget<Text>(_k('entry-notice/value/OK + Rejected')).data, '${p.ideal + 120}');
+        expect(tester.widget<Text>(_k('entry-notice/value/Actual Quantity')).data, typed);
         expect(toasts, isEmpty, reason: 'popup instead of a toast');
         await tester.tap(_k('entry-notice/ok'));
         await tester.pumpAndSettle();
         expect(_k('entry-notice'), findsNothing);
-        expect(_form(tester).entries[0]['okQty'], '300', reason: 'the box refused the keystroke');
+        expect(_form(tester).entries[0]['actualQty'], '320', reason: 'the box refused the keystroke');
       });
 
-      testWidgets('typing Rejected past what OK leaves raises the same popup', (tester) async {
+      testWidgets('typing OK Quantity past Actual is refused with a toast, not the Ideal popup', (tester) async {
+        final toasts = <String>[];
+        EntryFormToast.sink = toasts.add;
         await _openEditor(tester, p);
         await _fillValid(tester, p);
         await tester.pumpAndSettle();
-        await tester.ensureVisible(_box('rejectedQty'));
-        await tester.enterText(_box('rejectedQty'), '${p.ideal}');
+        await tester.ensureVisible(_box('okQty'));
+        await tester.enterText(_box('okQty'), '321');
         await tester.pump();
         await tester.pump();
-        expect(find.text("Can't add this much quantity"), findsOneWidget);
-        expect(tester.widget<Text>(_k('entry-notice/value/OK + Rejected')).data, '${p.ideal + 300}');
-        await tester.tap(_k('entry-notice/ok'));
-        await tester.pumpAndSettle();
+        expect(_k('entry-notice'), findsNothing);
+        expect(toasts, ["OK Quantity can't be more than Actual Quantity (320)"]);
+        expect(_form(tester).entries[0]['okQty'], '300', reason: 'the box refused the keystroke');
       });
 
       testWidgets('typing a downtime past the Machine Shift raises the stoppage popup', (tester) async {
@@ -446,16 +449,16 @@ void main() {
       testWidgets('Save with an over-limit quantity pops why, then moves to the field (nothing is sent)', (tester) async {
         final api = await _openEditor(tester, p);
         await _fillValid(tester, p);
-        _form(tester).onChange(0, 'okQty', '${p.ideal + 200}'); // set programmatically, past Ideal
+        _form(tester).onChange(0, 'actualQty', '${p.ideal + 200}'); // set programmatically, past Ideal
         await tester.pump();
         await _save(tester);
         await tester.pumpAndSettle();
         expect(_k('entry-notice'), findsOneWidget);
-        expect(tester.widget<Text>(_k('entry-notice/value/OK + Rejected')).data, '${p.ideal + 220}');
+        expect(tester.widget<Text>(_k('entry-notice/value/Actual Quantity')).data, '${p.ideal + 200}');
         expect(_form(tester).focusTarget, isNull, reason: 'focus moves after the popup is closed');
         await tester.tap(_k('entry-notice/ok'));
         await tester.pumpAndSettle();
-        expect(_form(tester).focusTarget!['field'], 'okQty');
+        expect(_form(tester).focusTarget!['field'], 'actualQty');
         expect(api.called('PUT', p.row), isEmpty);
       });
 
@@ -648,5 +651,6 @@ EntryNotice _qtyNoticeFor(_P p) => qtyNotice(
         'itemName': 'x',
         ...p.items.first,
       }),
-      entered: p.ideal + 120,
+      entered: p.ideal + 100,
+      label: 'Actual Quantity',
     );

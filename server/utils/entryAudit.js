@@ -98,7 +98,7 @@ const SHEET_FIELD_LABELS = {
   rubber: {
     machineOnTime: "Working Start Time",
     machineOffTime: "Working End Time",
-    okQty: "Actual OK Quantity",
+    okQty: "OK Quantity",
     lunchMin: "Lunch / Tea / Washroom etc (min)",
     otherMin: "Others (min)",
   },

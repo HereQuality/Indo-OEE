@@ -1,10 +1,10 @@
-// Hours the way a clock reads them (60 minutes to the hour, not 100).
+// Planned Operator Shift the way the sheet writes it: decimal hours.
 //
-// The server, the web app and the reports keep a shift length as decimal hours
-// (3.5 = 3 h 30 min). On the phone a person types and reads it as H.MM — "3.30"
-// is 3 h 30 min, and a single minute digit is tens of minutes ("3.5" is 3 h
-// 50 min) — and sees it as "3:30". These helpers are the only place the two
-// meet.
+// The server, the web app, the reports and the paper sheet all keep a shift
+// length as decimal hours — "5.33" is 5 h 20 min and "0.5" is 30 min — so that
+// is what a person types here too; it is taken to the whole minute, and shown
+// in the tables as hr:min ("5:20"). These helpers are the only place the two
+// meet. Keep in step with client/src/utils/shiftHours.js.
 
 import 'production_sheet_calc.dart' show isNum, jsNumber, jsRound, jsString;
 
@@ -18,29 +18,29 @@ String hoursToHm(Object? hours) {
   return '$sign${abs ~/ 60}:${(abs % 60).toString().padLeft(2, '0')}';
 }
 
-/// Decimal hours -> what the H.MM box shows (7.5 -> "7.30", 8 -> "8.00").
-String hoursToHmInput(Object? hours) {
+/// Decimal hours -> what the box shows, to the whole minute (5 h 20 min -> "5.33",
+/// 8 -> "8", 3.5 -> "3.5").
+String hoursToShiftInput(Object? hours) {
   final h = hours is num ? hours.toDouble() : jsNumber(hours);
   if (h == null || !isNum(h)) return '';
-  final total = jsRound(h * 60).abs().toInt();
-  return '${total ~/ 60}.${(total % 60).toString().padLeft(2, '0')}';
+  final minutes = jsRound(h * 60).abs();
+  final text = (minutes / 60).toStringAsFixed(2);
+  // 5.00 -> "5", 3.50 -> "3.5", 5.33 -> "5.33" (like JS's Number(x.toFixed(2))).
+  return text.contains('.') ? text.replaceFirst(RegExp(r'\.?0+$'), '') : text;
 }
 
-/// What an H.MM box holds: [hours] as decimal hours when it is a usable time,
-/// [minutesTooBig] when the minutes part is above 59 (nothing else is wrong).
-typedef HmParse = ({double? hours, bool minutesTooBig});
+/// What the box holds: [hours] as decimal hours (to the whole minute) when it is
+/// a usable number, else null.
+typedef ShiftParse = ({double? hours});
 
-/// "3.30" -> 3.5 hours, "3.5" -> 3 h 50 min, "3" -> 3, "" -> null.
-HmParse parseHm(Object? text) {
+/// "5.33" -> 5 h 20 min, "0.5" -> 30 min, "8" -> 8, "" -> null.
+ShiftParse parseShiftHours(Object? text) {
   final t = (text == null ? '' : jsString(text)).trim().replaceAll(',', '.');
-  final m = RegExp(r'^(\d{1,3})(?:\.(\d{0,2}))?$').firstMatch(t);
-  if (m == null) return (hours: null, minutesTooBig: false);
-  final h = int.parse(m.group(1)!);
-  final frac = m.group(2) ?? '';
-  final mm = frac.isEmpty ? 0 : int.parse(frac.length == 1 ? '${frac}0' : frac);
-  if (mm > 59) return (hours: null, minutesTooBig: true);
-  return (hours: (h * 60 + mm) / 60, minutesTooBig: false);
+  if (!RegExp(r'^\d{0,3}(?:\.\d*)?$').hasMatch(t) || !RegExp(r'\d').hasMatch(t)) {
+    return (hours: null);
+  }
+  return (hours: jsRound(double.parse(t.startsWith('.') ? '0$t' : t) * 60) / 60);
 }
 
-/// Decimal hours for the server, without float noise (3 h 50 min = 3.833333).
+/// Decimal hours for the server, without float noise (5 h 20 min = 5.333333).
 double hmToWireHours(double hours) => double.parse(hours.toStringAsFixed(6));

@@ -10,18 +10,16 @@ import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/entry_style.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/limit_notice.dart' show qtyNotice;
 import '../../shared/production_sheet_calc.dart';
-import '../../shared/shift_hours.dart';
+import '../cnc/cnc_lines.dart' show quantityLine, rejectLine;
 import 'rivet_calc.dart';
 
 // The RIVET Data Entry form (port of RivetEntryForm.jsx): the shared lines with
 // RIVET's own cards — Date/Machine/Operator + Machine Working Status, Process /
-// Part / No. of Holes / the four tickable operations, and the two typed
-// quantities (OK + Rejected, capped by Ideal Quantity).
+// Part / No. of Holes / the four tickable operations — and CNC's Production
+// Master (Actual within Ideal, OK within Actual) and Rejection Master cards.
 
 final List<String> _line2 = ['processType', 'itemName', 'vendor', 'noOfHoles', ...rivetOpKeys];
-const List<String> _line5 = ['okQty', 'rejectedQty'];
 
 /// The downtime boxes of the RIVET form, in order: key + label.
 const List<(String, String)> rivetDowntimeBoxes = [
@@ -44,20 +42,20 @@ class RivetEntryLines extends EntryLines {
   @override
   List<Widget> left(EntryLineContext c) => isNonWorking(c.values)
       ? [dateMachineOperatorLine(c, workingStatus: true), nonWorkingNote(c)]
-      : [dateMachineOperatorLine(c, workingStatus: true), rivetPartLine(c), timeLine(c), rivetQuantityLine(c)];
+      : [dateMachineOperatorLine(c, workingStatus: true), rivetPartLine(c), timeLine(c), quantityLine(c)];
 
   @override
   List<Widget> right(EntryLineContext c) => isNonWorking(c.values)
       ? [remarksLine(c)]
-      : [shiftLine(c), downtimeLine(c, boxes: rivetDowntimeBoxes), remarksLine(c)];
+      : [rejectLine(c), shiftLine(c), downtimeLine(c, boxes: rivetDowntimeBoxes), remarksLine(c)];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) => isNonWorking(v)
       ? 'Non Working'
       : [
           if (entryText(v['itemName']).isNotEmpty) entryText(v['itemName']),
+          if (entryText(v['actualQty']).isNotEmpty) 'Actual ${entryText(v['actualQty'])}',
           if (entryText(v['okQty']).isNotEmpty) 'OK ${entryText(v['okQty'])}',
-          if (entryText(v['rejectedQty']).isNotEmpty) 'Rejected ${entryText(v['rejectedQty'])}',
         ].join(' · ');
 }
 
@@ -218,52 +216,5 @@ Widget _opTile(EntryLineContext c, Map<String, dynamic> f, Map<String, dynamic>?
         c.set('excludedOps', isExcluded ? list.where((k) => '$k' != key).toList() : [...list, key]);
       },
     ),
-  );
-}
-
-/// Actual OK and Rejected Quantity — both typed; together within Ideal Quantity.
-Widget rivetQuantityLine(EntryLineContext c) {
-  final m = c.metrics;
-  final ideal = m.idealQty;
-  double? room(String otherKey) => ideal == null ? null : (ideal - (entryNum(c.values[otherKey]) ?? 0)).clamp(0, double.infinity).toDouble();
-  Widget box(String field, String label, String other) => c.keyed(
-        field,
-        c.numBox(
-          field,
-          label: label,
-          max: room(other),
-          // Past Ideal Quantity: the web's popup (entered = typed + the other box); a toast without popups.
-          onExceedTyped: c.onLimit(
-            (typed) => qtyNotice(calc: m.calc, entered: typed + (entryNum(c.values[other]) ?? 0)),
-            (_) => "OK + Rejected can't be more than Ideal Quantity (${fmtNum(ideal)}): as per calculation this machine can make at most "
-                '${fmtNum(ideal)} pieces in ${hoursToHm(m.calc['shiftHours'])} hr at ${fmtNum(m.calc['totalCycleSec'])} sec per piece.',
-          ),
-        ),
-      );
-
-  return EntryLineCard(
-    title: 'Production (Qty)',
-    icon: Icons.inventory_2_outlined,
-    hasError: c.lineHasError(_line5),
-    children: [
-      EntryGrid(
-        cells: [
-          EntryCell(
-            label: 'Actual OK Quantity',
-            required: true,
-            error: c.err('okQty'),
-            child: box('okQty', 'Actual OK Quantity', 'rejectedQty'),
-          ),
-          EntryCell(
-            label: 'Rejected Quantity',
-            required: true,
-            error: c.err('rejectedQty'),
-            child: box('rejectedQty', 'Rejected Quantity', 'okQty'),
-          ),
-        ],
-      ),
-      // Availability / Performance / Quality above 100% -> goes to Admin review.
-      oeeCheck(c),
-    ],
   );
 }

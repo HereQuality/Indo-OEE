@@ -71,12 +71,17 @@ void main() {
       'Total Cycle Time must be more than 0',
       'This Part is missing No. of Holes',
       'Machine OFF Time must be after Machine ON Time',
-      'Actual OK Quantity is required',
-      'Rejected Quantity is required',
-      "can't be more than Ideal Quantity",
+      'Actual Quantity is required',
+      'OK Quantity is required',
+      "Actual can't be more than Ideal Quantity",
+      "OK can't be more than Actual Quantity",
+      'rejected piece(s) still have no reason',
+      'Split is ',
+      'Nothing was rejected',
+      'Rejected quantities must be 0 or more',
+      'Remark is required when "Other" is a reject reason',
       'Planned Operator Shift is required',
-      'Minutes must be 00–59',
-      'Enter hours and minutes like 8.30',
+      'Enter hours as on the sheet, like 8.5 or 5.33',
       "can't be less than the Machine Shift",
       '0–1440',
       'but the Machine Shift is only',
@@ -169,7 +174,8 @@ void main() {
     }
     // The only extra is the phone's own Stoppage Allowed info text; Rejected is typed here.
     expect(spmSpec.formulas.keys.toSet().difference(web.keys.toSet()), {'stoppageAllowed'});
-    expect(spmSpec.formulas.containsKey('rejectedQty'), isFalse);
+    // Rejected is Actual − OK now, so its formula is part of the web map.
+    expect(spmSpec.formulas['rejectedQty'], web['rejectedQty']);
     expect([for (final x in spmOpFields) {...x}], [for (final x in f['opFields'] as List) m(x)]);
     expect([for (final x in spmReferenceFields) {...x}], [for (final x in f['referenceFields'] as List) m(x)]);
   });

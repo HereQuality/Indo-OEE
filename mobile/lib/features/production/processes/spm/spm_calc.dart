@@ -47,7 +47,9 @@ bool isSpmProcess(Json? process) {
 double _sumOrZero(Iterable<double?> vals) => vals.fold<double>(0, (s, v) => s + (isNum(v) ? v! : 0));
 
 /// Web `spmCycleSec`: the Part's own Total Cycle Time minus whichever of the four
-/// operations are unticked for this entry; blank without a Part Name.
+/// operations are unticked for this entry; blank without a Part Name. An entry saved
+/// before SPM entries carried the Part's Total Cycle Time (8–9 Oct 2026) adds up its
+/// four operations instead.
 double? spmCycleSec(Json? row) {
   final name = row?['itemName'];
   if (!(jsTruthy(name) && jsTrim(jsString(name)).isNotEmpty)) return null;
@@ -58,7 +60,12 @@ double? spmCycleSec(Json? row) {
       if (excluded.contains(f['key'])) jsNumber(row?[f['key']]),
   ]);
   final ownTotal = jsNumber(row?['totalCycleSec']);
-  return isNum(ownTotal) ? ownTotal! - excludedSec : null;
+  if (isNum(ownTotal)) return ownTotal! - excludedSec;
+  final ops = [
+    for (final f in spmOpFields)
+      if (!excluded.contains(f['key'])) jsNumber(row?[f['key']]),
+  ];
+  return ops.any(isNum) ? _sumOrZero(ops) : null;
 }
 
 /// The row as the shared formulas read it: its own cycle time in `totalCycleSec`.
@@ -77,21 +84,23 @@ List<Json> spmDayCalc(Iterable<Json?>? rows) =>
     calc.dayCalc((rows ?? const <Json?>[]).map(_withCycle));
 
 /// The ⓘ texts of the SPM table (web `SPM_FORMULAS`): the shared sheet formulas
-/// without `rejectedQty` (it is typed here) and with SPM's own `cycle`.
+/// with SPM's own `cycle`.
 const Map<String, String> spmFormulas = {
   'cycle': 'Total Cycle Time = Loading (Sec) + Process (Sec) + Unloading and Cleaning (Sec) + Other Operations (Sec).',
   'shift': 'Machine Shift Time = MOD(Machine OFF Time − Machine ON Time, 1) × 24',
   'idealQty':
       "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time) — the most the shift could make, so Actual Quantity can't be more than this.",
+  'rejectedQty':
+      'Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.',
   'pctOk': '% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)',
   'unutilized':
-      'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone. Shown as 0% when the result is below 0 and 100% when it is above 100.',
+      "Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, with Shift Hours and Lunch added up across every entry of this machine's date — so every entry of that machine/date shows the same figure. Shown as 0% when the result is below 0 and 100% when it is above 100.",
   'totalStoppage': 'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'stoppageAllowed':
       'Stoppage Allowed = the Machine Shift in minutes: all of Lunch / Rest and every downtime together can not be more than the machine ran.',
   'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).',
   'unreported':
-      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
+      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   'setupEff': 'Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time',
   'oeeLosses':
       "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",

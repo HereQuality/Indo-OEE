@@ -54,11 +54,11 @@ void main() {
 
   testWidgets('switching on a hidden graph appends it', (tester) async {
     await open(tester);
-    await tester.scrollUntilVisible(find.text('Rejected QTY by Reason'), 300, scrollable: scroller());
+    await tester.scrollUntilVisible(find.text('Rejection by Reason (Qty)'), 300, scrollable: scroller());
     // Bring the row clear of the sticky Save bar before tapping it.
     await tester.drag(scroller(), const Offset(0, -140));
     await tester.pump();
-    await tester.tap(find.text('Rejected QTY by Reason'));
+    await tester.tap(find.text('Rejection by Reason (Qty)'));
     await tester.pump();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
@@ -104,7 +104,7 @@ void main() {
   for (final c in [(true, const Size(390, 844), 1.0), (false, const Size(360, 640), 1.6), (true, const Size(360, 640), 1.6)]) {
     testWidgets('looks right: dark=${c.$1} ${c.$2} textScale ${c.$3}', (tester) async {
       await open(tester, dark: c.$1, size: c.$2, textScale: c.$3);
-      await tester.scrollUntilVisible(find.text('Rejected QTY by Reason'), 300, scrollable: scroller());
+      await tester.scrollUntilVisible(find.text('Rejection by Reason (Qty)'), 300, scrollable: scroller());
       expect(tester.takeException(), isNull);
     });
   }

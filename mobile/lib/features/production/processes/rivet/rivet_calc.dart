@@ -54,7 +54,7 @@ List<Map<String, dynamic>> rivetDayCalc(Iterable<Map<String, dynamic>?>? rows) =
     calc.dayCalc([for (final r in rows ?? const <Map<String, dynamic>?>[]) _withCycle(r)]);
 
 /// `RIVET_FORMULAS`: the web's FORMULAS (utils/sheetFormulas.js) without
-/// "rejectedQty" (typed on this sheet), with the RIVET cycle wording.
+/// "rejectedQty" (Actual − OK on this sheet), with the RIVET cycle wording.
 const Map<String, String> rivetFormulas = {
   'cycle': 'Total Cycle Time = Loading (Sec) + Process (Sec) + Unloading and Cleaning (Sec) + Other Operations (Sec).',
   'shift': 'Machine Shift Time = MOD(Machine OFF Time − Machine ON Time, 1) × 24',
@@ -62,11 +62,11 @@ const Map<String, String> rivetFormulas = {
       "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time) — the most the shift could make, so Actual Quantity can't be more than this.",
   'pctOk': '% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)',
   'unutilized':
-      'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone. Shown as 0% when the result is below 0 and 100% when it is above 100.',
+      'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, with Shift Hours and Lunch added up across every entry of this machine\'s date — so every entry of that machine/date shows the same figure. Shown as 0% when the result is below 0 and 100% when it is above 100.',
   'totalStoppage': 'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).',
   'unreported':
-      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
+      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   'setupEff': 'Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time',
   'oeeLosses':
       "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",

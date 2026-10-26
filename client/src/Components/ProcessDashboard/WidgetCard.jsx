@@ -70,8 +70,8 @@ const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false,
         <div className="d-flex align-items-start gap-2" style={{ minWidth: 0, flex: "1 1 200px" }}>
           <span className={`pd-kind pd-kind-${tone || "ok"}`} aria-hidden="true"><KindIcon size={16} /></span>
           <div style={{ minWidth: 0 }}>
-            <h6 className="pd-card-title fw-semibold mb-0">{title}</h6>
-            {hint && <div className="pd-card-hint text-muted small" title={hint}>{hint}</div>}
+            {/* Title only — the longer explanation shows on hover, not as a second line of text. */}
+            <h6 className="pd-card-title fw-semibold mb-0" title={hint || undefined}>{title}</h6>
           </div>
         </div>
         <div className="d-flex align-items-center gap-1 flex-shrink-0">
@@ -92,8 +92,7 @@ const WidgetCard = ({ title, hint, size = "md", height = 320, tableOnly = false,
       <Modal isOpen={expanded} toggle={closePopup} size="xl" centered className="pd-pop">
         <div className="pd-pop-head">
           <div style={{ minWidth: 0, flex: "1 1 180px" }}>
-            <h5 className="fw-semibold mb-0">{title}</h5>
-            {hint && <div className="text-muted small">{hint}</div>}
+            <h5 className="fw-semibold mb-0" title={hint || undefined}>{title}</h5>
           </div>
           <div className="d-flex align-items-center gap-1 flex-shrink-0">
             {!tableOnly && <ViewToggle view={popView} onChange={setPopView} />}

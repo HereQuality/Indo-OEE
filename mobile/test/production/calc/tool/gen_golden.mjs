@@ -57,7 +57,7 @@ import {
   validateEntry,
 } from "../../../../../client/src/utils/entryValidation.js";
 import { FORMULAS } from "../../../../../client/src/utils/sheetFormulas.js";
-import { hoursToHm, hoursToHmInput, parseHm, hmToWireHours } from "../../../../../client/src/utils/shiftHours.js";
+import { hoursToHm, hoursToShiftInput, parseShiftHours, hmToWireHours } from "../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -648,8 +648,8 @@ const hmInputs = [0, 1, 3.5, 7.5, 8, 8.25, 8.999, 11.99999, 0.5, 0.008, 0.0083, 
 const hmTexts = ["", " ", "3", "3.", "3.3", "3.30", "3.5", "3.05", "3.59", "3.60", "3.99", "3.123", "3,30", "03.30", "123.30", "1234.30", "0.00", "0.1", ".30", "abc", "3.3x", "24", "24.00", "24.01", "-3", "3 .30", null, undefined, 3, 3.5, 8.3, 8.0, 0, NaN, true];
 write("shift_hours.json", {
   hoursToHm: hmInputs.map((h) => ({ h: enc(h), out: hoursToHm(h) })),
-  hoursToHmInput: hmInputs.map((h) => ({ h: enc(h), out: hoursToHmInput(h) })),
-  parseHm: hmTexts.map((t) => ({ t: enc(t), out: parseHm(t) })),
+  hoursToShiftInput: hmInputs.map((h) => ({ h: enc(h), out: hoursToShiftInput(h) })),
+  parseShiftHours: hmTexts.map((t) => ({ t: enc(t), out: parseShiftHours(t) })),
   hmToWireHours: [0, 3.5, 3 + 50 / 60, 8.3333333333, 1 / 3, 24, 0.1 + 0.2, 1e-7].map((h) => ({ h, out: hmToWireHours(h) })),
 });
 
@@ -741,7 +741,7 @@ const addOv = (entries, extra = {}) => {
     editSlot,
     saved,
     out: overlapErrors(entries, occupied, { editSlot, saved }),
-    booked: entries.map((v) => bookedRanges(v, occupied, editSlot)),
+    booked: entries.map((v) => bookedRanges(v, occupied, editSlot, saved)),
     validate: entries.map((v) => validateEntry(v, { saved })),
   });
 };
@@ -753,7 +753,16 @@ for (const editSlot of [1, 2, 3]) {
 }
 // an older row: untouched times are exempt, changed times are not
 for (const [on, off] of [["22:00", "06:00"], ["22:00", "05:00"], ["10:00", "13:00"], ["10:00", "13:05"]]) {
-  addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot: 3, saved: { machineOnTime: on === "10:00" ? "10:00" : "22:00", machineOffTime: off === "13:00" ? "13:00" : "06:00" } });
+  const times = { machineOnTime: on === "10:00" ? "10:00" : "22:00", machineOffTime: off === "13:00" ? "13:00" : "06:00" };
+  // the saved row carries its date and machine too (as the form loads it)
+  addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot: 3, saved: { date: "2026-09-25", machine: "m1", ...times } });
+  // moved to another date or machine: a change, the exemptions stop
+  addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot: 3, saved: { date: "2026-09-24", machine: "m1", ...times } });
+  addOv([ovEntry({ machineOnTime: on, machineOffTime: off })], { editSlot: 3, saved: { date: "2026-09-25", machine: "m2", ...times } });
+}
+// the edited row is "itself" only on the date and machine it was saved on
+for (const saved of [{ date: "2026-09-25", machine: "m1" }, { date: "2026-09-24", machine: "m1" }, { date: "2026-09-25", machine: "m2" }]) {
+  addOv([ovEntry({ machineOnTime: "09:00", machineOffTime: "11:00" })], { editSlot: 1, saved: { ...saved, machineOnTime: "08:00", machineOffTime: "12:00" } });
 }
 // other machine / other date / blank neighbours / missing keys
 addOv([ovEntry({ machine: "m2", machineOnTime: "09:00", machineOffTime: "10:00" })]);

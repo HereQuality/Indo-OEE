@@ -110,8 +110,9 @@ Future<void> fillValid(WidgetTester t, {String machine = 'm1'}) async {
   f.onChange(0, 'noOfHoles', '4');
   f.onChange(0, 'machineOnTime', '08:00');
   f.onChange(0, 'machineOffTime', '16:00');
+  f.onChange(0, 'actualQty', '320');
   f.onChange(0, 'okQty', '300');
-  f.onChange(0, 'rejectedQty', '20');
+  f.onRejectChange(0, 'Dimension Out', '20');
   f.onChange(0, 'plannedOperatorShiftHours', '9');
   f.onChange(0, 'lunchMin', '30');
   f.onChange(0, 'setupMin', '10');
@@ -132,22 +133,22 @@ void main() {
         'Date, Machine No., Operator',
         'Process, Part, Total Cycle Time',
         'Machine ON–OFF Time, Machine Shift',
-        'Production (Qty)',
+        'Production Master',
+        'Rejection Master (Qty)',
         'Planned Operator Shift, Lunch / Rest',
         'Downtime / Stoppage (min)',
         'Remarks',
       ]) {
         expect(find.text(title, skipOffstage: false), findsOneWidget, reason: title);
       }
-      expect(find.text('Rejection Master (Qty)', skipOffstage: false), findsNothing);
-      expect(find.text('Production Master', skipOffstage: false), findsNothing);
+      expect(find.text('Production (Qty)', skipOffstage: false), findsNothing);
       // Process choices, the four operations, the nine downtime boxes' labels.
       expect(find.text('Rivet', skipOffstage: false), findsOneWidget);
       expect(find.text('Clamp', skipOffstage: false), findsOneWidget);
       for (final label in ['Loading', 'Process', 'Unloading and Cleaning', 'Other Operations']) {
         expect(find.text(label, skipOffstage: false), findsWidgets, reason: label);
       }
-      for (final label in ['Actual OK Quantity', 'Rejected Quantity', 'No. of Holes in One Piece', 'Planned Downtime (min)', 'Set-up Time (min)', 'Others (min)', 'Lunch / Rest (min)']) {
+      for (final label in ['Actual Quantity', 'OK Quantity', 'Rejected', 'Dimension Out', 'Other', 'No. of Holes in One Piece', 'Planned Downtime (min)', 'Set-up Time (min)', 'Others (min)', 'Lunch / Rest (min)']) {
         expect(find.textContaining(label, skipOffstage: false), findsWidgets, reason: label);
       }
     });
@@ -163,8 +164,9 @@ void main() {
       expect(f.focusTarget!['field'], 'operator');
       expect(f.errors[0]['processType'], 'Process is required');
       expect(f.errors[0]['itemName'], 'Part Name is required');
-      expect(f.errors[0]['okQty'], 'Actual OK Quantity is required');
-      expect(f.errors[0]['rejectedQty'], 'Rejected Quantity is required');
+      expect(f.errors[0]['actualQty'], 'Actual Quantity is required');
+      expect(f.errors[0]['okQty'], 'OK Quantity is required');
+      expect(f.errors[0].containsKey('rejectedQty'), isFalse, reason: 'Rejected is Actual − OK, never asked for');
       expect(find.text('Operator is required', skipOffstage: false), findsOneWidget);
       expect(find.text('Process is required', skipOffstage: false), findsOneWidget);
     });
@@ -194,29 +196,70 @@ void main() {
       expect(tester.widget<Text>(find.descendant(of: find.byKey(const ValueKey('entry0/calc/totalCycleSec'), skipOffstage: false), matching: find.byType(Text), skipOffstage: false).first).data, '35');
     });
 
-    formTest('OK and Rejected are capped by Ideal Quantity together, with a warning', (tester) async {
+    formTest('Actual is capped by Ideal Quantity and OK by Actual, with a warning', (tester) async {
       EntryFormToast.reset();
       EntryNotices.reset();
       addTearDown(EntryFormToast.reset);
       await open(tester, machineId: 'm1');
       await fillValid(tester);
-      // 8 h at 45 s = 640 pieces. Rejected 20 is in, so OK may take 620.
-      form(tester).onChange(0, 'okQty', '');
+      // 8 h at 45 s = 640 pieces: Actual may take no more.
+      form(tester).onChange(0, 'actualQty', '');
       await tester.pump();
-      final ok = find.byKey(const ValueKey('entry0/okQty'), skipOffstage: false);
-      await tester.ensureVisible(ok);
-      await tester.enterText(find.descendant(of: ok, matching: find.byType(EditableText)), '630');
+      final actual = find.byKey(const ValueKey('entry0/actualQty'), skipOffstage: false);
+      await tester.ensureVisible(actual);
+      await tester.enterText(find.descendant(of: actual, matching: find.byType(EditableText)), '650');
       await tester.pump();
-      expect(form(tester).entries[0]['okQty'], isNot('630'), reason: 'a keystroke past the cap is refused');
+      expect(form(tester).entries[0]['actualQty'], isNot('650'), reason: 'a keystroke past the cap is refused');
       // The web raises a popup with the figures (limitNotice.js qtyNotice), not a toast.
       expect(find.byKey(const ValueKey('entry-notice')), findsOneWidget);
       expect(find.textContaining('this machine can make at most 640 pieces in this shift.'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('entry-notice/ok')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.descendant(of: ok, matching: find.byType(EditableText)), '620');
+      await tester.enterText(find.descendant(of: actual, matching: find.byType(EditableText)), '640');
       await tester.pump();
-      expect(form(tester).entries[0]['okQty'], '620');
+      expect(form(tester).entries[0]['actualQty'], '640');
+      // OK is held to Actual.
+      form(tester).onChange(0, 'okQty', '');
+      await tester.pump();
+      final ok = find.byKey(const ValueKey('entry0/okQty'), skipOffstage: false);
+      await tester.ensureVisible(ok);
+      await tester.enterText(find.descendant(of: ok, matching: find.byType(EditableText)), '641');
+      await tester.pump();
+      expect(form(tester).entries[0]['okQty'], isNot('641'));
+      await tester.enterText(find.descendant(of: ok, matching: find.byType(EditableText)), '600');
+      await tester.pump();
+      expect(form(tester).entries[0]['okQty'], '600');
+      // Rejected = 640 − 600 = 40, but only 20 is split so far.
+      expect(form(tester).errors[0]['rejectBreakdown'], startsWith('20 of 40 rejected piece(s) still have no reason'));
+      expect(bar(tester).canSave, isFalse);
+      form(tester).onRejectChange(0, 'Dimension Out', '40');
+      await tester.pump();
       expect(form(tester).errors[0], isEmpty);
+      expect(bar(tester).canSave, isTrue);
+    });
+
+    formTest('the Rejection Master split has to add up, and "Other" needs a remark', (tester) async {
+      final h = await open(tester);
+      await fillValid(tester);
+      expect(form(tester).errors[0], isEmpty);
+      // Move 5 of the 20 rejected pieces to Other.
+      form(tester).onRejectChange(0, 'Dimension Out', '15');
+      form(tester).onRejectChange(0, 'Other', '5');
+      await tester.pump();
+      expect(form(tester).errors[0]['rejectOtherRemark'], 'Remark is required when "Other" is a reject reason');
+      expect(bar(tester).canSave, isFalse);
+      form(tester).onChange(0, 'rejectOtherRemark', ' cracked ');
+      await tester.pump();
+      expect(form(tester).errors[0], isEmpty);
+      await tapSave(tester);
+      await tester.pumpAndSettle();
+      final b = h.body(0);
+      expect(b['actualQty'], 320);
+      expect(b['okQty'], 300);
+      expect(b['rejectBreakdown'], {'Dimension Out': 15, 'Other': 5});
+      expect(b['rejectReason'], 'Dimension Out', reason: 'the biggest reason');
+      expect(b['rejectOtherRemark'], 'cracked');
+      expect(b.containsKey('rejectedQty'), isFalse, reason: 'the server derives Rejected');
     });
 
     formTest('stoppage is capped by the Machine Shift (8 h = 480 min), not by Planned Operator Shift', (tester) async {
@@ -239,7 +282,8 @@ void main() {
       await tester.pump();
       expect(form(tester).entries[0]['workingMode'], 'Non Working');
       expect(find.text('Process, Part, Total Cycle Time', skipOffstage: false), findsNothing);
-      expect(find.text('Production (Qty)', skipOffstage: false), findsNothing);
+      expect(find.text('Production Master', skipOffstage: false), findsNothing);
+      expect(find.text('Rejection Master (Qty)', skipOffstage: false), findsNothing);
       expect(find.text('Remarks', skipOffstage: false), findsWidgets);
       expect(bar(tester).canSave, isTrue);
       await tester.ensureVisible(find.byKey(const ValueKey('entry0/machineStatus/No Planning')));
@@ -269,10 +313,11 @@ void main() {
       final b = h.body(0);
       expect(b.keys.toSet(), {
         'date', 'machine', 'machineStatus', 'workingMode', 'slot', 'item', 'vendor', 'excludedOps',
-        'operator', 'processType', 'itemName', 'drawingNo', 'remarks', 'otherMinRemark',
+        'operator', 'processType', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark',
+        'rejectBreakdown', 'rejectReason',
         'machineOnTime', 'machineOffTime',
         'noOfHoles', 'rivetLoadingSec', 'rivetProcessSec', 'rivetUnloadingCleaningSec', 'rivetOtherOperationsSec',
-        'totalCycleSec', 'okQty', 'rejectedQty', 'plannedOperatorShiftHours',
+        'totalCycleSec', 'actualQty', 'okQty', 'plannedOperatorShiftHours',
         'plannedDownMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin',
         'bdMechMin', 'bdEleMin', 'noPowerMin', 'lunchMin', 'otherMin',
       });
@@ -292,16 +337,18 @@ void main() {
       expect(b['rivetUnloadingCleaningSec'], 10);
       expect(b['rivetOtherOperationsSec'], 5);
       expect(b['totalCycleSec'], 45);
+      expect(b['actualQty'], 320);
       expect(b['okQty'], 300);
-      expect(b['rejectedQty'], 20);
+      expect(b['rejectBreakdown'], {'Dimension Out': 20});
+      expect(b['rejectReason'], 'Dimension Out');
+      expect(b['rejectOtherRemark'], '');
+      expect(b.containsKey('rejectedQty'), isFalse, reason: 'Rejected = Actual − OK is derived on the server');
       expect(b['plannedOperatorShiftHours'], 9);
       expect(b['lunchMin'], 30);
       expect(b['setupMin'], 10);
       expect(b['otherMin'], '');
       expect(b['otherMinRemark'], '');
       expect(b['machineOnTime'], '08:00');
-      expect(b.containsKey('actualQty'), isFalse);
-      expect(b.containsKey('rejectBreakdown'), isFalse);
       expect(b.containsKey('_id'), isFalse);
       expect(h.popped, [true]);
       expect(find.text('Entry added successfully!'), findsOneWidget);
@@ -344,13 +391,17 @@ void main() {
         'machineOffTime': '16:00',
         'okQty': 300,
         'rejectedQty': 20,
+        'rejectReason': 'Tool Mark',
         'plannedOperatorShiftHours': 9.5,
         'lunchMin': 30,
       });
       expect(find.text('Update Rivet Entry'), findsOneWidget);
       final e = form(tester).entries[0];
-      expect(e['plannedOperatorShiftHours'], '9.30');
+      expect(e['plannedOperatorShiftHours'], '9.5');
       expect(e['okQty'], '300');
+      // An entry from before Actual existed: Actual = OK + Rejected, the rejected pieces on its one reason.
+      expect(e['actualQty'], '320');
+      expect(e['rejectBreakdown'], {'Tool Mark': '20'});
       expect(form(tester).isEdit, isTrue);
       expect(form(tester).errors[0], isEmpty);
       await tester.tap(find.descendant(of: find.byType(Scaffold).last, matching: find.widgetWithText(FilledButton, 'Update')).first);
@@ -363,7 +414,11 @@ void main() {
       expect(b['processType'], 'Clamp');
       expect(b['excludedOps'], ['rivetOtherOperationsSec']);
       expect(b['plannedOperatorShiftHours'], 9.5);
+      expect(b['actualQty'], 320);
       expect(b['okQty'], 300);
+      expect(b['rejectBreakdown'], {'Tool Mark': 20});
+      expect(b['rejectReason'], 'Tool Mark');
+      expect(b.containsKey('rejectedQty'), isFalse);
       expect(h.popped, [true]);
     });
   });

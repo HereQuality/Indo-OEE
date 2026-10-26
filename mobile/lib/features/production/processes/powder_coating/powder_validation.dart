@@ -8,7 +8,7 @@
 //               Working: only Date and Worker Name.
 //   Required    Date, Worker Name, Item Name, Standard Inspection Time per
 //               Piece (> 0), Inspection Start / End Time, Total Qty, Planned
-//               Operator Shift (typed H.MM, not less than the Working Hours).
+//               Operator Shift (typed as decimal hours, not less than the Working Hours).
 //   Quantities  Defect counts optional, together not more than Total Qty. Total
 //               Qty MAY beat Ideal Inspection Quantity (goes to OEE Review).
 //   Times       Inspection End after Start.
@@ -59,6 +59,8 @@ int? _clock(Object? t) {
 // An older row that already breaks a time rule stays editable.
 bool _timesUnchanged(Map<String, dynamic> v, Map<String, dynamic>? saved) =>
     saved != null &&
+    '${v['date'] ?? ''}' == '${saved['date'] ?? ''}' &&
+    '${v['machine'] ?? ''}' == '${saved['machine'] ?? ''}' &&
     normalizeTime(v['machineOnTime']) == normalizeTime(saved['machineOnTime']) &&
     normalizeTime(v['machineOffTime']) == normalizeTime(saved['machineOffTime']);
 
@@ -115,19 +117,19 @@ Map<String, String> validatePowderEntry(Map<String, dynamic> v, {Map<String, dyn
         "Total Defect / Rework (${jsNumStr(defects)}) can't be more than Total Qty (${jsNumStr(total)})";
   }
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  final plannedParse = parseHm(v['plannedOperatorShiftHours']);
+  // Planned Operator Shift is typed as decimal hours (60 minutes to the hour).
+  final plannedParse = parseShiftHours(v['plannedOperatorShiftHours']);
   final planned = plannedParse.hours;
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
-  } else if (plannedParse.minutesTooBig) {
-    errors['plannedOperatorShiftHours'] = 'Minutes must be 00–59 (3.30 means 3 h 30 min)';
   } else if (planned == null) {
-    errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
+    errors['plannedOperatorShiftHours'] = 'Enter hours as on the sheet, like 8.5 or 5.33';
   } else if (planned <= 0 || planned > 24) {
     errors['plannedOperatorShiftHours'] = 'Must be more than 0:00 and at most 24:00';
   } else {
-    final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
+    // Not while End isn't after Start: the span would wrap past midnight, and the
+    // End box already says what's wrong.
+    final shiftMin = errors.containsKey('machineOffTime') ? null : spanMinutes(v['machineOnTime'], v['machineOffTime']);
     if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
       errors['plannedOperatorShiftHours'] =
           "Planned Operator Shift can't be less than the Inspection Working Hours (${hoursToHm(shiftMin / 60)})";

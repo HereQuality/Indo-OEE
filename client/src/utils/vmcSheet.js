@@ -84,14 +84,11 @@ export const vmcRowCalc = (row) => {
 export const vmcDayCalc = (rows) => dayCalc((rows || []).map(withCycle));
 
 // The formula popovers for the VMC table's calculated headers: the CNC ones, with
-// the three that read differently here.
-export const VMC_FORMULAS = (() => {
-  const { rejectedQty: _typedHere, ...shared } = FORMULAS;
-  return {
-    ...shared,
-    idealQtyPerHour: "Ideal Quantity / Hour = Ideal Quantity ÷ Machine Shift Time (hours).",
-    cycle: "Product Cycle Time = Program Time (min) × 60 ÷ No. of Piece In One Program.",
-    idealQty:
-      "Ideal Quantity = FLOOR(Machine Shift Time (min) × No. of Piece In One Program ÷ Program Time (min)) — the most the shift could make, so Actual OK + Rejected can't be more than this.",
-  };
-})();
+// the two that read differently here (Rejected is Actual − OK, as on CNC).
+export const VMC_FORMULAS = {
+  ...FORMULAS,
+  idealQtyPerHour: "Ideal Quantity / Hour = Ideal Quantity ÷ Machine Shift Time (hours).",
+  cycle: "Product Cycle Time = Program Time (min) × 60 ÷ No. of Piece In One Program.",
+  idealQty:
+    "Ideal Quantity = FLOOR(Machine Shift Time (min) × No. of Piece In One Program ÷ Program Time (min)) — the most the shift could make, so Actual Quantity can't be more than this.",
+};

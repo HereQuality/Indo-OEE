@@ -535,7 +535,7 @@ Widget otherActivityLine(EntryLineContext c) {
   );
 }
 
-/// Planned Operator Shift (H.MM), Lunch / Tea / Washroom and the minutes allowed.
+/// Planned Operator Shift (hours), Lunch / Tea / Washroom and the minutes allowed.
 /// Optional and folded — open from the start while the shift is typed by hand,
 /// folded to "Fixed — nothing to enter" while Process Master locks it.
 Widget plannedShiftLine(EntryLineContext c) {
@@ -555,7 +555,7 @@ Widget plannedShiftLine(EntryLineContext c) {
           ? "Can't be less than the Inspection Working Hours ($workingHm)."
           : planned != null
           ? '= ${hoursToHm(planned)} hr'
-          : 'Type hours.minutes — 3.30 is 3 h 30 min.',
+          : 'Type hours as on the sheet — 3.5 is 3 h 30 min.',
     ?lockNote,
   ];
   return PowderFoldCard(
@@ -572,7 +572,7 @@ Widget plannedShiftLine(EntryLineContext c) {
       EntryGrid(
         cells: [
           EntryCell(
-            label: 'Planned Operator Shift (hr.min)',
+            label: 'Planned Operator Shift (hours)',
             required: true,
             error: c.err('plannedOperatorShiftHours'),
             hint: plannedHint.isEmpty ? null : plannedHint.join('\n'),
@@ -584,7 +584,7 @@ Widget plannedShiftLine(EntryLineContext c) {
                 maxLength: 5,
                 max: 24,
                 enabled: setting == null,
-                label: 'Planned Operator Shift (hr.min)',
+                label: 'Planned Operator Shift (hours)',
                 onExceed: (_) => EntryFormToast.warn(
                   "Planned Operator Shift can't be more than 24 hours.",
                 ),

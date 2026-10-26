@@ -1,6 +1,6 @@
 // The web's newer KPI tiles (Unutilized, Availability, Performance, Quality)
 // and graphs (apqTrend rings, unutilizedTrend, runTimeByMachineBars) plus the
-// graphs that changed shape (B.D. Backup treemap, Stoppages-by-Cause radar,
+// graphs that changed shape (B.D. Backup treemap, Downtime-by-Cause radar,
 // Rejected-by-Reason donut): values, sizes, Customize.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,9 +99,9 @@ void main() {
   test('catalogs list the new tiles and graphs with the web defaults', () {
     expect(eng.statsByKey['unutilized']!['tone'], 'downtime');
     expect(eng.statsByKey['oeeQuality']!['tone'], 'ok');
-    expect(eng.defaultStats.last, 'unutilized');
+    expect(eng.defaultStats, ['totalQty', 'okQty', 'rejectedQty', 'okPct', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'unutilized']);
     expect(eng.defaultCharts, containsAll(['apqTrend', 'unutilizedTrend', 'runTimeByMachineBars']));
-    expect(eng.chartsByKey['runTimeByMachine']!['label'], 'Stoppages by Cause (Min)');
+    expect(eng.chartsByKey['runTimeByMachine']!['label'], 'Downtime by Cause (min)');
     expect(eng.chartsByKey['downtimeByMachine']!['preview'], 'nestedTreemap');
     expect(eng.chartsByKey['rejectByReason']!['preview'], 'donut');
   });
@@ -176,10 +176,10 @@ void main() {
       expect(find.text(label), findsOneWidget, reason: label);
     }
     for (final label in [
-      'Availability · Performance · Quality',
-      'Unutilized Machine Time (over time)',
-      'Stoppages by Cause (Min)',
-      'Effective Machine Run Time (Hour) by MC No.',
+      'OEE Components — Availability, Performance, Quality',
+      'Unutilized Machine Time Trend',
+      'Downtime by Cause (min)',
+      'Effective Run Time by Machine (hr)',
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }

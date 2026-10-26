@@ -47,6 +47,7 @@ import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionShe
 import { VMC_FORMULAS, vmcDayCalc, vmcRowCalc } from "../utils/vmcSheet";
 import { firstVmcError, validateVmcEntry } from "../utils/vmcValidation";
 import { firstOverLimit } from "../utils/limitNotice";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../utils/quantityRules";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, slotsFullErrors } from "../utils/entryValidation";
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -72,9 +73,9 @@ import { shiftSettingForMachine } from "../utils/plannedShift";
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
 // `workOrderNo` is only shown here — the server takes the number from the work order itself.
-const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is
 // closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
@@ -86,6 +87,7 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -141,6 +143,8 @@ const emptyEntry = () => ({
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
+  // Rejection Master: { reason: qty } — typed per reason, must add up to Rejected (Actual − OK).
+  rejectBreakdown: {},
 });
 
 // A saved record -> form values ("" for anything unset, so inputs stay controlled).
@@ -150,6 +154,8 @@ const toFormValues = (row) => ({
   item: row.item || "",
   workOrder: row.workOrder || "",
   slot: row.slot,
+  // Actual Quantity and the Rejection Master split (an older entry has neither: Actual = OK + Rejected).
+  ...quantityFormValues(row),
   // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
   plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
@@ -180,6 +186,8 @@ const toPayload = (v, isEdit) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // The Rejection Master split and its "Other" remark. rejectedQty is never sent: the server derives it (Actual − OK).
+  ...rejectPayload(v),
   // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
   plannedOperatorShiftHours: (() => {
     const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
@@ -724,6 +732,12 @@ const VmcDataEntry = () => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
   }, []);
 
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
+
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
   const handleAddBlock = useCallback(() => {
@@ -784,7 +798,7 @@ const VmcDataEntry = () => {
     if (first) {
       // A quantity or stoppage past what the shift allows pops up why, with
       // the figures, before Save takes the operator to it.
-      const over = firstOverLimit(entries, errorsList, vmcRowCalc, { machineName });
+      const over = firstOverLimit(entries, errorsList, vmcRowCalc, { qtyKey: "actualQty", machineName });
       if (over) await toast.notice(...over.notice);
       setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
@@ -1025,6 +1039,7 @@ const VmcDataEntry = () => {
               plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onWorkOrderSelect={handleWorkOrderSelect}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}

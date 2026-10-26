@@ -1,6 +1,7 @@
 import { isNonWorking } from "./productionSheet";
 import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, timesUnchanged, withDecimalPlanned } from "./entryValidation";
+import { validateQuantities } from "./quantityRules";
 import { spmRowCalc } from "./spmSheet";
 import { hoursToHm, parseShiftHours } from "./shiftHours";
 
@@ -15,10 +16,12 @@ import { hoursToHm, parseShiftHours } from "./shiftHours";
  *   Required    Date, Machine No., Operator, Part Name (and that Part needs its
  *               own Loading/Process/Unloading and Cleaning/Other Operations set
  *               in Parts, with at least one still ticked — see validateSpmEntry),
- *               Machine ON/OFF Time, Actual OK Quantity, Rejected Quantity,
+ *               Machine ON/OFF Time, Actual Quantity, OK Quantity,
  *               Planned Operator Shift (typed as decimal hours like the sheet, not less than the Machine
  *               Shift).
- *   Quantities  OK + Rejected can't be more than Ideal Quantity.
+ *   Quantities  Actual and OK Quantity are typed (Rejected = Actual − OK): Actual can't be more
+ *               than Ideal Quantity, OK can't be more than Actual, and the Rejection Master
+ *               split has to add up to Rejected ("Other" needs a remark) — quantityRules.js.
  *   Times       Machine OFF after ON.
  *   Downtime    Optional (blank counts as 0), 0–1440 each, total within Planned
  *               Operator Shift − Machine Shift. "Others" needs a remark.
@@ -54,8 +57,10 @@ export const SPM_FIELD_ORDER = [
   "itemName",
   "machineOnTime",
   "machineOffTime",
+  "actualQty",
   "okQty",
-  "rejectedQty",
+  "rejectBreakdown",
+  "rejectOtherRemark",
   "plannedOperatorShiftHours",
   "lunchMin",
   ...SPM_DOWNTIME_KEYS,
@@ -111,16 +116,8 @@ export const validateSpmEntry = (v, { saved = null } = {}) => {
     if (on !== null && off !== null && off <= on) errors.machineOffTime = "Machine OFF Time must be after Machine ON Time";
   }
 
-  // OK and Rejected are both typed; together they can't beat what the shift could make.
-  const ok = num(v.okQty);
-  const rej = num(v.rejectedQty);
-  if (blank(v.okQty)) errors.okQty = "Actual OK Quantity is required";
-  else if (!isNum(ok) || ok < 0) errors.okQty = "Must be 0 or more";
-  if (blank(v.rejectedQty)) errors.rejectedQty = "Rejected Quantity is required";
-  else if (!isNum(rej) || rej < 0) errors.rejectedQty = "Must be 0 or more";
-  if (!errors.okQty && !errors.rejectedQty && isNum(calc.idealQty) && ok + rej > calc.idealQty) {
-    errors.okQty = `OK + Rejected (${ok + rej}) can't be more than Ideal Quantity (${calc.idealQty})`;
-  }
+  // Actual and OK are typed; Rejected = Actual − OK is split across the Rejection Master.
+  validateQuantities(v, calc, errors, { capByIdeal: true });
 
   // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
   const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);

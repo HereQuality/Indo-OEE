@@ -162,11 +162,11 @@ void main() {
     await _pump(t, 'downtimeByMachine', view: ChartView.table);
     expect(find.text('BREAKDOWN (MECH + ELE) (MIN)'), findsOneWidget);
     await _pump(t, 'oeeTrend');
-    expect(find.text('Considering losses'), findsOneWidget);
+    expect(find.text('Considering Losses'), findsOneWidget);
     // A hidden series is struck through, not removed: tapping twice restores it.
-    await t.tap(find.text('Lunch only'));
+    await t.tap(find.text('Lunch Only'));
     await t.pump(const Duration(milliseconds: 300));
-    await t.tap(find.text('Lunch only'));
+    await t.tap(find.text('Lunch Only'));
     await t.pump(const Duration(milliseconds: 300));
     expect(t.takeException(), isNull);
 

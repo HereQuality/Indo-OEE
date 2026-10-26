@@ -9,7 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../support/fake_api.dart';
 
 /// A saved entry the Contact / Trobe / Spring editor can open: 08:00-16:00 on a
-/// 60 s part (Ideal 480), 400 OK + 20 Rejected, 9 h planned, 30 min lunch.
+/// 60 s part (Ideal 480), Actual 420 = 400 OK + 20 Rejected (12 Tool Mark + 8
+/// Dimension Out), 9 h planned, 30 min lunch.
 Map<String, dynamic> twinRow() => {
   '_id': 'r1',
   'date': '2026-09-20',
@@ -22,8 +23,11 @@ Map<String, dynamic> twinRow() => {
   'totalCycleSec': 60,
   'machineOnTime': '08:00',
   'machineOffTime': '16:00',
+  'actualQty': 420,
   'okQty': 400,
   'rejectedQty': 20,
+  'rejectBreakdown': {'Tool Mark': 12, 'Dimension Out': 8},
+  'rejectReason': 'Tool Mark',
   'plannedOperatorShiftHours': 9,
   'lunchMin': 30,
   'setupMin': 10,

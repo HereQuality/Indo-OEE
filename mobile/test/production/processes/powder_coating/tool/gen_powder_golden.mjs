@@ -32,7 +32,7 @@ import {
 } from "../../../../../../client/src/utils/powderCoatingSheet.js";
 import { WORKER_WORDS, firstOverLimit } from "../../../../../../client/src/utils/limitNotice.js";
 import { POWDER_FIELD_ORDER, POWDER_MINUTE_KEYS, firstPowderError, validatePowderEntry } from "../../../../../../client/src/utils/powderCoatingValidation.js";
-import { hmToWireHours, hoursToHmInput, parseHm } from "../../../../../../client/src/utils/shiftHours.js";
+import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -119,7 +119,7 @@ const toFormValues = (row) => ({
   item: row.item || "",
   vendor: row.vendor || "",
   slot: row.slot,
-  plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
+  plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
 
 const STATUS_ONLY_KEPT = ["workingStatus", "workingMode", "machineStatus", "remarks"];
@@ -147,7 +147,7 @@ const toFullPayload = (v, isEdit, processId) => ({
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),

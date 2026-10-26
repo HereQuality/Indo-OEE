@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { entryCommonFields } = require("./entryCommon");
 const { WORKING_STATUSES, NON_WORKING_STATUSES } = require("./SpringEntry");
+const { rejectFields } = require("./rejectFields");
 
 /**
  * models/RubberEntry.js
@@ -12,7 +13,7 @@ const { WORKING_STATUSES, NON_WORKING_STATUSES } = require("./SpringEntry");
  * itself, since there's no machine to find it through (the Operator Planned
  * Shift lock and the dashboard both need it).
  *
- * Its figures are the Spring sheet's: a typed Actual OK and Rejected Quantity
+ * Its figures are the Spring sheet's: a typed Actual and OK Quantity (Rejected = Actual − OK)
  * and the stoppage columns (minus the two machine breakdowns — B.D. Mech. /
  * B.D. Ele. — a worker has no machine to break down). Working Start / End
  * Time are stored as machineOnTime / machineOffTime and Total Cycle Time as
@@ -63,6 +64,8 @@ const RubberEntrySchema = new mongoose.Schema(
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },
 
+    // Actual Quantity and the Rejection Master split (rejectFields.js); Rejected = Actual − OK.
+    ...rejectFields,
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
 

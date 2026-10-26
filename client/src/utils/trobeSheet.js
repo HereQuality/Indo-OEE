@@ -30,11 +30,9 @@ export const trobeRowCalc = rowCalc;
 export const trobeDayCalc = dayCalc;
 
 // The formula popovers for the Trobe table's calculated headers — the CNC
-// ones, with the one that reads differently here (no operation breakdown).
+// ones (Ideal Quantity and Rejected Quantity included, which read in terms of
+// Actual Quantity), with the one that reads differently here (no operation breakdown).
 export const TROBE_FORMULAS = {
   ...FORMULAS,
   cycle: "Total Cycle Time = this entry's own cycle time — filled in from the Part when picked, and can be changed for the day.",
-  rejectedQty: "Rejected Quantity is typed on the form for this entry — it isn't worked out from the other figures.",
-  idealQty:
-    "Ideal Quantity = FLOOR(Machine Shift Time × 3600 ÷ Total Cycle Time) — the most the shift could make, so OK + Rejected Quantity can't be more than this.",
 };

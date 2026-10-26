@@ -44,6 +44,7 @@ import { isoDay, sortByMachineOn } from "../utils/productionSheet";
 import { RUBBER_FORMULAS, RUBBER_STOPPAGE_FIELDS, rubberDayCalc, rubberRowCalc, isStatusOnly } from "../utils/rubberSheet";
 import { RUBBER_TIME_WORDS, firstRubberError, validateRubberEntry } from "../utils/rubberValidation";
 import { RUBBER_WORDS, firstOverLimit } from "../utils/limitNotice";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../utils/quantityRules";
 import { bookedRanges, isTimeRuleMessage, overlapErrors, slotsFullErrors } from "../utils/entryValidation";
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -68,10 +69,10 @@ import { shiftSettingForMachine } from "../utils/plannedShift";
  * the Save button can't disagree.
  */
 
-const TEXT_FIELDS = ["workingStatus", "itemName", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["workingStatus", "itemName", "remarks", "otherMinRemark", "rejectOtherRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 // Rejected Quantity and every stoppage box may stay blank.
-const NUMBER_FIELDS = ["totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...RUBBER_STOPPAGE_FIELDS.map((f) => f.key)];
+const NUMBER_FIELDS = ["totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...RUBBER_STOPPAGE_FIELDS.map((f) => f.key)];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is
 // closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
@@ -83,6 +84,7 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -131,6 +133,8 @@ const emptyEntry = () => ({
   item: "",
   vendor: "",
   vendorName: "",
+  // Rejection Master: { reason: qty } — the rejected pieces split across the reject reasons.
+  rejectBreakdown: {},
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -143,6 +147,8 @@ const toFormValues = (row) => ({
   item: row.item || "",
   vendor: row.vendor || "",
   slot: row.slot,
+  // Actual Quantity and the Rejection Master split (an entry saved before they existed reads as OK + Rejected).
+  ...quantityFormValues(row),
   // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
   plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
 });
@@ -156,7 +162,7 @@ const toPayload = (v, isEdit, processId) => {
   if (!isStatusOnly(v) && v.workingMode !== "Non Working") return body;
   return Object.fromEntries(
     Object.entries(body).map(([k, val]) =>
-      ["_id", "date", "machine", "process", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : ""],
+      ["_id", "date", "machine", "process", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : k === "rejectBreakdown" ? {} : ""],
     ),
   );
 };
@@ -187,6 +193,8 @@ const toFullPayload = (v, isEdit, processId) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // Rejection Master split + its "Other" remark. rejectedQty is never sent — the server works it out (Actual − OK).
+  ...rejectPayload(v),
   // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
   plannedOperatorShiftHours: (() => {
     const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
@@ -705,6 +713,12 @@ const RubberDataEntry = () => {
     setEntries((list) => list.map((v, i) => (i === index ? { ...v, [name]: value } : v)));
   }, []);
 
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
+
   // A new worker block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
   const handleAddBlock = useCallback(() => {
@@ -990,6 +1004,7 @@ const RubberDataEntry = () => {
               plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

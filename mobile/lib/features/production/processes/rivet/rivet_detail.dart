@@ -12,16 +12,29 @@ import 'rivet_columns.dart';
 /// Everything one saved RIVET entry holds, grouped like the CNC detail: the
 /// three OEE percentages on top, then Quantities (with the four cycle
 /// operations), Time, Stoppage, Efficiency and the entry's own text — every
-/// calculated column of the web sheet's table. Rejected Quantity is typed here
-/// (no reason split) and the "Others" downtime remark sits behind an eye.
+/// calculated column of the web sheet's table. Rejected Quantity is Actual − OK,
+/// followed by its Rejection Master split; the "Other" reject remark and the
+/// "Others" downtime remark sit behind an eye.
 DetailModel rivetDetail(Json row, Json calc, Json day) {
   Object? v(String key) => row[key];
   List<Json> remarks(String kind) => [
         for (final p in remarkParts(row))
           if (p['key'] == kind) p,
       ];
+  final breakdown = row['rejectBreakdown'] is Map ? Map<String, dynamic>.from(row['rejectBreakdown'] as Map) : <String, dynamic>{};
   final excluded = row['excludedOps'] is List ? (row['excludedOps'] as List).map((e) => '$e').toSet() : <String>{};
 
+  final rejectRows = <DetailRow>[
+    for (final reason in rejectReasons)
+      if (hasValue(breakdown[reason]) || (reason == 'Other' && remarks('reject').isNotEmpty))
+        DetailSubRow(
+          label: reason,
+          value: minStr(breakdown[reason]),
+          remarks: reason == 'Other' ? remarks('reject') : const [],
+          remarkTone: SheetTones.reject,
+          remarkLabel: 'View reject remark',
+        ),
+  ];
   final opRows = <DetailRow>[
     for (final f in rivetOpFields)
       if (hasValue(row[f['key']]))
@@ -70,7 +83,8 @@ DetailModel rivetDetail(Json row, Json calc, Json day) {
           DetailMetric(label: 'Ideal Quantity', value: nStr(calc['idealQty']), tone: SheetTones.calc, formulaKey: 'idealQty'),
           DetailMetric(label: 'Actual Quantity', value: nStr(calc['actualQty'])),
           DetailMetric(label: 'Actual OK Quantity', value: minStr(v('okQty')), strong: true),
-          DetailMetric(label: 'Rejected Quantity', value: minStr(v('rejectedQty'))),
+          DetailMetric(label: 'Rejected Quantity', value: nStr(calc['rejectedQty']), tone: SheetTones.calc),
+          ...rejectRows,
           DetailMetric(label: '% OK Quantity', value: pctStr(calc['pctOk']), tone: SheetTones.calc, formulaKey: 'pctOk'),
         ],
       ),

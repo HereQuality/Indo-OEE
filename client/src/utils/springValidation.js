@@ -3,13 +3,14 @@ import { normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, timesUnchanged, withDecimalPlanned } from "./entryValidation";
 import { springRowCalc, isStatusOnly } from "./springSheet";
 import { hoursToHm, parseShiftHours } from "./shiftHours";
+import { validateQuantities } from "./quantityRules";
 
 /**
  * utils/springValidation.js
  * ─────────────────────────────
  * Every rule the Spring Data Entry form enforces — the CNC sheet's rules
- * (utils/entryValidation.js), minus Actual Quantity and the reject-reason
- * split (Spring's OK/Rejected are both typed directly, like RIVET's), plus
+ * (utils/entryValidation.js) — Actual + OK Quantity typed, Rejected = Actual
+ * − OK split across the reject reasons (utils/quantityRules.js) — plus
  * Working Status and Setting ON/OFF Time as plain optional fields (no formula
  * reads them — see productionSheet.js's rowCalc). Total Cycle Time is this
  * entry's own figure, prefilled from the Part and editable here.
@@ -17,11 +18,13 @@ import { hoursToHm, parseShiftHours } from "./shiftHours";
  *   Status-only Any Working Status but PRESENT (ABSENT, SUNDAY, M/C OFF, …):
  *               only Date and Machine No. — nothing else is asked for.
  *   Required    Date, Machine No., Operator, Part Name, Total Cycle Time (> 0),
- *               Machine ON/OFF Time, Actual OK Quantity, Rejected Quantity,
+ *               Machine ON/OFF Time, Actual Quantity, OK Quantity,
  *               Planned Operator Shift (typed as decimal hours like the sheet, not less than the Machine
  *               Shift).
  *   Optional     Working Status, Setting ON/OFF Time — informational only.
- *   Quantities  OK + Rejected can't be more than Ideal Quantity.
+ *   Quantities  Actual can't be more than Ideal Quantity, OK can't be more than
+ *               Actual, and the Rejection Master boxes add up to Actual − OK
+ *               ("Other" needs a remark).
  *   Times       Machine OFF after ON.
  *   Downtime    Optional (blank counts as 0), 0–1440 each, total within Planned
  *               Operator Shift − Machine Shift. "Others" needs a remark.
@@ -58,8 +61,10 @@ export const SPRING_FIELD_ORDER = [
   "machineOffTime",
   "settingOnTime",
   "settingOffTime",
+  "actualQty",
   "okQty",
-  "rejectedQty",
+  "rejectBreakdown",
+  "rejectOtherRemark",
   "plannedOperatorShiftHours",
   "lunchMin",
   ...SPRING_DOWNTIME_KEYS,
@@ -110,16 +115,8 @@ export const validateSpringEntry = (v, { saved = null } = {}) => {
     if (!blank(v[key]) && !normalizeTime(v[key])) errors[key] = `Enter a valid ${label.toLowerCase()}`;
   }
 
-  // OK and Rejected are both typed; together they can't beat what the shift could make.
-  const ok = num(v.okQty);
-  const rej = num(v.rejectedQty);
-  if (blank(v.okQty)) errors.okQty = "Actual OK Quantity is required";
-  else if (!isNum(ok) || ok < 0) errors.okQty = "Must be 0 or more";
-  if (blank(v.rejectedQty)) errors.rejectedQty = "Rejected Quantity is required";
-  else if (!isNum(rej) || rej < 0) errors.rejectedQty = "Must be 0 or more";
-  if (!errors.okQty && !errors.rejectedQty && isNum(calc.idealQty) && ok + rej > calc.idealQty) {
-    errors.okQty = `OK + Rejected (${ok + rej}) can't be more than Ideal Quantity (${calc.idealQty})`;
-  }
+  // Actual and OK are typed (Rejected = Actual − OK); Actual can't beat what the shift could make.
+  validateQuantities(v, calc, errors);
 
   // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
   const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);

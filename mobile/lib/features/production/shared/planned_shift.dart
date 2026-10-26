@@ -1,5 +1,5 @@
 import 'production_sheet_calc.dart' show jsToNumber;
-import 'shift_hours.dart' show hoursToHmInput;
+import 'shift_hours.dart' show hoursToShiftInput;
 
 /// The Operator Planned Shift a machine's entries must use, from its process
 /// (Process Master) — a port of client/src/utils/plannedShift.js (and the rule
@@ -26,8 +26,8 @@ class ShiftSetting {
   /// hours.
   final bool fromEntry;
 
-  /// The box text ("7.30" for 7.5 hr) a new entry is filled with.
-  String get boxText => hoursToHmInput(hours);
+  /// The box text ("7.5" for 7.5 hr) a new entry is filled with.
+  String get boxText => hoursToShiftInput(hours);
 
   ShiftSetting copyWith({bool? fromEntry}) =>
       ShiftSetting(locked: locked, hours: hours, fromEntry: fromEntry ?? this.fromEntry);

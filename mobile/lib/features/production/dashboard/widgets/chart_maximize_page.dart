@@ -62,7 +62,6 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final effective = widget.tableOnly ? ChartView.table : _view;
     return Scaffold(
       appBar: AppBar(
@@ -72,7 +71,11 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         titleSpacing: 0,
-        title: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        title: Tooltip(
+          message: widget.hint ?? '',
+          triggerMode: TooltipTriggerMode.longPress,
+          child: Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        ),
         actions: [
           if (!widget.tableOnly) ViewToggleButton(view: _view, onChanged: (v) => setState(() => _view = v)),
           if (widget.onDrill != null) DrillButton(onPressed: widget.onDrill!),
@@ -85,29 +88,18 @@ class _ChartMaximizePageState extends State<ChartMaximizePage> {
             constraints: const BoxConstraints(maxWidth: 1100),
             child: LayoutBuilder(
               builder: (context, box) {
-                final hintText = widget.hint;
                 final stage = ListenableBuilder(
                   listenable: widget.refresh ?? const _Never(),
                   builder: (context, _) => widget.builder(context, effective, true),
                 );
                 // Landscape phones are short: keep a usable stage and scroll the rest.
                 const minStage = 260.0;
-                final header = (hintText == null || hintText.isEmpty)
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(hintText, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                        ),
-                      );
                 final card = Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
                   child: DashCard(padding: const EdgeInsets.all(10), child: stage),
                 );
                 return Column(
                   children: [
-                    header,
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, inner) => inner.maxHeight >= minStage + 20

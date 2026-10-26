@@ -183,7 +183,7 @@ void main() {
     testWidgets('a locked process fills the box, makes it read-only and says why', (tester) async {
       await _openEditor(tester);
       await _pickMachine(tester, 'm1'); // locked at 8 h
-      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8');
       await tester.ensureVisible(_box('plannedOperatorShiftHours'));
       expect(tester.widget<TextField>(_box('plannedOperatorShiftHours')).enabled, isFalse);
       expect(find.textContaining('Fixed at 8:00 hr — locked in Process Master'), findsOneWidget);
@@ -204,11 +204,11 @@ void main() {
     testWidgets('switching to another machine re-fills it; the default is not an unsaved change', (tester) async {
       await _openEditor(tester);
       await _pickMachine(tester, 'm1');
-      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8');
       // Typing is refused while locked (the box is disabled); the value stays.
       _form(tester).onChange(0, 'plannedOperatorShiftHours', '5');
       await tester.pump();
-      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '8');
     });
 
     testWidgets('editing keeps the shift the entry was saved with', (tester) async {
@@ -217,7 +217,7 @@ void main() {
         'itemName': 'Bracket', 'machineOnTime': '08:00', 'machineOffTime': '16:00',
         'actualQty': 400, 'okQty': 390, 'plannedOperatorShiftHours': 9.5, 'totalCycleSec': 60,
       });
-      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '9.30');
+      expect(_form(tester).entries[0]['plannedOperatorShiftHours'], '9.5');
       expect(_form(tester).plannedShifts.single!.fromEntry, isTrue);
       await tester.ensureVisible(_box('plannedOperatorShiftHours'));
       expect(tester.widget<TextField>(_box('plannedOperatorShiftHours')).enabled, isFalse);

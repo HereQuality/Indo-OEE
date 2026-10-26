@@ -29,9 +29,10 @@ import {
   firstPressError,
   validatePressEntry,
 } from "../../../../../../client/src/utils/pressValidation.js";
-import { STOPPAGE_FIELDS, metricsOver100, sortByMachineOn } from "../../../../../../client/src/utils/productionSheet.js";
+import { REJECT_REASONS, STOPPAGE_FIELDS, metricsOver100, sortByMachineOn } from "../../../../../../client/src/utils/productionSheet.js";
 import { stoppageLimitMin, withDecimalPlanned } from "../../../../../../client/src/utils/entryValidation.js";
-import { hmToWireHours, parseHm } from "../../../../../../client/src/utils/shiftHours.js";
+import { rejectPayload } from "../../../../../../client/src/utils/quantityRules.js";
+import { hmToWireHours, parseShiftHours } from "../../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -90,6 +91,25 @@ const STD = ["2", "1", "0.5", "3", "10", 2, 1.5, "7", "0", "-1", "abc", "", unde
 const PCS = ["1", "2", "5", "10", "100", 3, "0", "-2", "2.5", "abc", "", undefined, null, "7"];
 const STOP_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
 
+// Actual / OK / the Rejection Master split (reason -> qty) the way the form holds them.
+function qtyFields() {
+  const ok = int(0, 900);
+  const rej = int(0, 40);
+  const split = {};
+  if (chance(0.7) && rej > 0) {
+    const a = int(0, rej);
+    const r1 = pick(REJECT_REASONS);
+    split[r1] = String(a);
+    const r2 = pick(REJECT_REASONS);
+    split[r2] = String((Number(split[r2]) || 0) + rej - a);
+  }
+  const f = { actualQty: String(ok + rej), okQty: String(ok), rejectBreakdown: split };
+  if ("Other" in split) f.rejectOtherRemark = pick(["", "cracked", "  burr  "]);
+  // A record saved before Actual existed: OK + Rejected only.
+  if (chance(0.15)) return { okQty: String(ok), rejectedQty: String(rej) };
+  return f;
+}
+
 function saneRow(id) {
   const shifts = [["06:00", "14:00"], ["14:00", "22:00"], ["08:00", "16:00"], ["07:30", "15:45"], ["9", "17"], ["0930", "1330"], ["9:30", "18:15"], ["08:00", "12:00"]];
   const [on, off] = pick(shifts);
@@ -103,9 +123,8 @@ function saneRow(id) {
     machineOffTime: off,
     standardTimeMin: pick(["2", "1", "0.5", "3", 2, "7.5"]),
     pcsPerStandardTime: pick(["1", "2", "5", "10", 4]),
-    okQty: String(int(0, 900)),
-    rejectedQty: String(int(0, 40)),
-    plannedOperatorShiftHours: pick([8, 8.5, 9, 12, 4, "8", 7.5]),
+    ...qtyFields(),
+    plannedOperatorShiftHours: pick([8, 8.5, 9, 12, 4, "8", 7.5, "5.33", "0.5"]),
     lunchMin: pick(["0", "20", "30", "45", "", 30]),
     setupMin: pick(["", "0", "10", "25"]),
     remarks: pick(["", "ok", "late start"]),
@@ -124,7 +143,9 @@ function junkRow(id) {
   if (chance(0.9)) row.pcsPerStandardTime = pick(PCS);
   if (chance(0.85)) row.okQty = pick(QTY);
   if (chance(0.85)) row.rejectedQty = pick(QTY);
-  if (chance(0.15)) row.actualQty = pick(QTY);
+  if (chance(0.5)) row.actualQty = pick(QTY);
+  if (chance(0.4)) row.rejectBreakdown = pick([{}, { [REJECT_REASONS[0]]: pick(QTY) }, { [REJECT_REASONS[1]]: pick(QTY), Other: pick(QTY) }, { "Not a reason": "5" }, null]);
+  if (chance(0.2)) row.rejectOtherRemark = pick(["", "why", "  ", undefined]);
   if (chance(0.8)) row.plannedOperatorShiftHours = pick([...PLANNED, 8, 9.5, 24, 0, null]);
   if (chance(0.3)) row.excludedOps = pick([[], ["standardTimeMin"], ["pcsPerStandardTime", "standardTimeMin"], null]);
   for (const k of STOP_KEYS) if (chance(0.35)) row[k] = pick(NUMS);
@@ -212,22 +233,37 @@ function formValues() {
 const valCases = [];
 const validBase = {
   date: "2026-04-06", machine: "m1", operator: "Ravi", itemName: "Press Part A", machineOnTime: "08:00", machineOffTime: "16:00",
-  standardTimeMin: "2", pcsPerStandardTime: "10", okQty: "2000", rejectedQty: "10", plannedOperatorShiftHours: "8.30", lunchMin: "30",
+  standardTimeMin: "2", pcsPerStandardTime: "10", actualQty: "2010", okQty: "2000", rejectBreakdown: { [REJECT_REASONS[0]]: "10" }, rejectOtherRemark: "",
+  plannedOperatorShiftHours: "8.5", lunchMin: "30",
 };
 const curatedVal = [
   validBase,
   {},
   { ...validBase, workingMode: "Non Working", operator: "", itemName: "" },
   { ...validBase, date: "", workingMode: "Non Working" },
-  { ...validBase, okQty: "2400", rejectedQty: "1" },
-  { ...validBase, okQty: "2400", rejectedQty: "0" },
+  { ...validBase, actualQty: "2401", okQty: "2400" }, // over Ideal (2400)
+  { ...validBase, actualQty: "2400", okQty: "2400", rejectBreakdown: {} }, // exactly Ideal, nothing rejected
   { ...validBase, okQty: "-1" },
-  { ...validBase, rejectedQty: "abc" },
+  { ...validBase, actualQty: "abc" },
+  { ...validBase, actualQty: "-3" },
+  { ...validBase, actualQty: "", okQty: "" },
+  { ...validBase, okQty: "2011" }, // OK above Actual
+  { ...validBase, rejectBreakdown: {} },
+  { ...validBase, rejectBreakdown: { [REJECT_REASONS[0]]: "4" } },
+  { ...validBase, rejectBreakdown: { [REJECT_REASONS[0]]: "7", [REJECT_REASONS[1]]: "7" } },
+  { ...validBase, rejectBreakdown: { [REJECT_REASONS[0]]: "-1" } },
+  { ...validBase, rejectBreakdown: { [REJECT_REASONS[0]]: "abc" } },
+  { ...validBase, actualQty: "2000", rejectBreakdown: { [REJECT_REASONS[0]]: "3" } }, // nothing rejected
+  { ...validBase, rejectBreakdown: { Other: "10" } },
+  { ...validBase, rejectBreakdown: { Other: "10" }, rejectOtherRemark: "cracked" },
+  { ...validBase, rejectBreakdown: { Other: "10" }, rejectOtherRemark: "   " },
   { ...validBase, standardTimeMin: "", pcsPerStandardTime: "" },
-  { ...validBase, plannedOperatorShiftHours: "7.59" },
+  { ...validBase, plannedOperatorShiftHours: "7.99" },
   { ...validBase, plannedOperatorShiftHours: "8.00" },
   { ...validBase, plannedOperatorShiftHours: "8.60" },
   { ...validBase, plannedOperatorShiftHours: "24.30" },
+  { ...validBase, plannedOperatorShiftHours: "5.33" },
+  { ...validBase, plannedOperatorShiftHours: "0.5" },
   { ...validBase, machineOffTime: "07:00" },
   { ...validBase, machineOffTime: "08:00" },
   { ...validBase, setupMin: "400", noPowerMin: "81" },
@@ -241,7 +277,9 @@ for (const v of curatedVal) valCases.push({ values: v, saved: null });
 for (let i = 0; i < 520 * SCALE; i++) {
   const v = formValues();
   let saved = null;
-  if (chance(0.3)) saved = { machineOnTime: chance(0.6) ? v.machineOnTime : pick(TIMES_OK), machineOffTime: chance(0.6) ? v.machineOffTime : pick(TIMES_OK) };
+  // (The web's timesUnchanged also compares the saved row's date and machine; the phone's editor only
+  // hands over the times, so the fixtures keep date/machine unchanged and the times alone decide.)
+  if (chance(0.3)) saved = { date: v.date, machine: v.machine, machineOnTime: chance(0.6) ? v.machineOnTime : pick(TIMES_OK), machineOffTime: chance(0.6) ? v.machineOffTime : pick(TIMES_OK) };
   valCases.push({ values: v, saved });
 }
 write("validation.json", valCases.map((c) => ({ values: encIn(c.values), saved: c.saved ? encIn(c.saved) : null, errors: enc(validatePressEntry(c.values, { saved: c.saved })) })));
@@ -280,9 +318,9 @@ write("helpers.json", helperCases);
 
 // ── payload: the page's toPayload (PressDataEntry.jsx), copied verbatim ─────
 const STOPPAGE_KEYS = STOP_KEYS;
-const TEXT_FIELDS = ["operator", "itemName", "operation", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "itemName", "operation", "drawingNo", "setupNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = ["standardTimeMin", "pcsPerStandardTime", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["standardTimeMin", "pcsPerStandardTime", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 const toPayload = (v, isEdit) => ({
   ...(isEdit && v._id ? { _id: v._id } : {}),
   date: v.date,
@@ -294,11 +332,12 @@ const toPayload = (v, isEdit) => ({
   vendor: v.vendor || null,
   excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+  ...rejectPayload(v),
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
@@ -328,9 +367,11 @@ function payloadValues() {
     otherMinRemark: pick(["", "belt  ", "  "]),
     machineOnTime: pick(["08:00", "", "22:15"]),
     machineOffTime: pick(["16:00", "", "23:59"]),
-    plannedOperatorShiftHours: pick(["", "8", "8.30", "3.5", "3.75", "24", "abc", "8.60", "0.45", "12.00"]),
+    plannedOperatorShiftHours: pick(["", "8", "8.30", "3.5", "3.75", "24", "abc", "8.60", "0.45", "12.00", "5.33", "0.5"]),
   };
   for (const k of NUMBER_FIELDS) if (k !== "plannedOperatorShiftHours" && chance(0.8)) v[k] = pick(FIN);
+  v.rejectBreakdown = pick([{}, {}, { [REJECT_REASONS[0]]: "5" }, { [REJECT_REASONS[1]]: "3", Other: "2" }, { [REJECT_REASONS[0]]: "", Other: "0" }, { [REJECT_REASONS[2]]: "abc", [REJECT_REASONS[0]]: "7" }, { [REJECT_REASONS[3]]: "7", [REJECT_REASONS[1]]: "7" }, undefined, null]);
+  v.rejectOtherRemark = pick(["", " cracked ", undefined, null]);
   if (chance(0.5)) v.lunchMin = pick(FIN);
   if (chance(0.5)) v.otherMin = pick(FIN);
   return v;

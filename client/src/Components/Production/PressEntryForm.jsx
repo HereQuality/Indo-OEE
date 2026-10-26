@@ -14,7 +14,9 @@ import { metricsOver100 } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
-import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
+import { stoppageNotice } from "../../utils/limitNotice";
+import { hasRejectData } from "../../utils/quantityRules";
+import { ProductionMasterFields, RejectionMasterFields } from "./QuantityMaster";
 import { fmtNum, fmtPct, normalizeTime } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { PRESS_PROGRAM_FIELDS, pressRowCalc } from "../../utils/pressSheet";
@@ -28,7 +30,7 @@ import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
  * block per machine behind its own "+", "Add another machine" for several
  * machines in one Save, one block open at a time, Save scrolling to the first
  * incomplete field, grey boxes calculated live, typed boxes capped so they
- * can't be typed past what is allowed (OK + Rejected within Ideal Quantity;
+ * can't be typed past what is allowed (Actual within Ideal Quantity, OK within Actual;
  * all downtime together within the Machine Shift — a popup explains either limit with its figures).
  *
  * What differs is the PRESS sheet's own fields: Operation and Setup No., both
@@ -36,9 +38,9 @@ import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
  * of pieces made in it, set once on the Part (required there, not typed
  * here) and shown as VMC-style tick boxes — ticking/unticking here is a
  * per-entry note only, same as VMC's (these two multiply together, so there's
- * no honest partial cycle time once either is "removed"); Actual OK and
- * Rejected Quantity both typed (so no reject reason split); and all ten
- * downtime boxes.
+ * no honest partial cycle time once either is "removed"); Production
+ * Master / Rejection Master (Actual and OK Quantity typed, Rejected = Actual − OK
+ * split across reject reasons, as on CNC); and all ten downtime boxes.
  *
  * The rules live in utils/pressValidation.js; the figures in utils/pressSheet.js.
  */
@@ -82,7 +84,8 @@ const LINES = [
   { id: 2, title: "Part, Operation, Setup No.", fields: ["itemName", "operation", "setupNo"] },
   { id: 3, title: "Standard Time, Product Cycle Time", fields: [] },
   { id: 4, title: "Machine ON–OFF Time, Machine Shift", fields: ["machineOnTime", "machineOffTime"] },
-  { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
+  { id: 5, title: "Production Master", fields: ["actualQty", "okQty"] },
+  { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
   // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
   // still just one more stoppage box toward the total (see rowCalc).
   { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
@@ -100,9 +103,9 @@ const Line = ({ id, ...rest }) => <FormLine title={findLine(id).title} fields={f
 
 // Everything a block can hold beyond the machine itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
-const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal"].includes(k));
+const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal", "rejectBreakdown"].includes(k));
 
-const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
+const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null)) || hasRejectData(v);
 
 // One downtime box: a capped minutes input labelled like the sheet.
 const DOWNTIME_BOXES = [
@@ -135,6 +138,7 @@ const EntryBlock = ({
   onExpand,
   onChange,
   onItemSelect,
+  onRejectChange,
   onRemove,
   registerRef,
 }) => {
@@ -186,14 +190,6 @@ const EntryBlock = ({
             ),
     };
   };
-
-  // OK + Rejected can't go past Ideal Quantity: each box may take what the other leaves.
-  const qtyRoom = (otherKey) =>
-    Number.isFinite(calc.idealQty) ? Math.max(0, calc.idealQty - (Number(values[otherKey]) || 0)) : undefined;
-  // A blocked keystroke pops up why, with the figures: what was typed plus what
-  // the other box already holds, against Ideal Quantity.
-  const exceedIdeal = (otherKey) => (max, typed) =>
-    notice(...qtyNotice({ calc, entered: typed + (Number(values[otherKey]) || 0) }));
 
   // The time rules (OFF after ON, no overlap) show as soon as the times are
   // picked (and a typed time that isn't one, or a machine already full
@@ -525,31 +521,12 @@ const EntryBlock = ({
         </Line>
 
         <Line id={5} errors={errors} isSubmit={isSubmit} values={values}>
-          <Row className="g-1">
-            <Field label="Actual OK Quantity" required error={err("okQty")} md={3} fieldKey="okQty">
-              <NumberInput
-                name="okQty"
-                value={values.okQty}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("okQty")}
-                max={qtyRoom("rejectedQty")}
-                onExceedMax={exceedIdeal("rejectedQty")}
-              />
-            </Field>
-            <Field label="Rejected Quantity" required error={err("rejectedQty")} md={3} fieldKey="rejectedQty">
-              <NumberInput
-                name="rejectedQty"
-                value={values.rejectedQty}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("rejectedQty")}
-                max={qtyRoom("okQty")}
-                onExceedMax={exceedIdeal("okQty")}
-              />
-            </Field>
-          </Row>
+          <ProductionMasterFields values={values} calc={calc} err={err} onChange={handle} md={4} />
           <OeeCheck calc={oeeCalc} over={overMetrics} />
+        </Line>
+
+        <Line id={13} errors={errors} isSubmit={isSubmit} values={values} optional>
+          <RejectionMasterFields values={values} calc={calc} err={err} index={index} onChange={handle} onRejectChange={onRejectChange} />
         </Line>
 
         <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Shift fixed — Lunch / Rest optional" : ""}>
@@ -663,6 +640,7 @@ const PressEntryForm = ({
   plannedLocks = [],
   onChange,
   onItemSelect,
+  onRejectChange,
   onAdd,
   onRemove,
 }) => {
@@ -783,6 +761,7 @@ const PressEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
+          onRejectChange={onRejectChange}
           onRemove={removeBlock}
           registerRef={(el) => {
             blockRefs.current[i] = el;

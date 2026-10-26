@@ -6,7 +6,7 @@
 // in step.
 //
 //   Required   Date, Machine No., Operator, Part Name, Machine ON/OFF Time,
-//              Actual Qty, OK Qty, Planned Operator Shift (typed H.MM, never less
+//              Actual Qty, OK Qty, Planned Operator Shift (typed decimal hours, never less
 //              than the Machine Shift). Lunch / Rest is optional.
 //   Quantities Actual ≤ Ideal, OK ≤ Actual, and the Rejection Master split has to
 //              account for every rejected piece (Rejected = Actual − OK).
@@ -19,6 +19,7 @@
 //              own remark.
 
 import 'production_sheet_calc.dart';
+import 'quantity_rules.dart' show validateQuantities;
 import 'shift_hours.dart';
 
 /// The downtime boxes on the form. Lunch / Rest sits with Planned Operator
@@ -75,11 +76,11 @@ bool isBlank(Object? v) => v == null || jsTrim(jsString(v)).isEmpty;
 /// ON/OFF are both usable.
 double? stoppageLimitMin(Map<String, dynamic> v) => spanMinutes(v['machineOnTime'], v['machineOffTime']);
 
-/// The form keeps Planned Operator Shift as typed H.MM text ("3.30" = 3 h
+/// The form keeps Planned Operator Shift as typed decimal hours text ("3.5" = 3 h
 /// 30 min); the rules work in decimal hours. [v] with that one value converted
 /// ('' when it is not a usable time).
 Map<String, dynamic> withDecimalPlanned(Map<String, dynamic> v) {
-  final planned = parseHm(v['plannedOperatorShiftHours']).hours;
+  final planned = parseShiftHours(v['plannedOperatorShiftHours']).hours;
   return {...v, 'plannedOperatorShiftHours': planned ?? ''};
 }
 
@@ -94,8 +95,6 @@ Map<String, double> cleanSplit(Object? split) {
   }
   return out;
 }
-
-bool _finiteAtLeast0(double? n) => n != null && n.isFinite && n >= 0;
 
 // ── Machine ON/OFF times ─────────────────────────────────────────────────────
 // Two rules, both also enforced by the server (saveRow): OFF comes after ON (a
@@ -153,9 +152,12 @@ TimeSpan? timeInterval(Object? on, Object? off) {
 
 /// The time rules only apply when a row's times are set or changed — an older
 /// row that already breaks them stays editable. [saved] is the row's
-/// `{machineOnTime, machineOffTime}` as loaded (edit mode), else null.
+/// `{date, machine, machineOnTime, machineOffTime}` as loaded (edit mode), else null.
+/// Moving the row to another date or machine is a change too.
 bool _timesUnchanged(Map<String, dynamic> v, Map<String, dynamic>? saved) =>
     saved != null &&
+    '${v['date'] ?? ''}' == '${saved['date'] ?? ''}' &&
+    '${v['machine'] ?? ''}' == '${saved['machine'] ?? ''}' &&
     normalizeTime(v['machineOnTime']) ==
         normalizeTime(saved['machineOnTime']) &&
     normalizeTime(v['machineOffTime']) ==
@@ -165,25 +167,41 @@ bool _timesUnchanged(Map<String, dynamic> v, Map<String, dynamic>? saved) =>
 /// `{slot, machineOnTime, machineOffTime}` entries.
 typedef OccupiedTimes = Map<String, List<Map<String, dynamic>>>;
 
+/// Web `isEditedRow`: the row being edited is not "another" entry — but only on
+/// the date and machine it was saved on. Moved elsewhere, whatever holds its
+/// slot number there is a different entry. (Without [saved], the slot alone decides.)
+bool _isEditedRow(
+  Map<String, dynamic> o,
+  Map<String, dynamic> v,
+  int? editSlot,
+  Map<String, dynamic>? saved,
+) =>
+    editSlot != null &&
+    (o['slot'] as num?)?.toInt() == editSlot &&
+    (saved == null || (v['date'] == saved['date'] && v['machine'] == saved['machine']));
+
 List<Map<String, dynamic>> _savedFor(
   Map<String, dynamic> v,
   OccupiedTimes occupied,
   int? editSlot,
+  Map<String, dynamic>? saved,
 ) => [
   for (final o
       in occupied['${v['machine']}|${v['date']}'] ??
           const <Map<String, dynamic>>[])
-    if ((o['slot'] as num?)?.toInt() != editSlot) o,
+    if (!_isEditedRow(o, v, editSlot, saved)) o,
 ];
 
 /// What the machine already has on this entry's date, as readable ranges, for
-/// the "already booked" hint. [editSlot] is the row being edited (not "another").
+/// the "already booked" hint. [editSlot] / [saved] are the row being edited
+/// (not "another").
 List<String> bookedRanges(
   Map<String, dynamic> v,
   OccupiedTimes occupied, {
   int? editSlot,
+  Map<String, dynamic>? saved,
 }) => [
-  for (final o in _savedFor(v, occupied, editSlot))
+  for (final o in _savedFor(v, occupied, editSlot, saved))
     ?timeInterval(o['machineOnTime'], o['machineOffTime'])?.text,
 ];
 
@@ -206,7 +224,7 @@ List<Map<String, String>> overlapErrors(
       return const {};
 
     final others = <TimeSpan>[];
-    for (final o in _savedFor(v, occupied, editSlot)) {
+    for (final o in _savedFor(v, occupied, editSlot, saved)) {
       final span = timeInterval(o['machineOnTime'], o['machineOffTime']);
       if (span != null) others.add(span);
     }
@@ -268,9 +286,11 @@ List<Map<String, String>> operatorOverlapErrors(
     for (final o
         in occupied['$op|${v['date']}'] ?? const <Map<String, dynamic>>[]) {
       if ('${o['machine']}' == '${v['machine']}') continue;
+      // The edited row itself only counts as itself on the date it was saved on.
       if (editing != null &&
           '${o['machine']}' == editing.machine &&
-          (o['slot'] as num?)?.toInt() == editing.slot)
+          (o['slot'] as num?)?.toInt() == editing.slot &&
+          (saved == null || v['date'] == saved['date']))
         continue;
       final span = timeInterval(o['machineOnTime'], o['machineOffTime']);
       if (span != null)
@@ -344,73 +364,25 @@ Map<String, String> validateEntry(
     }
   }
 
-  // Actual can't beat what the shift could make; OK can't beat Actual.
-  final actual = jsNumber(v['actualQty']);
-  final idealQty = calc['idealQty'] as double?;
-  if (isBlank(v['actualQty'])) {
-    errors['actualQty'] = 'Actual Quantity is required';
-  } else if (!_finiteAtLeast0(actual)) {
-    errors['actualQty'] = 'Must be 0 or more';
-  } else if (isNum(idealQty) && actual! > idealQty!) {
-    errors['actualQty'] =
-        "Actual can't be more than Ideal Quantity (${jsNumStr(idealQty)})";
-  }
+  // Actual can't beat what the shift could make; OK can't beat Actual; the
+  // Rejection Master split has to account for Rejected = Actual − OK
+  // (shared/quantity_rules.dart, which the other machine sheets use too).
+  validateQuantities(v, calc, errors);
 
-  final ok = jsNumber(v['okQty']);
-  if (isBlank(v['okQty'])) {
-    errors['okQty'] = 'OK Quantity is required';
-  } else if (!_finiteAtLeast0(ok)) {
-    errors['okQty'] = 'Must be 0 or more';
-  } else if (isNum(actual) && ok! > actual!) {
-    errors['okQty'] =
-        "OK can't be more than Actual Quantity (${jsNumStr(actual)})";
-  }
-
-  // Rejected = Actual − OK, and every rejected piece needs a reason. Can only
-  // be checked once Actual and OK are both usable.
-  final rejectedKnown = isNum(actual) && isNum(ok) && ok! <= actual!;
-  final rejected = rejectedKnown ? actual - ok : 0.0;
-  final split = cleanSplit(v['rejectBreakdown']);
-  final splitTotal = split.values.fold<double>(0, (s, n) => s + n);
-  final rawBreakdown = v['rejectBreakdown'];
-  final hasBadBox =
-      rawBreakdown is Map &&
-      rawBreakdown.values.any((n) {
-        if (isBlank(n)) return false;
-        final x = jsToNumber(n);
-        return !x.isFinite || x < 0;
-      });
-  if (hasBadBox) {
-    errors['rejectBreakdown'] = 'Rejected quantities must be 0 or more';
-  } else if (rejectedKnown && splitTotal < rejected) {
-    errors['rejectBreakdown'] =
-        '${jsNumStr(rejected - splitTotal)} of ${jsNumStr(rejected)} rejected piece(s) still have no reason — the boxes must add up to the rejected quantity';
-  } else if (rejectedKnown && splitTotal > rejected) {
-    errors['rejectBreakdown'] = rejected > 0
-        ? 'Split is ${jsNumStr(splitTotal - rejected)} more than the ${jsNumStr(rejected)} rejected — the boxes must add up to the rejected quantity'
-        : 'Nothing was rejected (Actual − OK is 0), so these boxes should be empty';
-  }
-  if ((split['Other'] ?? 0) > 0 && isBlank(v['rejectOtherRemark'])) {
-    errors['rejectOtherRemark'] =
-        'Remark is required when "Other" is a reject reason';
-  }
-
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  final plannedParse = parseHm(v['plannedOperatorShiftHours']);
+  // Planned Operator Shift is typed as decimal hours (60 minutes to the hour).
+  final plannedParse = parseShiftHours(v['plannedOperatorShiftHours']);
   final planned = plannedParse.hours;
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
-  } else if (plannedParse.minutesTooBig) {
-    errors['plannedOperatorShiftHours'] =
-        'Minutes must be 00–59 (3.30 means 3 h 30 min)';
   } else if (planned == null) {
-    errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
+    errors['plannedOperatorShiftHours'] = 'Enter hours as on the sheet, like 8.5 or 5.33';
   } else if (planned <= 0 || planned > 24) {
     errors['plannedOperatorShiftHours'] =
         'Must be more than 0:00 and at most 24:00';
   } else {
     // The operator's planned shift has to cover the time the machine ran.
-    final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
+    // — once that time makes sense: with OFF not after ON the OFF box already says what is wrong.
+    final shiftMin = errors.containsKey('machineOffTime') ? null : spanMinutes(v['machineOnTime'], v['machineOffTime']);
     if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
       errors['plannedOperatorShiftHours'] =
           "Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})";

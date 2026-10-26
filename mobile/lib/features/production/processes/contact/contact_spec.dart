@@ -2,7 +2,7 @@ import '../cnc_twin.dart';
 
 /// The Contact Data Entry page (client/src/pages/ContactDataEntry.jsx,
 /// ContactEntryForm.jsx, contactColumns.jsx, utils/contact{Sheet,Validation}.js,
-/// server /contact-sheet). CNC's formulas; OK / Rejected typed; Working Status
+/// server /contact-sheet). CNC's formulas and quantity cards (Actual + OK typed, Rejected = Actual − OK, Rejection Master); Working Status
 /// column in the table.
 class ContactSpec extends CncTwinSpec {
   const ContactSpec();

@@ -46,6 +46,7 @@ import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionShe
 import { TROBE_FORMULAS, trobeDayCalc, trobeRowCalc, isStatusOnly } from "../utils/trobeSheet";
 import { firstTrobeError, validateTrobeEntry } from "../utils/trobeValidation";
 import { firstOverLimit } from "../utils/limitNotice";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../utils/quantityRules";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, slotsFullErrors } from "../utils/entryValidation";
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -71,9 +72,9 @@ import { shiftSettingForMachine } from "../utils/plannedShift";
  */
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "workingStatus", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime", "settingOnTime", "settingOffTime"];
-const NUMBER_FIELDS = ["totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 // Add-entry drafts: typing gets saved to localStorage the moment the form is
 // closed (Cancel, the X, Escape) so an accidental close doesn't lose it.
@@ -85,6 +86,7 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -136,6 +138,8 @@ const emptyEntry = () => ({
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
+  // Rejection Master (Qty): { reason: qty }.
+  rejectBreakdown: {},
 });
 
 // A saved record -> form values ("" for anything unset, so inputs stay controlled).
@@ -146,6 +150,9 @@ const toFormValues = (row) => ({
   slot: row.slot,
   // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
   plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
+  // Actual Quantity and the Rejection Master split (an older record has only OK
+  // and Rejected: Actual is their sum, its rejected pieces go against its reason).
+  ...quantityFormValues(row),
 });
 
 // A status-only day (ABSENT, SUNDAY, M/C OFF, …) keeps just its status,
@@ -157,7 +164,7 @@ const toPayload = (v, isEdit) => {
   if (!isStatusOnly(v) && v.workingMode !== "Non Working") return body;
   return Object.fromEntries(
     Object.entries(body).map(([k, val]) =>
-      ["_id", "date", "machine", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : ""],
+      ["_id", "date", "machine", "slot", ...STATUS_ONLY_KEPT].includes(k) ? [k, val] : [k, k === "item" ? null : k === "rejectBreakdown" ? {} : ""],
     ),
   );
 };
@@ -184,6 +191,8 @@ const toFullPayload = (v, isEdit) => ({
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
+  // rejectedQty is deliberately absent: the server derives it from Actual − OK.
+  ...rejectPayload(v),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
   // Typed as decimal hours like the sheet, taken to the whole minute (5.33 → 5 h 20 min).
@@ -719,6 +728,12 @@ const TrobeDataEntry = () => {
 
   // A new machine block copies the date from the block above it — the whole
   // form is normally one day's shift — but nothing else.
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
+
   const handleAddBlock = useCallback(() => {
     setEntries((list) => [...list, { ...emptyEntry(), date: list[list.length - 1]?.date || isoDay(new Date()) }]);
   }, []);
@@ -757,7 +772,7 @@ const TrobeDataEntry = () => {
     if (first) {
       // A quantity or stoppage past what the shift allows pops up why, with
       // the figures, before Save takes the operator to it.
-      const over = firstOverLimit(entries, errorsList, trobeRowCalc, { machineName });
+      const over = firstOverLimit(entries, errorsList, trobeRowCalc, { qtyKey: "actualQty", machineName });
       if (over) await toast.notice(...over.notice);
       setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
@@ -995,6 +1010,7 @@ const TrobeDataEntry = () => {
               plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

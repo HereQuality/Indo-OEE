@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/features/production/processes/vmc/vmc_calc.dart';
 import 'package:indo/features/production/processes/vmc/vmc_spec.dart';
 import 'package:indo/features/production/processes/vmc/vmc_validation.dart';
-import 'package:indo/features/production/shared/production_sheet_calc.dart' show sortByMachineOn;
+import 'package:indo/features/production/shared/production_sheet_calc.dart' show jsNumStr, sortByMachineOn;
 
 import '../../calc/golden_support.dart';
 
@@ -104,19 +104,35 @@ void main() {
     });
   });
 
+  group('golden: Actual Quantity + Rejection Master of a saved row', () {
+    final cases = loadFixture('quantity_form_values.json', dir: dir) as List;
+    test('${cases.length} rows load like the web quantityFormValues (as box text)', () {
+      String text(Object? n) => n is num ? jsNumStr(n) : '$n';
+      for (var i = 0; i < cases.length; i++) {
+        final c = cases[i] as Map;
+        final got = vmcSpec.toFormValues(_m(c['row']));
+        final out = c['out'] as Map;
+        expect(got['actualQty'], text(out['actualQty']), reason: 'actual case $i ${showCase(c['row'])}');
+        final want = {for (final e in (out['rejectBreakdown'] as Map).entries) e.key: text(e.value)};
+        expect(got['rejectBreakdown'], want, reason: 'split case $i ${showCase(c['row'])}');
+      }
+    });
+  });
+
   group('formulas', () {
     test('the web VMC_FORMULAS texts are carried over verbatim', () {
       final web = loadFixture('formulas.json', dir: dir) as Map;
       for (final e in web.entries) {
         expect(vmcSpec.formulas[e.key], e.value, reason: 'formula ${e.key}');
       }
-      expect(vmcSpec.formulas.containsKey('rejectedQty'), isFalse);
+      // Rejected is Actual − OK now, so its formula is carried too.
+      expect(vmcSpec.formulas['rejectedQty'], web['rejectedQty']);
     });
   });
 
   group('values by hand', () {
     final now = DateTime(2026, 10, 22);
-    test('a saved row loads as form values (planned shift as H.MM, numbers as text)', () {
+    test('a saved row loads as form values (planned shift as typed, numbers as text)', () {
       final v = vmcSpec.toFormValues({
         '_id': 'r1',
         'date': '2026-10-20',
@@ -126,16 +142,18 @@ void main() {
         'itemName': 'Bracket',
         'programTimeMin': 7,
         'pcsPerProgram': 9,
+        'actualQty': 45,
         'okQty': 40,
-        'rejectedQty': 0,
+        'rejectBreakdown': {'Tool Mark': 5, 'Nonsense': 2},
         'plannedOperatorShiftHours': 8.5,
         'lunchMin': 30,
         'workingMode': null,
         'machineStatus': ['No Planning'],
       }, now: now);
-      expect(v['plannedOperatorShiftHours'], '8.30');
+      expect(v['plannedOperatorShiftHours'], '8.5');
+      expect(v['actualQty'], '45');
       expect(v['okQty'], '40');
-      expect(v['rejectedQty'], '0');
+      expect(v['rejectBreakdown'], {'Tool Mark': '5'}, reason: 'only known reasons are kept');
       expect(v['programTimeMin'], '7');
       expect(v['workingMode'], 'Working');
       expect(v['slot'], 2);
@@ -158,7 +176,11 @@ void main() {
     test('drafts, new blocks and "has data"', () {
       final a = vmcSpec.emptyEntry(now: now);
       expect(vmcSpec.entryHasData(a), isFalse);
-      expect(vmcSpec.entryHasData({...a, 'rejectedQty': '0'}), isTrue);
+      expect(vmcSpec.entryHasData({...a, 'actualQty': '0'}), isTrue);
+      expect(vmcSpec.entryHasData({...a, 'rejectBreakdown': {'Tool Mark': '0'}}), isTrue);
+      expect(vmcSpec.entryHasData({...a, 'rejectBreakdown': {'Tool Mark': ''}}), isFalse);
+      expect(vmcSpec.hasAnyEntryData([{...a, 'rejectBreakdown': {'Tool Mark': '2'}}]), isTrue);
+      expect(vmcSpec.hasAnyEntryData([{...a, 'rejectBreakdown': {'Tool Mark': '0'}}]), isFalse);
       expect(vmcSpec.entryHasData({...a, 'workingMode': 'Non Working'}), isTrue);
       expect(vmcSpec.entryHasData({...a, 'machineStatus': ['No Manpower']}), isTrue);
       expect(vmcSpec.hasAnyEntryData([a]), isFalse);
@@ -168,7 +190,8 @@ void main() {
       expect(vmcSpec.newBlockAfter(const [], now: now)['date'], '2026-10-22');
       final merged = vmcSpec.mergeDraftEntry({'machine': 'm9', 'okQty': '3'}, now: now);
       expect(merged['machine'], 'm9');
-      expect(merged['rejectedQty'], '');
+      expect(merged['actualQty'], '');
+      expect(merged['rejectBreakdown'], isEmpty);
       expect(merged['excludedOps'], isEmpty);
       expect(merged['workingMode'], 'Working');
     });

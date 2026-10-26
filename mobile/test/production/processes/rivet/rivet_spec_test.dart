@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/features/production/processes/rivet/rivet_metrics.dart';
 import 'package:indo/features/production/processes/rivet/rivet_spec.dart';
+import 'package:indo/features/production/process/process_spec.dart';
 import 'package:indo/features/production/sheet/table/sheet_columns.dart';
 
 void main() {
@@ -19,12 +20,16 @@ void main() {
     'excludedOps': ['rivetOtherOperationsSec'],
     'machineOnTime': '08:00',
     'machineOffTime': '16:00',
+    'actualQty': 320,
     'okQty': 300,
     'rejectedQty': 20,
+    'rejectBreakdown': {'Tool Mark': 15, 'Other': 5},
+    'rejectReason': 'Tool Mark',
     'plannedOperatorShiftHours': 9,
     'lunchMin': 30,
     'otherMin': 10,
     'otherMinRemark': 'crane',
+    'rejectOtherRemark': 'cracked',
     'remarks': 'fine',
     'review': {'status': 'pending'},
   };
@@ -47,11 +52,16 @@ void main() {
       'operator', 'machineStatus', 'itemName', 'vendorName', 'drawingNo', 'processType', 'noOfHoles',
       'rivetLoadingSec', 'rivetProcessSec', 'rivetUnloadingCleaningSec', 'rivetOtherOperationsSec', 'cycle', 'on', 'off',
     ]);
-    expect(keys, containsAllInOrder(['okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'unutilized', 'totalStoppage', 'effective', 'unreported', 'setupEff', 'availability', 'performance', 'quality', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'review', 'remarks']));
+    expect(keys, containsAllInOrder(['idealQty', 'actualQty', 'okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'unutilized', 'totalStoppage', 'effective', 'unreported', 'setupEff', 'availability', 'performance', 'quality', 'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'review', 'remarks']));
     expect(keys.contains('plannedDownMin'), isFalse);
     final open = rivetSpec.columns({'downtime'});
     expect(open.middle.map((c) => c.key), containsAllInOrder(['totalStoppage', 'plannedDownMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'lunchMin', 'otherMin', 'effective']));
     expect(open.expandSummary['downtime'], 'totalStoppage');
+    // Rejected Quantity opens into the Rejection Master reasons, like CNC.
+    expect(keys.contains('Tool Mark'), isFalse);
+    final rejected = rivetSpec.columns({'rejectedQty'});
+    expect(rejected.middle.map((c) => c.key), containsAllInOrder(['rejectedQty', 'Dimension Out', 'Tool Mark', 'Other', 'pctOk']));
+    expect(rejected.expandSummary['rejectedQty'], 'rejectedQty');
   });
 
   test('cells read the row, the calc and the day', () {
@@ -64,6 +74,7 @@ void main() {
 
     expect(cell('cycle'), '40'); // 45 - 5 (Other Operations unticked)
     expect(cell('idealQty'), '720'); // 8 h * 3600 / 40
+    expect(cell('actualQty'), '320');
     expect(cell('okQty'), '300');
     expect(cell('rejectedQty'), '20');
     expect(cell('machineStatus'), 'Working');
@@ -74,6 +85,17 @@ void main() {
     expect(cell('plannedShift'), '9:00');
   });
 
+  test('the reasons columns show the split, Other carrying the remark', () {
+    final calc = rivetSpec.rowCalc(row);
+    final day = rivetSpec.dayCalc([row]).single;
+    final cols = rivetSpec.columns({'rejectedQty'}).middle;
+    String cell(String key) => cols.firstWhere((c) => c.key == key).text(CellData(row: row, calc: calc, day: day, machineName: 'RV-1'));
+    expect(cell('Tool Mark'), '15');
+    expect(cell('Other'), '5');
+    expect(cols.firstWhere((c) => c.key == 'Other').remarkKind, 'reject');
+    expect(rivetSpec.remarkParts(row).map((p) => p['key']), containsAll(['reject', 'downtime', 'general']));
+  });
+
   test('detail and day-card figures', () {
     final calc = rivetSpec.rowCalc(row);
     final detail = rivetSpec.detail(row, calc, rivetSpec.dayCalc([row]).single);
@@ -81,9 +103,15 @@ void main() {
     expect(detail.oee.map((o) => o.formulaKey), ['oeeLosses', 'oeeLunch', 'oeeLunchCot']);
     final figures = rivetSpec.figures(row, calc);
     expect(figures.ok, 300);
-    expect(figures.actual, 320, reason: 'OK + Rejected, as rowCalc reads a row with no Actual');
+    expect(figures.actual, 320);
+    final rejectLabels = [
+      for (final g in detail.groups.where((g) => g.title == 'Quantities'))
+        for (final r in g.rows)
+          if (r is DetailSubRow) r.label,
+    ];
+    expect(rejectLabels, containsAll(['Tool Mark', 'Other']));
     expect(figures.shiftHours, 8);
-    expect(rivetSpec.remarkParts(row).map((p) => p['key']), ['downtime', 'general']);
+    expect(rivetSpec.remarkParts(row).map((p) => p['key']), ['reject', 'downtime', 'general']);
   });
 
   test('metrics allow the whole Machine Shift as stoppage', () {

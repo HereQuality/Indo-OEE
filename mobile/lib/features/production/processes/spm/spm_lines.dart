@@ -13,8 +13,8 @@ import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/entry_style.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/limit_notice.dart' show qtyNotice;
 import '../../shared/production_sheet_calc.dart';
+import '../cnc/cnc_lines.dart' show quantityLine, rejectLine;
 import 'spm_calc.dart';
 import 'spm_validation.dart';
 
@@ -32,11 +32,10 @@ const List<(String, String)> spmDowntimeBoxes = [
 ];
 
 final List<String> _linePart = ['itemName', 'vendor', ...spmReferenceKeys];
-const List<String> _lineQty = ['okQty', 'rejectedQty'];
 
 /// What the SPM form derives from a block's values: CNC's [EntryMetrics] over
 /// the SPM figures, with the web SPM form's own caps — the stoppage allowance is
-/// the Machine Shift itself, and OK + Rejected share Ideal Quantity.
+/// the Machine Shift itself (OK is capped by the typed Actual, Actual by Ideal Quantity).
 class SpmMetrics extends EntryMetrics {
   SpmMetrics(super.values) : super(calcFn: spmRowCalc);
 
@@ -58,44 +57,30 @@ class SpmMetrics extends EntryMetrics {
           : "Stoppage happens within the Machine Shift, so all of it together can't be more than ${jsNumStr(limit)} min.",
     );
   }
-
-  double _typed(String key) {
-    final n = jsToNumber(values[key]);
-    return n.isNaN ? 0.0 : n;
-  }
-
-  /// What OK / Rejected may still take: whatever of Ideal Quantity the other
-  /// leaves (null until Ideal Quantity is known).
-  double? qtyRoom(String otherKey) {
-    final ideal = idealQty;
-    return ideal == null ? null : math.max(0.0, ideal - _typed(otherKey));
-  }
-
-  /// The message for a blocked keystroke past Ideal Quantity (web `qtyNotice`).
-  String get qtyMessage => 'As per calculation, this machine can make at most ${fmtNum(idealQty)} pieces in this shift.';
 }
 
 /// The SPM Data Entry form (port of SpmEntryForm.jsx): the shared lines with
-/// SPM's own Part / cycle-breakdown, Production (OK + Rejected) and Downtime cards.
+/// SPM's own Part / cycle-breakdown and Downtime cards, and CNC's Production
+/// Master (Actual + OK typed) and Rejection Master cards.
 class SpmEntryLines extends EntryLines {
   const SpmEntryLines();
 
   @override
   List<Widget> left(EntryLineContext c) => spmIsNonWorking(c.values)
       ? [dateMachineOperatorLine(c, workingStatus: true), nonWorkingNote(c)]
-      : [dateMachineOperatorLine(c, workingStatus: true), spmPartLine(c), timeLine(c), spmQuantityLine(c)];
+      : [dateMachineOperatorLine(c, workingStatus: true), spmPartLine(c), timeLine(c), quantityLine(c)];
 
   @override
   List<Widget> right(EntryLineContext c) =>
-      spmIsNonWorking(c.values) ? [remarksLine(c)] : [shiftLine(c), spmDowntimeLine(c), remarksLine(c)];
+      spmIsNonWorking(c.values) ? [remarksLine(c)] : [rejectLine(c), shiftLine(c), spmDowntimeLine(c), remarksLine(c)];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) {
     if (spmIsNonWorking(v)) return 'Non Working';
     return [
       if (entryText(v['itemName']).isNotEmpty) entryText(v['itemName']),
+      if (entryText(v['actualQty']).isNotEmpty) 'Actual ${entryText(v['actualQty'])}',
       if (entryText(v['okQty']).isNotEmpty) 'OK ${entryText(v['okQty'])}',
-      if (entryText(v['rejectedQty']).isNotEmpty) 'Rejected ${entryText(v['rejectedQty'])}',
     ].join(' · ');
   }
 }
@@ -202,57 +187,6 @@ Widget _opTile(EntryLineContext c, Map<String, String> f, Map<String, dynamic>? 
         c.set('excludedOps', isExcluded ? list.where((k) => '$k' != key).toList() : [...list, key]);
       },
     ),
-  );
-}
-
-/// Actual OK and Rejected Quantity (both typed, together within Ideal Quantity).
-Widget spmQuantityLine(EntryLineContext c) {
-  final m = c.metrics as SpmMetrics;
-  Widget box(String field, String other, String label) {
-    final room = m.qtyRoom(other);
-    return c.keyed(
-      field,
-      c.numBox(
-        field,
-        max: room,
-        label: label,
-        // Web: typed + what the other box holds, against Ideal Quantity (popup; a toast without popups).
-        onExceedTyped: c.onLimit(
-          (typed) => qtyNotice(calc: m.calc, entered: typed + m._typed(other)),
-          (_) => m.qtyMessage,
-        ),
-      ),
-    );
-  }
-
-  return EntryLineCard(
-    title: 'Production (Qty)',
-    icon: Icons.inventory_2_outlined,
-    hasError: c.lineHasError(_lineQty),
-    children: [
-      EntryGrid(
-        cells: [
-          EntryCell(label: 'Ideal Quantity', child: c.calcBox('idealQty', entryFmt(m.calc['idealQty']), 'Ideal Quantity')),
-          EntryCell(
-            label: 'Actual OK Quantity',
-            required: true,
-            error: c.err('okQty'),
-            hint: c.locked('okQty', m.qtyRoom('rejectedQty')) ? 'Ideal Quantity is used up, so OK can only be 0.' : null,
-            child: box('okQty', 'rejectedQty', 'Actual OK Quantity'),
-          ),
-          EntryCell(
-            label: 'Rejected Quantity',
-            required: true,
-            error: c.err('rejectedQty'),
-            hint: c.locked('rejectedQty', m.qtyRoom('okQty')) ? 'Ideal Quantity is used up, so Rejected can only be 0.' : null,
-            child: box('rejectedQty', 'okQty', 'Rejected Quantity'),
-          ),
-          EntryCell(label: '% OK Quantity', child: c.calcBox('pctOk', fmtPct(m.calc['pctOk']), '% OK Quantity')),
-        ],
-      ),
-      // Availability / Performance / Quality above 100% -> goes to Admin review.
-      oeeCheck(c),
-    ],
   );
 }
 

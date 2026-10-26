@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { entryCommonFields } = require("./entryCommon");
 const { STOPPAGE_KEYS } = require("./ProductionEntry");
+const { rejectFields } = require("./rejectFields");
 
 /**
  * models/PressEntry.js
@@ -64,6 +65,7 @@ const PressEntrySchema = new mongoose.Schema(
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },
 
+    ...rejectFields,
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
 

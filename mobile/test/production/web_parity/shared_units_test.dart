@@ -18,11 +18,11 @@ void main() {
       {'_id': 'p2', 'plannedShiftLocked': false},
     ];
 
-    test('a new entry takes the locked hours; the box text is H.MM', () {
+    test('a new entry takes the locked hours; the box text is decimal hours', () {
       final s = plannedShiftFor(machineId: 'm1', machines: machines, processes: processes)!;
       expect(s.hours, 7.5);
-      expect(s.boxText, '7.30');
-      expect(plannedShiftDefault(s), '7.30');
+      expect(s.boxText, '7.5');
+      expect(plannedShiftDefault(s), '7.5');
     });
 
     test('an edited entry with a saved shift keeps it (no default, fromEntry)', () {
@@ -32,7 +32,7 @@ void main() {
       // An old entry saved without one takes the process's hours.
       final blank = plannedShiftFor(machineId: 'm1', machines: machines, processes: processes, isEdit: true, savedPlanned: null)!;
       expect(blank.fromEntry, isFalse);
-      expect(plannedShiftDefault(blank), '7.30');
+      expect(plannedShiftDefault(blank), '7.5');
     });
 
     test('unlocked / unknown machine = no setting', () {

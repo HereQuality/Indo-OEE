@@ -69,8 +69,8 @@ Map<String, dynamic> powderToFormValues(Map<String, dynamic> row, {DateTime? now
   final vendor = row['vendor'];
   out['vendor'] = vendor is Map ? '${vendor['_id'] ?? ''}' : (jsTruthy(vendor) ? '$vendor' : '');
   out['slot'] = row['slot'];
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
-  out['plannedOperatorShiftHours'] = hoursToHmInput(row['plannedOperatorShiftHours']);
+  // A stored shift is decimal hours; the box shows it as typed (5 h 20 min -> "5.33").
+  out['plannedOperatorShiftHours'] = hoursToShiftInput(row['plannedOperatorShiftHours']);
   out['machineStatus'] = row['machineStatus'] is List ? List<dynamic>.from(row['machineStatus'] as List) : <dynamic>[];
   return out;
 }
@@ -117,9 +117,9 @@ Map<String, dynamic> powderToPayload(Map<String, dynamic> v, {required bool isEd
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? text('otherMinRemark') : '',
     for (final k in powderTimeFields) k: v[k] ?? '',
     for (final k in powderNumberFields) k: _blankOrMissing(v, k) ? '' : _wire(_numberOf(v, k)),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': () {
-      final hours = parseHm(v['plannedOperatorShiftHours']).hours;
+      final hours = parseShiftHours(v['plannedOperatorShiftHours']).hours;
       return hours == null ? '' : _wire(hmToWireHours(hours));
     }(),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.

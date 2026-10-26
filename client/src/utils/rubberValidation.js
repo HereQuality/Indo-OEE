@@ -2,6 +2,7 @@ import { isNonWorking, normalizeTime, spanMinutes } from "./productionSheet";
 import { stoppageLimitMin, timesUnchanged } from "./entryValidation";
 import { RUBBER_STOPPAGE_FIELDS, isStatusOnly, rubberRowCalc } from "./rubberSheet";
 import { hoursToHm, parseShiftHours } from "./shiftHours";
+import { validateQuantities } from "./quantityRules";
 
 /**
  * utils/rubberValidation.js
@@ -12,13 +13,15 @@ import { hoursToHm, parseShiftHours } from "./shiftHours";
  *   Status-only Any Working Status but PRESENT (ABSENT, SUNDAY, …): only Date
  *               and Worker Name — nothing else is asked for.
  *   Required    Date, Worker Name, Part Name, Total Cycle Time (> 0), Working
- *               Start / End Time, Actual OK Quantity, Planned Operator Shift
+ *               Start / End Time, Actual Quantity, OK Quantity, Planned Operator Shift
  *               (typed as decimal hours like the sheet, not less than the Worker Shift Time).
- *   Optional    Rejected Quantity (blank counts as 0, as the sheet leaves it).
- *   Quantities  Whole numbers, 0 or more. OK + Rejected MAY be more than IDEAL
- *               Quantity — unlike a machine, a person can beat the standard
- *               time (real row: 166 pcs where 163 was ideal) — and such an
- *               entry goes to OEE Review (Performance > 100%).
+ *   Quantities  Actual and OK are typed whole numbers, 0 or more; OK can't be more
+ *               than Actual; Rejected = Actual − OK, split across the reject
+ *               reasons (Rejection Master — the boxes must add up, "Other"
+ *               needs a remark; utils/quantityRules.js). Actual MAY be more
+ *               than IDEAL Quantity — unlike a machine, a person can beat the
+ *               standard time (real row: 166 pcs where 163 was ideal) — and
+ *               such an entry goes to OEE Review (Performance > 100%).
  *   Times       Working End after Start.
  *   Stoppage    Optional, 0–1440 each; all of it together within the Worker
  *               Shift Time. "Others" needs a remark.
@@ -43,8 +46,10 @@ export const RUBBER_FIELD_ORDER = [
   "totalCycleSec",
   "machineOnTime",
   "machineOffTime",
+  "actualQty",
   "okQty",
-  "rejectedQty",
+  "rejectBreakdown",
+  "rejectOtherRemark",
   "plannedOperatorShiftHours",
   ...RUBBER_MINUTE_KEYS,
   "stoppageTotal",
@@ -88,11 +93,12 @@ export const validateRubberEntry = (v, { saved = null } = {}) => {
     if (on !== null && off !== null && off <= on) errors.machineOffTime = "Working End Time must be after Working Start Time";
   }
 
-  const ok = num(v.okQty);
-  if (blank(v.okQty)) errors.okQty = "Actual OK Quantity is required";
-  else if (!isNum(ok) || ok < 0 || !Number.isInteger(ok)) errors.okQty = "Must be a whole number, 0 or more";
-  const rej = num(v.rejectedQty);
-  if (rej !== null && (!isNum(rej) || rej < 0 || !Number.isInteger(rej))) errors.rejectedQty = "Must be a whole number, 0 or more";
+  // Not capped at Ideal — over-Ideal goes to OEE Review instead.
+  validateQuantities(v, calc, errors, { capByIdeal: false });
+  for (const key of ["actualQty", "okQty"]) {
+    const n = num(v[key]);
+    if (!errors[key] && isNum(n) && !Number.isInteger(n)) errors[key] = "Must be a whole number, 0 or more";
+  }
 
   // Planned Operator Shift is typed as decimal hours like the sheet (5.33 = 5 h 20 min).
   const plannedParse = parseShiftHours(v.plannedOperatorShiftHours);

@@ -1,4 +1,5 @@
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/quantity_rules.dart';
 import '../../shared/shift_hours.dart';
 import 'rivet_calc.dart';
 import 'rivet_validation.dart' show rivetDowntimeKeys;
@@ -9,7 +10,7 @@ import 'rivet_validation.dart' show rivetDowntimeKeys;
 
 final List<String> _stoppageKeys = [for (final f in stoppageFields) f['key'] as String];
 
-const List<String> rivetTextFields = ['operator', 'processType', 'itemName', 'drawingNo', 'remarks', 'otherMinRemark'];
+const List<String> rivetTextFields = ['operator', 'processType', 'itemName', 'drawingNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark'];
 const List<String> rivetTimeFields = ['machineOnTime', 'machineOffTime'];
 
 /// Every field sent as a number (blank stays '' so the server unsets it).
@@ -17,8 +18,8 @@ final List<String> rivetNumberFields = [
   'noOfHoles',
   ...rivetOpKeys,
   'totalCycleSec',
+  'actualQty',
   'okQty',
-  'rejectedQty',
   'plannedOperatorShiftHours',
   ..._stoppageKeys,
 ];
@@ -48,6 +49,8 @@ Map<String, dynamic> rivetEmptyEntry({DateTime? now}) => <String, dynamic>{
       'vendorName': '',
       // Which of the four operations this entry has unticked.
       'excludedOps': <dynamic>[],
+      // { reason: qty } — the Rejection Master split; must add up to Actual − OK.
+      'rejectBreakdown': <String, dynamic>{},
       for (final k in rivetTextFields) k: '',
       for (final k in rivetTimeFields) k: '',
       for (final k in rivetNumberFields) k: '',
@@ -66,9 +69,13 @@ Map<String, dynamic> rivetToFormValues(Map<String, dynamic> row, {DateTime? now}
   }
   out['item'] = jsTruthy(row['item']) ? row['item'] : '';
   out['slot'] = row['slot'];
-  out['plannedOperatorShiftHours'] = hoursToHmInput(row['plannedOperatorShiftHours']);
+  out['plannedOperatorShiftHours'] = hoursToShiftInput(row['plannedOperatorShiftHours']);
   if (out['excludedOps'] is! List) out['excludedOps'] = <dynamic>[];
   if (out['machineStatus'] is! List) out['machineStatus'] = <dynamic>[];
+  // Rejected is Actual − OK, worked out live; a record from before Actual existed
+  // reads as OK + Rejected, its rejected pieces against its single reason.
+  out['rejectedQty'] = '';
+  out.addAll(quantityFormValues(row));
   return out;
 }
 
@@ -83,7 +90,7 @@ Object? _wire(double n) {
 /// to unset that field.
 Map<String, dynamic> rivetToPayload(Map<String, dynamic> v, {required bool isEdit}) {
   final nonWorking = v['workingMode'] == 'Non Working';
-  final planned = parseHm(v['plannedOperatorShiftHours']).hours;
+  final planned = parseShiftHours(v['plannedOperatorShiftHours']).hours;
   final status = jsTruthy(v['machineStatus']) ? v['machineStatus'] : <dynamic>[];
   final ops = jsTruthy(v['excludedOps']) ? v['excludedOps'] : <dynamic>[];
   return <String, dynamic>{
@@ -103,11 +110,14 @@ Map<String, dynamic> rivetToPayload(Map<String, dynamic> v, {required bool isEdi
     'vendor': jsTruthy(v['vendor']) ? v['vendor'] : null,
     'excludedOps': ops,
     for (final k in rivetTextFields) k: jsTrim(jsString(v[k] ?? '')),
+    // The Rejection Master split (and the remark that goes with "Other").
+    // rejectedQty is deliberately never sent: the server derives it from Actual − OK.
+    ...rejectPayload(v, _wire),
     // A remark only belongs to an "Others" that is still in use.
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? jsTrim(jsString(v['otherMinRemark'] ?? '')) : '',
     for (final k in rivetTimeFields) k: v[k] ?? '',
     for (final k in rivetNumberFields) k: (v[k] == '' || !v.containsKey(k)) ? '' : _wire(jsToNumber(v[k])),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': planned == null ? '' : _wire(hmToWireHours(planned)),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.
     'lunchMin': (v['lunchMin'] == '' || !v.containsKey('lunchMin')) ? 0 : _wire(jsToNumber(v['lunchMin'])),
@@ -117,6 +127,7 @@ Map<String, dynamic> rivetToPayload(Map<String, dynamic> v, {required bool isEdi
 /// True when any block carries something worth keeping as a draft.
 bool rivetHasAnyEntryData(List<Map<String, dynamic>> list) => list.any((v) {
       if (jsTruthy(v['machine'])) return true;
+      if (hasRejectData(v)) return true;
       return [...rivetTextFields, ...rivetTimeFields, ...rivetNumberFields].any((k) => !_blank(v[k]));
     });
 
@@ -131,8 +142,9 @@ const List<String> _dataKeys = [
   'noOfHoles',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   ...rivetDowntimeKeys,
@@ -146,7 +158,8 @@ bool rivetEntryHasData(Map<String, dynamic> v) =>
     _dataKeys.any((k) {
       final x = v[k];
       return x is List ? x.isNotEmpty : !_blank(x);
-    });
+    }) ||
+    hasRejectData(v);
 
 /// Picking a part copies its master values onto the block (`withPart`) — still
 /// editable, so a later change to the master never rewrites saved records. A
@@ -183,6 +196,9 @@ Map<String, dynamic> rivetNewBlockAfter(List<Map<String, dynamic>> list, {DateTi
 /// A draft saved before a field existed lacks it — fill those in (draft wins).
 Map<String, dynamic> rivetMergeDraftEntry(Map<String, dynamic> draft, {DateTime? now}) {
   final out = <String, dynamic>{...rivetEmptyEntry(now: now), ...draft};
+  out['rejectBreakdown'] = draft['rejectBreakdown'] is Map
+      ? Map<String, dynamic>.from(draft['rejectBreakdown'] as Map)
+      : <String, dynamic>{};
   out['excludedOps'] = draft['excludedOps'] is List ? List<dynamic>.from(draft['excludedOps'] as List) : <dynamic>[];
   out['machineStatus'] = draft['machineStatus'] is List ? List<dynamic>.from(draft['machineStatus'] as List) : <dynamic>[];
   return out;

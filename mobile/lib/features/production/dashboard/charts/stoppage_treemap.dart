@@ -10,7 +10,7 @@ import 'chart_props.dart';
 import 'mini_table.dart';
 import 'treemap_layout.dart';
 
-/// B.D. Backup - Stoppage by MC No. (charts.jsx `DowntimeByMachine`): a nested
+/// Downtime by Machine (min) (charts.jsx `DowntimeByMachine`): a nested
 /// treemap. Each machine is a block (area = its minutes lost, in its own hue)
 /// split into one tile per stoppage cause. fl_chart has no treemap, so the
 /// squarified layout (treemap_layout.dart) is painted on a canvas and

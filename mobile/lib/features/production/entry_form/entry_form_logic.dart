@@ -41,7 +41,7 @@ class EntryMetrics {
         calc = (calcFn ?? rowCalc)(values),
         splitTotal = cleanSplit(values['rejectBreakdown']).values.fold<double>(0, (s, n) => s + n),
         stoppageLimit = stoppageLimitMin(withDecimalPlanned(values)),
-        plannedHours = parseHm(values['plannedOperatorShiftHours']).hours {
+        plannedHours = parseShiftHours(values['plannedOperatorShiftHours']).hours {
     rejected = _or0(_dbl(calc['rejectedQty']));
     totalStoppage = _dbl(calc['totalStoppageMin']) ?? 0;
   }
@@ -53,7 +53,7 @@ class EntryMetrics {
   final Map<String, dynamic> Function(Map<String, dynamic>) _calcFn;
 
   /// The row calc as Save will work it out (the planned shift converted from its
-  /// typed H.MM to decimal hours first) — what the OEE check reads.
+  /// typed decimal hours to decimal hours first) — what the OEE check reads.
   late final Map<String, dynamic> oeeCalc = _calcFn(withDecimalPlanned(values));
 
   /// Availability / Performance / Quality (keys, in that order) above 100% as
@@ -67,7 +67,7 @@ class EntryMetrics {
   /// minutes (null until Machine ON/OFF are both picked).
   final double? stoppageLimit;
 
-  /// Planned Operator Shift as decimal hours (null while it isn't a usable H.MM).
+  /// Planned Operator Shift as decimal hours (null while it isn't a usable decimal hours).
   final double? plannedHours;
 
   /// Machine Shift in minutes (null until ON and OFF are both picked).

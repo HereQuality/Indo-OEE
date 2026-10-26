@@ -4,6 +4,7 @@ import '../../process/process_spec.dart';
 import '../../shared/limit_notice.dart' as limit show firstOverLimit;
 import '../../shared/limit_notice.dart' show OverLimit;
 import '../../shared/production_sheet_calc.dart' as calc;
+import '../../shared/quantity_rules.dart' show applyRejectSplitChange;
 import '../../sheet/sheet_model.dart';
 import '../../sheet/table/sheet_columns.dart';
 import 'press_calc.dart';
@@ -16,9 +17,9 @@ import 'press_values.dart';
 
 /// The PRESS Data Entry page (client/src/pages/PressDataEntry.jsx and
 /// utils/pressSheet.js / pressValidation.js) — Standard Time Taken and the
-/// number of pieces made in it give the Product Cycle Time; OK and Rejected
-/// Quantity are both typed (no reject-reason split); Operation and Setup No. are
-/// per-entry picks; all ten stoppage boxes.
+/// number of pieces made in it give the Product Cycle Time; Actual and OK
+/// Quantity are typed (Rejected = Actual − OK, split across the reject reasons
+/// like CNC); Operation and Setup No. are per-entry picks; all ten stoppage boxes.
 class PressSpec extends ProcessSpec {
   const PressSpec();
 
@@ -40,7 +41,7 @@ class PressSpec extends ProcessSpec {
   bool get showLimitPopups => true;
   @override
   OverLimit? firstOverLimit(List<Json> blocks, List<Map<String, String>> errors, {Map<String, String> machineNames = const {}}) =>
-      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'okQty', machineName: machineNames);
+      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'actualQty', machineName: machineNames);
 
   @override
   SheetApi get api => SheetApi.segment('press-sheet');
@@ -76,6 +77,8 @@ class PressSpec extends ProcessSpec {
   Json newBlockAfter(List<Json> blocks, {DateTime? now}) => pressNewBlockAfter(blocks, now: now);
   @override
   Json mergeDraftEntry(Json draft, {DateTime? now}) => pressMergeDraftEntry(draft, now: now);
+  @override
+  Json applyRejectChange(Json values, String reason, dynamic value) => applyRejectSplitChange(values, reason, value);
 
   // The web's Part picker shows the plain part name (PressEntryForm.jsx passes no
   // `label`, unlike Rivet's `partCycleLabel`), so no grey cycle line under it.

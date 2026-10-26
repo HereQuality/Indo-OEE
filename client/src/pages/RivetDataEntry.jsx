@@ -46,6 +46,7 @@ import { STOPPAGE_FIELDS, isoDay, sortByMachineOn } from "../utils/productionShe
 import { RIVET_FORMULAS, RIVET_OP_FIELDS, rivetDayCalc, rivetRowCalc } from "../utils/rivetSheet";
 import { firstRivetError, validateRivetEntry } from "../utils/rivetValidation";
 import { firstOverLimit } from "../utils/limitNotice";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../utils/quantityRules";
 import { bookedRanges, isTimeRuleMessage, operatorOverlapErrors, overlapErrors, slotsFullErrors } from "../utils/entryValidation";
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
@@ -73,14 +74,14 @@ import { shiftSettingForMachine } from "../utils/plannedShift";
 
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
 const RIVET_OP_KEYS = RIVET_OP_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "processType", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "processType", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
 const NUMBER_FIELDS = [
   "noOfHoles",
   ...RIVET_OP_KEYS,
   "totalCycleSec",
+  "actualQty",
   "okQty",
-  "rejectedQty",
   "plannedOperatorShiftHours",
   ...STOPPAGE_KEYS,
 ];
@@ -95,6 +96,7 @@ const DRAFT_TTL_MS = 60 * 1000;
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 
@@ -146,6 +148,8 @@ const emptyEntry = () => ({
   // Which of the four operations this entry has unticked — a per-entry note,
   // subtracted from Total Cycle Time only (see utils/rivetSheet.js's RIVET_OP_FIELDS).
   excludedOps: [],
+  // { reason: qty } — the Rejection Master split; must add up to Actual − OK.
+  rejectBreakdown: {},
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -159,6 +163,10 @@ const toFormValues = (row) => ({
   slot: row.slot,
   // A stored shift is decimal hours; the box shows it as the sheet writes it (5 h 20 min → "5.33").
   plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
+  // Rejected is Actual − OK, worked out live; a record from before Actual existed
+  // reads as OK + Rejected, its rejected pieces against its single reason.
+  rejectedQty: "",
+  ...quantityFormValues(row),
 });
 
 // Form values -> request body. "" tells the server to unset that field.
@@ -181,6 +189,9 @@ const toPayload = (v, isEdit) => ({
   vendor: v.vendor || null,
   excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+  // The Rejection Master split (and the remark that goes with "Other"). rejectedQty
+  // is deliberately never sent: the server derives it from Actual − OK.
+  ...rejectPayload(v),
   // A remark only belongs to an "Others" that is still in use — once that figure
   // goes back to zero the remark is cleared with it.
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
@@ -748,6 +759,13 @@ const RivetDataEntry = () => {
     [items],
   );
 
+  // One Rejection Master box: reason -> pieces rejected for it.
+  const handleRejectChange = useCallback((index, reason, value) => {
+    setEntries((list) =>
+      list.map((v, i) => (i === index ? { ...v, rejectBreakdown: { ...(v.rejectBreakdown || {}), [reason]: value } } : v)),
+    );
+  }, []);
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (isSaving) return;
@@ -760,7 +778,7 @@ const RivetDataEntry = () => {
     if (first) {
       // A quantity or stoppage past what the shift allows pops up why, with
       // the figures, before Save takes the operator to it.
-      const over = firstOverLimit(entries, errorsList, rivetRowCalc, { machineName });
+      const over = firstOverLimit(entries, errorsList, rivetRowCalc, { qtyKey: "actualQty", machineName });
       if (over) await toast.notice(...over.notice);
       setFocusTarget({ ...(over ? { index: over.index, field: over.field } : first), nonce: Date.now() });
       return;
@@ -998,6 +1016,7 @@ const RivetDataEntry = () => {
               plannedLocks={plannedLocks}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
+              onRejectChange={handleRejectChange}
               onAdd={handleAddBlock}
               onRemove={handleRemoveBlock}
             />

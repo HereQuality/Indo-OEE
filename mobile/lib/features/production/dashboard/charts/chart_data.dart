@@ -96,9 +96,9 @@ class OeeSeries {
 }
 
 const List<OeeSeries> oeeSeries = [
-  OeeSeries('oeeLosses', 'Considering losses', 'Considering losses'),
-  OeeSeries('oeeLunch', 'Not considering losses, but lunch', 'Lunch only'),
-  OeeSeries('oeeLunchCot', 'Not considering losses, but lunch & setup time', 'Lunch + setup time'),
+  OeeSeries('oeeLosses', 'Considering Losses', 'Considering Losses'),
+  OeeSeries('oeeLunch', 'Excl. Losses (Lunch Only)', 'Lunch Only'),
+  OeeSeries('oeeLunchCot', 'Excl. Losses (Lunch + Setup)', 'Lunch + Setup'),
 ];
 
 /// One x position of a time chart: the bucket key ('2026-09-05' / '2026-09').
@@ -261,7 +261,7 @@ List<MachinePanel> unreportedPanels(Rows rows, String dim, DashboardCtx ctx) {
   return out;
 }
 
-// ── MC No. Summary ─────────────────────────────────────────────────────────
+// ── Machine Performance Summary ─────────────────────────────────────────────────────────
 
 class SummaryRow {
   const SummaryRow(this.key, this.label, this.summary);

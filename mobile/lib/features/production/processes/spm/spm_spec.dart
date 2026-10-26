@@ -4,6 +4,7 @@ import '../../process/process_spec.dart';
 import '../../shared/limit_notice.dart' as limit show firstOverLimit;
 import '../../shared/limit_notice.dart' show OverLimit;
 import '../../shared/production_sheet_calc.dart' as calc;
+import '../../shared/quantity_rules.dart' show applyRejectSplitChange;
 import '../../sheet/sheet_model.dart';
 import '../../sheet/table/sheet_columns.dart';
 import 'spm_calc.dart';
@@ -51,7 +52,7 @@ class SpmSpec extends ProcessSpec {
   bool get showLimitPopups => true;
   @override
   OverLimit? firstOverLimit(List<Json> blocks, List<Map<String, String>> errors, {Map<String, String> machineNames = const {}}) =>
-      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'okQty', machineName: machineNames);
+      limit.firstOverLimit(blocks, errors, rowCalc, qtyKey: 'actualQty', machineName: machineNames);
 
   @override
   SheetApi get api => SheetApi.segment('spm-sheet');
@@ -87,6 +88,10 @@ class SpmSpec extends ProcessSpec {
   Json newBlockAfter(List<Json> blocks, {DateTime? now}) => spmNewBlockAfter(blocks, now: now);
   @override
   Json mergeDraftEntry(Json draft, {DateTime? now}) => spmMergeDraftEntry(draft, now: now);
+
+  // One Rejection Master box changed.
+  @override
+  Json applyRejectChange(Json values, String reason, dynamic value) => applyRejectSplitChange(values, reason, value);
 
   // ── form ──
   @override

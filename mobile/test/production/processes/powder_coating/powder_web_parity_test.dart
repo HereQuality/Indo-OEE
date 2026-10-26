@@ -115,7 +115,7 @@ Finder box(String field) => find.descendant(of: k('entry0/$field'), matching: fi
 Finder saveBtn() => find.descendant(of: find.byType(EntryActionBar), matching: find.byType(FilledButton));
 bool canSave(WidgetTester t) => t.widget<EntryActionBar>(find.byType(EntryActionBar)).canSave;
 
-Future<void> fillValid(WidgetTester t, {String? planned = '8.30'}) async {
+Future<void> fillValid(WidgetTester t, {String? planned = '8.5'}) async {
   final f = form(t);
   f.onChange(0, 'machine', 'w1');
   f.onItemSelect(0, 'i1');
@@ -226,7 +226,7 @@ void main() {
   group('Planned Operator Shift from Process Master (reached through the worker\'s process)', () {
     testWidgets('a locked process fills the box, makes it read-only and says why; the section folds', (tester) async {
       final api = await openEditor(tester);
-      expect(form(tester).entries[0]['plannedOperatorShiftHours'], '8.00');
+      expect(form(tester).entries[0]['plannedOperatorShiftHours'], '8');
       expect(form(tester).plannedShifts.single!.hours, 8);
       expect(foldNote(tester, 'plannedShift'), 'Fixed — nothing to enter');
       await tester.ensureVisible(k('entry0/fold/plannedShift'));
@@ -252,7 +252,7 @@ void main() {
       final field = tester.widget<TextField>(find.descendant(of: k('entry0/plannedOperatorShiftHours'), matching: find.byType(TextField)));
       expect(field.enabled, isTrue);
       expect(find.textContaining('Process Master'), findsNothing);
-      expect(find.text('Type hours.minutes — 3.30 is 3 h 30 min.'), findsOneWidget);
+      expect(find.text('Type hours as on the sheet — 3.5 is 3 h 30 min.'), findsOneWidget);
     });
 
     testWidgets('editing keeps the shift the entry was saved with', (tester) async {
@@ -261,7 +261,7 @@ void main() {
         'item': 'i1', 'itemName': 'Panel', 'totalCycleSec': 45, 'machineOnTime': '08:00', 'machineOffTime': '16:00',
         'actualQty': 600, 'plannedOperatorShiftHours': 9.5,
       });
-      expect(form(tester).entries[0]['plannedOperatorShiftHours'], '9.30');
+      expect(form(tester).entries[0]['plannedOperatorShiftHours'], '9.5');
       expect(form(tester).plannedShifts.single!.fromEntry, isTrue);
       await tester.ensureVisible(k('entry0/fold/plannedShift'));
       await tester.tap(k('entry0/fold/plannedShift'));
@@ -351,7 +351,7 @@ void main() {
       await fillValid(tester);
       final f = form(tester);
       f.onChange(0, 'machineOffTime', '09:00'); // 60 min of Inspection Working Hours
-      f.onChange(0, 'plannedOperatorShiftHours', '8.00');
+      f.onChange(0, 'plannedOperatorShiftHours', '8');
       f.onChange(0, 'otherActivityMin', '50');
       f.onChange(0, 'otherActivity', 'Packing');
       f.onChange(0, 'lunchMin', '30');
@@ -411,7 +411,7 @@ void main() {
       await openEditor(tester, size: const Size(360, 640), textScale: 1.6);
       await fillValid(tester);
       form(tester).onChange(0, 'machineOffTime', '09:00');
-      form(tester).onChange(0, 'plannedOperatorShiftHours', '8.00');
+      form(tester).onChange(0, 'plannedOperatorShiftHours', '8');
       form(tester).onChange(0, 'otherActivityMin', '50');
       form(tester).onChange(0, 'otherActivity', 'Packing');
       await tester.pump();

@@ -18,6 +18,21 @@ DetailModel twinDetail(Json row, Json calc, Json day, TwinStyle style) {
     for (final p in remarkParts(row))
       if (p['key'] == kind) p,
   ];
+  final breakdown = row['rejectBreakdown'] is Map
+      ? Map<String, dynamic>.from(row['rejectBreakdown'] as Map)
+      : <String, dynamic>{};
+  final rejectRows = <DetailRow>[
+    for (final reason in rejectReasons)
+      if (hasValue(breakdown[reason]) ||
+          (reason == 'Other' && remarks('reject').isNotEmpty))
+        DetailSubRow(
+          label: reason,
+          value: minStr(breakdown[reason]),
+          remarks: reason == 'Other' ? remarks('reject') : const [],
+          remarkTone: SheetTones.reject,
+          remarkLabel: 'View reject remark',
+        ),
+  ];
   final stopLabel = spring ? 'Idle Time' : 'Stoppage';
   final stopRows = <DetailRow>[
     for (final f in stoppageFields)
@@ -75,8 +90,10 @@ DetailModel twinDetail(Json row, Json calc, Json day, TwinStyle style) {
             label: 'Ideal Quantity/Hours',
             value: nStr(calc['idealQtyPerHour']),
           ),
-          if (spring)
-            DetailMetric(label: 'Total Qty', value: nStr(calc['actualQty'])),
+          DetailMetric(
+            label: spring ? 'Total Qty' : 'Actual Quantity',
+            value: nStr(calc['actualQty']),
+          ),
           DetailMetric(
             label: spring ? 'OK Qty' : 'Actual OK Quantity',
             value: minStr(v('okQty')),
@@ -84,8 +101,11 @@ DetailModel twinDetail(Json row, Json calc, Json day, TwinStyle style) {
           ),
           DetailMetric(
             label: spring ? 'Rejected Qty' : 'Rejected Quantity',
-            value: minStr(v('rejectedQty')),
+            value: nStr(calc['rejectedQty']),
+            tone: SheetTones.calc,
+            formulaKey: 'rejectedQty',
           ),
+          ...rejectRows,
           DetailMetric(
             label: spring ? 'OK Quantity (%)' : '% OK Quantity',
             value: pctStr(calc['pctOk']),

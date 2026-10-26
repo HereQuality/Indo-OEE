@@ -1,5 +1,5 @@
 import React from "react";
-import { STOPPAGE_FIELDS, displayDay, remarkParts } from "../../utils/productionSheet";
+import { STOPPAGE_FIELDS, REJECT_REASONS, displayDay, remarkParts } from "../../utils/productionSheet";
 import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
@@ -40,7 +40,22 @@ export const SPRING_COLUMNS = [
   { key: "cycle", label: "Standard Time per Piece (Sec)", get: (r) => min(r.totalCycleSec), align: "text-center" },
   { key: "totalQty", label: "Total Qty", get: (r, c) => n(c.actualQty), align: "text-center", tone: "calc" },
   { key: "okQty", label: "OK Qty", get: (r) => min(r.okQty), align: "text-center" },
-  { key: "rejectedQty", label: "Rejected Qty", get: (r) => min(r.rejectedQty), align: "text-center" },
+  {
+    // Rejected = Actual − OK (calc); expands to the Rejection Master split, "Other" carrying its remark.
+    key: "rejectedQty",
+    label: "Rejected Qty",
+    expandable: true,
+    summary: { key: "rejectedQty", label: "Rejected Qty", get: (r, c) => n(c.rejectedQty), align: "text-center", tone: "calc" },
+    columns: REJECT_REASONS.map((reason) => ({
+      key: reason,
+      label: reason,
+      get: (r) => {
+        const value = min(r.rejectBreakdown?.[reason]);
+        return reason === "Other" ? <WithRemark value={value} row={r} kind="reject" /> : value;
+      },
+      align: "text-center",
+    })),
+  },
   { key: "pctOk", label: "OK Quantity (%)", get: (r, c) => pct(c.pctOk), align: "text-center", tone: "calc" },
   { key: "idealQty", label: "Ideal Quantity", get: (r, c) => n(c.idealQty), align: "text-center", tone: "calc" },
   { key: "idealQtyPerHour", label: "Ideal Quantity/Hours", get: (r, c) => n(c.idealQtyPerHour), align: "text-center", tone: "calc" },

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,8 +11,8 @@ import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/limit_notice.dart' show qtyNotice;
 import '../../shared/production_sheet_calc.dart';
+import '../cnc/cnc_lines.dart' show quantityLine, rejectLine;
 import 'vmc_calc.dart';
 
 /// The downtime boxes the VMC form shows, in order: key + label (web DOWNTIME_BOXES).
@@ -31,29 +29,17 @@ const List<(String, String)> vmcDowntimeBoxes = [
 ];
 
 const List<String> _line2 = ['itemName', 'vendor'];
-const List<String> _line5 = ['okQty', 'rejectedQty'];
 
 /// What the form derives from a VMC block: CNC's metrics over the VMC figures
-/// (the stoppage allowance is the Machine Shift itself, as in the shared metrics).
+/// (the stoppage allowance is the Machine Shift itself, as in the shared metrics;
+/// OK is capped by the typed Actual, Actual by Ideal Quantity).
 class VmcMetrics extends EntryMetrics {
   VmcMetrics(super.values) : super(calcFn: vmcRowCalc);
-
-  /// What OK / Rejected may still take: Ideal Quantity less what the other box holds.
-  double? qtyRoom(String otherKey) {
-    final ideal = idealQty;
-    if (ideal == null) return null;
-    return math.max(0.0, ideal - (jsNumber(values[otherKey]) ?? 0).let0);
-  }
-}
-
-extension on double {
-  /// JS `x || 0` for a number.
-  double get let0 => (isNaN || this == 0) ? 0.0 : this;
 }
 
 /// The VMC Data Entry form (port of VmcEntryForm.jsx): the shared time / shift /
-/// remarks cards with VMC's own Part (+ program ticks), Production (OK +
-/// Rejected typed) and Downtime cards. A Non Working block asks for nothing but
+/// remarks cards with VMC's own Part (+ program ticks) and Downtime cards, and
+/// CNC's Production Master (Actual + OK typed) and Rejection Master cards. A Non Working block asks for nothing but
 /// date, machine, operator, reason and remarks.
 class VmcEntryLines extends EntryLines {
   const VmcEntryLines();
@@ -61,18 +47,18 @@ class VmcEntryLines extends EntryLines {
   @override
   List<Widget> left(EntryLineContext c) => isNonWorking(c.values)
       ? [dateMachineOperatorLine(c, workingStatus: true), nonWorkingNote(c)]
-      : [dateMachineOperatorLine(c, workingStatus: true), vmcPartLine(c), timeLine(c), vmcProductionLine(c)];
+      : [dateMachineOperatorLine(c, workingStatus: true), vmcPartLine(c), timeLine(c), quantityLine(c)];
 
   @override
   List<Widget> right(EntryLineContext c) =>
-      isNonWorking(c.values) ? [remarksLine(c)] : [shiftLine(c), vmcDowntimeLine(c), remarksLine(c)];
+      isNonWorking(c.values) ? [remarksLine(c)] : [rejectLine(c), shiftLine(c), vmcDowntimeLine(c), remarksLine(c)];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) => [
         if (isNonWorking(v)) 'Non Working',
         if (entryText(v['itemName']).isNotEmpty) entryText(v['itemName']),
+        if (entryText(v['actualQty']).isNotEmpty) 'Actual ${entryText(v['actualQty'])}',
         if (entryText(v['okQty']).isNotEmpty) 'OK ${entryText(v['okQty'])}',
-        if (entryText(v['rejectedQty']).isNotEmpty) 'Rejected ${entryText(v['rejectedQty'])}',
       ].join(' · ');
 }
 
@@ -149,54 +135,6 @@ Widget _programTile(EntryLineContext c, String key, String label, Map<String, dy
         c.set('excludedOps', isExcluded ? list.where((k) => '$k' != key).toList() : [...list, key]);
       },
     ),
-  );
-}
-
-String _qtyMessage(VmcMetrics m) =>
-    'As per calculation, this machine can make at most ${fmtNum(m.idealQty)} pieces in this shift — OK + Rejected can\'t be more than that.';
-
-/// Actual OK Quantity and Rejected Quantity, both typed, capped together by Ideal Quantity.
-Widget vmcProductionLine(EntryLineContext c) {
-  final m = c.metrics as VmcMetrics;
-  EntryCell box(String field, String label, String other) {
-    final room = m.qtyRoom(other);
-    return EntryCell(
-      label: label,
-      required: true,
-      error: c.err(field),
-      hint: c.locked(field, room) ? 'Ideal Quantity leaves no room, so $label can only be 0.' : null,
-      child: c.keyed(
-        field,
-        c.numBox(
-          field,
-          max: room,
-          label: label,
-          // Web: what was typed plus what the other box holds, against Ideal Quantity (popup; a toast without popups).
-          onExceedTyped: c.onLimit(
-            (typed) => qtyNotice(calc: m.calc, entered: typed + (jsNumber(c.values[other]) ?? 0).let0),
-            (_) => _qtyMessage(m),
-          ),
-        ),
-      ),
-    );
-  }
-
-  return EntryLineCard(
-    title: 'Production (Qty)',
-    icon: Icons.inventory_2_outlined,
-    hasError: c.lineHasError(_line5),
-    children: [
-      EntryGrid(
-        cells: [
-          EntryCell(label: 'Ideal Quantity', child: c.calcBox('idealQty', entryFmt(m.calc['idealQty']), 'Ideal Quantity')),
-          box('okQty', 'Actual OK Quantity', 'rejectedQty'),
-          box('rejectedQty', 'Rejected Quantity', 'okQty'),
-          EntryCell(label: '% OK Quantity', child: c.calcBox('pctOk', fmtPct(m.calc['pctOk']), '% OK Quantity')),
-        ],
-      ),
-      // Availability / Performance / Quality above 100% -> goes to Admin review.
-      oeeCheck(c),
-    ],
   );
 }
 

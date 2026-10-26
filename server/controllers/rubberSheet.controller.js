@@ -10,6 +10,7 @@ const { vendorFields } = require("../utils/entryVendor");
 const { enforcePlannedShiftForProcess } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
+const { applyQuantities, rejectOtherError } = require("../utils/rejectSplit");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
 
 /**
@@ -21,8 +22,8 @@ const { checkNotLocked, parseDay, parseList } = require("./productionSheet.contr
  * instead of per machine: there is no machine on this sheet. A worker does one
  * thing at a time, so their entries on a date can't overlap. The Operator
  * Planned Shift comes from the entry's own process (there's no machine to find
- * it through). Its fields are the Spring sheet's: Actual OK and Rejected
- * Quantity typed, and the stoppage columns.
+ * it through). Its fields are the Spring sheet's: Actual and OK
+ * Quantity typed (Rejected = Actual − OK, split across reject reasons), and the stoppage columns.
  *
  * Rows go back to the client with `machine` set to the worker's id as well,
  * so the shared table, day formulas and dashboard group by worker exactly as
@@ -36,11 +37,12 @@ const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 const PAGE_SIZE_DAYS = 10;
 const MAX_RANGE_DAYS = 366 * 5;
 
-const TEXT_KEYS = ["workingStatus", "itemName", "remarks", "otherMinRemark"];
+const TEXT_KEYS = ["workingStatus", "itemName", "remarks", "otherMinRemark", "rejectReason", "rejectOtherRemark"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime"];
-const NUMBER_KEYS = ["totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...RUBBER_STOPPAGE_KEYS];
+// rejectedQty is NOT here — it is derived (Actual − OK) in applyQuantities, never taken from the client.
+const NUMBER_KEYS = ["totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...RUBBER_STOPPAGE_KEYS];
 // What a status-only entry (ABSENT, SUNDAY, …) never carries.
-const PRODUCTION_KEYS = ["itemName", "otherMinRemark", ...TIME_KEYS, ...NUMBER_KEYS];
+const PRODUCTION_KEYS = ["itemName", "otherMinRemark", "rejectReason", "rejectOtherRemark", ...TIME_KEYS, ...NUMBER_KEYS];
 
 const isStatusOnly = (body) => NON_WORKING_STATUSES.includes(String(body?.workingStatus ?? "").trim());
 
@@ -85,6 +87,8 @@ const buildFields = (body) => {
       set[k] = n;
     }
   }
+  // Rejected = Actual − OK, plus the Rejection Master split.
+  applyQuantities(body, set, unset);
   if (body.item !== undefined) {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
@@ -108,7 +112,7 @@ const buildFields = (body) => {
 // Operator isn't one of them: here it is only the worker's name, already
 // logged as Worker Name.
 const SHEET = "rubber";
-const LOG_FIELDS = [...new Set(["worker", "vendorName", ...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "machineStatus", "workingMode"])];
+const LOG_FIELDS = [...new Set(["worker", "vendorName", ...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "machineStatus", "workingMode", "rejectBreakdown"])];
 
 const isRowEmpty = (doc) =>
   doc.workingMode !== "Non Working" &&
@@ -116,7 +120,8 @@ const isRowEmpty = (doc) =>
   !doc.vendor &&
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
-  NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null);
+  [...NUMBER_KEYS, "rejectedQty"].every((k) => doc[k] === undefined || doc[k] === null) &&
+  !Object.keys(doc.rejectBreakdown || {}).length;
 
 // Rows saved before a time rule existed may break it; editing something else on
 // such a row must still work, so the time rules only apply when the times are
@@ -133,13 +138,14 @@ const movesEntry = (existing, date, worker) => {
   return existingDay !== date || String(existing.worker) !== String(worker);
 };
 
-// Rejected Quantity is optional — blank counts as 0, as the sheet leaves it.
+// Actual and OK Quantity are typed; Rejected = Actual − OK (derived).
 const REQUIRED_FIELDS = [
   ["itemName", "Part Name"],
   ["totalCycleSec", "Total Cycle Time"],
   ["machineOnTime", "Working Start Time"],
   ["machineOffTime", "Working End Time"],
-  ["okQty", "Actual OK Quantity"],
+  ["actualQty", "Actual Quantity"],
+  ["okQty", "OK Quantity"],
   ["plannedOperatorShiftHours", "Planned Operator Shift"],
 ];
 
@@ -155,7 +161,7 @@ const hm = (hours) => {
 const entryRuleError = (body, existing = null) => {
   // A Non Working entry records only the day, worker, reason and remarks.
   if (isNonWorking(body)) return null;
-  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && isBlank(body.vendor) && !(body.machineStatus || []).length) {
+  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && isBlank(body.vendor) && !(body.machineStatus || []).length && !Object.keys(body.rejectBreakdown || {}).length) {
     return null;
   }
   // A status-only day (ABSENT, SUNDAY, …) needs nothing beyond its Date,
@@ -180,10 +186,12 @@ const entryRuleError = (body, existing = null) => {
   if (off <= on && !sameTimes(existing, body)) return "Working End Time must be after Working Start Time";
 
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
-  // OK + Rejected may be more than Ideal Quantity — a person can beat the
+  // Actual Quantity may be more than Ideal Quantity — a person can beat the
   // standard time, unlike a machine its cycle (real row: 166 pcs where 163 was
   // ideal) — and such an entry is held for OEE Review (Performance > 100%, see
-  // reviewFor) rather than refused, the same as Rubber.
+  // reviewFor) rather than refused.
+  const otherError = rejectOtherError(body);
+  if (otherError) return otherError;
 
   const plannedMin = Math.round(Number(body.plannedOperatorShiftHours) * 60);
   if (plannedMin < shiftMin) {
@@ -307,7 +315,7 @@ exports.saveRow = async (req, res) => {
     // A status-only entry never keeps work figures, whatever the
     // request carried — blanking them here unsets anything saved before.
     if (isStatusOnly(req.body)) {
-      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), item: null, vendor: null };
+      req.body = { ...req.body, ...Object.fromEntries(PRODUCTION_KEYS.map((k) => [k, ""])), rejectBreakdown: {}, item: null, vendor: null };
     }
     const { date, worker, slot, _id } = req.body;
     const day = parseDay(date);

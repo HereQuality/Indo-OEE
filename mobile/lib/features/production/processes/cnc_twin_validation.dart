@@ -3,14 +3,16 @@ import 'dart:math' as math;
 import '../entry_form/entry_form_logic.dart' show EntryMetrics;
 import '../shared/production_entry_validation.dart' show isBlank, stoppageLimitMin;
 import '../shared/production_sheet_calc.dart';
+import '../shared/quantity_rules.dart';
 import '../shared/shift_hours.dart';
 import 'cnc_twin_calc.dart';
 
 /// Port of client/src/utils/{contact,trobe,spring}Validation.js — the CNC
-/// sheet's rules minus Actual Quantity and the reject-reason split (OK and
-/// Rejected are both typed), plus Working Status and Setting ON/OFF Time as
-/// plain optional fields. The three files are identical but for the Part /
-/// cycle wording, which [TwinWording] carries.
+/// sheet's rules (Production Master: Actual + OK typed, Rejected = Actual − OK;
+/// Rejection Master: the rejected pieces split by reason, shared/quantity_rules
+/// .dart), plus Working Status and Setting ON/OFF Time as plain optional
+/// fields. The three files are identical but for the Part / cycle wording,
+/// which [TwinWording] carries.
 
 /// The downtime boxes (web `…_DOWNTIME_KEYS`): the stoppage fields but Lunch /
 /// Rest, which sits with Planned Operator Shift.
@@ -38,8 +40,10 @@ const List<String> twinFieldOrder = [
   'machineOffTime',
   'settingOnTime',
   'settingOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectBreakdown',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   ...twinDowntimeKeys,
@@ -75,10 +79,13 @@ int? _clock(Object? t) {
       : int.parse(n.substring(0, 2)) * 60 + int.parse(n.substring(3, 5));
 }
 
-// Same only-when-changed rule as the CNC sheet: an older row that already
-// breaks a time rule stays editable.
+// Same only-when-changed rule as the web (`timesUnchanged`): an older row that
+// already breaks a time rule stays editable — but moving it to another date or
+// machine is a change, since nothing it meets there was checked when it was saved.
 bool _timesUnchanged(Map<String, dynamic> v, Map<String, dynamic>? saved) =>
     saved != null &&
+    jsString(v['date'] ?? '') == jsString(saved['date'] ?? '') &&
+    jsString(v['machine'] ?? '') == jsString(saved['machine'] ?? '') &&
     normalizeTime(v['machineOnTime']) ==
         normalizeTime(saved['machineOnTime']) &&
     normalizeTime(v['machineOffTime']) ==
@@ -142,43 +149,25 @@ Map<String, String> twinValidate(
     }
   }
 
-  // OK and Rejected are both typed; together they can't beat what the shift could make.
-  final ok = _num(v['okQty']);
-  final rej = _num(v['rejectedQty']);
-  if (isBlank(v['okQty'])) {
-    errors['okQty'] = 'Actual OK Quantity is required';
-  } else if (!isNum(ok) || ok! < 0) {
-    errors['okQty'] = 'Must be 0 or more';
-  }
-  if (isBlank(v['rejectedQty'])) {
-    errors['rejectedQty'] = 'Rejected Quantity is required';
-  } else if (!isNum(rej) || rej! < 0) {
-    errors['rejectedQty'] = 'Must be 0 or more';
-  }
-  final ideal = c['idealQty'];
-  if (!errors.containsKey('okQty') &&
-      !errors.containsKey('rejectedQty') &&
-      isNum(ideal) &&
-      ok! + rej! > (ideal as num)) {
-    errors['okQty'] =
-        "OK + Rejected (${jsNumStr(ok + rej)}) can't be more than Ideal Quantity (${jsNumStr(ideal)})";
-  }
+  // Actual and OK are typed; Rejected = Actual − OK and the split accounts for it.
+  validateQuantities(v, c, errors);
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  final plannedParse = parseHm(v['plannedOperatorShiftHours']);
+  // Planned Operator Shift is typed as decimal hours (60 minutes to the hour).
+  final plannedParse = parseShiftHours(v['plannedOperatorShiftHours']);
   final planned = plannedParse.hours;
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
-  } else if (plannedParse.minutesTooBig) {
-    errors['plannedOperatorShiftHours'] =
-        'Minutes must be 00–59 (3.30 means 3 h 30 min)';
   } else if (planned == null) {
-    errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
+    errors['plannedOperatorShiftHours'] = 'Enter hours as on the sheet, like 8.5 or 5.33';
   } else if (planned <= 0 || planned > 24) {
     errors['plannedOperatorShiftHours'] =
         'Must be more than 0:00 and at most 24:00';
   } else {
-    final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
+    // Not while End isn't after Start: the span would wrap past midnight (23 h
+    // and the like), and the End box already says what's wrong.
+    final shiftMin = errors.containsKey('machineOffTime')
+        ? null
+        : spanMinutes(v['machineOnTime'], v['machineOffTime']);
     if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
       errors['plannedOperatorShiftHours'] =
           "Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})";

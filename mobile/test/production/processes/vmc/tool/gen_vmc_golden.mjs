@@ -18,8 +18,9 @@ import path from "node:path";
 import { sortByMachineOn } from "../../../../../../client/src/utils/productionSheet.js";
 import { vmcRowCalc, vmcDayCalc, programCycleSec, VMC_FORMULAS } from "../../../../../../client/src/utils/vmcSheet.js";
 import { VMC_FIELD_ORDER, VMC_DOWNTIME_KEYS, firstVmcError, validateVmcEntry } from "../../../../../../client/src/utils/vmcValidation.js";
-import { STOPPAGE_FIELDS } from "../../../../../../client/src/utils/productionSheet.js";
-import { hmToWireHours, parseHm } from "../../../../../../client/src/utils/shiftHours.js";
+import { STOPPAGE_FIELDS, REJECT_REASONS } from "../../../../../../client/src/utils/productionSheet.js";
+import { quantityFormValues, rejectPayload } from "../../../../../../client/src/utils/quantityRules.js";
+import { hmToWireHours, parseShiftHours } from "../../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -39,6 +40,25 @@ const SCALE = Number(process.env.SCALE || 1);
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 const chance = (p) => rnd() < p;
 const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+
+// A Rejection Master split of exactly `total` pieces over random reasons (as the form's boxes hold it: strings).
+const splitOf = (total) => {
+  const out = {};
+  let left = total;
+  while (left > 0) {
+    const reason = pick(REJECT_REASONS);
+    const n = chance(0.5) ? left : int(1, left);
+    out[reason] = String(Number(out[reason] || 0) + n);
+    left -= n;
+  }
+  return out;
+};
+// Junk split boxes: blanks, zeros, negatives, text, numbers, unknown reasons.
+const junkSplit = () => {
+  const out = {};
+  for (const r of [...REJECT_REASONS, "Nonsense"]) if (chance(0.25)) out[r] = pick(["", "0", "3", "10", 5, "-2", "abc", "  ", "2.5", 0]);
+  return out;
+};
 
 function enc(v) {
   if (v === undefined) return { $u: 1 };
@@ -89,8 +109,19 @@ const vmcRow = (id, { typed }) => {
   row.programTimeMin = pick(["5", "7", "12.5", "30", 10, "3", PROGRAM_MIN]).valueOf?.() ?? "5";
   if (Array.isArray(row.programTimeMin)) row.programTimeMin = pick(PROGRAM_MIN);
   row.pcsPerProgram = pick(["1", "2", "3", "9", 4, "12"]);
-  row.okQty = String(int(0, 400));
-  row.rejectedQty = String(int(0, 60));
+  const ok = int(0, 400);
+  const rej = int(0, 60);
+  row.okQty = String(ok);
+  if (chance(0.7)) {
+    // Production Master: Actual and OK typed, the rejected pieces split by reason.
+    row.actualQty = String(ok + rej);
+    if (chance(0.8)) row.rejectBreakdown = splitOf(rej);
+    if (row.rejectBreakdown?.Other && chance(0.7)) row.rejectOtherRemark = pick(["burr", " tool broke ", ""]);
+  } else {
+    // An entry saved before Actual existed: OK + Rejected, one reason.
+    row.rejectedQty = String(rej);
+    if (chance(0.5)) row.rejectReason = pick(REJECT_REASONS);
+  }
   row.plannedOperatorShiftHours = typed ? pick(["8", "8.30", "9", "12", "4.15", "10.45"]) : pick(["8", "8.5", "9", "12", 8, 9.25]);
   row.lunchMin = pick(["0", "20", "30", "45", "", 30]);
   for (const k of VMC_DOWNTIME_KEYS) if (chance(0.3)) row[k] = pick(["", "0", "10", "25", "5"]);
@@ -114,8 +145,11 @@ const junkRow = (id, { typed }) => {
   maybe(0.9, "programTimeMin", pick(PROGRAM_MIN));
   maybe(0.9, "pcsPerProgram", pick(PIECES));
   maybe(0.8, "okQty", pick(QTY));
-  maybe(0.8, "rejectedQty", pick(QTY));
-  maybe(0.15, "actualQty", pick(QTY));
+  maybe(0.3, "rejectedQty", pick(QTY));
+  maybe(0.6, "actualQty", pick(QTY));
+  maybe(0.4, "rejectBreakdown", junkSplit());
+  maybe(0.3, "rejectOtherRemark", pick(["", " ", "x", undefined]));
+  maybe(0.1, "rejectReason", pick([...REJECT_REASONS, "Nonsense", ""]));
   maybe(0.8, "plannedOperatorShiftHours", pick(typed ? PLANNED_TYPED : PLANNED_DEC));
   maybe(0.5, "lunchMin", pick(STOP));
   for (const f of STOPPAGE_FIELDS) maybe(0.3, f.key, pick(STOP));
@@ -136,7 +170,7 @@ for (let i = 0; i < 700 * SCALE; i += 1) {
 }
 // Hand-picked: the "7 min over 9 pieces" case the web comment names, and edge programs.
 for (const [p, n, on, off] of [["7", "9", "08:00", "16:00"], ["7", "9", "06:00", "14:00"], ["5", "1", "08:00", "08:01"], ["0", "5", "08:00", "16:00"], ["5", "0", "08:00", "16:00"]]) {
-  const row = { _id: "h", itemName: "P", programTimeMin: p, pcsPerProgram: n, machineOnTime: on, machineOffTime: off, okQty: "10", rejectedQty: "1", plannedOperatorShiftHours: 9 };
+  const row = { _id: "h", itemName: "P", programTimeMin: p, pcsPerProgram: n, machineOnTime: on, machineOffTime: off, actualQty: "11", okQty: "10", plannedOperatorShiftHours: 9 };
   rowCases.push({ row: encIn(row), out: enc(vmcRowCalc(row)) });
 }
 write("row_calc.json", rowCases);
@@ -182,11 +216,16 @@ for (let i = 0; i < 300 * SCALE; i += 1) {
     pcsPerProgram: pick(["1", "2", "9", "4"]),
     machineOnTime: pick(["08:00", "06:00", "9:30"]),
     machineOffTime: pick(["16:00", "14:00", "18:00"]),
-    okQty: String(int(0, 200)),
-    rejectedQty: String(int(0, 40)),
-    plannedOperatorShiftHours: pick(["9", "8.30", "10", "12"]),
+    plannedOperatorShiftHours: pick(["9", "8.5", "10", "12", "5.33"]),
     lunchMin: pick(["", "30", "45"]),
   };
+  const okQ = int(0, 200);
+  const rejQ = int(0, 40);
+  v.okQty = String(okQ);
+  v.actualQty = String(okQ + rejQ);
+  // mostly a correct split, sometimes short / over / "Other" with or without its remark
+  v.rejectBreakdown = chance(0.8) ? splitOf(rejQ) : chance(0.5) ? {} : splitOf(rejQ + int(1, 5));
+  if (v.rejectBreakdown.Other && chance(0.6)) v.rejectOtherRemark = "burr";
   for (const k of VMC_DOWNTIME_KEYS) if (chance(0.25)) v[k] = String(int(0, 90));
   if (Number(v.otherMin) > 0 && chance(0.5)) v.otherMinRemark = "tea";
   valCases.push({ values: encIn(v), saved: null, errors: enc(validateVmcEntry(v, {})) });
@@ -209,9 +248,9 @@ write("first_error.json", { fieldOrder: VMC_FIELD_ORDER, downtimeKeys: VMC_DOWNT
 
 // ── toPayload (body of VmcDataEntry.jsx's handler, copied — pages aren't importable) ──
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "machineNotRun", "workOrderNo", "itemName", "drawingNo", "setupNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["programTimeMin", "pcsPerProgram", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 const toPayload = (v, isEdit) => ({
   ...(isEdit && v._id ? { _id: v._id } : {}),
   date: v.date,
@@ -227,8 +266,10 @@ const toPayload = (v, isEdit) => ({
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
+  // The Rejection Master split and its "Other" remark. rejectedQty is never sent: the server derives it (Actual − OK).
+  ...rejectPayload(v),
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
@@ -241,6 +282,8 @@ for (let i = 0; i < 600 * SCALE; i += 1) {
     if (v[k] === undefined || v[k] === null) v[k] = "";
     else if (typeof v[k] === "number") v[k] = String(v[k]);
   }
+  // The phone's Rejection Master boxes hold text; some are blank / zero / junk.
+  if (chance(0.15)) v.rejectBreakdown = junkSplit();
   v.date = "2026-04-06";
   v.machine = chance(0.9) ? "m1" : "";
   v.item = chance(0.7) ? "i1" : "";
@@ -255,6 +298,15 @@ for (let i = 0; i < 600 * SCALE; i += 1) {
   payloadCases.push({ values: encIn(v), isEdit, payload: JSON.parse(JSON.stringify(toPayload(v, isEdit))) });
 }
 write("payload.json", payloadCases);
+
+// ── quantityFormValues (Actual Quantity + Rejection Master split of a saved row) ──
+const qtyRowCases = [];
+for (let i = 0; i < 300 * SCALE; i += 1) {
+  const row = makeRow("q" + i, { typed: false });
+  if (chance(0.3)) row.rejectBreakdown = chance(0.5) ? {} : junkSplit();
+  qtyRowCases.push({ row: encIn(row), out: enc(quantityFormValues(row)) });
+}
+write("quantity_form_values.json", qtyRowCases);
 
 write("formulas.json", VMC_FORMULAS);
 console.log("vmc golden written to", OUT, { rows: rowCases.length, day: dayCases.length, validation: valCases.length, payload: payloadCases.length });

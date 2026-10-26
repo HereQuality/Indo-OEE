@@ -111,7 +111,7 @@ void main() {
         expect(tile(k), findsOneWidget, reason: k);
       }
       // First default graph, in default order, framed by its card.
-      expect(find.text('Effective Machine Run Time (Hour) by Operator'), findsOneWidget);
+      expect(find.text('Effective Run Time by Operator (hr)'), findsOneWidget);
       expect(find.textContaining('runTimeByOperator view=chart'), findsOneWidget);
     });
 
@@ -329,13 +329,15 @@ void main() {
   });
 
   group('graph cards', () {
-    testWidgets('title, hint, chart <-> table switch and the drill button', (tester) async {
+    testWidgets('title (hint as tooltip), chart <-> table switch and the drill button', (tester) async {
       final api = FakeApi.install();
       installDashboardApi(api, processes: processesFixture(vmcStats: ['totalQty'], vmcCharts: ['runTimeByOperator']));
       await pumpDashboard(tester);
 
-      expect(find.text('Effective Machine Run Time (Hour) by Operator'), findsOneWidget);
-      expect(find.text('Hours of effective run time each operator produced.'), findsOneWidget);
+      expect(find.text('Effective Run Time by Operator (hr)'), findsOneWidget);
+      // Title only on the card: the longer explanation is a long-press tooltip, not a second line.
+      expect(find.text('Hours of effective run time each operator produced.'), findsNothing);
+      expect(find.byTooltip('Hours of effective run time each operator produced.'), findsOneWidget);
       expect(find.textContaining('view=chart'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Show as table'));

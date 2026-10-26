@@ -7,6 +7,7 @@
 
 import '../../entry_form/entry_form_logic.dart' show isBlankValue;
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/quantity_rules.dart';
 import '../../shared/shift_hours.dart';
 import '../../sheet/editor/entry_editor_logic.dart' show numText;
 import '../../sheet/sheet_model.dart';
@@ -14,13 +15,13 @@ import '../../sheet/sheet_model.dart';
 final List<String> _stoppageKeys = [for (final f in stoppageFields) f['key'] as String];
 
 /// `workOrderNo` is only shown on the web — the server takes the number from the work order.
-const List<String> vmcTextFields = ['operator', 'machineNotRun', 'workOrderNo', 'itemName', 'drawingNo', 'setupNo', 'remarks', 'otherMinRemark'];
+const List<String> vmcTextFields = ['operator', 'machineNotRun', 'workOrderNo', 'itemName', 'drawingNo', 'setupNo', 'remarks', 'rejectOtherRemark', 'otherMinRemark'];
 const List<String> vmcTimeFields = ['machineOnTime', 'machineOffTime'];
 final List<String> vmcNumberFields = [
   'programTimeMin',
   'pcsPerProgram',
+  'actualQty',
   'okQty',
-  'rejectedQty',
   'plannedOperatorShiftHours',
   ..._stoppageKeys,
 ];
@@ -46,6 +47,8 @@ Json emptyVmcEntry({DateTime? now}) => <String, dynamic>{
       for (final k in vmcTextFields) k: '',
       for (final k in vmcTimeFields) k: '',
       for (final k in vmcNumberFields) k: '',
+      // Rejection Master: {reason: qty}, typed per reason; has to add up to Rejected (Actual − OK).
+      'rejectBreakdown': <String, dynamic>{},
     };
 
 /// A saved record -> form values ('' for anything unset, so inputs stay controlled).
@@ -64,9 +67,11 @@ Json vmcToFormValues(Json row, {DateTime? now}) {
   out['slot'] = row['slot'];
   out['machineStatus'] = row['machineStatus'] is List ? List<dynamic>.from(row['machineStatus'] as List) : <dynamic>[];
   out['excludedOps'] = row['excludedOps'] is List ? List<dynamic>.from(row['excludedOps'] as List) : <dynamic>[];
-  // A stored shift is decimal hours; the box shows it as H.MM (7.5 -> "7.30").
+  // Actual Quantity and the Rejection Master split (an older entry has neither: Actual = OK + Rejected).
+  out.addAll(quantityFormValues(row));
+  // A stored shift is decimal hours; the box shows it as typed (5 h 20 min -> "5.33").
   out['plannedOperatorShiftHours'] =
-      isBlankValue(row['plannedOperatorShiftHours']) ? '' : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
+      isBlankValue(row['plannedOperatorShiftHours']) ? '' : hoursToShiftInput(jsToNumber(row['plannedOperatorShiftHours']));
   return out;
 }
 
@@ -105,9 +110,11 @@ Json vmcToPayload(Json v, {required bool isEdit}) {
     'otherMinRemark': jsToNumber(v['otherMin']) > 0 ? text('otherMinRemark') : '',
     for (final k in vmcTimeFields) k: v[k] ?? '',
     for (final k in vmcNumberFields) k: _number(v[k]),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // The Rejection Master split and its "Other" remark. rejectedQty is never sent: the server derives it (Actual − OK).
+    ...rejectPayload(v, _wire),
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': () {
-      final hours = parseHm(v['plannedOperatorShiftHours']).hours;
+      final hours = parseShiftHours(v['plannedOperatorShiftHours']).hours;
       return hours == null ? '' : _wire(hmToWireHours(hours));
     }(),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.
@@ -120,6 +127,7 @@ bool _filled(Object? v) => v != null && v != '';
 /// Whether any block holds something worth keeping as a draft (web hasAnyEntryData).
 bool hasAnyVmcEntryData(List<Json> list) => list.any((v) {
       if (jsTruthy(v['machine'])) return true;
+      if (hasRejectData(v)) return true;
       return [...vmcTextFields, ...vmcTimeFields, ...vmcNumberFields].any((k) => _filled(v[k]));
     });
 
@@ -131,8 +139,9 @@ const List<String> _dataKeys = [
   'itemName',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   'plannedDownMin',
@@ -154,7 +163,8 @@ bool vmcEntryHasData(Json v) =>
     _dataKeys.any((k) {
       final x = v[k];
       return x is List ? x.isNotEmpty : _filled(x);
-    });
+    }) ||
+    (v['rejectBreakdown'] is Map && (v['rejectBreakdown'] as Map).values.any(_filled));
 
 /// Picking a Part copies its details onto the block — still editable, so a later
 /// change to the master never rewrites saved records (web handleItemSelect /

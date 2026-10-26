@@ -14,7 +14,8 @@ import { metricsOver100 } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
-import { qtyNotice, stoppageNotice } from "../../utils/limitNotice";
+import { stoppageNotice } from "../../utils/limitNotice";
+import { ProductionMasterFields, RejectionMasterFields } from "./QuantityMaster";
 import { WORKING_STATUSES, fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
 import { springRowCalc, isStatusOnly } from "../../utils/springSheet";
@@ -28,7 +29,7 @@ import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
  * behaviour: one block per machine behind its own "+", "Add another machine"
  * for several machines in one Save, one block open at a time, Save scrolling
  * to the first incomplete field, grey boxes calculated live, typed boxes
- * capped so they can't be typed past what is allowed (OK + Rejected within
+ * capped so they can't be typed past what is allowed (Actual Quantity within
  * Ideal Quantity; all downtime together within the Machine Shift — a popup explains either limit with its figures).
  *
  * What differs from RIVET: no Process dropdown, no named operation
@@ -82,12 +83,13 @@ const LINES = [
     title: "Machine ON–OFF Time, Machine Shift",
     fields: ["machineOnTime", "machineOffTime"],
   },
-  { id: 5, title: "Production (Qty)", fields: ["okQty", "rejectedQty"] },
+  { id: 5, title: "Production Master", fields: ["actualQty", "okQty"] },
   // Lunch / Rest sits beside Planned Operator Shift on the form, though it is
   // still just one more stoppage box toward the total (see rowCalc).
   { id: 7, title: "Planned Operator Shift, Lunch / Rest", fields: ["plannedOperatorShiftHours", "lunchMin"] },
   { id: 8, title: "Idle Time (min)", fields: [...SPRING_DOWNTIME_KEYS, "stoppageTotal", "otherMinRemark"] },
   { id: 12, title: "Reason / Remarks for Rejection / Rework", fields: ["remarks"] },
+  { id: 13, title: "Rejection Master (Qty)", fields: ["rejectBreakdown", "rejectOtherRemark"] },
 ];
 
 const findLine = (id) => LINES.find((l) => l.id === id);
@@ -100,9 +102,10 @@ const Line = ({ id, ...rest }) => <FormLine title={findLine(id).title} fields={f
 
 // Everything a block can hold beyond the machine itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
-const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal"].includes(k));
+const DATA_KEYS = LINES.flatMap((l) => l.fields).filter((k) => !["date", "machine", "stoppageTotal", "rejectBreakdown"].includes(k));
 
-const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
+const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null)) ||
+  Object.values(v.rejectBreakdown || {}).some((n) => n !== "" && n !== undefined && n !== null);
 
 // One downtime box: a capped minutes input labelled like the sheet.
 const DOWNTIME_BOXES = [
@@ -135,6 +138,7 @@ const EntryBlock = ({
   onExpand,
   onChange,
   onItemSelect,
+  onRejectChange,
   onRemove,
   registerRef,
 }) => {
@@ -192,14 +196,6 @@ const EntryBlock = ({
             ),
     };
   };
-
-  // OK + Rejected can't go past Ideal Quantity: each box may take what the other leaves.
-  const qtyRoom = (otherKey) =>
-    Number.isFinite(calc.idealQty) ? Math.max(0, calc.idealQty - (Number(values[otherKey]) || 0)) : undefined;
-  // A blocked keystroke pops up why, with the figures: what was typed plus what
-  // the other box already holds, against Ideal Quantity.
-  const exceedIdeal = (otherKey) => (max, typed) =>
-    notice(...qtyNotice({ calc, entered: typed + (Number(values[otherKey]) || 0) }));
 
   // The time rules (OFF after ON, no overlap) show as soon as the times are
   // picked (and a typed time that isn't one, or a machine already full
@@ -467,31 +463,12 @@ const EntryBlock = ({
         </Line>
 
         <Line id={5} errors={errors} isSubmit={isSubmit} values={values}>
-          <Row className="g-1">
-            <Field label="Actual OK Quantity" required error={err("okQty")} fieldKey="okQty">
-              <NumberInput
-                name="okQty"
-                value={values.okQty}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("okQty")}
-                max={qtyRoom("rejectedQty")}
-                onExceedMax={exceedIdeal("rejectedQty")}
-              />
-            </Field>
-            <Field label="Rejected Quantity" required error={err("rejectedQty")} fieldKey="rejectedQty">
-              <NumberInput
-                name="rejectedQty"
-                value={values.rejectedQty}
-                onChange={handle}
-                decimals={false}
-                invalid={!!err("rejectedQty")}
-                max={qtyRoom("okQty")}
-                onExceedMax={exceedIdeal("okQty")}
-              />
-            </Field>
-          </Row>
+          <ProductionMasterFields values={values} calc={calc} err={err} onChange={handle} />
           <OeeCheck calc={oeeCalc} over={overMetrics} />
+        </Line>
+
+        <Line id={13} errors={errors} isSubmit={isSubmit} values={values} optional>
+          <RejectionMasterFields values={values} calc={calc} err={err} index={index} onChange={handle} onRejectChange={onRejectChange} />
         </Line>
 
         <Line id={7} errors={errors} isSubmit={isSubmit} values={values} optional openByDefault={!plannedLock} countFields={["lunchMin"]} summary={plannedLock ? "Shift fixed — Lunch / Rest optional" : ""}>
@@ -605,6 +582,7 @@ const SpringEntryForm = ({
   plannedLocks = [],
   onChange,
   onItemSelect,
+  onRejectChange,
   onAdd,
   onRemove,
 }) => {
@@ -725,6 +703,7 @@ const SpringEntryForm = ({
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}
+          onRejectChange={onRejectChange}
           onRemove={removeBlock}
           registerRef={(el) => {
             blockRefs.current[i] = el;

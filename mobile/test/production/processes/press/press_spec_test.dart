@@ -34,29 +34,36 @@ void main() {
     expect(e['workingMode'], 'Working');
     expect(e['machineStatus'], isEmpty);
     expect(e['excludedOps'], isEmpty);
-    for (final k in ['operator', 'itemName', 'operation', 'drawingNo', 'setupNo', 'standardTimeMin', 'pcsPerStandardTime', 'okQty', 'rejectedQty', 'plannedOperatorShiftHours', 'lunchMin', 'plannedDownMin', 'otherMin', 'otherMinRemark', 'machineOnTime']) {
+    for (final k in ['operator', 'itemName', 'operation', 'drawingNo', 'setupNo', 'standardTimeMin', 'pcsPerStandardTime', 'actualQty', 'okQty', 'rejectOtherRemark', 'plannedOperatorShiftHours', 'lunchMin', 'plannedDownMin', 'otherMin', 'otherMinRemark', 'machineOnTime']) {
       expect(e[k], '', reason: k);
     }
-    expect(e.containsKey('actualQty'), isFalse, reason: 'PRESS has no Actual box');
-    expect(e.containsKey('rejectBreakdown'), isFalse, reason: 'PRESS has no reject split');
+    expect(e['rejectBreakdown'], <String, dynamic>{}, reason: 'the Rejection Master split starts empty');
+    expect(e.containsKey('rejectedQty'), isFalse, reason: 'Rejected = Actual − OK, never typed');
     expect(pressSpec.entryHasData(e), isFalse);
     expect(pressSpec.hasAnyEntryData([e]), isFalse);
   });
 
-  test('toFormValues turns stored numbers into box text and the shift into H.MM', () {
+  test('toFormValues turns stored numbers into box text and the shift into decimal hours', () {
     final v = pressSpec.toFormValues(row(), now: now);
     expect(v['okQty'], '2000');
+    // No stored Actual (an entry from before it existed): OK + Rejected, no reason known.
+    expect(v['actualQty'], '2100');
+    expect(v['rejectBreakdown'], <String, dynamic>{});
     expect(v['standardTimeMin'], '2');
-    expect(v['plannedOperatorShiftHours'], '8.30');
+    expect(v['plannedOperatorShiftHours'], '8.5');
     expect(v['lunchMin'], '30');
     expect(v['setupMin'], '');
     expect(v['slot'], 2);
     expect(v['item'], 'i1');
     expect(v['_id'], 'r1');
-    expect(pressSpec.validateEntry(v), isEmpty);
+    // The 100 rejected pieces have no reason yet, so it can't be saved until they get one.
+    expect(pressSpec.validateEntry(v).keys, ['rejectBreakdown']);
+    expect(pressSpec.validateEntry({...v, 'rejectBreakdown': {'Tool Mark': '100'}}), isEmpty);
     // Saved and loaded unchanged: the payload carries the same figures back.
     final p = pressSpec.toPayload(v, isEdit: true);
     expect(p['plannedOperatorShiftHours'], 8.5);
+    expect(p['actualQty'], 2100);
+    expect(p.containsKey('rejectedQty'), isFalse);
     expect(p['_id'], 'r1');
     expect(p['slot'], 2);
     expect(pressSpec.toPayload(v, isEdit: false)['slot'], 'auto');
@@ -97,12 +104,16 @@ void main() {
     expect(pressSpec.newBlockAfter([], now: now)['date'], '2026-10-22');
     final merged = pressSpec.mergeDraftEntry({'machine': 'm2', 'okQty': '5'}, now: now);
     expect(merged['okQty'], '5');
-    expect(merged['rejectedQty'], '');
+    expect(merged['actualQty'], '');
+    expect(merged['rejectBreakdown'], <String, dynamic>{});
     expect(merged['excludedOps'], isEmpty);
     expect(pressSpec.hasAnyEntryData([first]), isTrue, reason: 'a machine alone counts');
     expect(pressSpec.entryHasData({...pressSpec.emptyEntry(now: now), 'machine': 'm1'}), isFalse);
     expect(pressSpec.entryHasData({...pressSpec.emptyEntry(now: now), 'remarks': 'x'}), isTrue);
     expect(pressSpec.entryHasData({...pressSpec.emptyEntry(now: now), 'workingMode': 'Non Working'}), isTrue);
+    final split = {...pressSpec.emptyEntry(now: now), 'rejectBreakdown': {'Tool Mark': '2'}};
+    expect(pressSpec.entryHasData(split), isTrue, reason: 'a Rejection Master figure is typed work');
+    expect(pressSpec.hasAnyEntryData([split]), isTrue);
   });
 
   test('the table lists the web columns in sheet order, with the stoppage breakdown behind Total Stoppage', () {
@@ -110,12 +121,18 @@ void main() {
     expect([for (final c in closed.left) c.key], ['date', 'machine']);
     expect([for (final c in closed.middle) c.key], [
       'operator', 'machineStatus', 'itemName', 'vendorName', 'operation', 'drawingNo', 'setupNo', 'standardTimeMin', 'pcsPerStandardTime',
-      'cycle', 'on', 'off', 'shift', 'idealQty', 'okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'totalStoppage',
+      'cycle', 'on', 'off', 'shift', 'idealQty', 'actualQty', 'okQty', 'rejectedQty', 'pctOk', 'plannedShift', 'totalStoppage',
       'setupEff', 'effective', 'unreported', 'availability', 'performance', 'quality', 'oeeLosses', 'oeeLunch', 'oeeLunchCot',
       'review', 'remarks',
     ]);
     expect(closed.middle.any((c) => c.key == 'unutilized'), isFalse);
-    expect(closed.expandSummary, {'downtime': 'totalStoppage'});
+    expect(closed.expandSummary, {'rejectedQty': 'rejectedQty', 'downtime': 'totalStoppage'});
+    // Rejected Quantity opens into the Rejection Master reasons.
+    final rejected = pressSpec.columns({'rejectedQty'});
+    expect([for (final c in rejected.middle) if (c.sub) c.key], [
+      'Dimension Out', 'Tool Mark', 'Surface Finish', 'Porosity / Blow Hole', 'Material Defect', 'Setting Mistake', 'Operator Mistake', 'Machine Fault', 'Broken', 'Other',
+    ]);
+    expect(rejected.middle.firstWhere((c) => c.key == 'Other').remarkKind, 'reject');
     final open = pressSpec.columns({'downtime'});
     expect([for (final c in open.middle) if (c.sub) c.key], [
       'plannedDownMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin', 'bdMechMin', 'bdEleMin', 'noPowerMin', 'lunchMin', 'otherMin',
@@ -123,7 +140,7 @@ void main() {
     expect(open.middle.firstWhere((c) => c.key == 'otherMin').remarkKind, 'downtime');
     // Every formula a column points at has a text.
     for (final c in [...closed.middle, ...open.middle]) {
-      expect(pressSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
+      if (c.formulaKey != null) expect(pressSpec.formulas.containsKey(c.formulaKey), isTrue, reason: c.key);
     }
   });
 
@@ -135,6 +152,7 @@ void main() {
     String cell(String key) => pressSpec.columns({'downtime'}).middle.firstWhere((c) => c.key == key).text(cd);
     expect(cell('cycle'), '12');
     expect(cell('idealQty'), '2400');
+    expect(cell('actualQty'), '2100');
     expect(cell('okQty'), '2000');
     expect(cell('rejectedQty'), '100');
     expect(cell('shift'), '8:00');
@@ -151,7 +169,7 @@ void main() {
     final calc = pressSpec.rowCalc(r);
     final f = pressSpec.figures(r, calc);
     expect(f.ok, 2000);
-    expect(f.actual, 2100, reason: 'OK + Rejected');
+    expect(f.actual, 2100);
     expect(f.shiftHours, 8);
     expect([for (final p in pressSpec.remarkParts(r)) p['key']], ['downtime', 'general']);
     final d = pressSpec.detail(r, calc, pressSpec.dayCalc([r]).single);

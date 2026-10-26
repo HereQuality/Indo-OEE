@@ -296,6 +296,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   int? get _editSlot => _isEdit ? (widget.row!['slot'] as num?)?.toInt() : null;
   Map<String, dynamic>? get _savedTimes => _isEdit
       ? {
+          // Date and machine too: moving the row elsewhere is a change (web `saved`).
+          'date': widget.row!['date'],
+          'machine': widget.row!['machine'],
           'machineOnTime': widget.row!['machineOnTime'],
           'machineOffTime': widget.row!['machineOffTime'],
           'operator': widget.row!['operator'],
@@ -763,7 +766,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                     isEdit: _isEdit,
                     booked: [
                       for (final e in _entries)
-                        bookedRanges(e, _occupied, editSlot: _editSlot),
+                        bookedRanges(e, _occupied, editSlot: _editSlot, saved: _savedTimes),
                     ],
                     onChange: _onChange,
                     onItemSelect: _onItemSelect,

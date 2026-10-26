@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { entryCommonFields } = require("./entryCommon");
 const { STOPPAGE_KEYS } = require("./ProductionEntry");
+const { rejectFields } = require("./rejectFields");
 
 /**
  * models/RivetEntry.js
@@ -16,8 +17,8 @@ const { STOPPAGE_KEYS } = require("./ProductionEntry");
  * plus one reference figure (No. of Holes in One Piece) that's typed and
  * shown on the sheet but doesn't feed any formula yet — nobody has given us
  * the rule connecting it to Ideal Quantity, so it stays display-only until
- * that's confirmed against real data. A typed Rejected Quantity, same as
- * VMC/SPM (no reject reason split).
+ * that's confirmed against real data. Actual and OK Quantity are typed, Rejected is
+ * Actual − OK and split across reject reasons (rejectFields.js), same as CNC.
  *
  * Only the entered values are stored. Every calculated column (Ideal Qty,
  * Effective Run Time, OEE, …) is derived on display — see
@@ -74,6 +75,7 @@ const RivetEntrySchema = new mongoose.Schema(
     machineOnTime: { type: String, match: HHMM },
     machineOffTime: { type: String, match: HHMM },
 
+    ...rejectFields,
     okQty: { type: Number, min: [0, "OK Quantity cannot be negative"] },
     rejectedQty: { type: Number, min: [0, "Rejected Quantity cannot be negative"] },
 

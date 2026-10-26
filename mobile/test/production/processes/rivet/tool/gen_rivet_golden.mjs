@@ -16,7 +16,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { STOPPAGE_FIELDS, sortByMachineOn } from "../../../../../../client/src/utils/productionSheet.js";
+import { REJECT_REASONS, STOPPAGE_FIELDS, sortByMachineOn } from "../../../../../../client/src/utils/productionSheet.js";
 import {
   RIVET_FORMULAS,
   RIVET_OP_FIELDS,
@@ -26,7 +26,8 @@ import {
   rivetRowCalc,
 } from "../../../../../../client/src/utils/rivetSheet.js";
 import { RIVET_DOWNTIME_KEYS, RIVET_FIELD_ORDER, firstRivetError, validateRivetEntry } from "../../../../../../client/src/utils/rivetValidation.js";
-import { hmToWireHours, hoursToHmInput, parseHm } from "../../../../../../client/src/utils/shiftHours.js";
+import { hasRejectData, quantityFormValues, rejectPayload } from "../../../../../../client/src/utils/quantityRules.js";
+import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../../../../../../client/src/utils/shiftHours.js";
 
 const OUT = process.env.OUT_DIR;
 if (!OUT) throw new Error("set OUT_DIR");
@@ -86,6 +87,25 @@ const SECS = ["5", "8", "10", "12.5", 4, "0", "20", "15"];
 const ITEMS = ["Rivet A", "Clamp 7B", "Flange", " Part B ", "X"];
 const HM = ["8", "8.30", "9", "12", "4.15", "3.5", "3.60", "24", "24.01", "0", "0.00", "abc", "", "  ", "8,30", ".5", "5.", 8, 8.5, null, undefined, "1000", "7.075"];
 
+// Actual / OK / the Rejection Master split (reason -> qty) the way the form holds them.
+function qtyFields() {
+  const ok = int(0, 400);
+  const rej = int(0, 40);
+  const split = {};
+  if (chance(0.7) && rej > 0) {
+    const a = int(0, rej);
+    const r1 = pick(REJECT_REASONS);
+    split[r1] = String(a);
+    const r2 = pick(REJECT_REASONS);
+    split[r2] = String((Number(split[r2]) || 0) + rej - a);
+  }
+  const f = { actualQty: String(ok + rej), okQty: String(ok), rejectBreakdown: split };
+  if (Object.keys(split).includes("Other")) f.rejectOtherRemark = pick(["", "cracked", "  burr  "]);
+  // A record saved before Actual existed: OK + Rejected only (+ its single reason).
+  if (chance(0.15)) return { okQty: String(ok), rejectedQty: String(rej), rejectReason: pick(["", REJECT_REASONS[0], "Gone"]) };
+  return f;
+}
+
 function saneRow(id) {
   const shifts = [["06:00", "14:00"], ["14:00", "22:00"], ["22:00", "06:00"], ["08:00", "16:00"], ["07:30", "15:45"], ["9", "17"], ["0930", "1330"], ["9:30", "18.15"]];
   const [on, off] = pick(shifts);
@@ -102,9 +122,8 @@ function saneRow(id) {
     totalCycleSec: chance(0.8) ? String(sum) : pick(["45", "60", 90, "12.5"]),
     machineOnTime: on,
     machineOffTime: off,
-    okQty: String(int(0, 400)),
-    rejectedQty: String(int(0, 40)),
-    plannedOperatorShiftHours: pick(["8", "8.30", "9", "12", "4", 8, "10.15"]),
+    ...qtyFields(),
+    plannedOperatorShiftHours: pick(["8", "8.30", "9", "12", "4", 8, "10.15", "5.33", "0.5", "3.5"]),
     lunchMin: pick(["0", "20", "30", "45", "", 30]),
     setupMin: pick(["", "0", "10", "25"]),
     remarks: pick(["", "ok", "late start"]),
@@ -127,7 +146,10 @@ function junkRow(id) {
   if (chance(0.4)) row.excludedOps = pick([[], [OPS[0]], [OPS[1], OPS[3]], OPS, ["nope"], null, ["drillingSec"]]);
   if (chance(0.85)) row.okQty = pick(QTY);
   if (chance(0.85)) row.rejectedQty = pick(QTY);
-  if (chance(0.3)) row.actualQty = pick(QTY);
+  if (chance(0.5)) row.actualQty = pick(QTY);
+  if (chance(0.4)) row.rejectBreakdown = pick([{}, { [REJECT_REASONS[0]]: pick(QTY) }, { [REJECT_REASONS[1]]: pick(QTY), Other: pick(QTY) }, { "Not a reason": "5" }, null]);
+  if (chance(0.2)) row.rejectOtherRemark = pick(["", "why", "  ", undefined]);
+  if (chance(0.15)) row.rejectReason = pick(REJECT_REASONS);
   for (const f of STOPPAGE_FIELDS) if (chance(0.35)) row[f.key] = pick(NUMS);
   return row;
 }
@@ -230,21 +252,26 @@ function validRow() {
     excludedOps: [],
     machineOnTime: "08:00",
     machineOffTime: "16:00",
+    actualQty: "320",
     okQty: "300",
-    rejectedQty: "20",
+    rejectBreakdown: { [REJECT_REASONS[0]]: "20" },
+    rejectOtherRemark: "",
     plannedOperatorShiftHours: "9.00",
     lunchMin: "30",
     workingMode: "Working",
   };
 }
 const valCases = [];
-const addVal = (v, saved) => {
+const addVal = (v, savedTimes) => {
+  // The web's timesUnchanged also compares the saved row's date and machine; the phone's editor
+  // only hands over the times, so the fixtures keep date/machine unchanged (times alone decide).
+  const saved = savedTimes ? { date: v.date, machine: v.machine, ...savedTimes } : savedTimes;
   const errors = validateRivetEntry(v, saved ? { saved } : undefined);
   valCases.push({ values: encIn(v), saved: saved ? encIn(saved) : null, errors: enc(errors), keys: Object.keys(errors) });
 };
 addVal(validRow());
 addVal({});
-addVal({ ...validRow(), workingMode: "Non Working", operator: "", itemName: "", okQty: "" });
+addVal({ ...validRow(), workingMode: "Non Working", operator: "", itemName: "", okQty: "", actualQty: "" });
 addVal({ ...validRow(), workingMode: "Non Working", date: "", machine: "" });
 addVal({ ...validRow(), itemName: "" });
 addVal({ ...validRow(), totalCycleSec: "" });
@@ -252,10 +279,23 @@ addVal({ ...validRow(), totalCycleSec: undefined });
 addVal({ ...validRow(), excludedOps: OPS });
 addVal({ ...validRow(), excludedOps: ["rivetLoadingSec"], totalCycleSec: "10" });
 addVal({ ...validRow(), processType: "" });
-addVal({ ...validRow(), okQty: "400", rejectedQty: "200" }); // over ideal
+addVal({ ...validRow(), actualQty: "641", okQty: "300" }); // over ideal
+addVal({ ...validRow(), actualQty: "640", okQty: "640", rejectBreakdown: {} }); // exactly Ideal
 addVal({ ...validRow(), okQty: "-1" });
-addVal({ ...validRow(), rejectedQty: "abc" });
-addVal({ ...validRow(), okQty: "", rejectedQty: "" });
+addVal({ ...validRow(), actualQty: "abc" });
+addVal({ ...validRow(), actualQty: "-2" });
+addVal({ ...validRow(), actualQty: "", okQty: "" });
+addVal({ ...validRow(), okQty: "400" }); // OK above Actual
+addVal({ ...validRow(), rejectBreakdown: {} }); // nothing split yet
+addVal({ ...validRow(), rejectBreakdown: { [REJECT_REASONS[0]]: "4" } });
+addVal({ ...validRow(), rejectBreakdown: { [REJECT_REASONS[0]]: "12", [REJECT_REASONS[1]]: "12" } });
+addVal({ ...validRow(), rejectBreakdown: { [REJECT_REASONS[0]]: "-1" } });
+addVal({ ...validRow(), rejectBreakdown: { [REJECT_REASONS[0]]: "abc" } });
+addVal({ ...validRow(), actualQty: "300", okQty: "300", rejectBreakdown: { [REJECT_REASONS[0]]: "3" } }); // nothing rejected
+addVal({ ...validRow(), actualQty: "300", okQty: "300", rejectBreakdown: {} });
+addVal({ ...validRow(), rejectBreakdown: { Other: "20" } });
+addVal({ ...validRow(), rejectBreakdown: { Other: "20" }, rejectOtherRemark: "cracked" });
+addVal({ ...validRow(), rejectBreakdown: { Other: "20" }, rejectOtherRemark: "   " });
 addVal({ ...validRow(), machineOnTime: "16:00", machineOffTime: "08:00" });
 addVal({ ...validRow(), machineOnTime: "16:00", machineOffTime: "08:00" }, { machineOnTime: "16:00", machineOffTime: "08:00" });
 addVal({ ...validRow(), machineOnTime: "abc" });
@@ -314,12 +354,13 @@ void errorLists;
 
 // ── page handlers (copied from pages/RivetDataEntry.jsx — keep in step) ──────
 const STOPPAGE_KEYS = STOPPAGE_FIELDS.map((f) => f.key);
-const TEXT_FIELDS = ["operator", "processType", "itemName", "drawingNo", "remarks", "otherMinRemark"];
+const TEXT_FIELDS = ["operator", "processType", "itemName", "drawingNo", "remarks", "rejectOtherRemark", "otherMinRemark"];
 const TIME_FIELDS = ["machineOnTime", "machineOffTime"];
-const NUMBER_FIELDS = ["noOfHoles", ...OPS, "totalCycleSec", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_FIELDS = ["noOfHoles", ...OPS, "totalCycleSec", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 const hasAnyEntryData = (list) =>
   list.some((v) => {
     if (v.machine) return true;
+    if (hasRejectData(v)) return true;
     return [...TEXT_FIELDS, ...TIME_FIELDS, ...NUMBER_FIELDS].some((k) => v[k] !== "" && v[k] !== undefined && v[k] !== null);
   });
 const emptyEntry = () => ({
@@ -332,6 +373,7 @@ const emptyEntry = () => ({
   vendor: "",
   vendorName: "",
   excludedOps: [],
+  rejectBreakdown: {},
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, ""])),
@@ -341,7 +383,9 @@ const toFormValues = (row) => ({
   ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined)),
   item: row.item || "",
   slot: row.slot,
-  plannedOperatorShiftHours: hoursToHmInput(row.plannedOperatorShiftHours),
+  plannedOperatorShiftHours: hoursToShiftInput(row.plannedOperatorShiftHours),
+  rejectedQty: "",
+  ...quantityFormValues(row),
 });
 const toPayload = (v, isEdit) => ({
   ...(isEdit && v._id ? { _id: v._id } : {}),
@@ -354,11 +398,12 @@ const toPayload = (v, isEdit) => ({
   vendor: v.vendor || null,
   excludedOps: v.excludedOps || [],
   ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, String(v[k] ?? "").trim()])),
+  ...rejectPayload(v),
   otherMinRemark: Number(v.otherMin) > 0 ? String(v.otherMinRemark ?? "").trim() : "",
   ...Object.fromEntries(TIME_FIELDS.map((k) => [k, v[k] ?? ""])),
   ...Object.fromEntries(NUMBER_FIELDS.map((k) => [k, v[k] === "" || v[k] === undefined ? "" : Number(v[k])])),
   plannedOperatorShiftHours: (() => {
-    const { hours } = parseHm(v.plannedOperatorShiftHours);
+    const { hours } = parseShiftHours(v.plannedOperatorShiftHours);
     return hours === null ? "" : hmToWireHours(hours);
   })(),
   lunchMin: v.lunchMin === "" || v.lunchMin === undefined ? 0 : Number(v.lunchMin),
@@ -372,8 +417,11 @@ const withPart = (v, it) => ({
   ...Object.fromEntries(OPS.map((k) => [k, it[k] ?? ""])),
   excludedOps: [],
 });
-const DATA_KEYS = ["operator", "machineStatus", "processType", "itemName", "noOfHoles", "machineOnTime", "machineOffTime", "okQty", "rejectedQty", "plannedOperatorShiftHours", "lunchMin", ...RIVET_DOWNTIME_KEYS, "otherMinRemark", "remarks"];
-const hasData = (v) => v.workingMode === "Non Working" || DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null));
+const DATA_KEYS = ["operator", "machineStatus", "processType", "itemName", "noOfHoles", "machineOnTime", "machineOffTime", "actualQty", "okQty", "rejectOtherRemark", "plannedOperatorShiftHours", "lunchMin", ...RIVET_DOWNTIME_KEYS, "otherMinRemark", "remarks"];
+const hasData = (v) =>
+  v.workingMode === "Non Working" ||
+  DATA_KEYS.some((k) => (Array.isArray(v[k]) ? v[k].length > 0 : v[k] !== "" && v[k] !== undefined && v[k] !== null)) ||
+  hasRejectData(v);
 
 // A typed block (what the phone's boxes hold: Strings) in the shapes the form can produce.
 function typedBlock(i) {
@@ -395,6 +443,9 @@ function typedBlock(i) {
   if (chance(0.3)) b.noOfHoles = pick(["4", "", 6, "abc", null]);
   if (chance(0.3)) b.excludedOps = pick([[], [OPS[0]], undefined, null]);
   if (chance(0.3)) b.machineOnTime = pick(TIMES_OK);
+  if (chance(0.5)) b.actualQty = pick(QTY);
+  b.rejectBreakdown = pick([{}, {}, { [REJECT_REASONS[0]]: "5" }, { [REJECT_REASONS[1]]: "3", Other: "2" }, { [REJECT_REASONS[0]]: "", Other: "0" }, { [REJECT_REASONS[2]]: "abc", [REJECT_REASONS[0]]: "7" }, { [REJECT_REASONS[3]]: "7", [REJECT_REASONS[1]]: "7" }, undefined, null]);
+  b.rejectOtherRemark = pick(["", " cracked ", undefined, null]);
   return b;
 }
 const payloadCases = [];
@@ -427,7 +478,10 @@ for (let i = 0; i < 400 * SCALE; i += 1) {
     machineOffTime: pick(["16:00", "14:30"]),
     okQty: pick([300, 0, "12", null]),
     rejectedQty: pick([5, 0, null]),
-    plannedOperatorShiftHours: pick([8, 8.5, 9, 7.75, 3.8333333333, null, undefined, 24, "9"]),
+    ...pick([{}, {}, { actualQty: pick([305, 12, "40", 0]) }, { rejectBreakdown: { [REJECT_REASONS[0]]: pick([5, "3"]), [REJECT_REASONS[1]]: 2 } }, { rejectBreakdown: { "Not a reason": 4 } }, { rejectBreakdown: {} }]),
+    rejectReason: pick(["", null, undefined, REJECT_REASONS[1], "Gone"]),
+    rejectOtherRemark: pick(["", "why", null]),
+    plannedOperatorShiftHours: pick([8, 8.5, 9, 7.75, 3.8333333333, null, undefined, 24, "9", 5.3333333333, 0.5]),
     lunchMin: pick([30, 0, null, undefined, 45]),
     setupMin: pick([10, null, undefined]),
     otherMin: pick([0, 5, null]),

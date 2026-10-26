@@ -11,7 +11,7 @@ import 'chart_props.dart';
 import 'mini_table.dart';
 import 'nice_axis.dart';
 
-/// OEE (over time): the three OEE figures by date (by month on long ranges).
+/// OEE Trend: the three OEE figures by date (by month on long ranges).
 /// Tap a legend entry to hide / show that line; touch or drag on the plot for
 /// the exact figures; tap to cross-filter that date / month.
 class OeeTrendChart extends StatelessWidget {
@@ -27,7 +27,7 @@ class OeeTrendChart extends StatelessWidget {
       );
 }
 
-/// Unutilized Machine Time over time: one filled area (every entry's own
+/// Unutilized Machine Time Trend: one filled area (every entry's own
 /// figure, averaged per date, or per month on long ranges). The axis fits the
 /// data instead of stretching to 100%.
 class UnutilizedTrendChart extends StatelessWidget {

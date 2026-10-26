@@ -88,14 +88,14 @@ const Map<String, String> sheetFormulas = {
   'rejectedQty':
       'Rejected Quantity = Actual Quantity − OK Quantity, so OK + Rejected = Actual. The breakdown shows how that total splits across the reasons entered on the form.',
   'pctOk': '% OK Quantity = OK Quantity ÷ (OK Quantity + Rejected Quantity)',
-  'unutilized': 'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, for this entry alone. Shown as 0% when the result is below 0 and 100% when it is above 100.',
+  'unutilized': 'Unutilized Machine Time = (12 − (Shift Hours − Lunch ÷ 60)) ÷ 11, with Shift Hours and Lunch added up across every entry of this machine\'s date — so every entry of that machine/date shows the same figure. Shown as 0% when the result is below 0 and 100% when it is above 100.',
   'totalStoppage':
       'Total Stoppage = Lunch / Rest + the downtime columns opened here: Setup Time … Other.',
   'stoppageAllowed':
       'Stoppage Allowed = the Machine Shift (min): all stoppage together (Lunch / Rest included) can\'t be more than the time the machine ran.',
   'effective': 'Effective Machine Run Time = OK Quantity × Total Cycle Time ÷ 3600, shown as hours:minutes (753 × 57 s = 11:55).',
   'unreported':
-      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, in whole minutes, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
+      "Unreported Time (min) = Planned Operator Shift − Effective Run Time − Total Stoppage, combined across every entry of this machine's date — so every entry of that machine/date shows the same figure.",
   'setupEff': 'Setup Efficiency = Effective Machine Run Time ÷ Machine Shift Time',
   'oeeLosses':
       "OEE considering losses = Effective Run Time ÷ (Available Hours − Total Downtime ÷ 60), combined across every entry of this machine's date.",

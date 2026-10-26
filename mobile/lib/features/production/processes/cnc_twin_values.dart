@@ -1,12 +1,14 @@
 import '../entry_form/entry_form_logic.dart' show entryText, isBlankValue;
 import '../shared/production_sheet_calc.dart';
+import '../shared/quantity_rules.dart';
 import '../shared/shift_hours.dart';
 import 'cnc_twin_calc.dart';
 
 /// The pure parts of the Contact / Trobe / Spring pages' handlers (emptyEntry,
 /// toFormValues, toPayload, hasAnyEntryData, the Part-pick copy) — the three
 /// pages are identical in these. A block is a Map with the web's exact keys;
-/// typed fields are Strings ('' = blank).
+/// typed fields are Strings ('' = blank) and `rejectBreakdown` is a Map of
+/// reason -> quantity text (the Rejection Master).
 
 final List<String> twinStoppageKeys = [
   for (final f in stoppageFields) f['key'] as String,
@@ -18,6 +20,7 @@ const List<String> twinTextFields = [
   'itemName',
   'drawingNo',
   'remarks',
+  'rejectOtherRemark',
   'otherMinRemark',
 ];
 const List<String> twinTimeFields = [
@@ -28,8 +31,8 @@ const List<String> twinTimeFields = [
 ];
 final List<String> twinNumberFields = [
   'totalCycleSec',
+  'actualQty',
   'okQty',
-  'rejectedQty',
   'plannedOperatorShiftHours',
   ...twinStoppageKeys,
 ];
@@ -70,6 +73,8 @@ Map<String, dynamic> twinEmptyEntry({DateTime? now}) => <String, dynamic>{
   for (final k in twinTextFields) k: '',
   for (final k in twinTimeFields) k: '',
   for (final k in twinNumberFields) k: '',
+  // Rejection Master (Qty): { reason: quantity text }.
+  'rejectBreakdown': <String, dynamic>{},
 };
 
 String _numText(Object? v) {
@@ -100,7 +105,7 @@ Map<String, dynamic> twinToFormValues(
   out['plannedOperatorShiftHours'] =
       isBlankValue(row['plannedOperatorShiftHours'])
       ? ''
-      : hoursToHmInput(jsToNumber(row['plannedOperatorShiftHours']));
+      : hoursToShiftInput(jsToNumber(row['plannedOperatorShiftHours']));
   out['item'] = jsTruthy(row['item']) ? '${row['item']}' : '';
   out['slot'] = row['slot'];
   out['machineStatus'] = row['machineStatus'] is List
@@ -109,6 +114,10 @@ Map<String, dynamic> twinToFormValues(
   out['workingMode'] = row['workingMode'] == 'Non Working'
       ? 'Non Working'
       : 'Working';
+  // Actual Quantity and the Rejection Master split (a record saved before they
+  // existed has only OK and Rejected: Actual is their sum, its rejected pieces go
+  // against its single reason).
+  out.addAll(quantityFormValues(row));
   return out;
 }
 
@@ -151,11 +160,13 @@ Map<String, dynamic> twinToPayload(
     'otherMinRemark': jsToNumber(v['otherMin']) > 0
         ? text('otherMinRemark')
         : '',
+    // rejectedQty is deliberately absent: the server derives it from Actual − OK.
+    ...rejectPayload(v, _wire),
     for (final k in twinTimeFields) k: _timeOut(v[k]),
     for (final k in twinNumberFields) k: _numberOut(v[k]),
-    // Typed as H.MM, saved as decimal hours (3.30 -> 3.5).
+    // Typed as decimal hours like the sheet, taken to the whole minute (5.33 -> 5 h 20 min).
     'plannedOperatorShiftHours': () {
-      final hours = parseHm(v['plannedOperatorShiftHours']).hours;
+      final hours = parseShiftHours(v['plannedOperatorShiftHours']).hours;
       return hours == null ? '' : _wire(hmToWireHours(hours));
     }(),
     // Lunch is optional on the form; the server wants a 0 rather than nothing.
@@ -166,7 +177,11 @@ Map<String, dynamic> twinToPayload(
     for (final e in body.entries)
       e.key: _statusOnlyKept.contains(e.key)
           ? e.value
-          : (e.key == 'item' ? null : ''),
+          : (e.key == 'item'
+                ? null
+                : e.key == 'rejectBreakdown'
+                ? <String, dynamic>{}
+                : ''),
   };
 }
 
@@ -182,6 +197,7 @@ bool _filled(Object? v) => v != null && v != '';
 bool twinHasAnyEntryData(List<Map<String, dynamic>> list) => list.any(
   (v) =>
       jsTruthy(v['machine']) ||
+      hasRejectData(v) ||
       [
         ...twinTextFields,
         ...twinTimeFields,
@@ -196,8 +212,9 @@ const List<String> _blockDataKeys = [
   'totalCycleSec',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   'plannedDownMin',
@@ -216,6 +233,7 @@ const List<String> _blockDataKeys = [
 /// Whether ONE block holds typed work (web `hasData`): a Non Working block always does.
 bool twinEntryHasData(Map<String, dynamic> v) =>
     twinIsNonWorking(v) ||
+    hasRejectData(v) ||
     _blockDataKeys.any(
       (k) => v[k] is List ? (v[k] as List).isNotEmpty : _filled(v[k]),
     );
@@ -273,6 +291,10 @@ Map<String, dynamic> twinMergeDraftEntry(
   out['machineStatus'] = draft['machineStatus'] is List
       ? List<dynamic>.from(draft['machineStatus'] as List)
       : <dynamic>[];
+  final split = draft['rejectBreakdown'];
+  out['rejectBreakdown'] = split is Map
+      ? Map<String, dynamic>.from(split)
+      : <String, dynamic>{};
   return out;
 }
 

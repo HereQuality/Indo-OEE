@@ -46,7 +46,7 @@ const int kFitPanels = 6;
   return best;
 }
 
-/// Unreported Time (min) by MC No.: one small chart per machine, all on one
+/// Unreported Time by Machine (min): one small chart per machine, all on one
 /// shared "nice" scale so the panels compare honestly.
 class UnreportedByMachineChart extends StatefulWidget {
   const UnreportedByMachineChart({super.key, required this.props});

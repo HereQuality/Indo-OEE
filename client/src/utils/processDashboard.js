@@ -63,30 +63,31 @@ export const STAT_CATALOG = [
 // `measure` is the KPI the card's "Break down" button drills into. `preview`
 // picks the thumbnail sketch and `tone` its colour (WidgetPreview.jsx).
 export const CHART_CATALOG = [
-  { key: "oeeTrend", measure: "oeeLosses", label: "OEE (over time)", hint: "The three OEE figures by date — by month on long ranges.", size: "lg", preview: "lines" },
+  { key: "oeeTrend", measure: "oeeLosses", label: "OEE Trend", hint: "The three OEE figures by date — by month on long ranges.", size: "lg", preview: "lines" },
   {
     key: "apqTrend",
     measure: "oeeAvailability",
-    label: "Availability · Performance · Quality",
+    label: "OEE Components — Availability, Performance, Quality",
     hint: "The three OEE components for the period, as rings. Table view: by date. Over 100% means an entry is held for Admin review.",
     size: "md",
     preview: "radial",
   },
-  { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by Operator", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok", worker: { label: "Effective Working Time (Hour) by Operator" } },
-  { key: "downtimeByMachine", measure: "downtimeMin", label: "B.D. Backup — Stoppage by MC No.", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "nestedTreemap", worker: { label: "Stoppage by Worker", hint: "Minutes lost per worker, by stoppage cause." } },
-  { key: "runTimeByMachine", measure: "effectiveHours", label: "Stoppages by Cause (Min)", hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.", size: "md", preview: "radar", tone: "downtime", worker: { hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each worker, with their working time." } },
-  { key: "runTimeByMachineBars", measure: "effectiveHours", label: "Effective Machine Run Time (Hour) by MC No.", hint: "Hours of effective run time on each machine.", size: "md", preview: "vbars", tone: "ok", worker: { label: "Effective Working Time (Hour) by Worker", hint: "Hours of effective working time for each worker." } },
-  { key: "unutilizedTrend", measure: "unutilized", label: "Unutilized Machine Time (over time)", hint: "Unutilized share of the 12-hour day by date — by month on long ranges.", size: "md", preview: "area", worker: { label: "Unutilized Time (over time)" } },
-  { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time (Min) by MC No.", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples", worker: { label: "Unreported Time (Min) by Worker", hint: "Minutes not accounted for — one small chart per worker." } },
-  { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected QTY (over time)", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
-  { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by MC No.", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok", worker: { label: "OEE by Worker", hint: "Considering losses — average of that worker's days." } },
-  { key: "rejectByReason", measure: "rejectedQty", label: "Rejected QTY by Reason", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "donut", tone: "reject" },
-  { key: "okPctByOperator", measure: "okPct", label: "Operator v/s OK QTY %", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
-  { key: "outputByItem", measure: "okQty", label: "OK QTY by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
-  { key: "machineSummary", label: "MC No. Summary (table)", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table", worker: { label: "Worker Summary (table)", hint: "One row per worker — quantities, working time, downtime and OEE." } },
+  { key: "runTimeByOperator", measure: "effectiveHours", label: "Effective Run Time by Operator (hr)", hint: "Hours of effective run time each operator produced.", size: "sm", preview: "hbars", tone: "ok", worker: { label: "Effective Working Time by Worker (hr)" } },
+  { key: "downtimeByMachine", measure: "downtimeMin", label: "Downtime by Machine (min)", hint: "Minutes lost per machine: breakdown, setup, lunch/tea, other.", size: "md", preview: "nestedTreemap", worker: { label: "Downtime by Worker (min)", hint: "Minutes lost per worker, by stoppage cause." } },
+  { key: "runTimeByMachine", measure: "effectiveHours", label: "Downtime by Cause (min)", hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each machine, with its run time.", size: "md", preview: "radar", tone: "downtime", worker: { hint: "Every stoppage cause on one radar — further out means more minutes lost. Table view: each worker, with their working time." } },
+  { key: "runTimeByMachineBars", measure: "effectiveHours", label: "Effective Run Time by Machine (hr)", hint: "Hours of effective run time on each machine.", size: "md", preview: "vbars", tone: "ok", worker: { label: "Effective Working Time by Worker (hr)", hint: "Hours of effective working time for each worker." } },
+  { key: "unutilizedTrend", measure: "unutilized", label: "Unutilized Machine Time Trend", hint: "Unutilized share of the 12-hour day by date — by month on long ranges.", size: "md", preview: "area", worker: { label: "Unutilized Time Trend" } },
+  { key: "unreportedByMachine", measure: "unreportedMin", label: "Unreported Time by Machine (min)", hint: "Minutes not accounted for — one small chart per machine.", size: "md", preview: "multiples", worker: { label: "Unreported Time by Worker (min)", hint: "Minutes not accounted for — one small chart per worker." } },
+  { key: "okRejectedTrend", measure: "okQty", label: "OK vs Rejected Quantity Trend", hint: "Stacked — the full bar is the actual quantity.", size: "md", preview: "stackedTime" },
+  { key: "oeeByMachine", measure: "oeeLosses", label: "OEE by Machine", hint: "Considering losses — average of that machine's days.", size: "md", preview: "vbars", tone: "ok", worker: { label: "OEE by Worker", hint: "Considering losses — average of that worker's days." } },
+  { key: "rejectByReason", measure: "rejectedQty", label: "Rejection by Reason (Qty)", hint: "Rejected quantity grouped by reject reason.", size: "md", preview: "donut", tone: "reject" },
+  { key: "okPctByOperator", measure: "okPct", label: "OK Quantity % by Operator", hint: "OK ÷ Actual for each operator.", size: "md", preview: "hbars", tone: "ok" },
+  { key: "outputByItem", measure: "okQty", label: "OK Quantity by Part", hint: "Parts ranked by OK quantity.", size: "md", preview: "hbars", tone: "ok" },
+  { key: "machineSummary", label: "Machine Performance Summary", hint: "One row per machine — quantities, run time, downtime and OEE.", size: "full", preview: "table", worker: { label: "Worker Performance Summary", hint: "One row per worker — quantities, working time, downtime and OEE." } },
 ];
 
-export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "effectiveHours", "downtimeMin", "unutilized"];
+// The KPI tiles every process starts with, in this order — two rows of four on a wide screen.
+export const DEFAULT_STATS = ["totalQty", "okQty", "rejectedQty", "okPct", "oeeLosses", "oeeLunch", "oeeLunchCot", "unutilized"];
 export const DEFAULT_CHARTS = ["runTimeByOperator", "oeeTrend", "apqTrend", "downtimeByMachine", "runTimeByMachine", "runTimeByMachineBars", "unutilizedTrend", "unreportedByMachine", "okRejectedTrend", "rejectByReason", "machineSummary"];
 
 const byKey = (catalog) => Object.fromEntries(catalog.map((w) => [w.key, w]));

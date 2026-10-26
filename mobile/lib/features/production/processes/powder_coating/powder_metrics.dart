@@ -60,7 +60,7 @@ class PowderMetrics extends EntryMetrics {
   bool get totalQtyTyped => !isBlankValue(values['actualQty']);
 
   /// Availability / Performance / Quality "as Save will work them out" — planned
-  /// shift converted from its typed H.MM first — above 100% sends the entry to
+  /// shift converted from its typed hours first — above 100% sends the entry to
   /// Admin review, so the form flags it.
   List<String> get metricsOver100 {
     final c = powderRowCalc(withDecimalPlanned(values));

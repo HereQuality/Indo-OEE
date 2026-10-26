@@ -203,13 +203,13 @@ void main() {
       expect(find.text('Machine ON–OFF Time, Machine Shift'), findsOneWidget);
       _form(t).onChange(0, 'machineOnTime', '08:00');
       _form(t).onChange(0, 'machineOffTime', '16:00');
-      _form(t).onChange(0, 'plannedOperatorShiftHours', '7.30');
+      _form(t).onChange(0, 'plannedOperatorShiftHours', '7.5');
       await t.pumpAndSettle();
       // The time rule shows live (and replaces the hint, as on the web).
       expect(find.text("Planned Operator Shift can't be less than the Machine Shift (8:00)"), findsOneWidget);
       _form(t).onChange(0, 'plannedOperatorShiftHours', '');
       await t.pumpAndSettle();
-      expect(find.text('Type hours.minutes — 3.30 is 3 h 30 min.'), findsOneWidget);
+      expect(find.text('Type hours as on the sheet — 3.5 is 3 h 30 min.'), findsOneWidget);
     });
   });
 

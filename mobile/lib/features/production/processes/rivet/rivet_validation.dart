@@ -1,5 +1,6 @@
 import '../../shared/production_entry_validation.dart';
 import '../../shared/production_sheet_calc.dart';
+import '../../shared/quantity_rules.dart';
 import '../../shared/shift_hours.dart';
 import 'rivet_calc.dart';
 
@@ -10,9 +11,12 @@ import 'rivet_calc.dart';
 //
 //   Required    Date, Machine No., Operator, Process, Part Name (with Operation
 //               Times set on the Part and at least one still ticked), Machine
-//               ON/OFF Time, Actual OK Quantity, Rejected Quantity, Planned
-//               Operator Shift (typed H.MM, not less than the Machine Shift).
-//   Quantities  OK + Rejected can't be more than Ideal Quantity.
+//               ON/OFF Time, Actual Quantity, OK Quantity, Planned Operator
+//               Shift (typed as decimal hours, not less than the Machine Shift).
+//   Quantities  Actual can't be more than Ideal Quantity and OK can't be more than
+//               Actual; Rejected = Actual − OK (shown, not typed) and the Rejection
+//               Master split has to add up to it, with a remark when "Other" is
+//               used (shared/quantity_rules.dart).
 //   Times       Machine OFF after ON.
 //   Downtime    Optional (blank counts as 0), 0–1440 each, total within the Machine
 //               Shift (ON to OFF). "Others" needs a remark.
@@ -43,8 +47,10 @@ const List<String> rivetFieldOrder = [
   'itemName',
   'machineOnTime',
   'machineOffTime',
+  'actualQty',
   'okQty',
-  'rejectedQty',
+  'rejectBreakdown',
+  'rejectOtherRemark',
   'plannedOperatorShiftHours',
   'lunchMin',
   ...rivetDowntimeKeys,
@@ -111,40 +117,23 @@ Map<String, String> validateRivetEntry(Map<String, dynamic> v, {Map<String, dyna
     }
   }
 
-  // OK and Rejected are both typed; together they can't beat what the shift could make.
-  final ok = jsNumber(v['okQty']);
-  final rej = jsNumber(v['rejectedQty']);
-  if (isBlank(v['okQty'])) {
-    errors['okQty'] = 'Actual OK Quantity is required';
-  } else if (!isNum(ok) || ok! < 0) {
-    errors['okQty'] = 'Must be 0 or more';
-  }
-  if (isBlank(v['rejectedQty'])) {
-    errors['rejectedQty'] = 'Rejected Quantity is required';
-  } else if (!isNum(rej) || rej! < 0) {
-    errors['rejectedQty'] = 'Must be 0 or more';
-  }
-  final ideal = calc['idealQty'] as double?;
-  if (!errors.containsKey('okQty') && !errors.containsKey('rejectedQty') && ideal != null && ideal.isFinite) {
-    final both = ok! + rej!;
-    if (both > ideal) {
-      errors['okQty'] = "OK + Rejected (${jsNumStr(both)}) can't be more than Ideal Quantity (${jsNumStr(ideal)})";
-    }
-  }
+  // Actual and OK are typed (Actual within Ideal, OK within Actual); Rejected = Actual − OK
+  // and the Rejection Master split has to account for all of it.
+  validateQuantities(v, calc, errors);
 
-  // Planned Operator Shift is typed as H.MM (60 minutes to the hour).
-  final plannedParse = parseHm(v['plannedOperatorShiftHours']);
+  // Planned Operator Shift is typed as decimal hours (60 minutes to the hour).
+  final plannedParse = parseShiftHours(v['plannedOperatorShiftHours']);
   final planned = plannedParse.hours;
   if (isBlank(v['plannedOperatorShiftHours'])) {
     errors['plannedOperatorShiftHours'] = 'Planned Operator Shift is required';
-  } else if (plannedParse.minutesTooBig) {
-    errors['plannedOperatorShiftHours'] = 'Minutes must be 00–59 (3.30 means 3 h 30 min)';
   } else if (planned == null) {
-    errors['plannedOperatorShiftHours'] = 'Enter hours and minutes like 8.30';
+    errors['plannedOperatorShiftHours'] = 'Enter hours as on the sheet, like 8.5 or 5.33';
   } else if (planned <= 0 || planned > 24) {
     errors['plannedOperatorShiftHours'] = 'Must be more than 0:00 and at most 24:00';
   } else {
-    final shiftMin = spanMinutes(v['machineOnTime'], v['machineOffTime']);
+    // Not while End isn't after Start: the span would wrap past midnight (23 h and
+    // the like), and the End box already says what's wrong.
+    final shiftMin = errors.containsKey('machineOffTime') ? null : spanMinutes(v['machineOnTime'], v['machineOffTime']);
     if (shiftMin != null && jsRound(planned * 60) < shiftMin) {
       errors['plannedOperatorShiftHours'] =
           "Planned Operator Shift can't be less than the Machine Shift (${hoursToHm(shiftMin / 60)})";

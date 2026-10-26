@@ -168,8 +168,12 @@
 }
 
 /* KPI tiles */
-.pd-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-.pd-stat { flex: 1 1 168px; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px 14px; color: var(--pd-ink); transition: transform 0.12s, box-shadow 0.12s; }
+/* Four tiles to a row on a wide screen (8 tiles = 4 + 4), two on a tablet or phone. */
+.pd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+@media (max-width: 991.98px) {
+  .pd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.pd-stat { min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px 14px; color: var(--pd-ink); transition: transform 0.12s, box-shadow 0.12s; }
 .pd-stat:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.09); }
 .pd-stat-label { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pd-muted); }
 .pd-stat-value { font-size: 1.55rem; font-weight: 700; line-height: 1.2; display: flex; align-items: center; gap: 8px; }
@@ -188,7 +192,6 @@
 }
 @media (max-width: 767.98px) {
   .pd-span-sm, .pd-span-md, .pd-span-lg { grid-column: span 12; }
-  .pd-stat { flex-basis: calc(50% - 6px); }
   .pd-stat-value { font-size: 1.25rem; }
 }
 
@@ -342,7 +345,7 @@
   content: ""; position: absolute; inset: 0 0 auto 0; height: 4px;
   background: linear-gradient(90deg, var(--pd-s1), var(--pd-s3) 55%, var(--pd-s4));
 }
-.pd-card-head { min-height: 62px; }
+.pd-card-head { min-height: 40px; }
 .pd-kind {
   flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
   background: var(--pd-wash); color: var(--pd-accent);

@@ -172,11 +172,11 @@ class DrillButton extends StatelessWidget {
       );
 }
 
-/// The frame around every visual (port of WidgetCard.jsx): title + hint, a
+/// The frame around every visual (port of WidgetCard.jsx): title (hint on long-press), a
 /// chart <-> table switch, a Break down button for the visual's measure and
 /// Maximize. [builder] draws the visual; the card only frames it.
 ///
-/// [fixedHeader] (tablet grid) reserves a two-line title + one-line hint, so
+/// [fixedHeader] (tablet grid) reserves a two-line title, so
 /// every card in a grid row is exactly as tall as its neighbours. A card
 /// narrower than [_denseBelow] keeps its actions in one overflow menu so the
 /// title still has room.
@@ -204,7 +204,7 @@ class WidgetCard extends StatelessWidget {
   final ChartView view;
   final ValueChanged<ChartView> onViewChanged;
 
-  /// A table-only visual (the MC No. Summary) has no chart view to switch to.
+  /// A table-only visual (the Machine Performance Summary) has no chart view to switch to.
   final bool tableOnly;
   final VoidCallback? onDrill;
   final VoidCallback onMaximize;
@@ -264,31 +264,23 @@ class WidgetCard extends StatelessWidget {
       ],
     );
 
+    // Title only: the longer explanation is a long-press tooltip (and the
+    // screen-reader hint), never a second line of text on the card.
     Widget heading(bool reserve) {
-      final text = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            maxLines: reserve ? 2 : 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w600),
-          ),
-          if (hint != null && hint!.isNotEmpty) ...[
-            const SizedBox(height: 1),
-            Text(
-              hint!,
-              maxLines: reserve ? 1 : 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, height: 1.3, color: cs.onSurfaceVariant),
-            ),
-          ],
-        ],
+      Widget text = Text(
+        title,
+        maxLines: reserve ? 2 : 4,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w600),
       );
+      final tip = hint;
+      if (tip != null && tip.isNotEmpty) {
+        text = Tooltip(message: tip, triggerMode: TooltipTriggerMode.longPress, child: Semantics(hint: tip, child: text));
+      }
       if (!reserve) return text;
-      final h = scaler.scale(14) * 1.25 * 2 + 1 + scaler.scale(12) * 1.3;
-      // Reserve exactly two title lines + one hint line; anything longer is
-      // clipped, never an overflow error.
+      final h = scaler.scale(14) * 1.25 * 2;
+      // Reserve exactly two title lines; anything longer is clipped, never an
+      // overflow error.
       return SizedBox(
         height: h + 1,
         child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minHeight: 0, maxHeight: double.infinity, child: text)),

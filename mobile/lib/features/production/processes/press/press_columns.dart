@@ -1,6 +1,6 @@
 import '../../sheet/table/shared_columns.dart';
 import '../../sheet/table/sheet_columns.dart';
-import '../../shared/production_sheet_calc.dart' show displayDay;
+import '../../shared/production_sheet_calc.dart' show displayDay, rejectReasons;
 import '../../sheet/widgets/sheet_format.dart';
 
 /// The sheet's own wording for each downtime column (pressColumns.jsx).
@@ -95,8 +95,40 @@ SheetColumns pressColumns(Set<String> open) {
       formulaKey: 'idealQty',
       text: (d) => nStr(d.calc['idealQty']),
     ),
+    SheetCol(key: 'actualQty', label: 'Actual Quantity', width: 92, tone: ColTone.calc, text: (d) => nStr(d.calc['actualQty'])),
     SheetCol(key: 'okQty', label: 'Actual OK Quantity', width: 100, text: (d) => minStr(d.row['okQty'])),
-    SheetCol(key: 'rejectedQty', label: 'Rejected Quantity', width: 100, text: (d) => minStr(d.row['rejectedQty'])),
+  ];
+
+  // Rejected = Actual − OK (calculated); opens into the Rejection Master split,
+  // the "Other" figure carrying its remark.
+  addExpandable(
+    open,
+    SheetCol(
+      key: 'rejectedQty',
+      label: 'Rejected Quantity',
+      width: 148,
+      tone: ColTone.calc,
+      text: (d) => nStr(d.calc['rejectedQty']),
+    ),
+    'rejectedQty',
+    'Rejected Quantity',
+    [
+      for (final reason in rejectReasons)
+        sheetSubCol(
+          reason,
+          reason,
+          (d) {
+            final b = d.row['rejectBreakdown'];
+            return minStr(b is Map ? b[reason] : null);
+          },
+          width: reason == 'Other' ? 124 : 100,
+          remarkKind: reason == 'Other' ? 'reject' : null,
+        ),
+    ],
+    mid,
+  );
+
+  mid.addAll([
     SheetCol(
       key: 'pctOk',
       label: '% OK Quantity',
@@ -111,7 +143,7 @@ SheetColumns pressColumns(Set<String> open) {
       width: 160,
       text: (d) => hmStr(d.row['plannedOperatorShiftHours']),
     ),
-  ];
+  ]);
 
   addExpandable(
     open,
@@ -199,6 +231,6 @@ SheetColumns pressColumns(Set<String> open) {
   return SheetColumns(
     left: [for (final c in left) fitSheetColumn(c)],
     middle: [for (final c in mid) fitSheetColumn(c)],
-    expandSummary: const {'downtime': 'totalStoppage'},
+    expandSummary: const {'rejectedQty': 'rejectedQty', 'downtime': 'totalStoppage'},
   );
 }

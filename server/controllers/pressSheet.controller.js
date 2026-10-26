@@ -10,6 +10,7 @@ const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
+const { applyQuantities, rejectOtherError, hasSplit } = require("../utils/rejectSplit");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
 
 /**
@@ -28,9 +29,9 @@ const SLOT_NUMBERS = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
 const PAGE_SIZE_DAYS = 10;
 const MAX_RANGE_DAYS = 366 * 5;
 
-const TEXT_KEYS = ["operator", "itemName", "operation", "drawingNo", "setupNo", "remarks", "otherMinRemark"];
+const TEXT_KEYS = ["operator", "itemName", "operation", "drawingNo", "setupNo", "remarks", "otherMinRemark", "rejectReason", "rejectOtherRemark"];
 const TIME_KEYS = ["machineOnTime", "machineOffTime"];
-const NUMBER_KEYS = ["standardTimeMin", "pcsPerStandardTime", "okQty", "rejectedQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
+const NUMBER_KEYS = ["standardTimeMin", "pcsPerStandardTime", "actualQty", "okQty", "plannedOperatorShiftHours", ...STOPPAGE_KEYS];
 
 const fail = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -70,6 +71,8 @@ const buildFields = (body) => {
       set[k] = n;
     }
   }
+  // Rejected = Actual − OK (never taken from the client) and the Rejection Master split.
+  applyQuantities(body, set, unset);
   if (body.item !== undefined) {
     if (body.item && !mongoose.isValidObjectId(body.item)) throw fail("Invalid item");
     set.item = body.item || null;
@@ -106,14 +109,15 @@ const buildFields = (body) => {
 
 // This sheet's key in the audit log, and the fields whose old → new values it records.
 const SHEET = "press";
-const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode"])];
+const LOG_FIELDS = [...new Set([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS, "excludedOps", "vendorName", "machineStatus", "workingMode", "rejectBreakdown"])];
 
 const isRowEmpty = (doc) =>
   doc.workingMode !== "Non Working" &&
   !(doc.machineStatus || []).length &&
   TEXT_KEYS.every((k) => !doc[k]) &&
   TIME_KEYS.every((k) => !doc[k]) &&
-  NUMBER_KEYS.every((k) => doc[k] === undefined || doc[k] === null);
+  [...NUMBER_KEYS, "rejectedQty"].every((k) => doc[k] === undefined || doc[k] === null) &&
+  !hasSplit(doc);
 
 const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
 
@@ -137,8 +141,8 @@ const REQUIRED_FIELDS = [
   ["itemName", "Part Name"],
   ["machineOnTime", "Machine ON Time"],
   ["machineOffTime", "Machine OFF Time"],
-  ["okQty", "Actual OK Quantity"],
-  ["rejectedQty", "Rejected Quantity"],
+  ["actualQty", "Actual Quantity"],
+  ["okQty", "OK Quantity"],
   ["plannedOperatorShiftHours", "Planned Operator Shift"],
 ];
 
@@ -154,7 +158,8 @@ const hm = (hours) => {
 const entryRuleError = (body, existing = null) => {
   // A Non Working entry records only the day, machine, operator, reason and remarks.
   if (isNonWorking(body)) return null;
-  if ([...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && !(body.machineStatus || []).length) return null;
+  const everyBlank = [...TEXT_KEYS, ...TIME_KEYS, ...NUMBER_KEYS].every((k) => isBlank(body[k])) && !(body.machineStatus || []).length;
+  if (everyBlank && !Object.keys(body.rejectBreakdown || {}).length) return null;
 
   const missing = REQUIRED_FIELDS.filter(([k]) => isBlank(body[k])).map(([, label]) => label);
   if (missing.length) return `Required: ${missing.join(", ")}`;
@@ -174,6 +179,8 @@ const entryRuleError = (body, existing = null) => {
     return "No. Piece in Standard Time must be a whole number, 1 or more";
   }
   const minutesOf = (k) => (isBlank(body[k]) ? 0 : Number(body[k]));
+  const otherError = rejectOtherError(body);
+  if (otherError) return otherError;
   if (minutesOf("otherMin") > 0 && isBlank(body.otherMinRemark)) {
     return "A remark is required when Others downtime is entered";
   }
@@ -188,8 +195,8 @@ const entryRuleError = (body, existing = null) => {
   if (hasStandard) {
     // Pieces made can't beat what the shift could make: floor(shift × pieces ÷ standard time).
     const ideal = Math.floor((shiftMin * Number(body.pcsPerStandardTime)) / Number(body.standardTimeMin));
-    if (Number(body.okQty) + Number(body.rejectedQty) > ideal) {
-      return `OK + Rejected (${Number(body.okQty) + Number(body.rejectedQty)}) can't be more than Ideal Quantity (${ideal})`;
+    if (Number(body.actualQty) > ideal) {
+      return `Actual Quantity (${Number(body.actualQty)}) can't be more than Ideal Quantity (${ideal})`;
     }
   }
 
