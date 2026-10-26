@@ -86,6 +86,7 @@ Future<({FakeApi api, List<bool?> popped})> open(WidgetTester tester, {Map<Strin
 ProductionEntryForm form(WidgetTester t) => t.widget<ProductionEntryForm>(find.byType(ProductionEntryForm));
 Finder saveBtn() => find.descendant(of: find.byType(EntryActionBar), matching: find.byType(FilledButton));
 Finder inputOf(String field) => find.descendant(of: find.byKey(ValueKey('entry0/$field')), matching: find.byType(TextField));
+double? idealQty(WidgetTester t) => spmSpec.metrics(form(t).entries[0]).idealQty;
 Finder calcText(String key, String text) => find.descendant(of: find.byKey(ValueKey('entry0/calc/$key')), matching: find.text(text));
 
 /// A complete, valid block, typed the way the form would.
@@ -121,7 +122,8 @@ void main() {
       'Downtime / Stoppage (min)',
       'Remarks',
     ]) {
-      expect(find.text(title), findsOneWidget, reason: title);
+      // "Remarks" is both the line title and the label of its box.
+      expect(find.text(title), title == 'Remarks' ? findsNWidgets(2) : findsOneWidget, reason: title);
     }
     expect(find.text('Production (Qty)'), findsNothing);
     expect(find.text('Machine Working Status'), findsOneWidget);
@@ -144,7 +146,9 @@ void main() {
     final v = form(tester).entries[0];
     expect([v['totalCycleSec'], v['loadingSec'], v['processSec'], v['noOfHoles'], v['piecesPerCycle'], v['strokeRequired'], v['drawingNo']], ['30', '5', '20', '4', '2', '1', 'D-100']);
     expect(calcText('totalCycleSec', '30'), findsOneWidget);
-    expect(calcText('idealQty', '960'), findsOneWidget); // 8 h = 28800 s / 30 s
+    // Ideal Quantity is no box on the web form (it only caps Actual): read it from the figures.
+    expect(find.byKey(const ValueKey('entry0/calc/idealQty'), skipOffstage: false), findsNothing);
+    expect(idealQty(tester), 960); // 8 h = 28800 s / 30 s
     expect(calcText('noOfHoles', '4'), findsOneWidget);
 
     // Untick "Loading — 5": 25 s a piece, Ideal 1152; the Part's own figures are untouched.
@@ -154,7 +158,7 @@ void main() {
     expect(form(tester).entries[0]['excludedOps'], ['loadingSec']);
     expect(form(tester).entries[0]['loadingSec'], '5');
     expect(calcText('totalCycleSec', '25'), findsOneWidget);
-    expect(calcText('idealQty', '1152'), findsOneWidget);
+    expect(idealQty(tester), 1152);
     await tester.tap(find.byKey(const ValueKey('entry0/loadingSec')));
     await tester.pump();
     expect(form(tester).entries[0]['excludedOps'], isEmpty);
@@ -169,7 +173,7 @@ void main() {
     form(tester).onChange(0, 'machineOnTime', '08:00');
     form(tester).onChange(0, 'machineOffTime', '08:10'); // 600 s / 30 s = Ideal 20
     await tester.pump();
-    expect(calcText('idealQty', '20'), findsOneWidget);
+    expect(idealQty(tester), 20);
 
     await tester.ensureVisible(inputOf('actualQty'));
     await tester.enterText(inputOf('actualQty'), '21'); // 21 > Ideal 20: refused
@@ -197,7 +201,8 @@ void main() {
     await tester.pump();
     expect(form(tester).entries[0]['okQty'], '15');
     expect(calcText('rejectedQty', '5'), findsOneWidget);
-    expect(calcText('pctOk', '75.00%'), findsOneWidget);
+    expect(find.byKey(const ValueKey('entry0/calc/pctOk'), skipOffstage: false), findsNothing, reason: 'no % OK box on the web form');
+    expect(spmSpec.metrics(form(tester).entries[0]).calc['pctOk'], closeTo(0.75, 1e-9));
   });
 
   testWidgets('Save on an empty form shows the web messages and sends nothing', (tester) async {
@@ -310,7 +315,7 @@ void main() {
     expect(find.text('Production Master'), findsNothing);
     expect(find.text('Rejection Master (Qty)'), findsNothing);
     expect(find.text('Part, Cycle Breakdown'), findsNothing);
-    expect(find.text('Remarks'), findsNWidgets(2), reason: 'the Remarks card title and the Status chip');
+    expect(find.text('Remarks'), findsNWidgets(3), reason: 'the Remarks card title, its box label and the Status chip');
     await tester.tap(find.byKey(const ValueKey('entry0/machineStatus/No Planning')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('entry0/machineStatus/Machine Breakdown')));

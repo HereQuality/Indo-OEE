@@ -6,8 +6,8 @@ import '../../entry_form/entry_fields.dart';
 import '../../entry_form/entry_form_logic.dart';
 import '../../entry_form/entry_layout.dart';
 import '../../entry_form/entry_line_context.dart';
+import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
-import '../../entry_form/entry_style.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
 import '../../shared/production_sheet_calc.dart';
@@ -47,7 +47,7 @@ class RivetEntryLines extends EntryLines {
   @override
   List<Widget> right(EntryLineContext c) => isNonWorking(c.values)
       ? [remarksLine(c)]
-      : [rejectLine(c), shiftLine(c), downtimeLine(c, boxes: rivetDowntimeBoxes), remarksLine(c)];
+      : [rejectLine(c), shiftLine(c), rivetDowntimeLine(c), remarksLine(c)];
 
   @override
   String collapsedSummary(Map<String, dynamic> v) => isNonWorking(v)
@@ -103,13 +103,12 @@ class _Choices extends StatelessWidget {
   }
 }
 
-/// Process, Part Name, No. of Holes, the four tickable operations and Total Cycle Time.
+/// Part Name (+ Vendor Name), Process, No. of Holes in One Piece, the four tickable
+/// operations and the grey Total Cycle Time - the web's line 2, box for box.
 Widget rivetPartLine(EntryLineContext c) {
   final m = c.metrics;
   final item = entryItemFor(c.values, c.items);
   final excluded = entryExcludedOps(c.values);
-  final hasItem = c.text('item').isNotEmpty;
-  final s = c.theme.colorScheme;
   final process = c.text('processType');
   // A record saved with a value since retired from the list still shows it.
   final processOptions = [...rivetProcessTypes, if (process.isNotEmpty && !rivetProcessTypes.contains(process)) process];
@@ -129,7 +128,8 @@ Widget rivetPartLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                text: c.text('itemName'),
+                // Web `partCycleLabel` (Rivet's picker passes `label`): "Rivet 4mm — 45 sec".
+                text: partBoxText(c),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -165,17 +165,8 @@ Widget rivetPartLine(EntryLineContext c) {
           ),
         ],
       ),
+      // The web has no heading or note over the operation tick boxes.
       const SizedBox(height: 10),
-      Text(
-        hasItem || item != null ? 'Operations in this cycle' : 'Operations (pick a part first)',
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurface),
-      ),
-      const SizedBox(height: 2),
-      Text(
-        "Untick one to leave it out of this entry's cycle time.",
-        style: TextStyle(fontSize: EntryStyle.noteSize, color: s.onSurfaceVariant, height: 1.25),
-      ),
-      const SizedBox(height: 8),
       Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -186,7 +177,6 @@ Widget rivetPartLine(EntryLineContext c) {
         cells: [
           EntryCell(
             label: 'Total Cycle Time (Sec)',
-            hint: "The Part's own Total Cycle Time, minus any unticked operation above",
             child: c.calcBox('totalCycleSec', entryFmt(m.calc['totalCycleSec']), 'Total Cycle Time (Sec)'),
           ),
         ],
@@ -216,5 +206,63 @@ Widget _opTile(EntryLineContext c, Map<String, dynamic> f, Map<String, dynamic>?
         c.set('excludedOps', isExcluded ? list.where((k) => '$k' != key).toList() : [...list, key]);
       },
     ),
+  );
+}
+
+/// The nine downtime boxes, the running total against the Machine Shift, and the
+/// "Others" remark once Others downtime is used. RIVET's own wording (web
+/// RivetEntryForm.jsx line 8): "Remark for Others downtime" - the shared
+/// `downtimeLine` says "Other".
+Widget rivetDowntimeLine(EntryLineContext c) {
+  final m = c.metrics;
+  final keys = [for (final b in rivetDowntimeBoxes) b.$1, 'stoppageTotal', 'otherMinRemark'];
+  final anyLocked = rivetDowntimeBoxes.any((b) => c.locked(b.$1, m.minutesLimit(b.$1).max));
+  return EntryLineCard(
+    title: 'Downtime / Stoppage (min)',
+    icon: Icons.build_circle_outlined,
+    hasError: c.lineHasError(keys),
+    optional: true,
+    hasValue: c.anyFilled([for (final k in keys) if (k != 'stoppageTotal') k]),
+    children: [
+      EntryGrid(
+        maxCols: 3,
+        cells: [
+          for (final (key, label) in rivetDowntimeBoxes)
+            EntryCell(label: label, error: c.err(key), child: c.keyed(key, c.minutesBox(key, label))),
+        ],
+      ),
+      // Phone-only: why some downtime boxes take nothing (the web raises a popup when you type).
+      if (anyLocked) EntryHintText(m.downtimeLockReason),
+      const SizedBox(height: 10),
+      c.keyed('stoppageTotal', stoppageMeter(c)),
+      if (m.otherDowntimeUsed) ...[
+        const SizedBox(height: 10),
+        EntryGrid(
+          cells: [
+            EntryCell(
+              label: 'Remark for Others downtime',
+              required: true,
+              error: c.err('otherMinRemark'),
+              span: EntryCell.full,
+              child: c.keyed(
+                'otherMinRemark',
+                EntryTextField(
+                  key: ValueKey('entry${c.index}/otherMinRemark'),
+                  value: c.text('otherMinRemark'),
+                  maxLength: 300,
+                  minLines: 2,
+                  maxLines: 4,
+                  hint: 'What was the “Others” downtime?',
+                  invalid: c.err('otherMinRemark') != null,
+                  focusNode: c.nodeFor('otherMinRemark'),
+                  semanticsLabel: 'Remark for Others downtime',
+                  onChanged: (t) => c.set('otherMinRemark', t),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ],
   );
 }

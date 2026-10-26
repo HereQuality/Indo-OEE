@@ -58,6 +58,13 @@ final List<String> powderNonWorkingStatuses = [
 /// The reasons a Non Working day can carry (MACHINE_STATUSES).
 const List<String> powderMachineStatuses = ['Machine Breakdown', 'No Manpower', 'No Planning'];
 
+/// The reasons a new entry is offered (the web's WORKER_STATUSES): a worker has
+/// no machine to break down. An entry saved with "Machine Breakdown" still shows it.
+final List<String> powderReasonStatuses = [
+  for (final s in powderMachineStatuses)
+    if (s != 'Machine Breakdown') s,
+];
+
 /// JS `isStatusOnly`: a Working Status other than PRESENT.
 bool isStatusOnly(Map<String, dynamic>? v) =>
     powderNonWorkingStatuses.contains(jsTrim(jsString(v?['workingStatus'] ?? '')));

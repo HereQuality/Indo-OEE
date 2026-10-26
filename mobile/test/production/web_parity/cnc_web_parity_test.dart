@@ -8,6 +8,7 @@ import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/core/theme/app_colors.dart';
 import 'package:indo/core/utils/alerts.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
+import 'package:indo/features/production/entry_form/entry_layout.dart' show EntryLineCard;
 import 'package:indo/features/production/entry_form/entry_notice_dialog.dart';
 import 'package:indo/features/production/entry_form/production_entry_form.dart';
 import 'package:indo/features/production/processes/cnc/cnc_spec.dart';
@@ -19,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/fake_api.dart';
 import '../sheet_list_test.dart' as list;
+import 'form_lines_support.dart';
 
 const _rowPath = '/api/v1/production-sheet/row';
 const _occupied = '/api/v1/production-sheet/occupied';
@@ -48,7 +50,8 @@ final _operators = <Map<String, dynamic>>[
 ];
 
 class _Launcher extends StatelessWidget {
-  const _Launcher({this.row, this.vendors = const [], this.processes = const []});
+  const _Launcher({this.row, this.vendors = const [], this.processes = const [], this.operators = const []});
+  final List<Map<String, dynamic>> operators;
   final Map<String, dynamic>? row;
   final List<Map<String, dynamic>> vendors;
   final List<Map<String, dynamic>> processes;
@@ -64,7 +67,7 @@ class _Launcher extends StatelessWidget {
                   row: row,
                   machines: _machines,
                   items: _items,
-                  operators: _operators,
+                  operators: operators.isEmpty ? _operators : operators,
                   processes: processes,
                   extra: {'vendors': vendors},
                 ),
@@ -81,6 +84,8 @@ Future<FakeApi> _openEditor(
   Map<String, dynamic>? row,
   List<Map<String, dynamic>>? vendors,
   List<Map<String, dynamic>>? processes,
+  List<Map<String, dynamic>> operators = const [],
+  Size size = const Size(390, 844),
 }) async {
   SharedPreferences.setMockInitialValues({});
   EntryNotices.reset();
@@ -91,8 +96,9 @@ Future<FakeApi> _openEditor(
     tester,
     ScaffoldMessenger(
       key: rootMessengerKey,
-      child: _Launcher(row: row, vendors: vendors ?? _vendors, processes: processes ?? _processes),
+      child: _Launcher(row: row, vendors: vendors ?? _vendors, processes: processes ?? _processes, operators: operators),
     ),
+    size: size,
   );
   await tester.tap(find.text('Open editor'));
   await tester.pumpAndSettle();
@@ -478,6 +484,139 @@ void main() {
       final ctx = tester.element(find.textContaining('Availability (%)', findRichText: true));
       final valueText = tester.widget<Text>(find.text('${(over * 100).toStringAsFixed(2)}%').first);
       expect(valueText.style!.color, AppColors.readable(ctx, AppColors.critical));
+    });
+  });
+
+  // The web Add Entry modal (ProductionEntryForm.jsx LINES): the same lines, in the
+  // same order, with the same boxes, labels and required stars. A trailing " *" is
+  // the red star. On a tablet the two columns read left column, then right column.
+  group('same lines and boxes as the web Add Entry modal', () {
+    const webLines = <FormLineLabels>[
+      ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator *', 'Machine Working Status']),
+      ('Part Name, Total Cycle Time', ['Part Name *', 'Total Cycle Time (sec)']),
+      ('Machine ON–OFF Time, Machine Shift', ['Machine ON Time *', 'Machine OFF Time *']),
+      // Actual, OK and the grey Rejected - no Ideal Quantity box, no % OK box.
+      ('Production Master', ['Actual Quantity *', 'OK Quantity *', 'Rejected']),
+      (
+        'Rejection Master (Qty)',
+        [
+          'Dimension Out', 'Tool Mark', 'Surface Finish', 'Porosity / Blow Hole', 'Material Defect',
+          'Setting Mistake', 'Operator Mistake', 'Machine Fault', 'Broken', 'Other',
+        ],
+      ),
+      ('Planned Operator Shift, Lunch / Rest', ['Planned Operator Shift (hours) *', 'Lunch / Rest (min)', 'Stoppage Allowed (min)']),
+      (
+        'Downtime / Stoppage (min)',
+        [
+          'Setup Time (min)', 'No Man Power (min)', 'Material Shifting (min)', 'No Material (min)',
+          'Breakdown Mechanical (min)', 'BD Electricity (min)', 'No Power (min)', 'Other (min)',
+        ],
+      ),
+      ('Remarks', ['Remarks']),
+    ];
+
+    testWidgets('phone: the eight web lines, in the web order, each with the web boxes', (tester) async {
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm3'); // no process: no vendor, shift typed by hand
+      expect(describeLines(openFormLines(tester)), describeLines(webLines));
+    });
+
+    testWidgets('tablet: two columns, left column then right column is the web order', (tester) async {
+      await _openEditor(tester, size: const Size(1024, 1180));
+      await _pickMachine(tester, 'm3');
+      final lines = openFormLines(tester);
+      expect(describeLines(lines), describeLines(webLines));
+      // Really two columns: Rejection Master (5th) sits to the right of the Date line (1st).
+      final date = tester.getTopLeft(find.text('Date, Machine No., Operator'));
+      final reject = tester.getTopLeft(find.text('Rejection Master (Qty)'));
+      expect(reject.dx, greaterThan(date.dx + 200));
+    });
+
+    testWidgets('Vendor Name (no star) follows Total Cycle Time when the process has vendors', (tester) async {
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm2'); // process p3: Acme Castings
+      final part = openFormLines(tester).firstWhere((l) => l.$1 == 'Part Name, Total Cycle Time');
+      expect(part.$2, ['Part Name *', 'Total Cycle Time (sec)', 'Vendor Name']);
+    });
+
+    testWidgets('the Part Name box reads like the web picker ("name — N sec"); operations are bare tick boxes', (tester) async {
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm3');
+      expect(find.text('Select part'), findsOneWidget);
+      _form(tester).onItemSelect(0, 'i1');
+      await tester.pumpAndSettle();
+      expect(find.text('Bracket — 60 sec'), findsOneWidget);
+      // The web has no heading or note over the operation boxes.
+      expect(find.textContaining('Operations'), findsNothing);
+      expect(find.textContaining('Untick'), findsNothing);
+      // All eight operations are listed (disabled when the part lacks one).
+      for (final t in ['Drilling (sec)', 'Boring (sec)', 'Threading (sec)', 'Tapping (sec)', 'Chamfering (sec)', 'Other Operation (sec)', 'Other Operation 2 (sec)', 'Clamp/Declamp (sec)']) {
+        expect(find.textContaining(t, findRichText: true), findsWidgets, reason: t);
+      }
+    });
+
+    testWidgets('Remarks is a plain box under the "Remarks" label (no placeholder); editing locks Machine No. without a note', (tester) async {
+      await _openEditor(tester, row: {
+        '_id': 'r1', 'date': '2026-09-20', 'machine': 'm3', 'slot': 1, 'item': 'i1', 'operator': 'Ravi',
+        'itemName': 'Bracket', 'machineOnTime': '08:00', 'machineOffTime': '16:00',
+        'actualQty': 400, 'okQty': 390, 'plannedOperatorShiftHours': 9, 'totalCycleSec': 60,
+      });
+      expect(tester.widget<TextField>(_box('remarks')).decoration!.hintText, isNull);
+      expect(find.textContaining("Can't be changed while editing"), findsNothing);
+    });
+
+    testWidgets('the Operator list is the machine\'s process\'s operators plus those with no process (web operatorsForMachine)', (tester) async {
+      await _openEditor(tester, operators: [
+        {'_id': 'o1', 'name': 'Ravi', 'processes': ['p1']},
+        {'_id': 'o2', 'name': 'Sita', 'processes': [{'_id': 'p3'}]},
+        {'_id': 'o3', 'name': 'Anyone', 'processes': <dynamic>[]},
+      ]);
+      await _pickMachine(tester, 'm1'); // process p1
+      await tester.ensureVisible(_k('entry0/operator'));
+      await tester.tap(_k('entry0/operator'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ravi'), findsOneWidget);
+      expect(find.text('Anyone'), findsOneWidget);
+      expect(find.text('Sita'), findsNothing, reason: 'Sita works in p3 only');
+      await tester.tap(find.text('Anyone'));
+      await tester.pumpAndSettle();
+      await _pickMachine(tester, 'm3'); // no process: everyone
+      await tester.ensureVisible(_k('entry0/operator'));
+      await tester.tap(_k('entry0/operator'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sita'), findsOneWidget);
+    });
+
+    testWidgets('Non Working: only the head line (Status added, Operator not required), the note and Remarks', (tester) async {
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm3');
+      await tester.ensureVisible(_k('entry0/workingMode/Non Working'));
+      await tester.tap(_k('entry0/workingMode/Non Working'));
+      await tester.pumpAndSettle();
+      expect(describeLines(openFormLines(tester)), describeLines(const <FormLineLabels>[
+        ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator', 'Machine Working Status', 'Status']),
+        ('Remarks', ['Remarks']),
+      ]));
+      expect(find.textContaining('Non Working — the machine did not run, so nothing else is needed. Pick a Status if you like and press Save.', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('optional lines start folded ("Optional — tap to add"); the Planned line is open when the shift is typed by hand', (tester) async {
+      EntryLineCard.foldOptional = true;
+      addTearDown(() => EntryLineCard.foldOptional = false);
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm3'); // no process: shift typed by hand
+      expect(find.text('Optional — tap to add'), findsNWidgets(3), reason: 'Rejection Master, Downtime and Remarks');
+      expect(find.text('Shift fixed — Lunch / Rest optional'), findsNothing);
+      expect(_k('entry0/plannedOperatorShiftHours'), findsOneWidget);
+    });
+
+    testWidgets('a shift fixed by Process Master folds its line to "Shift fixed — Lunch / Rest optional"', (tester) async {
+      EntryLineCard.foldOptional = true;
+      addTearDown(() => EntryLineCard.foldOptional = false);
+      await _openEditor(tester);
+      await _pickMachine(tester, 'm1'); // fixed at 8 h
+      expect(find.text('Optional — tap to add'), findsNWidgets(3));
+      expect(find.text('Shift fixed — Lunch / Rest optional'), findsOneWidget);
     });
   });
 

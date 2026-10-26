@@ -186,6 +186,33 @@ Map<String, dynamic>? entryItemFor(Map<String, dynamic> values, List<Map<String,
   return null;
 }
 
+/// Web `utils/operatorsForMachine.js`: the operators an entry form offers for one
+/// machine - those assigned (Operator Master) to the machine's process plus any
+/// not assigned to a process yet. No machine picked, or a machine in no process,
+/// offers everyone.
+List<Map<String, dynamic>> operatorsForMachine(
+  List<Map<String, dynamic>> operators,
+  List<Map<String, dynamic>> machines,
+  Object? machineId,
+) {
+  String idOf(Object? p) => p is Map ? '${p['_id'] ?? ''}' : '${p ?? ''}';
+  Map<String, dynamic>? machine;
+  for (final m in machines) {
+    if ('${m['_id']}' == '${machineId ?? ''}') {
+      machine = m;
+      break;
+    }
+  }
+  final owner = machine?['process'];
+  if (owner == null || owner == '' || owner == false || owner == 0) return operators;
+  final pid = idOf(owner);
+  if (pid.isEmpty) return operators;
+  return [
+    for (final o in operators)
+      if (o['processes'] is! List || (o['processes'] as List).isEmpty || (o['processes'] as List).any((p) => idOf(p) == pid)) o,
+  ];
+}
+
 /// Operation keys unticked on this entry.
 Set<String> entryExcludedOps(Map<String, dynamic> values) {
   final raw = values['excludedOps'];

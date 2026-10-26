@@ -7,6 +7,7 @@ import '../shared/limit_notice.dart' show adminReviewText;
 import '../shared/production_sheet_calc.dart' show oeeMetricLabels;
 import '../shared/vendors.dart';
 import 'entry_fields.dart';
+import 'entry_form_logic.dart';
 import 'entry_layout.dart';
 import 'entry_line_context.dart';
 
@@ -14,6 +15,7 @@ import 'entry_line_context.dart';
 // cells a process's `EntryLines` drops into its own cards:
 //
 //   vendorCell(c)      Vendor Name picker  (VendorSelect.jsx + vendorsFor.js)
+//   partBoxText(c)     what the Part Name box reads (partCycleLabel: "Name — 60 sec")
 //   oeeCheck(c)        the "above 100% … goes to Admin review" banner (OeeCheck.jsx)
 //
 // The Machine Working Status lives in `machine_status.dart`, the planned-shift
@@ -28,6 +30,23 @@ List<Map<String, dynamic>> blockVendors(EntryLineContext c) =>
 /// The web's `showVendor`: the process has vendors, or the entry already names one
 /// (so editing never hides it).
 bool showVendorFor(EntryLineContext c) => blockVendors(c).isNotEmpty || c.text('vendor').isNotEmpty;
+
+/// What the Part Name box shows once a part is picked — the web's
+/// `partCycleLabel` (`SearchablePartSelect label=`): "Flange 40 — 60 sec", the
+/// name alone when the part has no usable Total Cycle Time (never "— null sec"),
+/// and the entry's own saved name when the part is not in the live list (an old
+/// record). Pass [withCycle] false for a form whose web picker has no `label`
+/// (Press shows the bare name).
+String partBoxText(EntryLineContext c, {bool withCycle = true}) {
+  final saved = c.text('itemName');
+  if (!withCycle) return saved;
+  final item = entryItemFor(c.values, c.items);
+  if (item == null) return saved;
+  final name = entryText(item['itemName']);
+  final raw = item['totalCycleSec'];
+  final cycle = (raw == null || raw == '') ? null : entryNum(raw);
+  return cycle == null ? name : '$name — ${entryFmt(cycle)} sec';
+}
 
 /// The Vendor Name picker cell, or null while the box is not shown (no vendors
 /// for the process and none on the entry). Put it in the Part card's grid:

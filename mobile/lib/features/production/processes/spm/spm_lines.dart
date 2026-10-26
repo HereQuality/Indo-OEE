@@ -10,7 +10,6 @@ import '../../entry_form/entry_layout.dart';
 import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_line_context.dart';
 import '../../entry_form/entry_op_tile.dart';
-import '../../entry_form/entry_style.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
 import '../../shared/production_sheet_calc.dart';
@@ -91,7 +90,6 @@ Widget spmPartLine(EntryLineContext c) {
   final m = c.metrics;
   final item = entryItemFor(c.values, c.items);
   final excluded = entryExcludedOps(c.values);
-  final s = c.theme.colorScheme;
   return EntryLineCard(
     title: 'Part, Cycle Breakdown',
     icon: Icons.precision_manufacturing_outlined,
@@ -108,9 +106,10 @@ Widget spmPartLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                // A record typed into the old grid has a part name but no link to
-                // the Item master: show that name rather than an empty box.
-                text: c.text('itemName'),
+                // Web `partCycleLabel`: "Bracket — 30 sec". A record typed into the
+                // old grid has a part name but no link to the Item master: show that
+                // name rather than an empty box.
+                text: partBoxText(c),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -135,17 +134,8 @@ Widget spmPartLine(EntryLineContext c) {
             EntryCell(label: f['label'], child: c.calcBox(f['key']!, entryFmt(c.values[f['key']]), f['label']!)),
         ],
       ),
+      // The web has no heading or note over the operation tick boxes.
       const SizedBox(height: 10),
-      Text(
-        item != null || c.text('item').isNotEmpty ? 'Operations in this cycle' : 'Operations (pick a part first)',
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurface),
-      ),
-      const SizedBox(height: 2),
-      Text(
-        "Untick one to leave it out of this entry's cycle time.",
-        style: TextStyle(fontSize: EntryStyle.noteSize, color: s.onSurfaceVariant, height: 1.25),
-      ),
-      const SizedBox(height: 8),
       Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -194,13 +184,8 @@ Widget _opTile(EntryLineContext c, Map<String, String> f, Map<String, dynamic>? 
 /// "Others" remark once that downtime is used.
 Widget spmDowntimeLine(EntryLineContext c) {
   final m = c.metrics;
-  final s = c.theme.colorScheme;
-  final limit = m.stoppageLimit;
-  final over = m.overStoppage;
-  final totalText = entryFmt(m.totalStoppage);
   final anyLocked = spmDowntimeBoxes.any((b) => c.locked(b.$1, m.minutesLimit(b.$1).max));
   final keys = [for (final b in spmDowntimeBoxes) b.$1, 'stoppageTotal', 'otherMinRemark'];
-  final err = c.err('stoppageTotal');
   return EntryLineCard(
     title: 'Downtime / Stoppage (min)',
     icon: Icons.build_circle_outlined,
@@ -217,32 +202,7 @@ Widget spmDowntimeLine(EntryLineContext c) {
       ),
       if (anyLocked) EntryHintText(m.downtimeLockReason),
       const SizedBox(height: 10),
-      c.keyed(
-        'stoppageTotal',
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text.rich(
-              key: ValueKey('entry${c.index}/stoppageSummary'),
-              style: const TextStyle(fontSize: 13, height: 1.3),
-              TextSpan(
-                children: [
-                  TextSpan(text: 'Total stoppage (with Lunch / Rest): ', style: TextStyle(color: s.onSurfaceVariant)),
-                  TextSpan(
-                    text: '${totalText.isEmpty ? '0' : totalText} min',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: over ? s.error : null),
-                  ),
-                  TextSpan(
-                    text: limit == null ? ' — enter Machine ON/OFF Time to see the allowance' : ' of ${jsNumStr(limit)} min allowed',
-                    style: TextStyle(color: s.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-            if (err != null) EntryErrorText(err),
-          ],
-        ),
-      ),
+      c.keyed('stoppageTotal', stoppageMeter(c)),
       if (m.otherDowntimeUsed) ...[
         const SizedBox(height: 10),
         EntryGrid(

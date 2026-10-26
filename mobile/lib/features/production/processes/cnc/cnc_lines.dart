@@ -11,7 +11,6 @@ import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../entry_form/entry_style.dart';
 import '../../shared/limit_notice.dart' show qtyNotice;
 import '../../shared/production_sheet_calc.dart';
 
@@ -49,9 +48,6 @@ Widget partLine(EntryLineContext c) {
   final m = c.metrics;
   final item = entryItemFor(c.values, c.items);
   final excluded = entryExcludedOps(c.values);
-  final itemName = c.text('itemName');
-  final hasItem = c.text('item').isNotEmpty;
-  final s = c.theme.colorScheme;
   return EntryLineCard(
     title: 'Part Name, Total Cycle Time',
     icon: Icons.precision_manufacturing_outlined,
@@ -68,9 +64,10 @@ Widget partLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                // A record typed into the old grid has a part name but no link
-                // to the Item master: show that name rather than an empty box.
-                text: itemName,
+                // Web `partCycleLabel`: "Flange 40 — 60 sec". A record typed into the
+                // old grid has a part name but no link to the Item master: show that
+                // name rather than an empty box.
+                text: partBoxText(c),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -88,17 +85,8 @@ Widget partLine(EntryLineContext c) {
           ?vendorCell(c),
         ],
       ),
+      // The web has no heading or note over the operation tick boxes.
       const SizedBox(height: 10),
-      Text(
-        hasItem || item != null ? 'Operations in this cycle' : 'Operations (pick a part first)',
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: s.onSurface),
-      ),
-      const SizedBox(height: 2),
-      Text(
-        "Untick one to leave it out of this entry's cycle time.",
-        style: TextStyle(fontSize: EntryStyle.noteSize, color: s.onSurfaceVariant, height: 1.25),
-      ),
-      const SizedBox(height: 8),
       Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -135,7 +123,9 @@ Widget _opTile(EntryLineContext c, Map<String, dynamic> f, Map<String, dynamic>?
   );
 }
 
-/// Ideal / Actual / OK quantity and what they make.
+/// The web's Production Master: Actual Quantity and OK Quantity (typed) and the
+/// grey Rejected — nothing else. Ideal Quantity is not a box: it only caps Actual
+/// (past it the web's popup, or a toast, shows the figures).
 Widget quantityLine(EntryLineContext c) {
   final m = c.metrics;
   return EntryLineCard(
@@ -144,12 +134,14 @@ Widget quantityLine(EntryLineContext c) {
     hasError: c.lineHasError(_line5),
     children: [
       EntryGrid(
+        // The web's three boxes in one row where there is room (a tablet column).
+        maxCols: 3,
         cells: [
-          EntryCell(label: 'Ideal Quantity', child: c.calcBox('idealQty', entryFmt(m.calc['idealQty']), 'Ideal Quantity')),
           EntryCell(
             label: 'Actual Quantity',
             required: true,
             error: c.err('actualQty'),
+            // Phone-only: says why the box takes nothing (the web raises a popup when you type).
             hint: c.locked('actualQty', m.idealQty)
                 ? 'Ideal Quantity is 0, so Actual can only be 0 — check the Machine ON/OFF times and the Part.'
                 : null,
@@ -183,7 +175,6 @@ Widget quantityLine(EntryLineContext c) {
             ),
           ),
           EntryCell(label: 'Rejected', child: c.calcBox('rejectedQty', entryFmt(m.calc['rejectedQty']), 'Rejected')),
-          EntryCell(label: '% OK Quantity', child: c.calcBox('pctOk', fmtPct(m.calc['pctOk']), '% OK Quantity')),
         ],
       ),
       // Availability / Performance / Quality above 100% -> goes to Admin review.
@@ -239,7 +230,7 @@ Widget rejectLine(EntryLineContext c) {
                   ),
               ],
             ),
-            // Why some Rejection Master boxes can take no figure yet.
+            // Phone-only: why some Rejection Master boxes can take no figure yet.
             if (rejectReasons.any((r) => EntryTextField.capLocks(entryText(split is Map ? split[r] : null), m.rejectRoom(r))))
               EntryHintText(m.rejectLockReason),
             const SizedBox(height: 8),

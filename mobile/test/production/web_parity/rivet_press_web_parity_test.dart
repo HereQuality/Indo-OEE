@@ -9,6 +9,8 @@ import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/core/theme/app_colors.dart';
 import 'package:indo/core/utils/alerts.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
+import 'package:indo/features/production/entry_form/entry_layout.dart' show EntryLineCard;
+import 'package:indo/features/production/entry_form/entry_op_tile.dart';
 import 'package:indo/features/production/entry_form/entry_notice_dialog.dart';
 import 'package:indo/features/production/entry_form/production_entry_form.dart';
 import 'package:indo/features/production/process/process_spec.dart';
@@ -24,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/fake_api.dart';
 import '../sheet_list_test.dart' as list;
+import 'form_lines_support.dart';
 
 // m1: process p1 (planned shift locked at 8 h, no vendors)
 // m2: process p3 (planned shift typed by hand; vendors v1 active, v2 inactive)
@@ -239,6 +242,8 @@ void main() {
     EntryFormToast.reset();
     EntryNotices.reset();
   });
+
+  _sameLinesAsTheWeb();
 
   for (final p in [_rivet, _press]) {
     group('${p.name}: Vendor Name', () {
@@ -642,6 +647,187 @@ void main() {
       expect(_k('entry0/oeeCheck'), findsOneWidget);
     });
   });
+}
+
+// The web Add Entry modals (RivetEntryForm.jsx / PressEntryForm.jsx `LINES`): the same
+// lines, in the same order, with the same boxes, labels and required stars. A trailing
+// " *" is the red star. On a tablet the two columns read left column, then right column.
+const _webHead = ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator *', 'Machine Working Status']);
+// Actual, OK and the grey Rejected - no Ideal Quantity box, no % OK box.
+const _webProduction = ('Production Master', ['Actual Quantity *', 'OK Quantity *', 'Rejected']);
+const _webRejection = (
+  'Rejection Master (Qty)',
+  [
+    'Dimension Out', 'Tool Mark', 'Surface Finish', 'Porosity / Blow Hole', 'Material Defect',
+    'Setting Mistake', 'Operator Mistake', 'Machine Fault', 'Broken', 'Other',
+  ],
+);
+const _webShift = ('Planned Operator Shift, Lunch / Rest', ['Planned Operator Shift (hours) *', 'Lunch / Rest (min)', 'Stoppage Allowed (min)']);
+const _webDowntime = (
+  'Downtime / Stoppage (min)',
+  [
+    'Planned Downtime (min)', 'Set-up Time (min)', 'No Manpower (min)', 'Material Shifting (min)', 'No Material (min)',
+    'B.D. Mech. (min)', 'B.D. Ele. (min)', 'No Power (min)', 'Others (min)',
+  ],
+);
+const _webRemarks = ('Remarks', ['Remarks']);
+
+const _rivetWebLines = <FormLineLabels>[
+  _webHead,
+  ('Process, Part, Total Cycle Time', ['Part Name *', 'Process *', 'No. of Holes in One Piece', 'Total Cycle Time (Sec)']),
+  ('Machine ON–OFF Time, Machine Shift', ['Machine ON Time *', 'Machine OFF Time *']),
+  _webProduction,
+  _webRejection,
+  _webShift,
+  _webDowntime,
+  _webRemarks,
+];
+const _pressWebLines = <FormLineLabels>[
+  _webHead,
+  ('Part, Operation, Setup No.', ['Part Name *', 'Operation', 'Setup No.']),
+  ('Standard Time, Product Cycle Time', ['Product Cycle Time (sec)']),
+  ('Machine ON–OFF Time, Machine Shift', ['Machine Time ON *', 'Machine Time OFF *']),
+  _webProduction,
+  _webRejection,
+  _webShift,
+  _webDowntime,
+  _webRemarks,
+];
+
+void _sameLinesAsTheWeb() {
+  for (final p in [_rivet, _press]) {
+    final webLines = p.spec.key == 'rivet' ? _rivetWebLines : _pressWebLines;
+    final partLine = webLines[1].$1;
+
+    group('${p.name}: same lines and boxes as the web Add Entry modal', () {
+      testWidgets('phone: the web lines, in the web order, each with the web boxes', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3'); // no process: no vendor, shift typed by hand
+        expect(describeLines(openFormLines(tester)), describeLines(webLines));
+      });
+
+      testWidgets('tablet: two columns, left column then right column is the web order', (tester) async {
+        await _openEditor(tester, p, size: const Size(1024, 1180));
+        await _pickMachine(tester, 'm3');
+        expect(describeLines(openFormLines(tester)), describeLines(webLines));
+        // Really two columns: Rejection Master sits to the right of the Date line.
+        final date = tester.getTopLeft(find.text('Date, Machine No., Operator'));
+        final reject = tester.getTopLeft(find.text('Rejection Master (Qty)'));
+        expect(reject.dx, greaterThan(date.dx + 200));
+      });
+
+      testWidgets('Vendor Name (no star) is in the Part line when the process has vendors, and only there', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm2'); // process p3: Acme Castings
+        final lines = openFormLines(tester);
+        final part = lines.firstWhere((l) => l.$1 == partLine).$2;
+        // Rivet: right after Part Name (its own row); Press: after Operation and Setup No.
+        expect(part, p.spec.key == 'rivet'
+            ? ['Part Name *', 'Vendor Name', 'Process *', 'No. of Holes in One Piece', 'Total Cycle Time (Sec)']
+            : ['Part Name *', 'Operation', 'Setup No.', 'Vendor Name']);
+        expect([for (final l in lines) if (l.$1 != partLine) l.$1], [for (final l in webLines) if (l.$1 != partLine) l.$1]);
+        expect(lines.where((l) => l.$1 != partLine).any((l) => l.$2.contains('Vendor Name')), isFalse);
+      });
+
+      testWidgets('the Part Name box reads like the web picker, with no helper text under the cycle time', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3');
+        expect(find.text('Select part'), findsOneWidget);
+        _form(tester).onItemSelect(0, 'i1');
+        await tester.pumpAndSettle();
+        final name = p.items.first['itemName'] as String;
+        final box = tester.widget<Text>(find.descendant(of: _k('entry0/itemName'), matching: find.byType(Text)).first);
+        // Rivet's picker passes partCycleLabel ("name — N sec"); Press's passes no label (bare name).
+        expect(box.data, p.spec.key == 'rivet' ? '$name — 45 sec' : name);
+        // The web shows its cycle-time explanation only as a hover tooltip: no note on the phone.
+        expect(find.textContaining("The Part's own Total Cycle Time", skipOffstage: false), findsNothing);
+        expect(find.textContaining('not here', skipOffstage: false), findsNothing);
+        expect(find.textContaining('Operations in this cycle', skipOffstage: false), findsNothing);
+        expect(find.textContaining('Operations (pick a part first)', skipOffstage: false), findsNothing);
+        expect(find.textContaining('Untick', skipOffstage: false), findsNothing);
+      });
+
+      testWidgets('the tick boxes are bare, labelled like the web, between the Part boxes and the cycle time', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3');
+        _form(tester).onItemSelect(0, 'i1');
+        await tester.pumpAndSettle();
+        final ticks = p.spec.key == 'rivet'
+            ? {
+                'rivetLoadingSec': 'Loading',
+                'rivetProcessSec': 'Process',
+                'rivetUnloadingCleaningSec': 'Unloading and Cleaning',
+                'rivetOtherOperationsSec': 'Other Operations',
+              }
+            : {'standardTimeMin': 'Standard Time Taken (min)', 'pcsPerStandardTime': 'No. Piece in Standard Time'};
+        for (final e in ticks.entries) {
+          await tester.ensureVisible(_k('entry0/${e.key}'));
+          expect(tester.widget<EntryOpTile>(_k('entry0/${e.key}')).label, e.value, reason: e.key);
+        }
+        final cycle = tester.getTopLeft(_k('entry0/calc/totalCycleSec')).dy;
+        final firstTick = tester.getTopLeft(_k('entry0/${ticks.keys.first}')).dy;
+        if (p.spec.key == 'rivet') {
+          // Web: Part, Process, No. of Holes, the ticks, then the grey Total Cycle Time.
+          expect(cycle, greaterThan(firstTick));
+          expect(tester.getTopLeft(_k('entry0/noOfHoles')).dy, lessThan(firstTick));
+        } else {
+          // Web: the grey Product Cycle Time, then the ticks.
+          expect(cycle, lessThan(firstTick));
+        }
+        expect(find.byType(EntryOpTile), findsNWidgets(ticks.length));
+      });
+
+      testWidgets('"Others" downtime: the remark reads "Remark for Others downtime" with the "Others" placeholder', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3');
+        _form(tester).onChange(0, 'otherMin', '10');
+        await tester.pump();
+        final lines = openFormLines(tester);
+        expect(lines.firstWhere((l) => l.$1 == 'Downtime / Stoppage (min)').$2.last, 'Remark for Others downtime *');
+        await tester.ensureVisible(_box('otherMinRemark'));
+        expect(tester.widget<TextField>(_box('otherMinRemark')).decoration!.hintText, 'What was the “Others” downtime?');
+      });
+
+      testWidgets('Remarks is a plain box under the "Remarks" label (no placeholder); editing locks Machine No. without a note', (tester) async {
+        await _openEditor(tester, p, row: _saved(p, 'r1', extra: {'machine': 'm3'}));
+        await tester.ensureVisible(_box('remarks'));
+        expect(tester.widget<TextField>(_box('remarks')).decoration!.hintText, isNull);
+        expect(find.textContaining("Can't be changed while editing", skipOffstage: false), findsNothing);
+      });
+
+      testWidgets('Non Working: only the head line (Status added, Operator not required), the note and Remarks', (tester) async {
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3');
+        await tester.ensureVisible(_k('entry0/workingMode/Non Working'));
+        await tester.tap(_k('entry0/workingMode/Non Working'));
+        await tester.pumpAndSettle();
+        expect(describeLines(openFormLines(tester)), describeLines(const <FormLineLabels>[
+          ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator', 'Machine Working Status', 'Status']),
+          _webRemarks,
+        ]));
+        expect(find.textContaining('Non Working — the machine did not run, so nothing else is needed. Pick a Status if you like and press Save.', findRichText: true), findsOneWidget);
+      });
+
+      testWidgets('optional lines start folded ("Optional — tap to add"); the Planned line is open when the shift is typed by hand', (tester) async {
+        EntryLineCard.foldOptional = true;
+        addTearDown(() => EntryLineCard.foldOptional = false);
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm3'); // no process: shift typed by hand
+        expect(find.text('Optional — tap to add'), findsNWidgets(3), reason: 'Rejection Master, Downtime and Remarks');
+        expect(find.text('Shift fixed — Lunch / Rest optional'), findsNothing);
+        expect(tester.widget<TextField>(_box('plannedOperatorShiftHours')).enabled, isTrue);
+      });
+
+      testWidgets('a shift fixed by Process Master folds its line to "Shift fixed — Lunch / Rest optional"', (tester) async {
+        EntryLineCard.foldOptional = true;
+        addTearDown(() => EntryLineCard.foldOptional = false);
+        await _openEditor(tester, p);
+        await _pickMachine(tester, 'm1'); // fixed at 8 h
+        expect(find.text('Optional — tap to add'), findsNWidgets(3));
+        expect(find.text('Shift fixed — Lunch / Rest optional'), findsOneWidget);
+      });
+    });
+  }
 }
 
 EntryNotice _qtyNoticeFor(_P p) => qtyNotice(

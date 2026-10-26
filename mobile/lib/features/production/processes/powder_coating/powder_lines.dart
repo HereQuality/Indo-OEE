@@ -17,7 +17,7 @@ import '../../shared/production_sheet_calc.dart';
 import '../../shared/shift_hours.dart';
 import '../../shared/vendors.dart';
 import 'powder_calc.dart';
-import 'powder_fold_card.dart';
+import 'powder_reasons.dart';
 import 'powder_metrics.dart';
 
 const List<String> _line1 = ['date', 'machine', 'workingMode', 'machineStatus'];
@@ -110,7 +110,7 @@ Widget dateWorkerStatusLine(EntryLineContext c) {
             label: 'Worker Name',
             required: true,
             error: c.err('machine'),
-            hint: c.isEdit ? "Can't be changed while editing" : null,
+            // Web: the select is just disabled while editing (no note under it).
             child: c.keyed('machine', c.machineBox(enabled: !c.isEdit)),
           ),
           EntryCell(
@@ -151,13 +151,13 @@ Widget dateWorkerStatusLine(EntryLineContext c) {
               span: EntryCell.full,
               child: c.keyed(
                 'machineStatus',
-                MachineStatusSelect(
+                PowderReasonSelect(
                   index: c.index,
                   ticked: reasons,
                   remark: c.text('remarks'),
                   onChanged: (list) => c.set('machineStatus', list),
                   // "Remarks" opens the (folded) Remarks section and puts the cursor in it.
-                  onOpenRemarks: () => requestOpenRemarks(c.index),
+                  onOpenRemarks: () => c.focusField('remarks'),
                 ),
               ),
             ),
@@ -244,8 +244,10 @@ Widget itemLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                text: c.text('itemName'),
-                hint: 'Select item',
+                // Web `partCycleLabel`: "Flange 40 — 60 sec"; an old record's own name
+                // when the part is not in the live list.
+                text: partBoxText(c),
+                hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
                 focusNode: c.nodeFor('itemName'),
@@ -492,12 +494,11 @@ Widget _minutesBox(EntryLineContext c, String field, String label) {
 /// Other Activity Carried Out, and the minutes spent on it (optional, folded).
 Widget otherActivityLine(EntryLineContext c) {
   final minutes = jsNumber(c.values['otherActivityMin']);
-  return PowderFoldCard(
-    id: 'otherActivity',
-    index: c.index,
+  return EntryLineCard(
     title: 'Other Activity Carried Out',
     icon: Icons.work_outline_rounded,
     hasError: c.lineHasError(_line6),
+    optional: true,
     hasValue: _anyFilled(c, _line6),
     children: [
       EntryGrid(
@@ -537,7 +538,7 @@ Widget otherActivityLine(EntryLineContext c) {
 
 /// Planned Operator Shift (hours), Lunch / Tea / Washroom and the minutes allowed.
 /// Optional and folded — open from the start while the shift is typed by hand,
-/// folded to "Fixed — nothing to enter" while Process Master locks it.
+/// folded to "Shift fixed — Lunch / Tea optional" while Process Master locks it.
 Widget plannedShiftLine(EntryLineContext c) {
   final m = c.metrics;
   final limit = m.stoppageLimit;
@@ -558,16 +559,17 @@ Widget plannedShiftLine(EntryLineContext c) {
           : 'Type hours as on the sheet — 3.5 is 3 h 30 min.',
     ?lockNote,
   ];
-  return PowderFoldCard(
-    id: 'plannedShift',
-    index: c.index,
+  return EntryLineCard(
     title: 'Planned Operator Shift, Lunch / Tea',
     icon: Icons.timelapse_rounded,
     hasError: c.lineHasError(_line7),
-    // Only Lunch / Tea counts as typed: a pre-filled, locked shift must not open it.
+    // Web `<Line id={7} optional openByDefault={!plannedLock} countFields={["lunchMin"]}
+    // summary={plannedLock ? "Shift fixed — Lunch / Tea optional" : ""}>`: only Lunch / Tea
+    // counts as typed (a pre-filled, locked shift must not open it).
+    optional: true,
     hasValue: _anyFilled(c, const ['lunchMin']),
     openByDefault: setting == null,
-    summary: setting != null ? 'Fixed — nothing to enter' : '',
+    summary: setting != null ? 'Shift fixed \u2014 Lunch / Tea optional' : '',
     children: [
       EntryGrid(
         cells: [
@@ -623,12 +625,11 @@ Widget idleLine(EntryLineContext c) {
   final away = m.away;
   final awayText = fmtNum(away);
   final err = c.err('stoppageTotal');
-  return PowderFoldCard(
-    id: 'idle',
-    index: c.index,
+  return EntryLineCard(
     title: 'Idle Time — Other (min)',
     icon: Icons.pause_circle_outline_rounded,
     hasError: c.lineHasError(_line8),
+    optional: true,
     // The running total (stoppageTotal) is not something typed.
     hasValue: _anyFilled(c, const ['otherMin', 'otherMinRemark']),
     children: [
@@ -720,21 +721,21 @@ Widget idleLine(EntryLineContext c) {
   );
 }
 
-/// Reason / Remarks for Rejection / Rework (optional, folded). The Status
+/// Reason / Remarks for Rejection / Rework (optional, folded). The Reasons
 /// list's "Remarks" tick opens it and puts the cursor in the box.
-Widget powderRemarksLine(EntryLineContext c) => PowderFoldCard(
-  id: 'remarks',
-  index: c.index,
+Widget powderRemarksLine(EntryLineContext c) => EntryLineCard(
   title: 'Reason / Remarks for Rejection / Rework',
   icon: Icons.notes_rounded,
   hasError: c.lineHasError(const ['remarks']),
+  optional: true,
   hasValue: _anyFilled(c, const ['remarks']),
-  openSignal: remarksOpenSignal(c.index),
-  onSignalOpened: () => c.focusField('remarks'),
+  revealKey: 'entry${c.index}/remarks',
   children: [
     EntryGrid(
       cells: [
+        // Web: the same words as the line title, over a plain textarea (no placeholder).
         EntryCell(
+          label: 'Reason / Remarks for Rejection / Rework',
           span: EntryCell.full,
           child: c.keyed(
             'remarks',

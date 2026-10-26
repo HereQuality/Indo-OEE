@@ -108,7 +108,8 @@ void main() {
       'Downtime / Stoppage (min)',
       'Remarks',
     ]) {
-      expect(find.text(title, skipOffstage: false), findsOneWidget, reason: title);
+      // "Remarks" is both the line title and the label of its box.
+      expect(find.text(title, skipOffstage: false), title == 'Remarks' ? findsNWidgets(2) : findsOneWidget, reason: title);
     }
     // CNC's operation ticks are not VMC's (it has Program Time / pieces instead).
     expect(find.text('Operations in this cycle', skipOffstage: false), findsNothing);
@@ -144,7 +145,9 @@ void main() {
     f.onChange(0, 'machineOffTime', '16:00');
     await tester.pump();
     expect(boxText(tester, 'entry0/calc/totalCycleSec'), '180');
-    expect(boxText(tester, 'entry0/calc/idealQty'), '160');
+    // Ideal Quantity is no box on the web form (it only caps Actual): read it from the figures.
+    expect(find.byKey(const ValueKey('entry0/calc/idealQty'), skipOffstage: false), findsNothing);
+    expect(vmcSpec.metrics(form(tester).entries[0]).idealQty, 160);
 
     Finder box(String field) => find.descendant(of: find.byKey(ValueKey('entry0/$field')), matching: find.byType(EditableText));
     // Actual may be at most Ideal Quantity (160).
@@ -162,7 +165,8 @@ void main() {
     await tester.pump();
     expect(boxText(tester, 'entry0/okQty'), '150');
     expect(boxText(tester, 'entry0/calc/rejectedQty'), '10');
-    expect(boxText(tester, 'entry0/calc/pctOk'), isNotEmpty);
+    expect(find.byKey(const ValueKey('entry0/calc/pctOk'), skipOffstage: false), findsNothing, reason: 'no % OK box on the web form');
+    expect(vmcSpec.metrics(form(tester).entries[0]).calc['pctOk'], isNotNull);
   });
 
   testWidgets('a complete add saves the exact VMC payload to /vmc-sheet/row', (tester) async {

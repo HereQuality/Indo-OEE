@@ -8,6 +8,7 @@ import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/core/theme/app_colors.dart';
 import 'package:indo/core/utils/alerts.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
+import 'package:indo/features/production/entry_form/entry_layout.dart' show EntryLineCard;
 import 'package:indo/features/production/entry_form/entry_notice_dialog.dart';
 import 'package:indo/features/production/entry_form/production_entry_form.dart';
 import 'package:indo/features/production/process/process_spec.dart';
@@ -20,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/fake_api.dart';
 import '../sheet_list_test.dart' as list;
+import '../web_parity/form_lines_support.dart';
 
 // m1: process p1 (planned shift locked at 8 h, no vendors)
 // m2: process p3 (planned shift typed by hand; vendors v1 active, v2 inactive)
@@ -97,7 +99,44 @@ Map<String, dynamic> _saved({String machine = 'm2', Map<String, dynamic> extra =
       ...extra,
     };
 
-void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
+/// The Rejection Master boxes of the web form (REJECT_REASONS), in order.
+const twinWebRejectionBoxes = [
+  'Dimension Out', 'Tool Mark', 'Surface Finish', 'Porosity / Blow Hole', 'Material Defect',
+  'Setting Mistake', 'Operator Mistake', 'Machine Fault', 'Broken', 'Other',
+];
+
+/// The downtime boxes of the web form (DOWNTIME_BOXES of Contact / Trobe / Spring), in order.
+const twinWebDowntimeBoxes = [
+  'Planned Downtime (min)', 'Set-up Time (min)', 'No Manpower (min)', 'Material Shifting (min)',
+  'No Material (min)', 'B.D. Mech. (min)', 'B.D. Ele. (min)', 'No Power (min)', 'Others (min)',
+];
+
+/// The lines of the web Add Entry modal of a Contact / Trobe / Spring form in the
+/// order it draws them (the JSX, not the `LINES` array): Rejection Master follows
+/// Production Master. Only the wording of the Part, Downtime and Remarks lines differs.
+List<FormLineLabels> twinWebLines({
+  required String partTitle,
+  required List<String> partBoxes,
+  required String downtimeTitle,
+  required String remarksTitle,
+  required String remarksLabel,
+}) => [
+  ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator *', 'Machine Working Status']),
+  (partTitle, partBoxes),
+  ('Machine ON–OFF Time, Machine Shift', ['Machine ON Time *', 'Machine OFF Time *']),
+  // Actual, OK and the grey Rejected - no Ideal Quantity box, no % OK box.
+  ('Production Master', ['Actual Quantity *', 'OK Quantity *', 'Rejected']),
+  ('Rejection Master (Qty)', twinWebRejectionBoxes),
+  ('Planned Operator Shift, Lunch / Rest', ['Planned Operator Shift (hours) *', 'Lunch / Rest (min)', 'Stoppage Allowed (min)']),
+  (downtimeTitle, twinWebDowntimeBoxes),
+  (remarksTitle, [remarksLabel]),
+];
+
+void registerTwinWebParity(
+  ProcessSpec spec, {
+  required String itemLabel,
+  required List<FormLineLabels> webLines,
+}) {
   final rowPath = spec.api.row;
   final occupied = spec.api.occupied;
 
@@ -165,6 +204,92 @@ void registerTwinWebParity(ProcessSpec spec, {required String itemLabel}) {
     setUp(() {
       EntryFormToast.reset();
       EntryNotices.reset();
+    });
+
+    // The web Add Entry modal (ContactEntryForm / TrobeEntryForm / SpringEntryForm.jsx): the
+    // same lines, in the same order, with the same boxes, labels and required stars. A
+    // trailing " *" is the red star. On a tablet the two columns read left, then right.
+    group('same lines and boxes as the web Add Entry modal', () {
+      final partTitle = webLines[1].$1;
+      final partBoxes = webLines[1].$2;
+      final remarks = webLines.last;
+
+      testWidgets('phone: the eight web lines, in the web order, each with the web boxes', (tester) async {
+        await openEditor(tester);
+        await pickMachine(tester, 'm3'); // no process: no vendor, shift typed by hand
+        expect(describeLines(openFormLines(tester)), describeLines(webLines));
+      });
+
+      testWidgets('tablet: two columns, left column then right column is the web order', (tester) async {
+        await openEditor(tester, size: const Size(1024, 1180));
+        await pickMachine(tester, 'm3');
+        expect(describeLines(openFormLines(tester)), describeLines(webLines));
+        // Really two columns: Rejection Master (5th) sits to the right of the Date line (1st).
+        final date = tester.getTopLeft(find.text('Date, Machine No., Operator'));
+        final reject = tester.getTopLeft(find.text('Rejection Master (Qty)'));
+        expect(reject.dx, greaterThan(date.dx + 200));
+      });
+
+      testWidgets('Vendor Name (no star) follows the cycle time box when the process has vendors', (tester) async {
+        await openEditor(tester);
+        await pickMachine(tester, 'm2'); // process p3: Acme Castings
+        final part = openFormLines(tester).firstWhere((l) => l.$1 == partTitle);
+        expect(part.$2, [...partBoxes, 'Vendor Name']);
+      });
+
+      testWidgets('the $itemLabel box reads like the web picker ("name — N sec"); blank reads "Select part"', (tester) async {
+        await openEditor(tester);
+        await pickMachine(tester, 'm3');
+        expect(find.text('Select part'), findsOneWidget);
+        form(tester).onItemSelect(0, 'i1');
+        await tester.pumpAndSettle();
+        expect(find.text('Bracket — 60 sec'), findsOneWidget);
+        // The cycle time is the entry's own typed box (not a grey one): the Part's usual shows once it differs.
+        expect(find.text("Part's usual: 60 sec"), findsNothing);
+        form(tester).onChange(0, 'totalCycleSec', '55');
+        await tester.pumpAndSettle();
+        expect(find.text("Part's usual: 60 sec"), findsOneWidget);
+      });
+
+      testWidgets('Remarks is a plain box under its label (no placeholder); editing locks Machine No. without a note', (tester) async {
+        await openEditor(tester, row: _saved(machine: 'm3'));
+        expect(tester.widget<TextField>(box('remarks')).decoration!.hintText, isNull);
+        expect(find.textContaining("Can't be changed while editing"), findsNothing);
+      });
+
+      testWidgets('Non Working: only the head line (Status added, Operator not required), the note and Remarks', (tester) async {
+        await openEditor(tester);
+        await pickMachine(tester, 'm3');
+        await tester.ensureVisible(k('entry0/workingMode/Non Working'));
+        await tester.tap(k('entry0/workingMode/Non Working'));
+        await tester.pumpAndSettle();
+        expect(describeLines(openFormLines(tester)), describeLines(<FormLineLabels>[
+          ('Date, Machine No., Operator', ['Date *', 'Machine No. *', 'Operator', 'Machine Working Status', 'Status']),
+          remarks,
+        ]));
+        expect(
+          find.textContaining('Non Working — the machine did not run, so nothing else is needed. Pick a Status if you like and press Save.', findRichText: true),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('optional lines start folded ("Optional — tap to add"); the Planned line is open when the shift is typed by hand', (tester) async {
+        EntryLineCard.foldOptional = true;
+        addTearDown(() => EntryLineCard.foldOptional = false);
+        await openEditor(tester);
+        await pickMachine(tester, 'm3'); // no process: shift typed by hand
+        expect(find.text('Optional — tap to add'), findsNWidgets(3), reason: 'Rejection Master, Downtime and Remarks');
+        expect(find.text('Shift fixed — Lunch / Rest optional'), findsNothing);
+        expect(k('entry0/plannedOperatorShiftHours'), findsOneWidget);
+      });
+
+      testWidgets('a shift fixed by Process Master folds its line to "Shift fixed — Lunch / Rest optional"', (tester) async {
+        EntryLineCard.foldOptional = true;
+        addTearDown(() => EntryLineCard.foldOptional = false);
+        await openEditor(tester);
+        await pickMachine(tester, 'm1'); // process p1: planned shift locked at 8 h
+        expect(find.text('Shift fixed — Lunch / Rest optional'), findsOneWidget);
+      });
     });
 
     test('the spec switches the four shared pieces on', () {

@@ -270,7 +270,11 @@ class EntryBlockState extends State<EntryBlock> {
     final r = await showPicker<String>(
       context,
       title: 'Operator',
-      options: [for (final o in widget.operators) PickOption<String>('${o['name'] ?? ''}', '${o['name'] ?? ''}')],
+      // Web `operatorsForMachine`: this machine's process's operators (plus any with no process).
+      options: [
+        for (final o in operatorsForMachine(widget.operators, widget.machines, _v['machine']))
+          PickOption<String>('${o['name'] ?? ''}', '${o['name'] ?? ''}'),
+      ],
       selected: name.isEmpty ? null : name,
       allowClear: true,
     );

@@ -139,7 +139,8 @@ void main() {
         'Downtime / Stoppage (min)',
         'Remarks',
       ]) {
-        expect(find.text(title, skipOffstage: false), findsOneWidget, reason: title);
+        // The Remarks card shows its title and, like the web, a "Remarks" label over the box.
+        expect(find.text(title, skipOffstage: false), title == 'Remarks' ? findsNWidgets(2) : findsOneWidget, reason: title);
       }
       expect(find.text('Production (Qty)', skipOffstage: false), findsNothing);
       // Process choices, the four operations, the nine downtime boxes' labels.

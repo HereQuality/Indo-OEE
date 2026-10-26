@@ -142,10 +142,12 @@ abstract class ProcessSpec {
   /// workers assigned to the process); null = nothing special.
   String? get noMachinesMessage => null;
 
-  /// Whether one form may hold a row key (machine / worker) only once per date
-  /// (Powder Coating: a worker already in another block of the same date is
-  /// "already added" in the picker). Default: a machine may repeat.
-  bool get uniqueMachinePerDate => false;
+  /// Whether one form may hold a row key (machine / worker) only once per date:
+  /// a machine already in another block of the same date is "already added" in
+  /// the picker, and "Add another machine" is off (with the web's note) once
+  /// every machine is in the form for the date. Every web entry form does this,
+  /// so the default is true.
+  bool get uniqueMachinePerDate => true;
 
   /// Whether the editor also looks an Operator up (`occupied?date&operator`) so
   /// one operator can't be on two machines at once. Powder Coating has no

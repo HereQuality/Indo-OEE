@@ -163,9 +163,10 @@ void main() {
         );
         expect(find.text('Idle Time (min)'), findsOneWidget);
         expect(find.text('Downtime / Stoppage (min)'), findsNothing);
+        // The line's title and, as on the web, the same words as the label over its box.
         expect(
           find.text('Reason / Remarks for Rejection / Rework'),
-          findsOneWidget,
+          findsNWidgets(2),
         );
         expect(find.text('Planned Downtime (min)'), findsOneWidget);
         expect(find.byKey(const ValueKey('entry0/actualQty')), findsOneWidget);

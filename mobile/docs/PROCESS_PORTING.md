@@ -401,7 +401,7 @@ optional (hidden on some pages) uses `SheetCol.shownWhen: (env) => …` — `She
 * `EntryLineCard(optional: true, hasValue:, openByDefault:, summary:, revealKey:)` is the web FormLine
   `optional`: folded to its header ("Optional — tap to add"), opens by itself when it holds a value,
   has an error after Save or `openByDefault`; fields stay mounted. The shared Planned Shift
-  (`openByDefault: no Process Master setting`, `summary: 'Fixed — nothing to enter'`), Downtime, Remarks
+  (`openByDefault: no Process Master setting`, `summary: 'Shift fixed — Lunch / Rest optional'`), Downtime, Remarks
   and CNC's Rejection cards use it. A card holding a box that is focused from outside (the Status
   "Remarks" tick) passes `revealKey: 'entry$index/<field>'`. Tests run with folding OFF
   (`test/flutter_test_config.dart`); `web_parity/line_fold_part_picker_test.dart` turns it on.

@@ -9,6 +9,7 @@ import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/core/theme/app_colors.dart';
 import 'package:indo/core/utils/alerts.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
+import 'package:indo/features/production/entry_form/entry_layout.dart' show EntryLineCard;
 import 'package:indo/features/production/entry_form/entry_notice_dialog.dart';
 import 'package:indo/features/production/entry_form/production_entry_form.dart';
 import 'package:indo/features/production/sheet/sheet_model.dart' show Json;
@@ -21,6 +22,7 @@ import 'package:indo/features/production/sheet/widgets/entry_detail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/fake_api.dart';
+import '../../web_parity/form_lines_support.dart';
 
 const spec = powderCoatingSpec;
 const rowPath = '/api/v1/powder-coating-sheet/row';
@@ -133,10 +135,21 @@ Future<void> tapSave(WidgetTester t) async {
   await t.pump();
 }
 
-/// The words in section [id]'s header ('' while it is open and empty).
+/// The optional lines of the form, by the short names the tests use.
+const foldTitles = {
+  'otherActivity': 'Other Activity Carried Out',
+  'plannedShift': 'Planned Operator Shift, Lunch / Tea',
+  'idle': 'Idle Time — Other (min)',
+  'remarks': 'Reason / Remarks for Rejection / Rework',
+};
+
+/// The header of the optional line [id] (tap it to open / fold the line).
+Finder toggle(String id) => find.byKey(ValueKey('line-toggle/${foldTitles[id]}'));
+
+/// The words in line [id]'s header next to its title ('' while it is open and empty).
 String foldNote(WidgetTester t, String id) {
-  final note = find.byKey(ValueKey('entry0/fold/$id/note'));
-  return note.evaluate().isEmpty ? '' : t.widget<Text>(note).data ?? '';
+  final texts = find.descendant(of: toggle(id), matching: find.byType(Text)).evaluate().map((e) => (e.widget as Text).data ?? '');
+  return texts.firstWhere((x) => x != foldTitles[id], orElse: () => '');
 }
 
 Future<void> pickWorkingStatus(WidgetTester t, String mode) async {
@@ -151,6 +164,9 @@ void main() {
   setUp(() {
     EntryFormToast.reset();
     EntryNotices.reset();
+    // The optional lines fold like the web FormLine (the test config switches folding off).
+    EntryLineCard.foldOptional = true;
+    addTearDown(() => EntryLineCard.foldOptional = false);
   });
 
   group('Vendor Name', () {
@@ -228,9 +244,9 @@ void main() {
       final api = await openEditor(tester);
       expect(form(tester).entries[0]['plannedOperatorShiftHours'], '8');
       expect(form(tester).plannedShifts.single!.hours, 8);
-      expect(foldNote(tester, 'plannedShift'), 'Fixed — nothing to enter');
-      await tester.ensureVisible(k('entry0/fold/plannedShift'));
-      await tester.tap(k('entry0/fold/plannedShift'));
+      expect(foldNote(tester, 'plannedShift'), 'Shift fixed — Lunch / Tea optional');
+      await tester.ensureVisible(toggle('plannedShift'));
+      await tester.tap(toggle('plannedShift'));
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(find.descendant(of: k('entry0/plannedOperatorShiftHours'), matching: find.byType(TextField))).enabled, isFalse);
       expect(find.textContaining('Fixed at 8:00 hr — locked in Process Master'), findsOneWidget);
@@ -248,7 +264,7 @@ void main() {
       expect(form(tester).entries[0]['plannedOperatorShiftHours'], '');
       // Open from the start (nothing is fixed, so it needs typing) and not read-only.
       expect(foldNote(tester, 'plannedShift'), isNot('Optional — tap to add'));
-      expect(foldNote(tester, 'plannedShift'), isNot('Fixed — nothing to enter'));
+      expect(foldNote(tester, 'plannedShift'), isNot('Shift fixed — Lunch / Tea optional'));
       final field = tester.widget<TextField>(find.descendant(of: k('entry0/plannedOperatorShiftHours'), matching: find.byType(TextField)));
       expect(field.enabled, isTrue);
       expect(find.textContaining('Process Master'), findsNothing);
@@ -263,8 +279,8 @@ void main() {
       });
       expect(form(tester).entries[0]['plannedOperatorShiftHours'], '9.5');
       expect(form(tester).plannedShifts.single!.fromEntry, isTrue);
-      await tester.ensureVisible(k('entry0/fold/plannedShift'));
-      await tester.tap(k('entry0/fold/plannedShift'));
+      await tester.ensureVisible(toggle('plannedShift'));
+      await tester.tap(toggle('plannedShift'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Kept as this entry was saved — set by Process Master'), findsOneWidget);
     });
@@ -288,29 +304,41 @@ void main() {
   });
 
   group('Working Status and Reasons For Not Working', () {
-    testWidgets('Non Working: the shared Status list (with Remarks) in the web\'s order; Working clears them', (tester) async {
+    testWidgets('Non Working: the worker reasons (no Machine Breakdown) and Remarks in the web\'s order; Working clears them', (tester) async {
       final api = await openEditor(tester);
       expect(k('entry0/machineStatus/No Manpower'), findsNothing, reason: 'Reasons are for Non Working only');
       await pickWorkingStatus(tester, 'Non Working');
       expect(find.text('Reasons For Not Working'), findsOneWidget);
-      for (final st in ['Machine Breakdown', 'No Manpower', 'No Planning', 'Remarks']) {
+      for (final st in ['No Manpower', 'No Planning', 'Remarks']) {
         expect(k('entry0/machineStatus/$st'), findsOneWidget, reason: st);
       }
+      // Web WORKER_STATUSES: a worker has no machine to break down.
+      expect(k('entry0/machineStatus/Machine Breakdown'), findsNothing);
       expect(find.textContaining('no inspection that day, so nothing else is needed'), findsOneWidget);
       expect(find.text('Inspection (Qty), Types of Defect / Rework'), findsNothing);
 
       await tester.tap(k('entry0/machineStatus/No Planning'));
       await tester.pump();
-      await tester.tap(k('entry0/machineStatus/Machine Breakdown'));
+      await tester.tap(k('entry0/machineStatus/No Manpower'));
       await tester.pump();
-      expect(form(tester).entries[0]['machineStatus'], ['Machine Breakdown', 'No Planning']);
+      expect(form(tester).entries[0]['machineStatus'], ['No Manpower', 'No Planning']);
 
       await tapSave(tester);
       await tester.pumpAndSettle();
       final put = Map<String, dynamic>.from(api.called('PUT', rowPath).single.body as Map);
       expect(put['workingMode'], 'Non Working');
-      expect(put['machineStatus'], ['Machine Breakdown', 'No Planning']);
+      expect(put['machineStatus'], ['No Manpower', 'No Planning']);
       expect(put['itemName'], '');
+    });
+
+    testWidgets('an entry saved with Machine Breakdown still lists it, ticked, so editing never drops it', (tester) async {
+      await openEditor(tester, workerId: null, row: {
+        '_id': 'e1', 'date': '2026-09-20', 'worker': 'w1', 'machine': 'w1', 'operator': 'Asha', 'slot': 1,
+        'workingMode': 'Non Working', 'machineStatus': ['Machine Breakdown'],
+      });
+      expect(tester.widget<FilterChip>(k('entry0/machineStatus/Machine Breakdown')).selected, isTrue);
+      expect(k('entry0/machineStatus/No Manpower'), findsOneWidget);
+      expect(k('entry0/machineStatus/No Planning'), findsOneWidget);
     });
 
     testWidgets('going back to Working drops the reasons', (tester) async {
@@ -394,7 +422,7 @@ void main() {
       await fillValid(tester);
       form(tester).onChange(0, 'machineOffTime', '09:00');
       await tester.pump();
-      await tester.tap(k('entry0/fold/otherActivity'));
+      await tester.tap(toggle('otherActivity'));
       await tester.pumpAndSettle();
       await tester.enterText(box('otherActivityMin'), '70');
       await tester.pump();
@@ -448,15 +476,15 @@ void main() {
 
     testWidgets('tapping the header opens and folds it; typing marks it "Filled in"', (tester) async {
       await openEditor(tester);
-      await tester.ensureVisible(k('entry0/fold/idle'));
-      await tester.tap(k('entry0/fold/idle'));
+      await tester.ensureVisible(toggle('idle'));
+      await tester.tap(toggle('idle'));
       await tester.pumpAndSettle();
       expect(foldNote(tester, 'idle'), '');
       expect(box('otherMin'), findsOneWidget);
       await tester.enterText(box('otherMin'), '5');
       await tester.pump();
       expect(foldNote(tester, 'idle'), 'Filled in');
-      await tester.tap(k('entry0/fold/idle'));
+      await tester.tap(toggle('idle'));
       await tester.pumpAndSettle();
       expect(foldNote(tester, 'idle'), 'Filled in');
       expect(box('otherMin'), findsNothing);
@@ -482,14 +510,104 @@ void main() {
       await tester.pump();
       expect(foldNote(tester, 'idle'), 'Filled in');
       // Fold it again, then press Save: the error brings it back.
-      await tester.ensureVisible(k('entry0/fold/idle'));
-      await tester.tap(k('entry0/fold/idle'));
+      await tester.ensureVisible(toggle('idle'));
+      await tester.tap(toggle('idle'));
       await tester.pumpAndSettle();
       await tapSave(tester);
       await tester.pumpAndSettle();
       expect(find.text('Remark is required when Other idle time is entered'), findsOneWidget);
       expect(find.text('Check this line'), findsWidgets);
       expect(box('otherMinRemark'), findsOneWidget);
+    });
+  });
+
+  // The web Add Entry modal (PowderCoatingEntryForm.jsx): the same lines, in the same
+  // order, with the same boxes, labels and required stars. A trailing " *" is the red
+  // star. On a tablet the two columns read left column, then right column.
+  group('same lines and boxes as the web Add Entry modal', () {
+    // Folded lines do not lay out their boxes, so read the lines with every optional one open.
+    setUp(() => EntryLineCard.foldOptional = false);
+
+    const webLines = <FormLineLabels>[
+      ('Date, Worker Name, Working Status', ['Date *', 'Worker Name *', 'Working Status']),
+      (
+        'Item Name, Vendor Name, Standard Inspection Time',
+        ['Item Name *', 'Vendor Name', 'Standard Inspection Time per Piece (Sec) *'],
+      ),
+      ('Inspection Start – End Time, Working Hours', ['Inspection Start Time *', 'Inspection End Time *', 'Inspection Working Hours']),
+      (
+        'Inspection (Qty), Types of Defect / Rework',
+        [
+          'Total Qty *', 'Ideal Inspection Quantity', 'Ideal Inspection Qty / Hour', 'Ideal Inspection Time',
+          'Less Powder Coating (Qty)', 'Dots (Qty)', 'Miss Powder Coating (Qty)', 'Other (Qty)',
+          'Total Defect / Rework', 'OK Qty',
+        ],
+      ),
+      ('Other Activity Carried Out', ['Other Activity Carried Out', 'Time in Other Activity (min)']),
+      ('Planned Operator Shift, Lunch / Tea', ['Planned Operator Shift (hours) *', 'Lunch / Tea / Washroom (min)', 'Minutes Allowed']),
+      ('Idle Time — Other (min)', ['Other (min)', 'Total Idle Time (min)']),
+      ('Reason / Remarks for Rejection / Rework', ['Reason / Remarks for Rejection / Rework']),
+    ];
+
+    testWidgets('phone: the eight web lines, in the web order, each with the web boxes', (tester) async {
+      await openEditor(tester, size: const Size(390, 844));
+      expect(describeLines(openFormLines(tester)), describeLines(webLines));
+    });
+
+    testWidgets('tablet: two columns, left column then right column is the web order', (tester) async {
+      await openEditor(tester, size: const Size(1024, 1180));
+      expect(describeLines(openFormLines(tester)), describeLines(webLines));
+      // Really two columns: Other Activity (5th) sits to the right of the Date line (1st).
+      final date = tester.getTopLeft(find.text('Date, Worker Name, Working Status'));
+      final activity = tester.getTopLeft(find.text('Other Activity Carried Out').first);
+      expect(activity.dx, greaterThan(date.dx + 200));
+    });
+
+    testWidgets('no vendors for the process: no Vendor Name box between Item Name and the inspection time', (tester) async {
+      await openEditor(tester, vendors: const [], size: const Size(390, 844));
+      final item = openFormLines(tester).firstWhere((l) => l.$1 == 'Item Name, Vendor Name, Standard Inspection Time');
+      expect(item.$2, ['Item Name *', 'Standard Inspection Time per Piece (Sec) *']);
+    });
+
+    testWidgets('Non Working: only the head line (Reasons For Not Working added), the note and the Remarks line', (tester) async {
+      await openEditor(tester, size: const Size(390, 844));
+      await pickWorkingStatus(tester, 'Non Working');
+      expect(describeLines(openFormLines(tester)), describeLines(const <FormLineLabels>[
+        ('Date, Worker Name, Working Status', ['Date *', 'Worker Name *', 'Working Status', 'Reasons For Not Working']),
+        ('Reason / Remarks for Rejection / Rework', ['Reason / Remarks for Rejection / Rework']),
+      ]));
+      expect(
+        find.textContaining('Non Working — no inspection that day, so nothing else is needed. Pick a reason if you like and press Save.', findRichText: true),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Other Activity Carried Out gets its red star once minutes are typed', (tester) async {
+      await openEditor(tester, size: const Size(390, 844));
+      List<String> activityBoxes() => openFormLines(tester).firstWhere((l) => l.$1 == 'Other Activity Carried Out').$2;
+      expect(activityBoxes().first, 'Other Activity Carried Out');
+      form(tester).onChange(0, 'otherActivityMin', '10');
+      await tester.pump();
+      expect(activityBoxes().first, 'Other Activity Carried Out *');
+    });
+
+    testWidgets('the Item Name box reads like the web picker ("name — N sec"), blank reads "Select part"', (tester) async {
+      await openEditor(tester, size: const Size(390, 844));
+      expect(find.text('Select part'), findsOneWidget);
+      expect(find.text('Select item'), findsNothing);
+      form(tester).onItemSelect(0, 'i1');
+      await tester.pumpAndSettle();
+      expect(find.text('Panel — 45 sec'), findsOneWidget);
+    });
+
+    testWidgets('Remarks is a plain box under its label (no placeholder); editing locks Worker Name without a note', (tester) async {
+      await openEditor(tester, workerId: null, row: {
+        '_id': 'e1', 'date': '2026-09-20', 'worker': 'w1', 'machine': 'w1', 'operator': 'Asha', 'slot': 1,
+        'item': 'i1', 'itemName': 'Panel', 'totalCycleSec': 45, 'machineOnTime': '08:00', 'machineOffTime': '16:00',
+        'actualQty': 600, 'plannedOperatorShiftHours': 8.5,
+      }, size: const Size(390, 844));
+      expect(tester.widget<TextField>(find.descendant(of: k('entry0/remarks'), matching: find.byType(TextField))).decoration!.hintText, isNull);
+      expect(find.textContaining("Can't be changed while editing"), findsNothing);
     });
   });
 

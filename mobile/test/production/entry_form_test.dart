@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
 
 import 'entry_form_harness.dart';
+import 'web_parity/form_lines_support.dart';
 
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 12; i++) {
@@ -17,19 +18,35 @@ void main() {
     expect(find.byKey(const ValueKey('entry0/collapsed')), findsNothing);
     await openBlock(tester, 0);
 
-    for (final title in [
+    // The web's lines, in the web's order (CNC: ProductionEntryForm.jsx LINES).
+    final titles = [
       'Date, Machine No., Operator',
       'Part Name, Total Cycle Time',
       'Machine ON–OFF Time, Machine Shift',
+      'Production Master',
       'Rejection Master (Qty)',
       'Planned Operator Shift, Lunch / Rest',
       'Downtime / Stoppage (min)',
       'Remarks',
-    ]) {
-      expect(find.text(title, skipOffstage: false), findsOneWidget, reason: title);
+    ];
+    final tops = <double>[];
+    for (final title in titles) {
+      // "Remarks" is both the line title and the label of its box.
+      final f = find.text(title, skipOffstage: false);
+      expect(f, title == 'Remarks' ? findsNWidgets(2) : findsOneWidget, reason: title);
+      tops.add(tester.getTopLeft(f.first).dy);
     }
-    // 08:00-16:00 on a 60 s part -> Ideal 480; 9 h planned -> 60 min allowed.
-    expect(find.descendant(of: find.byKey(const ValueKey('entry0/calc/idealQty')), matching: find.text('480')), findsOneWidget);
+    // One column on a phone, so the order down the page is the web's.
+    for (var i = 1; i < titles.length; i++) {
+      expect(tops[i], greaterThan(tops[i - 1]), reason: '${titles[i]} comes after ${titles[i - 1]}');
+    }
+
+    // Production Master: Actual, OK and the grey Rejected - no Ideal Quantity and no % OK box.
+    expect(openFormLines(tester).firstWhere((l) => l.$1 == 'Production Master').$2, ['Actual Quantity *', 'OK Quantity *', 'Rejected']);
+    expect(find.byKey(const ValueKey('entry0/calc/idealQty'), skipOffstage: false), findsNothing);
+    expect(find.byKey(const ValueKey('entry0/calc/pctOk'), skipOffstage: false), findsNothing);
+    expect(find.byKey(const ValueKey('entry0/calc/rejectedQty')), findsOneWidget);
+    // 9 h planned over a 08:00-16:00 shift -> the allowance box exists.
     expect(find.byKey(const ValueKey('entry0/calc/stoppageAllowed'), skipOffstage: false), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -118,6 +135,19 @@ void main() {
     expect(find.byKey(const ValueKey('entry0/header')), findsOneWidget);
     expect(find.byKey(const ValueKey('entry-add')), findsNothing);
     expect(find.byKey(const ValueKey('entry0/remove')), findsNothing);
+  });
+
+  testWidgets('a machine can be in the form once per date: the picker says "already added", and "Add another machine" goes off with the web note once all are in', (tester) async {
+    final key = await pumpForm(tester, [validEntry(), blankEntry(machine: 'm2')]);
+    // Both machines are already in this form for the date (web allTaken).
+    expect(tester.widget<OutlinedButton>(find.byKey(const ValueKey('entry-add'))).onPressed, isNull);
+    expect(find.text('Every machine is already in this form for this date.'), findsOneWidget);
+
+    // A different date frees them again.
+    key.currentState!.set(1, 'date', '2026-09-26');
+    await tester.pumpAndSettle();
+    expect(tester.widget<OutlinedButton>(find.byKey(const ValueKey('entry-add'))).onPressed, isNotNull);
+    expect(find.text('Every machine is already in this form for this date.'), findsNothing);
   });
 
   testWidgets('dark + 360x640 + text scale 1.6 renders without exceptions', (tester) async {

@@ -124,8 +124,8 @@ void main() {
     });
 
     testWidgets('a folded card shows its summary instead; "Filled in" once it has a value and is folded', (t) async {
-      await pump(t, card(summary: 'Fixed — nothing to enter'));
-      expect(find.text('Fixed — nothing to enter'), findsOneWidget);
+      await pump(t, card(summary: 'Shift fixed — Lunch / Rest optional'));
+      expect(find.text('Shift fixed — Lunch / Rest optional'), findsOneWidget);
       expect(find.text('Optional — tap to add'), findsNothing);
     });
 
@@ -144,7 +144,7 @@ void main() {
       await _open(t);
       await _pickMachine(t, 'm1');
       await t.pumpAndSettle();
-      expect(find.text('Fixed — nothing to enter'), findsOneWidget);
+      expect(find.text('Shift fixed — Lunch / Rest optional'), findsOneWidget);
       expect(_k('entry0/plannedOperatorShiftHours'), findsNothing); // hidden
       expect(find.text('Optional — tap to add'), findsWidgets); // Rejection, Downtime, Remarks
       await t.ensureVisible(find.byKey(const ValueKey('line-toggle/Planned Operator Shift, Lunch / Rest')));
@@ -159,7 +159,7 @@ void main() {
       await _pickMachine(t, 'm2');
       await t.pumpAndSettle();
       expect(_k('entry0/plannedOperatorShiftHours'), findsOneWidget);
-      expect(find.text('Fixed — nothing to enter'), findsNothing);
+      expect(find.text('Shift fixed — Lunch / Rest optional'), findsNothing);
     });
 
     testWidgets('typing in Lunch / Rest (or any downtime box) opens its card; values keep when folded', (t) async {

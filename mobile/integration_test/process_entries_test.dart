@@ -15,10 +15,10 @@ num _n(dynamic v) => v is num ? v : num.tryParse('$v') ?? double.nan;
 /// Powder Coating keeps Remarks in a folded card: open it first.
 Future<void> openRemarks(WidgetTester t, ProcCfg p) async {
   if (p.hasMachineOperator) return;
-  final fold = find.byKey(const ValueKey<String>('entry0/fold/remarks'));
+  final fold = find.byKey(const ValueKey<String>('line-toggle/Reason / Remarks for Rejection / Rework'));
   await ensureBuilt(t, fold);
   if (boxField('remarks').evaluate().isEmpty)
-    await tapKey(t, 'entry0/fold/remarks');
+    await tapKey(t, 'line-toggle/Reason / Remarks for Rejection / Rework');
 }
 
 Future<void> fillWorking(

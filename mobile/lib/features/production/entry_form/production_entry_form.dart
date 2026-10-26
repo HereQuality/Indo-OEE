@@ -249,6 +249,12 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
     while (_blockKeys.length < entries.length) {
       _blockKeys.add(GlobalKey<EntryBlockState>(debugLabel: 'entry-block-${_blockKeys.length}'));
     }
+    // Web `allTaken`: a new block takes the last block's date; once every machine is
+    // already on that date in this form it would have none left to pick.
+    final lastDate = entries.isEmpty ? null : entries.last['date'];
+    final allTaken = widget.spec.uniqueMachinePerDate &&
+        widget.machines.isNotEmpty &&
+        widget.machines.every((m) => entries.any((v) => v['date'] == lastDate && '${v['machine'] ?? ''}' == '${m['_id']}'));
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
@@ -300,11 +306,20 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   key: const ValueKey('entry-add'),
-                  onPressed: _add,
+                  onPressed: allTaken ? null : _add,
                   style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
                   icon: const Icon(Icons.add_rounded, size: 20),
                   label: Text('Add another ${widget.spec.machineNoun}'),
                 ),
+                if (allTaken)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Every ${widget.spec.machineNoun} is already in this form for this date.',
+                      key: const ValueKey('entry-add/allTaken'),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
               ],
             ],
           ),

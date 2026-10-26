@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../entry_form/common_lines.dart';
 import '../../entry_form/entry_fields.dart';
 import '../../entry_form/entry_form_logic.dart';
@@ -11,7 +10,7 @@ import '../../entry_form/entry_number_input.dart';
 import '../../entry_form/entry_op_tile.dart';
 import '../../entry_form/machine_status.dart';
 import '../../entry_form/web_parity_lines.dart';
-import '../../shared/production_sheet_calc.dart';
+import '../../shared/production_sheet_calc.dart' show isNonWorking;
 import '../cnc/cnc_lines.dart' show quantityLine, rejectLine;
 import 'vmc_calc.dart';
 
@@ -67,7 +66,6 @@ Widget vmcPartLine(EntryLineContext c) {
   final m = c.metrics;
   final item = entryItemFor(c.values, c.items);
   final excluded = entryExcludedOps(c.values);
-  final itemName = c.text('itemName');
   return EntryLineCard(
     title: 'Part, Product Cycle Time',
     icon: Icons.precision_manufacturing_outlined,
@@ -84,7 +82,8 @@ Widget vmcPartLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                text: itemName,
+                // Web `partCycleLabel`: "Housing — 180 sec"; an old record keeps its saved name.
+                text: partBoxText(c),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -95,14 +94,15 @@ Widget vmcPartLine(EntryLineContext c) {
             ),
           ),
           EntryCell(
+            // Web: a tooltip only (Program Time × 60 ÷ No. of Piece In One Program), no visible note.
             label: 'Product Cycle Time (sec)',
-            hint: 'Program Time (min) × 60 ÷ No. of Piece In One Program — set on the Part (Production › Parts), not here',
             child: c.calcBox('totalCycleSec', entryFmt(m.calc['totalCycleSec']), 'Product Cycle Time (sec)'),
           ),
           // Vendor Name: only when the machine's process has vendors (or the entry names one).
           ?vendorCell(c),
         ],
       ),
+      // The web has no heading or note over the Program Time / pieces tick boxes.
       const SizedBox(height: 10),
       Wrap(
         spacing: 6,
@@ -160,7 +160,7 @@ Widget vmcDowntimeLine(EntryLineContext c) {
       ),
       if (anyLocked) EntryHintText(m.downtimeLockReason),
       const SizedBox(height: 10),
-      c.keyed('stoppageTotal', _vmcStoppageMeter(c)),
+      c.keyed('stoppageTotal', stoppageMeter(c)),
       if (m.otherDowntimeUsed) ...[
         const SizedBox(height: 10),
         EntryGrid(
@@ -189,56 +189,6 @@ Widget vmcDowntimeLine(EntryLineContext c) {
           ],
         ),
       ],
-    ],
-  );
-}
-
-Widget _vmcStoppageMeter(EntryLineContext c) {
-  final m = c.metrics;
-  final s = c.theme.colorScheme;
-  final limit = m.stoppageLimit;
-  final over = m.overStoppage;
-  final totalText = entryFmt(m.totalStoppage);
-  final frac = limit == null
-      ? 0.0
-      : limit > 0
-          ? (m.totalStoppage / limit).clamp(0.0, 1.0)
-          : (m.totalStoppage > 0 ? 1.0 : 0.0);
-  final err = c.err('stoppageTotal');
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text.rich(
-        key: ValueKey('entry${c.index}/stoppageSummary'),
-        style: const TextStyle(fontSize: 13, height: 1.3),
-        TextSpan(
-          children: [
-            TextSpan(text: 'Total stoppage (with Lunch / Rest): ', style: TextStyle(color: s.onSurfaceVariant)),
-            TextSpan(
-              text: '${totalText.isEmpty ? '0' : totalText} min',
-              style: TextStyle(fontWeight: FontWeight.w700, color: over ? s.error : null),
-            ),
-            TextSpan(
-              text: limit == null ? ' — enter Machine ON/OFF Time to see the allowance' : ' of ${jsNumStr(limit)} min allowed',
-              style: TextStyle(color: s.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-      if (limit != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 5,
-              backgroundColor: s.outlineVariant,
-              color: over ? s.error : (frac > 0.85 ? AppColors.warn : s.primary),
-            ),
-          ),
-        ),
-      if (err != null) EntryErrorText(err),
     ],
   );
 }

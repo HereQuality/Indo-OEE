@@ -76,7 +76,7 @@ Widget dateMachineOperatorLine(EntryLineContext c, {bool workingStatus = false})
             label: 'Machine No.',
             required: true,
             error: c.err('machine'),
-            hint: c.isEdit ? "Can't be changed while editing" : null,
+            // Web: the select is just disabled while editing (no note under it).
             child: c.keyed('machine', c.machineBox(enabled: !c.isEdit)),
           ),
           EntryCell(
@@ -174,9 +174,12 @@ Widget shiftLine(EntryLineContext c) {
   final lockNote = setting == null
       ? null
       : plannedShiftReason(setting, hoursToHm(setting.hours));
+  // Web: not while End isn't after Start - that "shift" wraps past midnight and the
+  // OFF box already says what is wrong.
+  final endBeforeStart = (c.errors['machineOffTime'] ?? '').contains(' Time must be after ');
   final plannedHint = [
     if (c.err('plannedOperatorShiftHours') == null)
-      m.plannedBelowMachine
+      m.plannedBelowMachine && !endBeforeStart
           ? "Can't be less than Machine Shift ($machineHm)."
           : planned != null
           ? '= ${hoursToHm(planned)} hr'
@@ -188,17 +191,17 @@ Widget shiftLine(EntryLineContext c) {
     icon: Icons.timelapse_rounded,
     hasError: c.lineHasError(_line7),
     // Web `<Line id={7} optional openByDefault={!plannedLock} countFields={["lunchMin"]}
-    // summary={plannedLock ? "Fixed — nothing to enter" : ""}>`: folded when Process Master
-    // fixes the shift; only Lunch / Rest counts as typed.
+    // summary={plannedLock ? "Shift fixed — Lunch / Rest optional" : ""}>`: folded when
+    // Process Master fixes the shift; only Lunch / Rest counts as typed.
     optional: true,
     openByDefault: setting == null,
     hasValue: c.anyFilled(const ['lunchMin']),
-    summary: setting != null ? 'Fixed \u2014 nothing to enter' : '',
+    summary: setting != null ? 'Shift fixed \u2014 Lunch / Rest optional' : '',
     children: [
       EntryGrid(
         cells: [
           EntryCell(
-            label: 'Planned Operator Shift (hr.min)',
+            label: 'Planned Operator Shift (hours)',
             required: true,
             error: c.err('plannedOperatorShiftHours'),
             // Typed as decimal hours like the sheet: 5.33 is 5 h 20 min.
@@ -211,7 +214,7 @@ Widget shiftLine(EntryLineContext c) {
                 maxLength: 5,
                 max: 24,
                 enabled: setting == null,
-                label: 'Planned Operator Shift (hr.min)',
+                label: 'Planned Operator Shift (hours)',
                 onExceed: (_) => EntryFormToast.warn(
                   "Planned Operator Shift can't be more than 24 hours.",
                 ),
@@ -221,6 +224,7 @@ Widget shiftLine(EntryLineContext c) {
           EntryCell(
             label: 'Lunch / Rest (min)',
             error: c.err('lunchMin'),
+            // Phone-only: says why the box takes nothing (the web raises a popup when you type).
             hint: c.locked('lunchMin', lunch.max)
                 ? 'No stoppage time left, so Lunch / Rest can only be 0.'
                 : null,
@@ -272,7 +276,7 @@ Widget downtimeLine(
             ),
         ],
       ),
-      // Why some downtime boxes are shut.
+      // Phone-only: why some downtime boxes take nothing (the web raises a popup when you type).
       if (anyLocked) EntryHintText(m.downtimeLockReason),
       const SizedBox(height: 10),
       c.keyed('stoppageTotal', stoppageMeter(c)),
@@ -370,7 +374,8 @@ Widget stoppageMeter(EntryLineContext c) {
   );
 }
 
-/// The general remarks box (optional).
+/// The general remarks box (optional): the web's `Remarks` label over a plain
+/// textarea (no placeholder).
 Widget remarksLine(EntryLineContext c) => EntryLineCard(
   title: 'Remarks',
   icon: Icons.notes_rounded,
@@ -382,6 +387,7 @@ Widget remarksLine(EntryLineContext c) => EntryLineCard(
     EntryGrid(
       cells: [
         EntryCell(
+          label: 'Remarks',
           span: EntryCell.full,
           child: c.keyed(
             'remarks',
@@ -391,7 +397,6 @@ Widget remarksLine(EntryLineContext c) => EntryLineCard(
               maxLength: 500,
               minLines: 2,
               maxLines: 5,
-              hint: 'Anything worth noting about this shift (optional)',
               focusNode: c.nodeFor('remarks'),
               semanticsLabel: 'Remarks',
               onChanged: (t) => c.set('remarks', t),

@@ -117,7 +117,7 @@ Widget headLine(EntryLineContext c, TwinStyle style) {
             label: 'Machine No.',
             required: true,
             error: c.err('machine'),
-            hint: c.isEdit ? "Can't be changed while editing" : null,
+            // Web: the select is just disabled while editing (no note under it).
             child: c.keyed('machine', c.machineBox(enabled: !c.isEdit)),
           ),
           EntryCell(
@@ -185,7 +185,9 @@ Widget partLine(EntryLineContext c, TwinStyle style) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                text: c.text('itemName'),
+                // Web `partCycleLabel`: "Flange 40 — 60 sec"; an old record's own name
+                // when the part is not in the live list.
+                text: partBoxText(c),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -282,7 +284,8 @@ Widget twinDowntimeLine(EntryLineContext c, TwinStyle style) {
   );
 }
 
-/// Remarks (Spring: "Reason / Remarks for Rejection / Rework"), optional.
+/// Remarks (Spring: "Reason / Remarks for Rejection / Rework"), optional: the
+/// web's label over a plain textarea (no placeholder).
 Widget twinRemarksLine(EntryLineContext c, TwinStyle style) => EntryLineCard(
   title: style.remarksCardTitle,
   icon: Icons.notes_rounded,
@@ -294,6 +297,7 @@ Widget twinRemarksLine(EntryLineContext c, TwinStyle style) => EntryLineCard(
     EntryGrid(
       cells: [
         EntryCell(
+          label: style.remarksLabel,
           span: EntryCell.full,
           child: c.keyed(
             'remarks',
@@ -303,7 +307,6 @@ Widget twinRemarksLine(EntryLineContext c, TwinStyle style) => EntryLineCard(
               maxLength: 500,
               minLines: 2,
               maxLines: 5,
-              hint: 'Anything worth noting about this shift (optional)',
               focusNode: c.nodeFor('remarks'),
               semanticsLabel: style.remarksLabel,
               onChanged: (t) => c.set('remarks', t),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:indo/core/api/endpoints.dart';
 import 'package:indo/core/utils/alerts.dart';
+import 'package:indo/features/production/entry_form/entry_fields.dart' show EntryPickerBox;
 import 'package:indo/features/production/entry_form/entry_notice_dialog.dart';
 import 'package:indo/features/production/entry_form/entry_form_toast.dart';
 import 'package:indo/features/production/entry_form/production_entry_form.dart';
@@ -153,19 +154,6 @@ Future<void> tapSave(WidgetTester t) async {
   await t.pump();
 }
 
-/// Opens every optional section of block [index] that is still folded to its
-/// slim "Optional — tap to add" row (FormLine `optional` on the web).
-Future<void> unfold(WidgetTester t, {int index = 0}) async {
-  for (final id in ['otherActivity', 'plannedShift', 'idle', 'remarks']) {
-    final head = find.byKey(ValueKey('entry$index/fold/$id'));
-    final folded = find.descendant(of: head, matching: find.text('Optional — tap to add'));
-    if (folded.evaluate().isEmpty) continue;
-    await t.ensureVisible(head);
-    await t.tap(head);
-    await t.pumpAndSettle();
-  }
-}
-
 /// The text box of the form field [field] of block 0.
 Finder box(String field) => find.descendant(of: find.byKey(ValueKey('entry0/$field')), matching: find.byType(EditableText));
 
@@ -212,7 +200,6 @@ void main() {
   group('add', () {
     editorTest('a chosen worker opens the sheet: every card, label and cap of the web form', (tester) async {
       await open(tester, workerId: 'w1', size: const Size(390, 2400));
-      await unfold(tester);
       expect(find.text('Add Powder Coating Entry'), findsOneWidget);
       for (final title in [
         'Date, Worker Name, Working Status',
@@ -277,7 +264,8 @@ void main() {
       expect(find.textContaining('Reasons For Not Working'), findsOneWidget);
       expect(find.text('Item Name, Vendor Name, Standard Inspection Time'), findsNothing);
       expect(find.text('Inspection (Qty), Types of Defect / Rework'), findsNothing);
-      expect(find.text('Reason / Remarks for Rejection / Rework'), findsOneWidget);
+      // The Remarks line stays: its title and the label over its box (the web's two).
+      expect(find.text('Reason / Remarks for Rejection / Rework'), findsNWidgets(2));
       // Date and Worker are all that's needed.
       expect(bar(tester).canSave, isTrue);
       await tester.tap(find.byKey(const ValueKey('entry0/machineStatus/No Manpower')));
@@ -389,7 +377,6 @@ void main() {
     editorTest('the grey boxes follow the typed figures', (tester) async {
       await open(tester, workerId: 'w1', size: const Size(390, 2400));
       await fillValid(tester);
-      await unfold(tester);
       String calc(String key) => tester.widget<Text>(find.descendant(of: find.byKey(ValueKey('entry0/calc/$key')), matching: find.byType(Text)).first).data ?? '';
       expect(calc('shiftHours'), '8:00 hr');
       expect(calc('idealQty'), '640');
@@ -443,7 +430,6 @@ void main() {
       f.onChange(0, 'machineOnTime', '08:00');
       f.onChange(0, 'machineOffTime', '09:00');
       await tester.pump();
-      await unfold(tester);
       await tester.enterText(box('otherActivityMin'), '50');
       await tester.pump();
       await tester.enterText(box('lunchMin'), '30');
@@ -524,7 +510,9 @@ void main() {
     editorTest('the worker is locked, the saved figures are loaded and Update keeps the slot and _id', (tester) async {
       final h = await open(tester, row: row, size: const Size(390, 2400));
       expect(find.text('Update Powder Coating Entry'), findsOneWidget);
-      expect(find.text("Can't be changed while editing"), findsOneWidget);
+      // Web: the Worker Name select is just disabled while editing (no note under it).
+      expect(find.text("Can't be changed while editing"), findsNothing);
+      expect(tester.widget<EntryPickerBox>(find.byKey(const ValueKey('entry0/machine'))).enabled, isFalse);
       final v = form(tester).entries.single;
       expect(v['machine'], 'w2');
       expect(v['actualQty'], '600');

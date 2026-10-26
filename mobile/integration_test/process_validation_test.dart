@@ -78,11 +78,11 @@ void main() {
         }
         if (!p.hasMachineOperator) {
           final fold = find.byKey(
-            const ValueKey<String>('entry0/fold/remarks'),
+            const ValueKey<String>('line-toggle/Reason / Remarks for Rejection / Rework'),
           );
           await ensureBuilt(t, fold);
           if (boxField('remarks').evaluate().isEmpty)
-            await tapKey(t, 'entry0/fold/remarks');
+            await tapKey(t, 'line-toggle/Reason / Remarks for Rejection / Rework');
         }
         await typeBox(t, 'remarks', tag);
         await shot(t, 'nonworking_$short');
@@ -179,7 +179,7 @@ void main() {
             );
             expect(boxText(t, 'actualQty'), '999999');
             await typeBox(t, 'actualQty', '100');
-            await tapKey(t, 'entry0/fold/otherActivity');
+            await tapKey(t, 'line-toggle/Other Activity Carried Out');
             await typeBox(
               t,
               'otherActivityMin',

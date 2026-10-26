@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/form_widgets.dart' show PickOption, showPicker;
 import '../../../../core/widgets/web_time_field.dart';
 import '../../entry_form/common_lines.dart';
@@ -97,7 +96,6 @@ Widget _choiceBox(EntryLineContext c, String field, String title, String hint, L
 
 /// Part Name, Operation and Setup No.
 Widget pressPartLine(EntryLineContext c) {
-  final itemName = c.text('itemName');
   return EntryLineCard(
     title: 'Part, Operation, Setup No.',
     icon: Icons.precision_manufacturing_outlined,
@@ -114,7 +112,8 @@ Widget pressPartLine(EntryLineContext c) {
               'itemName',
               EntryPickerBox(
                 key: ValueKey('entry${c.index}/itemName'),
-                text: itemName,
+                // Web: Press's picker passes no `label`, so the box reads the bare part name.
+                text: partBoxText(c, withCycle: false),
                 hint: 'Select part',
                 maxLines: 2,
                 invalid: c.err('itemName') != null,
@@ -157,8 +156,9 @@ Widget pressStandardTimeLine(EntryLineContext c) {
       EntryGrid(
         cells: [
           EntryCell(
+            // The web only has a hover tooltip here (Standard Time Taken x 60 / No. Piece in
+            // Standard Time), no visible note.
             label: 'Product Cycle Time (sec)',
-            hint: 'Standard Time Taken (min) × 60 ÷ No. Piece in Standard Time — set on the Part (Production › Parts), not here',
             child: c.calcBox('totalCycleSec', entryFmt(calc['totalCycleSec']), 'Product Cycle Time (sec)'),
           ),
         ],
@@ -271,7 +271,7 @@ Widget pressDowntimeLine(EntryLineContext c) {
       ),
       if (anyLocked) EntryHintText(m.downtimeLockReason),
       const SizedBox(height: 10),
-      c.keyed('stoppageTotal', _stoppageMeter(c)),
+      c.keyed('stoppageTotal', stoppageMeter(c)),
       if (m.otherDowntimeUsed) ...[
         const SizedBox(height: 10),
         EntryGrid(
@@ -300,58 +300,6 @@ Widget pressDowntimeLine(EntryLineContext c) {
           ],
         ),
       ],
-    ],
-  );
-}
-
-/// Every stoppage box, Lunch / Rest included, has to fit inside the Machine
-/// Shift, so the running total sits next to that allowance.
-Widget _stoppageMeter(EntryLineContext c) {
-  final m = c.metrics;
-  final s = c.theme.colorScheme;
-  final limit = m.stoppageLimit;
-  final over = m.overStoppage;
-  final totalText = entryFmt(m.totalStoppage);
-  final frac = limit == null
-      ? 0.0
-      : limit > 0
-          ? (m.totalStoppage / limit).clamp(0.0, 1.0)
-          : (m.totalStoppage > 0 ? 1.0 : 0.0);
-  final err = c.err('stoppageTotal');
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text.rich(
-        key: ValueKey('entry${c.index}/stoppageSummary'),
-        style: const TextStyle(fontSize: 13, height: 1.3),
-        TextSpan(
-          children: [
-            TextSpan(text: 'Total stoppage (with Lunch / Rest): ', style: TextStyle(color: s.onSurfaceVariant)),
-            TextSpan(
-              text: '${totalText.isEmpty ? '0' : totalText} min',
-              style: TextStyle(fontWeight: FontWeight.w700, color: over ? s.error : null),
-            ),
-            TextSpan(
-              text: limit == null ? ' — enter Machine ON/OFF Time to see the allowance' : ' of ${jsNumStr(limit)} min allowed',
-              style: TextStyle(color: s.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-      if (limit != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 5,
-              backgroundColor: s.outlineVariant,
-              color: over ? s.error : (frac > 0.85 ? AppColors.warn : s.primary),
-            ),
-          ),
-        ),
-      if (err != null) EntryErrorText(err),
     ],
   );
 }
