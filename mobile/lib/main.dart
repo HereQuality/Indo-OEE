@@ -27,7 +27,9 @@ Future<void> main() async {
     // Load the saved token before the first frame: the API layer reads it
     // synchronously.
     await AuthStorage.instance.init();
-    await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // Not awaited: it only answers once the platform handled it, and the first
+    // frame must not wait on that.
+    unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
     runApp(const IndoApp());
   }, (error, stack) => debugPrint('Uncaught (zone): $error\n$stack'));
 }
