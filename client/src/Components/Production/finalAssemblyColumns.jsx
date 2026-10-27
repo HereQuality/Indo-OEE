@@ -1,7 +1,7 @@
 import React from "react";
 import { displayDay, fmtNum, remarkParts } from "../../utils/productionSheet";
 import { FA_DEFECT_REASONS, FA_IDLE_FIELDS, FA_LABELS as L } from "../../utils/finalAssemblySheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/finalAssemblyColumns.jsx
@@ -81,8 +81,8 @@ export const FINAL_ASSEMBLY_COLUMNS = [
   // Each entry's own (combined across the day only on Process Master's fixed shift) — never merged.
   { key: "unreported", label: L.unreported, get: (r, c, d) => n(d.unreportedMin), align: "text-center", tone: "day" },
   ...APQ_COLUMNS,
-  { key: "productivity", label: L.productivity, get: (r, c, d) => pct(d.productivity), align: "text-center", tone: "oee" },
-  { key: "productivityLunch", label: L.productivityLunch, get: (r, c, d) => pct(d.productivityLunch), align: "text-center", tone: "oee" },
+  { key: "productivity", label: L.productivity, get: (r, c, d) => pctOver(d.productivity), align: "text-center", tone: "oee" },
+  { key: "productivityLunch", label: L.productivityLunch, get: (r, c, d) => pctOver(d.productivityLunch), align: "text-center", tone: "oee" },
   REVIEW_COLUMN,
   {
     key: "remarks",

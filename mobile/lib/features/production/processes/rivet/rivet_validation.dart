@@ -92,7 +92,7 @@ Map<String, String> validateRivetEntry(Map<String, dynamic> v, {Map<String, dyna
     // with every operation unticked, has no cycle time to compute from.
     final cycle = calc['totalCycleSec'] as double?;
     if (!isNum(cycle) || cycle! <= 0) {
-      errors['itemName'] = cycle == null
+      errors['itemName'] = cycle == null && isBlank(v['totalCycleSec'])
           ? 'This Part has no Operation Times set — edit it in Parts first'
           : 'Total Cycle Time must be more than 0 — untick fewer operations';
     }

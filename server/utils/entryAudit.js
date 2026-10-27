@@ -5,7 +5,7 @@ const RoleMaster = require("../models/RoleMaster");
 const { machineNamesFor } = require("./machineNames");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const { CYCLE_OP_FIELDS, SPM_OP_FIELDS, RIVET_OP_FIELDS, SPM_REFERENCE_FIELDS } = require("../models/Item");
-const { entryMetrics, metricsOver100, METRIC_LABELS } = require("./oeeMetrics");
+const { entryMetrics, metricsOver100, dayOeeFor, ownerFieldOf, METRIC_LABELS } = require("./oeeMetrics");
 const { actorOf, adminRecipients } = require("./adminAccess");
 const { createNotificationForMany } = require("../services/notification.service");
 
@@ -15,9 +15,14 @@ const { createNotificationForMany } = require("../services/notification.service"
  * What every sheet's saveRow / deleteRow / unlockRow does besides saving:
  *
  *  - reviewFor: works out the entry's Availability / Performance / Quality
- *    (utils/oeeMetrics.js) from what's about to be saved, and whether it now
- *    needs Admin review — any of the three above 100% → "pending". Saved in
- *    the same write as the entry itself, so the two can't disagree.
+ *    (utils/oeeMetrics.js) and its OEE figures (the day's: dayOeeFor, which needs
+ *    the entry's siblings — the other entries of its machine's / worker's date)
+ *    from what's about to be saved, and whether it now needs Admin review — any
+ *    of them above 100% → "pending". Saved in the same write as the entry
+ *    itself, so the two can't disagree.
+ *  - siblingsOf / reflagSiblings: a day's OEE figures are shared by (some of)
+ *    its entries, so saving or deleting one can move the others' — their
+ *    figures and review flag are worked out again, and logged like any flag.
  *      · An entry already approved (or rejected) stays that way as long as
  *        the over-100% figures are exactly what was reviewed — an edit that
  *        changes none of them (say, a remark) doesn't reopen it. Any change
@@ -291,9 +296,11 @@ const merged = (before, set, unset) => {
 
 // { set, unset, transition, oee, over } — the oee/review fields to write with
 // this save, and whether the review state moved ("flagged" | "cleared" | null).
-const reviewFor = (sheet, before, set, unset) => {
+// `siblings`: the other entries of this entry's machine's (worker's) date, from
+// the same collection (siblingsOf) — the day's OEE figures read them.
+const reviewFor = (sheet, before, set, unset, siblings = []) => {
   const after = merged(before, set, unset);
-  const oee = Object.fromEntries(Object.entries(entryMetrics(sheet, after)).map(([k, v]) => [k, round(v)]));
+  const oee = Object.fromEntries(Object.entries({ ...entryMetrics(sheet, after), ...dayOeeFor(sheet, after, siblings) }).map(([k, v]) => [k, round(v)]));
   const over = metricsOver100(oee).map((f) => ({ metric: f.metric, value: round(f.value) }));
   const prev = before?.review || null;
 
@@ -309,6 +316,57 @@ const reviewFor = (sheet, before, set, unset) => {
     oee,
     over,
   };
+};
+
+// Every entry of `key`'s (machine or worker, by sheet) `date` in `Model`.
+const siblingsOf = async (Model, sheet, { date, key }) => {
+  if (!date || !key) return [];
+  return Model.find({ date, [ownerFieldOf(sheet)]: key }).lean();
+};
+
+const sameOee = (a = {}, b = {}) => {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const k of keys) {
+    const x = round(a?.[k]);
+    const y = round(b?.[k]);
+    if (x !== y) return false;
+  }
+  return true;
+};
+
+const isoDay = (d) => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+
+// Works one machine's (worker's) date out again for every entry on it except
+// `skipId`: its OEE figures, and whether it is now held for review (or no
+// longer) — an entry already approved / rejected stays decided while its
+// over-100% figures are unchanged (reviewFor). Changes are written without
+// touching who last saved the entry, and logged (flagged / cleared). Never
+// fails the save it follows: an error is reported and the save stands.
+const reflagGroup = async ({ sheet, Model, req, date, key, skipId }) => {
+  const day = await siblingsOf(Model, sheet, { date, key });
+  for (const entry of day) {
+    if (skipId && String(entry._id) === String(skipId)) continue;
+    const review = reviewFor(sheet, entry, {}, {}, day);
+    if (!review.transition && sameOee(entry.oee, review.oee)) continue;
+    const update = { $set: review.set, ...(Object.keys(review.unset).length ? { $unset: review.unset } : {}) };
+    const updated = await Model.findByIdAndUpdate(entry._id, update, { new: true, timestamps: false }).lean();
+    if (updated) await logEntrySave({ sheet, req, before: entry, after: updated, fields: [], review });
+  }
+};
+
+// After an entry was saved (`id`), moved or deleted (no `id`): the entries
+// sharing its date with it, and — when it moved to another date or machine /
+// worker — those it left. `before` is the entry as it was, null for a new one.
+const reflagSiblings = async ({ sheet, Model, req, before, date, key, id }) => {
+  try {
+    await reflagGroup({ sheet, Model, req, date, key, skipId: id });
+    const owner = ownerFieldOf(sheet);
+    if (before && (isoDay(before.date) !== isoDay(date) || String(before[owner]) !== String(key))) {
+      await reflagGroup({ sheet, Model, req, date: before.date, key: before[owner] });
+    }
+  } catch (error) {
+    console.error("Error re-checking the entries sharing a day:", error);
+  }
 };
 
 // Who did each entry, for the data entry sheets' "Entered By" column. The audit
@@ -456,6 +514,8 @@ module.exports = {
   SHEET_LABELS,
   FIELD_LABELS,
   reviewFor,
+  siblingsOf,
+  reflagSiblings,
   logEntrySave,
   logEntryDelete,
   logEntryUnlock,

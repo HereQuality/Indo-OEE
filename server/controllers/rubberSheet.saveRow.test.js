@@ -46,6 +46,12 @@ const fakeDb = ({ process = { _id: PROCESS, plannedShiftLocked: false }, existin
       stub(RoleMaster, "find", () => chain([]));
       stub(RubberEntry, "find", () => chain(others));
       stub(RubberEntry, "findOne", () => chain(null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(RubberEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(RubberEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -133,7 +139,8 @@ test("sheet row 2 — more than Ideal — saves and goes to OEE Review instead o
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     const doc = db.saved[0];
     assert.equal(doc.review?.status, "pending");
-    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance", "productivity", "productivityLunch"]);
     assert.ok(Math.abs(doc.oee.performance - (166 * 22) / 3600) < 1e-3, "101.44%");
   });
 });

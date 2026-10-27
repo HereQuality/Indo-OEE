@@ -47,7 +47,12 @@ class ProductionEntryForm extends StatefulWidget {
     this.spec = cncSpec,
     this.extra = const {},
     this.plannedShifts = const [],
+    this.savedRows = const [],
   });
+
+  /// The sheet's loaded rows — what the OEE check joins an entry to for its
+  /// day's figures.
+  final List<Map<String, dynamic>> savedRows;
 
   /// Per block: the Planned Operator Shift Process Master sets for its machine
   /// (null / missing = typed by hand). Only a spec with `usesPlannedShiftSetting`
@@ -281,6 +286,7 @@ class _ProductionEntryFormState extends State<ProductionEntryForm> {
                   items: widget.items,
                   operators: widget.operators,
                   isEdit: widget.isEdit,
+                  savedRows: widget.savedRows,
                   booked: i < widget.booked.length ? widget.booked[i] : const <String>[],
                   canRemove: !widget.isEdit && entries.length > 1,
                   expanded: widget.isEdit || _expanded == i,

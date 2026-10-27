@@ -639,7 +639,9 @@ write("time_and_dates.json", {
 // ── formula texts, Non Working, metricsOver100, H.MM helpers ────────────────
 write("formulas.json", FORMULAS);
 const calcSamples = rowCases.slice(0, 400).map((r) => rowCalc(r));
-const mo = [{}, null, undefined, { availability: 1 }, { availability: 1.0000000001 }, { availability: 1.000000002, quality: 1.5 }, { performance: "1.2" }, { performance: NaN, quality: Infinity }, { availability: 2, performance: 3, quality: 4 }, { quality: 1 + 1e-9 }, { quality: 1 + 1.1e-9 }];
+const mo = [{}, null, undefined, { availability: 1 }, { availability: 1.0000000001 }, { availability: 1.000000002, quality: 1.5 }, { performance: "1.2" }, { performance: NaN, quality: Infinity }, { availability: 2, performance: 3, quality: 4 }, { quality: 1 + 1e-9 }, { quality: 1 + 1.1e-9 },
+  // the OEE / Productivity figures (the day's, merged on by withDayFigures)
+  { oeeLosses: 1.025, oeeLunch: 1.025, oeeLunchCot: 0.99 }, { oeeLosses: 1 + 1e-12, oeeLunch: null, oeeLunchCot: undefined }, { productivity: 1.2, productivityLunch: 1.3 }, { availability: 1.01, oeeLosses: 1.02, productivity: 0.5 }, { oeeLunchCot: 1 + 1.1e-9 }, { oeeLosses: "1.2", productivityLunch: NaN }];
 write("metrics_over_100.json", {
   cases: [...mo, ...calcSamples].map((c) => ({ calc: enc(c ?? null), out: metricsOver100(c) })),
   nonWorking: [{}, null, undefined, { workingMode: "Non Working" }, { workingMode: "Working" }, { workingMode: "non working" }, { workingMode: "" }, { workingMode: "Non Working " }].map((v) => ({ v: v === undefined ? null : v, out: isNonWorking(v) })),

@@ -640,3 +640,171 @@ input, textarea, .form-control {
 .entry-block-in {
   animation: entry-block-in 180ms ease-out;
 }
+
+/* ── Responsive fit (modals, short screens, touch) ───────────────────────── */
+
+/* The usable height of the screen. 100vh on a phone includes the part hidden
+   behind the browser's address bar; 100dvh is the part you can actually see.
+   viewportFit.js narrows this further to the visual viewport while the
+   on-screen keyboard is up, so the Save / Cancel footer stays on screen. */
+:root {
+  --app-vh: 100vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --app-vh: 100dvh;
+  }
+}
+
+/* Every scrollable modal (the Add / Edit entry forms, the master-data forms):
+   the dialog is bounded by the visible height, the header and footer keep
+   their size, and only the body scrolls. The forms wrap their body in a
+   <form>, so the <form> has to be part of the flex column too — otherwise the
+   body's own max-height guess (formerly calc(100vh - 200px)) pushed the footer
+   off-screen under larger text or a wrapped title. */
+.modal-dialog-scrollable {
+  height: auto;
+  max-height: calc(100vh - var(--bs-modal-margin) * 2);
+  max-height: calc(var(--app-vh) - var(--bs-modal-margin) * 2);
+}
+.modal-dialog-scrollable .modal-content {
+  max-height: calc(100vh - var(--bs-modal-margin) * 2);
+  max-height: calc(var(--app-vh) - var(--bs-modal-margin) * 2);
+}
+.modal-dialog-scrollable .modal-content > .modal-header,
+.modal-dialog-scrollable .modal-content > .modal-footer,
+.modal-dialog-scrollable .modal-content > form > .modal-footer {
+  flex-shrink: 0;
+}
+.modal-dialog-scrollable .modal-content > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.modal-dialog-scrollable .modal-content > form > .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* a field focused by keyboard / tap scrolls to clear the edges */
+  scroll-padding-block: 3rem;
+}
+
+/* Short screens (landscape phones, or a phone with the keyboard open): tighten
+   the modal chrome so the fields get most of the height. */
+@media (max-height: 500px) {
+  .modal-dialog {
+    --bs-modal-margin: 0.25rem;
+  }
+  .modal-dialog-scrollable .modal-header,
+  .modal-dialog-scrollable .modal-footer {
+    padding: 0.35rem 0.75rem !important;
+  }
+  .modal-dialog-scrollable .modal-title,
+  .modal-dialog-scrollable .modal-header {
+    font-size: 1rem;
+  }
+  .modal-dialog-scrollable .modal-body {
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* Touch screens: primary controls get at least a 44 x 44 px hit area.
+   Desktop (mouse) sizes are untouched. */
+@media (pointer: coarse) {
+  /* :root raises specificity above Bootstrap's / the page stylesheets' own
+     small-control sizes, whatever order the stylesheets load in. */
+  :root .btn,
+  :root .form-control,
+  :root .form-select,
+  :root .form-control-sm,
+  :root .form-select-sm,
+  :root .input-group-sm > .form-control,
+  :root .input-group-sm > .form-select,
+  :root .input-group-sm > .btn,
+  :root .pd-field-btn,
+  :root .pd-clear-btn,
+  :root .pd-quick-btn {
+    min-height: 44px;
+  }
+  :root .btn {
+    min-width: 44px;
+  }
+  /* footer Save / Cancel (Tailwind buttons), tab buttons, sidebar links */
+  :root .modal-footer button,
+  :root aside a,
+  :root [role="tab"] {
+    min-height: 44px;
+  }
+  :root .btn-close {
+    box-sizing: border-box;
+    min-width: 44px;
+    min-height: 44px;
+    background-position: center;
+  }
+  :root .form-check-input,
+  :root input[type="checkbox"],
+  :root input[type="radio"] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  :root .touch-hit,
+  :root .touch-hit-label {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :root .dropdown-menu .dropdown-item,
+  :root .touch-row {
+    min-height: 44px;
+  }
+}
+
+/* OEE Review table: the frozen Actions column must be opaque so the columns
+   scrolling underneath it don't show through. */
+html body .table > thead > tr > th.oee-actions-sticky,
+html body .table > tbody > tr > td.oee-actions-sticky {
+  background-color: #fff !important;
+}
+html.dark body .table > thead > tr > th.oee-actions-sticky,
+html.dark body .table > tbody > tr > td.oee-actions-sticky {
+  background-color: #1c1c1e !important;
+}
+
+/* Master tables: a name column set to wrap (column `wrap: true`) breaks inside
+   a long unbroken word or route too, instead of widening the table. */
+.rdt_TableCell [data-tag="allowRowEvents"] {
+  overflow-wrap: anywhere;
+  text-align: start; /* the page wrapper's .text-right otherwise right-aligns a wrapped second line */
+}
+
+/* OEE Review: an over-100% figure and the inactive tabs, as readable (4.5:1) as the rest. */
+.pct-over { color: #b02a37; }
+.dark .pct-over { color: #ff6b6b; }
+html:not(.dark) .nav-link[role="tab"]:not(.active) { color: #0a58ca; }
+
+/* Process Master: a deactivated machine's chip. */
+.machine-inactive { color: #5f6368 !important; }
+.dark .machine-inactive { color: #b0b4ba !important; }
+
+/* Dark theme: outline Approve / Reject buttons (OEE Review) were 3.75:1. */
+.dark .btn-outline-success {
+  color: #6ee7b7 !important;
+  border-color: #34d399 !important;
+  background-color: transparent !important;
+}
+.dark .btn-outline-success:hover:not(:disabled) {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+  color: #a7f3d0 !important;
+}
+.dark .btn-outline-danger {
+  color: #fca5a5 !important;
+  border-color: #f87171 !important;
+  background-color: transparent !important;
+}
+.dark .btn-outline-danger:hover:not(:disabled) {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+  color: #fecaca !important;
+}

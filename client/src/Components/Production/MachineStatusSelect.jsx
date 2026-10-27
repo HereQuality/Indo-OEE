@@ -23,7 +23,7 @@ import { MACHINE_STATUSES } from "../../utils/productionSheet";
  */
 const REMARKS = "Remarks";
 
-const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = false, statuses = MACHINE_STATUSES }) => {
+const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = false, statuses = MACHINE_STATUSES, id }) => {
   const [open, setOpen] = useState(false);
   const [remarksOn, setRemarksOn] = useState(!!remark); // Remarks ticked
   const [pos, setPos] = useState(null);
@@ -100,6 +100,7 @@ const MachineStatusSelect = ({ value = [], onChange, remark = "", invalid = fals
       <button
         ref={btnRef}
         type="button"
+        id={id}
         className={`form-select form-select-sm text-start text-truncate ${invalid ? "is-invalid" : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}

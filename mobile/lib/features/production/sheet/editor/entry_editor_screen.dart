@@ -40,7 +40,13 @@ class EntryEditorScreen extends StatefulWidget {
     this.extra = const {},
     this.lockedProcess,
     this.processes = const [],
+    this.savedRows = const [],
   });
+
+  /// The sheet's loaded rows (the list's controller rows): the other entries of
+  /// a machine's date, which the OEE check needs to work out the day's figures
+  /// (web `savedRows`).
+  final List<Map<String, dynamic>> savedRows;
 
   /// Every Process document (Process Master) — what a spec with
   /// `usesPlannedShiftSetting` reads each machine's Planned Operator Shift from.
@@ -516,8 +522,13 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     // web only shows the banner in the form, so a spec has to ask for this).
     if (widget.spec.noticeOnSaveForReview) {
       final labels = <String>{
-        for (final e in _entries)
-          for (final k in widget.spec.metrics(e).oeeOver100) oeeMetricLabels[k] ?? k,
+        for (var i = 0; i < _entries.length; i++)
+          for (final k in widget.spec.oeeOver100(
+            _entries[i],
+            saved: widget.savedRows,
+            plannedShift: i < _plannedShifts.length ? _plannedShifts[i] : null,
+          ))
+            oeeMetricLabels[k] ?? k,
       };
       if (labels.isNotEmpty && mounted) {
         await EntryNotices.show(context, adminReviewNotice(labels));
@@ -786,6 +797,7 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
                     operators: widget.operators,
                     plannedShifts: _plannedShifts,
                     isEdit: _isEdit,
+                    savedRows: widget.savedRows,
                     booked: [
                       for (final e in _entries)
                         bookedRanges(e, _occupied, editSlot: _editSlot, saved: _savedTimes),

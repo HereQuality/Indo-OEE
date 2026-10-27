@@ -52,6 +52,12 @@ const fakeDb = ({ process = { _id: PROCESS, plannedShiftLocked: false }, existin
       stub(OperatorRoles, "find", () => chain([]));
       stub(MfaEntry, "find", () => chain(others));
       stub(MfaEntry, "findOne", () => chain(null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(MfaEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(MfaEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -174,7 +180,8 @@ test("TOTAL above Ideal saves and goes to OEE Review (the paper's PRATIKSHA 14/0
     });
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     assert.equal(db.saved[0].review?.status, "pending");
-    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance", "productivity", "productivityLunch"]);
     assert.ok(Math.abs(db.saved[0].oee.performance - (140 * 80) / 60 / 34) < 1e-3);
   });
 });

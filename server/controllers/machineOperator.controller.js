@@ -13,6 +13,7 @@
 const mongoose = require("mongoose");
 const MachineOperator = require("../models/MachineOperator");
 const Process = require("../models/Process");
+const { sendError, pageParams } = require("../utils/httpErrors");
 
 // The request's processes as a de-duplicated id list, or { error }. Every id
 // must be a real process. Required (at least one) when `required` is set.
@@ -30,6 +31,9 @@ exports.createMachineOperator = async (req, res) => {
   try {
     const { name, isActive } = req.body;
 
+    if (name !== null && typeof name === "object") {
+      return res.status(400).json({ isOk: false, message: "Operator name must be text" });
+    }
     if (!name || !String(name).trim()) {
       return res.status(400).json({ isOk: false, message: "Operator name is required" });
     }
@@ -46,7 +50,7 @@ exports.createMachineOperator = async (req, res) => {
     res.status(201).json({ isOk: true, data: created, message: "Operator created successfully" });
   } catch (error) {
     console.error("Error creating machine operator:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -56,6 +60,9 @@ exports.updateMachineOperator = async (req, res) => {
     const { operatorId } = req.params;
     const { name, isActive } = req.body;
 
+    if (name !== null && typeof name === "object") {
+      return res.status(400).json({ isOk: false, message: "Operator name must be text" });
+    }
     if (name !== undefined && !String(name).trim()) {
       return res.status(400).json({ isOk: false, message: "Operator name cannot be empty" });
     }
@@ -77,7 +84,7 @@ exports.updateMachineOperator = async (req, res) => {
     res.status(200).json({ isOk: true, data: operator, message: "Operator updated successfully" });
   } catch (error) {
     console.error("Error updating machine operator:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -100,7 +107,7 @@ exports.deleteMachineOperator = async (req, res) => {
     return res.status(200).json({ isOk: true, message: "Operator deleted successfully" });
   } catch (error) {
     console.error("Error deleting machine operator:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -114,7 +121,7 @@ exports.getMachineOperatorById = async (req, res) => {
     res.status(200).json({ isOk: true, data: operator });
   } catch (error) {
     console.error("Error fetching machine operator:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -125,7 +132,7 @@ exports.listMachineOperators = async (req, res) => {
     res.status(200).json({ isOk: true, data: operators });
   } catch (error) {
     console.error("Error listing machine operators:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -133,6 +140,7 @@ exports.listMachineOperators = async (req, res) => {
 exports.listMachineOperatorsByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+    const page = pageParams(skip, per_page);
 
     const query = {};
     // Matched as plain text, so a "(" or "*" typed in can't break the search.
@@ -146,12 +154,12 @@ exports.listMachineOperatorsByParams = async (req, res) => {
     const [totalCount, operators] = await Promise.all([
       MachineOperator.countDocuments(query),
       // Case-insensitive, so "acme" sorts beside "Acme" rather than after every capital.
-      MachineOperator.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
+      MachineOperator.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(page.skip).limit(page.limit).populate("processes", "processName").lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: operators }] });
   } catch (error) {
     console.error("Error searching machine operators:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

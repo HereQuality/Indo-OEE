@@ -446,7 +446,7 @@ void main() {
       form(tester).onChange(0, 'okQty', '690');
       await tester.pump();
       expect(find.byKey(const ValueKey('entry0/oeeCheck')), findsOneWidget);
-      expect(find.textContaining('Performance above 100%'), findsOneWidget);
+      expect(find.textContaining('Performance, Productivity without considering Lunch, Tea, etc., Productivity considering Lunch, Tea, etc. above 100%'), findsOneWidget);
       expect(bar(tester).canSave, isTrue);
       await tapSave(tester);
       await tester.pumpAndSettle();

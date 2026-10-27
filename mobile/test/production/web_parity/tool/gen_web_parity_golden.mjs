@@ -228,6 +228,8 @@ const overCases2 = [];
 for (let i = 0; i < N(200); i += 1) {
   const v = pick([0, 0.5, 1, 1.0000000001, 1.000000002, 1.05, 2, -1, NaN, Infinity, null, undefined, "1.5", "abc"]);
   const calc = { availability: v, performance: pick([0.9, 1.2, null, undefined, NaN]), quality: pick([1, 1.01, 0]) };
+  // The OEE / Productivity figures of the day (withDayFigures) hold an entry too.
+  if (i % 2) Object.assign(calc, { oeeLosses: [0.9, 1.025, 1, null][i % 4], oeeLunch: [1.0000000001, 1.2, undefined][i % 3], oeeLunchCot: [0.5, 1.5, NaN][i % 3], productivity: [1, 1.3, null][(i >> 1) % 3], productivityLunch: [0.8, 1.000000002][(i >> 1) % 2] });
   overCases2.push({ v: encIn(v), over: pctOver(v), calc: encIn(calc), keys: metricsOver100(calc) });
 }
 write("over_100.json", overCases2);

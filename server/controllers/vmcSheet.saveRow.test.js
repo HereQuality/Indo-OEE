@@ -37,6 +37,7 @@ const fakeDb = (rows = [], process = null) => {
   return {
     saved,
     logs,
+    table,
     install() {
       const restore = [];
       const stub = (obj, name, fn) => {
@@ -56,6 +57,12 @@ const fakeDb = (rows = [], process = null) => {
       stub(RoleMaster, "find", () => chain([]));
       stub(VmcEntry, "find", (q) => chain(match(q)));
       stub(VmcEntry, "findOne", (q) => chain(match(q)[0] || null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(VmcEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(VmcEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -276,4 +283,99 @@ test("occupied: lists the slots a machine already has", async () => {
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.payload.data, [{ slot: 1, machineOnTime: "09:00", machineOffTime: "17:30" }]);
   });
+});
+
+// ── QC audit: API-001 / API-015 / API-007 ──────────────────────────────────
+const dupKey = () => Object.assign(new Error("E11000 duplicate key error collection: vmcentries index: date_1_machine_1_slot_1"), { code: 11000 });
+const OTHER_ID = "64b0c0ffee0000000000bbbb";
+
+test("two saves racing for the same free slot: the loser lands in the next one, nothing is lost", async () => {
+  await withDb([], async (db) => {
+    const create = VmcEntry.create;
+    let calls = 0;
+    const slots = [];
+    VmcEntry.create = async (payload) => {
+      calls += 1;
+      slots.push(payload.slot);
+      if (calls === 1) {
+        // The other request got slot 1 first.
+        db.table.push({ _id: OTHER_ID, date: payload.date, machine: payload.machine, slot: 1, createdAt: new Date() });
+        throw dupKey();
+      }
+      return create(payload);
+    };
+    try {
+      const res = await call(saveRow, { body: body() });
+      assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+      assert.deepEqual(slots, [1, 2]);
+      assert.equal(res.payload.data.slot, 2);
+      assert.equal(db.saved.length, 1);
+    } finally {
+      VmcEntry.create = create;
+    }
+  });
+});
+
+test("racing for the last free slot: the loser gets the same full-day message", async () => {
+  await withDb([], async (db) => {
+    const create = VmcEntry.create;
+    VmcEntry.create = async (payload) => {
+      for (const slot of [1, 2, 3]) db.table.push({ _id: OTHER_ID, date: payload.date, machine: payload.machine, slot, createdAt: new Date() });
+      throw dupKey();
+    };
+    try {
+      const res = await call(saveRow, { body: body() });
+      assert.equal(res.statusCode, 400);
+      assert.match(res.payload.message, /already has 3 entries on/);
+      assert.equal(db.saved.length, 0);
+    } finally {
+      VmcEntry.create = create;
+    }
+  });
+});
+
+test("editing with slot auto keeps the entry's own slot while its date and machine are unchanged", async () => {
+  const mine = { _id: "64b0c0ffee0000000000e002", slot: 2, operator: "Asha", machineOnTime: "09:00", machineOffTime: "17:30" };
+  await withDb([mine], async () => {
+    const findById = VmcEntry.findById;
+    const findByIdAndUpdate = VmcEntry.findByIdAndUpdate;
+    let update = null;
+    VmcEntry.findById = () => ({ lean: async () => ({ ...mine, date: new Date(`${TODAY}T00:00:00.000Z`), machine: MACHINE, createdAt: new Date() }) });
+    VmcEntry.findByIdAndUpdate = (id, u) => ({
+      lean: async () => {
+        update = u;
+        return { _id: id, ...u.$set };
+      },
+    });
+    try {
+      const res = await call(saveRow, { body: body({ _id: mine._id, slot: "auto", remarks: "edited" }) });
+      assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+      assert.equal(update.$set.slot, 2, "kept slot 2, not the lowest free slot (1)");
+      assert.equal(res.payload.data.slot, 2);
+    } finally {
+      VmcEntry.findById = findById;
+      VmcEntry.findByIdAndUpdate = findByIdAndUpdate;
+    }
+  });
+});
+
+test("text fields must be text: an object or array is refused, a number is stringified", async () => {
+  await refused({ itemName: { $ne: null } }, /"itemName" must be text/);
+  await refused({ operator: ["Asha"] }, /"operator" must be text/);
+  await refused({ remarks: { a: 1 } }, /"remarks" must be text/);
+  await withDb([], async (db) => {
+    const res = await call(saveRow, { body: body({ itemName: 4501 }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].itemName, "4501");
+  });
+});
+
+test("CALC-001: Ideal Quantity is 1000 for 180 min × 15 pieces ÷ 2.7 min, not 999", async () => {
+  const r = (actualQty) => body({ machineOnTime: "00:00", machineOffTime: "03:00", programTimeMin: 2.7, pcsPerProgram: 15, actualQty, okQty: 1000, rejectBreakdown: {}, plannedOperatorShiftHours: 3, lunchMin: 0 });
+  await withDb([], async (db) => {
+    const ok = await call(saveRow, { body: r(1000) });
+    assert.equal(ok.statusCode, 200, JSON.stringify(ok.payload));
+    assert.equal(db.saved.length, 1);
+  });
+  await refused(r(1001), /Actual Quantity \(1001\) can't be more than Ideal Quantity \(1000\)/);
 });

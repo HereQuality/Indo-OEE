@@ -97,11 +97,28 @@ const List<Map<String, dynamic>> stoppageFields = [
 /// time the machine was meant to produce, so they never lower Availability.
 const List<String> plannedStopKeys = ['lunchMin', 'plannedDownMin'];
 
-/// Which of Availability / Performance / Quality a row's calc may be above 100% on.
+/// Which figures of a row's calc (with its day's figures merged in, see
+/// [withDayFigures]) may be above 100% and hold the entry for Admin review:
+/// Availability / Performance / Quality, the three OEE figures and the worker
+/// sheets' two Productivity figures. Mirrors the web's OEE_METRIC_LABELS.
 const Map<String, String> oeeMetricLabels = {
   'availability': 'Availability',
   'performance': 'Performance',
   'quality': 'Quality',
+  'oeeLosses': 'OEE considering losses',
+  'oeeLunch': 'OEE not considering losses but lunch',
+  'oeeLunchCot': 'OEE not considering losses but lunch & setup time',
+  'productivity': 'Productivity without considering Lunch, Tea, etc.',
+  'productivityLunch': 'Productivity considering Lunch, Tea, etc.',
+};
+
+/// The OEE figure keys a sheet's table has: three on a machine sheet, two on
+/// BEFORE POWDER COATING, the two Productivity figures on a worker sheet
+/// (web OEE_FIGURE_KEYS). The kinds are 'machine' | 'bpc' | 'worker'.
+const Map<String, List<String>> oeeFigureKeys = {
+  'machine': ['oeeLosses', 'oeeLunch', 'oeeLunchCot'],
+  'bpc': ['oeeLosses', 'oeeLunch'],
+  'worker': ['productivity', 'productivityLunch'],
 };
 
 // ── JavaScript number semantics ─────────────────────────────────────────────
@@ -340,6 +357,16 @@ double? totalCycleSec(Iterable<Object?>? ops) {
 
 double _sumOrZero(Iterable<double?> vals) => vals.fold<double>(0, (s, v) => s + (isNum(v) ? v! : 0));
 
+/// A Part's own Total Cycle Time less the seconds of the operations unticked for this
+/// entry. Unticking more than the Part has leaves float noise (7.1e-15) or a negative
+/// figure: rounded to the millionth, anything not above zero is no cycle at all (null).
+/// Web `cycleAfterExcluded`.
+double? cycleAfterExcluded(double ownTotal, double excludedSec) {
+  if (excludedSec == 0) return ownTotal;
+  final c = jsRound((ownTotal - excludedSec) * 1e6) / 1e6;
+  return c > 0 ? c : null;
+}
+
 double? _ratio(double? a, double? b) => (isNum(a) && isNum(b) && b != 0) ? a! / b! : null;
 
 // ── Per-row figures ─────────────────────────────────────────────────────────
@@ -369,7 +396,7 @@ Map<String, dynamic> rowCalc(Map<String, dynamic>? row) {
   final legacySingle = jsNumber(row['cycleTimeSec']);
   final double? opsTotal;
   if (isNum(ownTotal)) {
-    opsTotal = ownTotal! - excludedSec;
+    opsTotal = cycleAfterExcluded(ownTotal!, excludedSec);
   } else if (hasOpFields) {
     opsTotal = _sumOrZero(opFields);
   } else if (isNum(legacySingle)) {
@@ -388,7 +415,9 @@ Map<String, dynamic> rowCalc(Map<String, dynamic>? row) {
 
   // 3) Ideal Quantity = FLOOR(shift min × 60 ÷ cycle sec).
   final idealQtyRaw = shiftMin != null ? _ratio(shiftMin * 60, cycle) : null;
-  final double? idealQty = isNum(idealQtyRaw) ? idealQtyRaw!.floorToDouble() : null;
+  // + 1e-9: a quotient that is a whole number mathematically can land just under it
+  // in floating point (9300 / 37.2 = 249.99999999999997) and must not floor one low.
+  final double? idealQty = isNum(idealQtyRaw) ? (idealQtyRaw! + 1e-9).floorToDouble() : null;
 
   final ok = jsNumber(row['okQty']);
   // Actual is typed (never above Ideal); Rejected is whatever of it wasn't OK.
@@ -487,12 +516,45 @@ Map<String, dynamic> _oeeParts({
   };
 }
 
-/// Whichever of Availability / Performance / Quality is above 100% on a row's
-/// calc — [] when none (a tiny tolerance keeps floating-point dust out).
+/// Whichever of [oeeMetricLabels] is above 100% on a calc map — [] when none (a
+/// tiny tolerance keeps floating-point dust out). The OEE / Productivity figures
+/// are the day's, so merge them onto the row's calc first ([withDayFigures]).
 List<String> metricsOver100(Map<String, dynamic>? calc) => [
       for (final k in oeeMetricLabels.keys)
         if (isNum(calc?[k]) && (calc![k] as num) > 1 + 1e-9) k,
     ];
+
+/// A row's calc with the day's OEE figures added — only the ones [kind]
+/// ('machine' | 'bpc' | 'worker') has. Mirrors the web's withDayFigures.
+Map<String, dynamic> withDayFigures(Map<String, dynamic> calc, Map<String, dynamic>? day, [String kind = 'machine']) {
+  final out = <String, dynamic>{...calc};
+  for (final k in oeeFigureKeys[kind] ?? const <String>[]) {
+    out[k] = day?[k];
+  }
+  return out;
+}
+
+/// This form entry's day figures among the sheet's already-saved entries: the
+/// entry ([values], planned shift already in decimal hours) joins [saved] (the
+/// other entries of the same machine / worker and date — the entry's own saved
+/// copy, matched by _id, is replaced by [values]) and [dayCalcFn] (the sheet's
+/// dayCalc) runs over the group. Mirrors the web's dayFiguresFor.
+Map<String, dynamic>? dayFiguresFor(
+  List<Map<String, dynamic>> Function(List<Map<String, dynamic>> sortedRows) dayCalcFn,
+  Map<String, dynamic> values, [
+  Iterable<Map<String, dynamic>?>? saved,
+]) {
+  final mine = <String, dynamic>{...values};
+  final id = values['_id'];
+  final others = [
+    for (final r in saved ?? const <Map<String, dynamic>?>[])
+      if (r != null && !(jsTruthy(id) && '${r['_id']}' == '$id')) r,
+  ];
+  final sorted = sortByMachineOn([...others, mine]);
+  final results = dayCalcFn(sorted);
+  final i = sorted.indexWhere((r) => identical(r, mine));
+  return (i < 0 || i >= results.length) ? null : results[i];
+}
 
 /// `Math.max(0, x)` for a finite x.
 double _max0(double x) => x > 0 ? x : 0.0;
@@ -710,11 +772,17 @@ String fmtNum(Object? v, [int digits = 2]) {
   if (!isNum(v)) return '';
   final d = (v as num).toDouble();
   if (d == d.truncateToDouble()) return jsNumStr(d);
-  return jsToFixed(d, digits).replaceFirst(_trailingZerosRe, '');
+  final fixed = jsToFixed(d, digits);
+  // Rounds to zero (float noise like -2.8e-14): "0", never "-0".
+  return double.parse(fixed) == 0 ? '0' : fixed.replaceFirst(_trailingZerosRe, '');
 }
 
 /// A 0–1 ratio as "12.34%"; "" for null/NaN/Infinity.
-String fmtPct(Object? v) => isNum(v) ? '${jsToFixed((v as num).toDouble() * 100, 2)}%' : '';
+String fmtPct(Object? v) {
+  if (!isNum(v)) return '';
+  final fixed = jsToFixed((v as num).toDouble() * 100, 2);
+  return double.parse(fixed) == 0 ? '0.00%' : '$fixed%';
+}
 
 // ── Dates ───────────────────────────────────────────────────────────────────
 

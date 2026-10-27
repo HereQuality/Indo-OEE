@@ -95,7 +95,7 @@ Map<String, String> validateSpmEntry(Json v, {Json? saved}) {
   } else if (!isNum(cycle) || cycle! <= 0) {
     // The operations are set on the Part itself; an older part may lack them, or
     // every operation here has been unticked — no cycle time to compute from.
-    errors['itemName'] = cycle == null
+    errors['itemName'] = cycle == null && isBlank(v['totalCycleSec'])
         ? 'This Part has no Operation Times set — edit it in Parts first'
         : 'Total Cycle Time must be more than 0 — untick fewer operations';
   } else if (!errors.containsKey('itemName') && [v['noOfHoles'], v['piecesPerCycle'], v['strokeRequired']].any(isBlank)) {

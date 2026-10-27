@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useId, useMemo } from "react";
 import { Col, Input, Label, Row } from "reactstrap";
 import NumberInput from "./NumberInput";
 import { useAlert } from "../../context/AlertContext";
@@ -41,15 +41,17 @@ export const ProductionMasterFields = ({
   labels: { actual: actualLabel = "Actual Quantity", ok: okLabel = "OK Quantity", rejected: rejectedLabel = "Rejected" } = {},
 }) => {
   const { warning, notice } = useAlert();
+  const uid = useId();
   const actualTyped = values.actualQty !== "" && Number.isFinite(Number(values.actualQty));
   return (
     <Row className="g-1">
       <Col xs={12} sm={6} lg={md}>
         <div className="mb-1" data-field="actualQty">
-          <Label className={labelClass}>
+          <Label htmlFor={`${uid}-actual`} className={labelClass}>
             {actualLabel} <span className="text-danger">*</span>
           </Label>
           <NumberInput
+            id={`${uid}-actual`}
             name="actualQty"
             value={values.actualQty}
             onChange={onChange}
@@ -64,10 +66,11 @@ export const ProductionMasterFields = ({
       </Col>
       <Col xs={12} sm={6} lg={md}>
         <div className="mb-1" data-field="okQty">
-          <Label className={labelClass}>
+          <Label htmlFor={`${uid}-ok`} className={labelClass}>
             {okLabel} <span className="text-danger">*</span>
           </Label>
           <NumberInput
+            id={`${uid}-ok`}
             name="okQty"
             value={values.okQty}
             onChange={onChange}
@@ -81,8 +84,8 @@ export const ProductionMasterFields = ({
       </Col>
       <Col xs={12} sm={6} lg={md}>
         <div className="mb-1" title={`${actualLabel} − ${okLabel}, so OK + Rejected = ${actualLabel}`}>
-          <Label className={labelClass}>{rejectedLabel}</Label>
-          <Input type="text" bsSize="sm" value={fmtNum(calc.rejectedQty) ?? ""} readOnly disabled className="bg-light" />
+          <Label htmlFor={`${uid}-rejected`} className={labelClass}>{rejectedLabel}</Label>
+          <Input id={`${uid}-rejected`} type="text" bsSize="sm" value={fmtNum(calc.rejectedQty) ?? ""} readOnly disabled className="bg-light" />
         </div>
       </Col>
     </Row>
@@ -105,8 +108,9 @@ export const RejectionMasterFields = ({ values, calc, err, index, onChange, onRe
           {reasons.map((reason) => (
             <Col xs={12} sm={6} lg={4} key={reason}>
               <div className="mb-2">
-                <Label className={labelClass}>{reason}</Label>
+                <Label htmlFor={`reject-${index}-${reason.replace(/\W+/g, "-")}`} className={labelClass}>{reason}</Label>
                 <NumberInput
+                  id={`reject-${index}-${reason.replace(/\W+/g, "-")}`}
                   name={reason}
                   value={values.rejectBreakdown?.[reason] ?? ""}
                   onChange={(e) => onRejectChange(index, reason, e.target.value)}
@@ -138,10 +142,11 @@ export const RejectionMasterFields = ({ values, calc, err, index, onChange, onRe
         <Row className="g-1">
           <Col md={12}>
             <div className="mb-1" data-field="rejectOtherRemark">
-              <Label className={labelClass}>
+              <Label htmlFor={`reject-other-remark-${index}`} className={labelClass}>
                 Remark for “Other” rejection <span className="text-danger">*</span>
               </Label>
               <Input
+                id={`reject-other-remark-${index}`}
                 type="textarea"
                 bsSize="sm"
                 name="rejectOtherRemark"

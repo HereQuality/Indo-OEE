@@ -212,6 +212,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
           extra: _c.extra,
           lockedProcess: _c.lockedProcess,
           processes: _c.processes,
+          savedRows: _c.rows,
         ),
       );
       if (!mounted) return;

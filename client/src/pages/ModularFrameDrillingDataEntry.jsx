@@ -920,7 +920,7 @@ const ModularFrameDrillingDataEntry = () => {
         <form noValidate onSubmit={handleSave}>
           {/* The form is far taller than the viewport: the body scrolls and the
               Save/Cancel footer stays reachable. */}
-          <ModalBody style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+          <ModalBody>
             <MfdEntryForm
               entries={entries}
               errors={errorsList}
@@ -933,6 +933,7 @@ const ModularFrameDrillingDataEntry = () => {
               isEdit={modalMode === "edit"}
               booked={bookedList}
               plannedLocks={plannedLocks}
+              savedRows={rows}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
               onAdd={handleAddBlock}

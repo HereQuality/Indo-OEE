@@ -98,7 +98,7 @@ Future<void> pickVendor(EntryLineContext c) async {
 /// Performance / Quality — as Save will work them out — goes above 100%: the
 /// entry still saves, but is held for Admin review. Empty while all are fine.
 Widget oeeCheck(EntryLineContext c) {
-  final over = c.metrics.oeeOver100;
+  final over = c.oeeOver100 ?? c.metrics.oeeOver100;
   if (over.isEmpty) return SizedBox.shrink(key: ValueKey('entry${c.index}/oeeCheck/none'));
   final amber = AppColors.readable(c.buildContext, AppColors.warn);
   final s = c.theme.colorScheme;

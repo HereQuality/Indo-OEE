@@ -79,9 +79,13 @@ exports.login = async (req, res) => {
     const { username, email, password, remember } = req.body;
     const loginId = username || email; // accept either for migration
 
-    // 1. Check if identifier and password exist
+    // 1. Check if identifier and password exist (and are text — an object or array here
+    // used to reach loginId.toLowerCase() and answer 500)
     if (!loginId || !password) {
       return res.status(400).json({ status: 'fail', message: 'Please provide username and password' });
+    }
+    if (typeof loginId !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ status: 'fail', message: 'Username and password must be text' });
     }
 
     // 2. Look up the account: User first (by username OR email), then Operator (by username OR emailOffice)
@@ -140,21 +144,20 @@ exports.login = async (req, res) => {
       // Increment login attempts
       account.loginAttempts += 1;
       let responseMessage = 'Incorrect username or password';
-      let remainingAttempts = MAX_LOGIN_ATTEMPTS - account.loginAttempts;
 
       if (account.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
         account.lockUntil = Date.now() + LOCK_TIME;
         account.loginAttempts = 0; // Reset for next time after lock expires
         responseMessage = 'Account locked due to too many failed attempts.';
-        remainingAttempts = 0;
       }
 
       await account.save({ validateBeforeSave: false });
 
-      return res.status(401).json({ 
-        status: 'fail', 
-        message: responseMessage,
-        attemptsRemaining: remainingAttempts
+      // Same status and body as an unknown username: no "attempts left" count,
+      // which only an existing account could return (the attempts are still counted above).
+      return res.status(401).json({
+        status: 'fail',
+        message: responseMessage
       });
     }
 
@@ -175,7 +178,7 @@ exports.login = async (req, res) => {
 exports.checkUsername = async (req, res) => {
   try {
     const { username } = req.query;
-    if (!username || username.trim().length < 3) {
+    if (typeof username !== 'string' || username.trim().length < 3) {
       return res.status(400).json({ status: 'fail', message: 'Username too short' });
     }
     const normalised = username.toLowerCase().trim();
@@ -265,7 +268,7 @@ exports.getLoginStatus = async (req, res) => {
   try {
     const { email, username } = req.body;
     const loginId = username || email;
-    if (!loginId) return res.status(400).json({ status: 'fail', message: 'Username or email required' });
+    if (!loginId || typeof loginId !== 'string') return res.status(400).json({ status: 'fail', message: 'Username or email required' });
 
     const normalised = loginId.toLowerCase().trim();
     let account = await User.findOne({ $or: [{ username: normalised }, { email: normalised }] });

@@ -36,6 +36,8 @@ const MachineSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+      // A hex colour (#rgb, #rrggbb, with or without alpha) or blank — the stored ones are all #RRGGBB.
+      match: [/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, "Colour must be a hex colour such as #FFC000"],
     },
     sequence: {
       type: Number,

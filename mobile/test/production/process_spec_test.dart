@@ -107,7 +107,9 @@ void main() {
         'printing': '/production/printing-data-entry',
         'injection': '/production/injection-moulding-data-entry',
         'bpc': '/production/before-powder-coating-data-entry',
+        'raw-casting': '/production/raw-casting-data-entry',
         'mfd': '/production/modular-frame-drilling-data-entry',
+        'mfa': '/production/modular-frame-assembly-data-entry',
         'embossing': '/production/embossing-data-entry',
         'final-assembly': '/production/final-assembly-data-entry',
       };

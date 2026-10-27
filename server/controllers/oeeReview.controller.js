@@ -22,17 +22,17 @@ const Process = require("../models/Process");
 const AuditLog = require("../models/AuditLog");
 const { REVIEW_STATUSES } = require("../models/entryCommon");
 const { accessOf, actorOf, isAdminUser } = require("../utils/adminAccess");
-const { SHEET_LABELS, labelOf, machineNamesOf, keyOf, write, overText, logEntryUnlock, logEntrySave, reviewFor } = require("../utils/entryAudit");
+const { SHEET_LABELS, labelOf, machineNamesOf, keyOf, write, overText, logEntryUnlock, logEntrySave, reviewFor, siblingsOf, reflagSiblings } = require("../utils/entryAudit");
 const { settingForMachine, settingForProcess } = require("../utils/plannedShift");
-const { spanMinutes } = require("../utils/oeeMetrics");
+const { spanMinutes, ownerFieldOf } = require("../utils/oeeMetrics");
 const { checkNotLocked } = require("./productionSheet.controller");
 const { createNotification } = require("../services/notification.service");
 
 /**
  * controllers/oeeReview.controller.js
  * ─────────────────────────────────────
- * Admin review of entries whose Availability, Performance or Quality went
- * above 100% (flagged on save — see utils/entryAudit.js), and the audit log.
+ * Admin review of entries whose Availability, Performance, Quality or OEE
+ * figures went above 100% (flagged on save — see utils/entryAudit.js), and the audit log.
  * Everything here except /access is Admin / Super Admin only (route-level
  * requireAdmin). Figures are shown exactly as saved — never capped.
  */
@@ -84,7 +84,7 @@ exports.listReviews = async (req, res) => {
     if (status !== "all" && !REVIEW_STATUSES.includes(status)) {
       return res.status(400).json({ isOk: false, message: "Invalid status" });
     }
-    const sheets = req.query.sheet ? String(req.query.sheet).split(",").filter((s) => MODELS[s]) : Object.keys(MODELS);
+    const sheets = req.query.sheet ? String(req.query.sheet).split(",").filter((s) => Object.hasOwn(MODELS, s)) : Object.keys(MODELS);
     const query = status === "all" ? { "review.status": { $in: REVIEW_STATUSES } } : { "review.status": status };
     const from = parseDay(req.query.from);
     const to = parseDay(req.query.to);
@@ -157,7 +157,7 @@ const alreadyDecided = (review) => `Already ${review.status} by ${review.decided
 exports.decide = async (req, res) => {
   try {
     const { sheet, id } = req.params;
-    const Model = MODELS[sheet];
+    const Model = Object.hasOwn(MODELS, sheet) ? MODELS[sheet] : null;
     if (!Model || !mongoose.isValidObjectId(id)) return res.status(400).json({ isOk: false, message: "Invalid entry" });
     const decision = String(req.body.decision || "");
     if (!["approved", "rejected"].includes(decision)) {
@@ -250,7 +250,7 @@ exports.decide = async (req, res) => {
 exports.reopen = async (req, res) => {
   try {
     const { sheet, id } = req.params;
-    const Model = MODELS[sheet];
+    const Model = Object.hasOwn(MODELS, sheet) ? MODELS[sheet] : null;
     if (!Model || !mongoose.isValidObjectId(id)) return res.status(400).json({ isOk: false, message: "Invalid entry" });
     const entry = await Model.findById(id).lean();
     if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
@@ -283,7 +283,7 @@ exports.reopen = async (req, res) => {
 exports.applyShift = async (req, res) => {
   try {
     const { sheet, id } = req.params;
-    const Model = MODELS[sheet];
+    const Model = Object.hasOwn(MODELS, sheet) ? MODELS[sheet] : null;
     if (!Model || !mongoose.isValidObjectId(id)) return res.status(400).json({ isOk: false, message: "Invalid entry" });
     const entry = await Model.findById(id).lean();
     if (!entry) return res.status(404).json({ isOk: false, message: "Entry not found" });
@@ -314,7 +314,8 @@ exports.applyShift = async (req, res) => {
     }
 
     const set = { plannedOperatorShiftHours: setting.hours, plannedLocked: true };
-    const review = reviewFor(sheet, entry, set, {});
+    const owner = ownerFieldOf(sheet);
+    const review = reviewFor(sheet, entry, set, {}, await siblingsOf(Model, sheet, { date: entry.date, key: entry[owner] }));
     const unset = review.unset;
     const updated = await Model.findOneAndUpdate(
       { _id: id, plannedOperatorShiftHours: typed },
@@ -327,6 +328,8 @@ exports.applyShift = async (req, res) => {
     if (!updated) return res.status(409).json({ isOk: false, message: "This entry was changed while you were looking at it — reload and try again" });
 
     await logEntrySave({ sheet, req, before: entry, after: updated, fields: ["plannedOperatorShiftHours"], review });
+    // A day's OEE figures are shared — the entries it shares them with are worked out again.
+    await reflagSiblings({ sheet, Model, req, before: entry, date: entry.date, key: entry[owner], id: entry._id });
     res.status(200).json({
       isOk: true,
       data: { _id: String(updated._id), plannedOperatorShiftHours: updated.plannedOperatorShiftHours, oee: updated.oee, review: updated.review || null },

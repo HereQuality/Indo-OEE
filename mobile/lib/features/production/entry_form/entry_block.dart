@@ -75,7 +75,11 @@ class EntryBlock extends StatefulWidget {
     this.extra = const {},
     this.takenMachines = const [],
     this.plannedShift,
+    this.savedRows = const [],
   });
+
+  /// The sheet's loaded rows, for the OEE check's day figures.
+  final List<Map<String, dynamic>> savedRows;
 
   /// Process Master's Planned Operator Shift for this block's machine (specs
   /// with `usesPlannedShiftSetting`); null = typed by hand.
@@ -167,6 +171,7 @@ class EntryBlockState extends State<EntryBlock> {
     if (o.index != w.index ||
         !identical(o.spec, w.spec) ||
         !identical(o.extra, w.extra) ||
+        !identical(o.savedRows, w.savedRows) ||
         o.isSubmit != w.isSubmit ||
         o.isEdit != w.isEdit ||
         o.canRemove != w.canRemove ||
@@ -533,6 +538,7 @@ class EntryBlockState extends State<EntryBlock> {
         operators: widget.operators,
         extra: widget.extra,
         metrics: widget.spec.metrics(_v),
+        oeeOver100: widget.spec.oeeOver100(_v, saved: widget.savedRows, plannedShift: widget.plannedShift),
         onChange: widget.onChange,
         onItemSelect: widget.onItemSelect,
         onRejectChange: widget.onRejectChange,

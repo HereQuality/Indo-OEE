@@ -7,9 +7,12 @@ import { OEE_METRIC_LABELS } from "../../utils/productionSheet";
  * ─────────────────────────────────────
  * The live warning on every sheet's entry form when this entry's
  * Availability / Performance / Quality (rowCalc's own figures, still worked out
- * and saved — just not shown as boxes) goes above 100%: the entry still saves, but goes to Admin review — the figure is never
+ * and saved — just not shown as boxes) or any OEE figure of its day (the
+ * Productivity figures on a worker sheet — see withDayFigures) goes above 100%:
+ * the entry still saves, but goes to Admin review — the figure is never
  * capped. `calc` is the sheet's row calc of the form values (planned shift
- * already in decimal hours); `over` is the metric keys above 100%.
+ * already in decimal hours) with the day's figures; `over` is the metric keys
+ * above 100%.
  */
 const OeeCheck = ({ over = [] }) => (
   <div className="mb-2">

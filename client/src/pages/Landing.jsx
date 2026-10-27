@@ -184,7 +184,7 @@ export default function Landing() {
               {/* Card header */}
               <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Line 2 · Toughening Furnace</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">OEE overview</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">Shift B &middot; 06:00 – 14:00</p>
                 </div>
                 <span className="flex items-center gap-1.5 rounded-full bg-stock-in/15 px-2.5 py-1 text-[10px] font-semibold text-stock-in">

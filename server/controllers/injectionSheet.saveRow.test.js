@@ -65,6 +65,12 @@ const fakeDb = ({ process = UNLOCKED, rows = [], existing = null } = {}) => {
       stub(InjectionEntry, "find", (q) => chain(match(q)));
       stub(InjectionEntry, "findOne", (q) => chain(match(q)[0] || null));
       stub(InjectionEntry, "findById", () => chain(existing));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(InjectionEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(InjectionEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -165,7 +171,8 @@ test("paper row 2 (101.33%) saves and goes to OEE Review", async () => {
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     const doc = db.saved[0];
     assert.equal(doc.review?.status, "pending");
-    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance", "oeeLosses", "oeeLunchCot"]);
     assert.ok(Math.abs(doc.oee.performance - 152 / 150) < 1e-4, "101.33%");
   });
 });
@@ -263,4 +270,15 @@ test("the audit log words an entry the way the paper sheet does", async () => {
     }
     assert.ok(!labels.includes("Reject Reasons"));
   });
+});
+
+test("CALC-001: Ideal Quantity is not one low on an exact division (00:00–03:00 at 2.7 s = 4000)", async () => {
+  // 10800 ÷ 2.7 is 3999.9999999999995 in floating point: TOTAL 4000 used to be refused as "more than Ideal (3999)".
+  const r = (actualQty) => row1({ machineOnTime: "00:00", machineOffTime: "03:00", totalCycleSec: 2.7, actualQty, okQty: 4000, plannedOperatorShiftHours: 3, lunchMin: 0 });
+  await withDb({}, async (db) => {
+    const res = await call(saveRow, { body: r(4000) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].actualQty, 4000);
+  });
+  await refused(r(4001), /Actual Quantity \(4001\) can't be more than Ideal Quantity \(4000\)/);
 });

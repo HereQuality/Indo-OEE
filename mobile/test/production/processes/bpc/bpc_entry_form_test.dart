@@ -207,7 +207,7 @@ void main() {
 
     test('registered after Injection Moulding, reachable by key and page', () {
       final keys = [for (final s in ProcessRegistry.all) s.key];
-      expect(keys.last, 'bpc');
+      expect(keys.indexOf('bpc'), greaterThan(keys.indexOf('injection')));
       expect(keys.indexOf('bpc'), greaterThan(keys.indexOf('powder-coating')));
       expect(ProcessRegistry.byKey('bpc'), same(spec));
       expect(ProcessRegistry.byPath('/production/before-powder-coating-data-entry'), same(spec));
@@ -445,7 +445,7 @@ void main() {
       f.onRejectChange(0, 'Blow Holes Casting', '');
       await tester.pump();
       expect(find.byKey(const ValueKey('entry0/oeeCheck')), findsOneWidget);
-      expect(find.textContaining('Performance above 100%'), findsOneWidget);
+      expect(find.textContaining('Performance, OEE considering losses, OEE not considering losses but lunch above 100%'), findsOneWidget);
       expect(bar(tester).canSave, isTrue);
       await tapSave(tester);
       await tester.pumpAndSettle();

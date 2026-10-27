@@ -79,9 +79,14 @@ double? stoppageLimitMin(Map<String, dynamic> v) => spanMinutes(v['machineOnTime
 /// The form keeps Planned Operator Shift as typed decimal hours text ("3.5" = 3 h
 /// 30 min); the rules work in decimal hours. [v] with that one value converted
 /// ('' when it is not a usable time).
-Map<String, dynamic> withDecimalPlanned(Map<String, dynamic> v) {
+///
+/// [plannedLocked]: the entry's Planned is the machine's locked day (a new entry on a
+/// locked process: `setting.locked && !setting.fromEntry`), so the row is marked
+/// `plannedLocked` as the server does on Save and the day's figures count that 12 h once.
+/// An edited entry keeps the flag it was saved with (the form values carry it).
+Map<String, dynamic> withDecimalPlanned(Map<String, dynamic> v, {bool plannedLocked = false}) {
   final planned = parseShiftHours(v['plannedOperatorShiftHours']).hours;
-  return {...v, 'plannedOperatorShiftHours': planned ?? ''};
+  return {...v, 'plannedOperatorShiftHours': planned ?? '', if (plannedLocked) 'plannedLocked': true};
 }
 
 /// The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.

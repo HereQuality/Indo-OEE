@@ -410,6 +410,7 @@ const RoleMaster = () => {
           tog_list();
         }}
         centered
+        scrollable
       >
         <ModalHeader
           className="p-3 border-bottom"
@@ -505,6 +506,7 @@ onChange={handleCheck}
           setIsSubmit(false);
         }}
         centered
+        scrollable
       >
         <ModalHeader
           className="p-3 border-bottom"

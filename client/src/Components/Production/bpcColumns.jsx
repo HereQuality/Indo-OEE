@@ -1,7 +1,7 @@
 import React from "react";
 import { displayDay, fmtNum, remarkParts } from "../../utils/productionSheet";
 import { BPC_REJECT_REASONS, BPC_STOPPAGE_FIELDS, rejectSplitTotal } from "../../utils/bpcSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/bpcColumns.jsx
@@ -88,8 +88,8 @@ export const BPC_COLUMNS = [
   // Each entry's own (combined across the day only on Process Master's fixed shift) — never merged.
   { key: "unreported", label: "Unreported Time (min)", get: (r, c, d) => n(d.unreportedMin), align: "text-center", tone: "day" },
   ...APQ_COLUMNS,
-  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-center", tone: "oee" },
-  { key: "oeeLunch", label: "OEE not considering losses but lunch (%)", get: (r, c, d) => pct(d.oeeLunch), align: "text-center", tone: "oee" },
+  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pctOver(d.oeeLosses), align: "text-center", tone: "oee" },
+  { key: "oeeLunch", label: "OEE not considering losses but lunch (%)", get: (r, c, d) => pctOver(d.oeeLunch), align: "text-center", tone: "oee" },
   REVIEW_COLUMN,
   {
     key: "remarks",

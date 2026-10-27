@@ -10,6 +10,7 @@ import '../core/api/api_client.dart';
 import '../features/auth/blocked_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/maintenance/maintenance_gate.dart';
+import '../features/production/sheet/editor/entry_draft_store.dart';
 import '../providers/auth_provider.dart';
 import '../providers/company_provider.dart';
 import '../providers/menu_provider.dart';
@@ -24,7 +25,7 @@ class IndoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()..bootstrap()),
+        ChangeNotifierProvider(create: (_) => AuthProvider(onSessionEnd: clearEntryDrafts)..bootstrap()),
         ChangeNotifierProvider(create: (_) => CompanyProvider()..load()),
         ChangeNotifierProxyProvider<AuthProvider, ThemeProvider>(
           create: (_) => ThemeProvider(),

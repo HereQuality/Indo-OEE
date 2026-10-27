@@ -58,6 +58,19 @@ const withGrowingTable = async (fn) => {
   stub(RoleMaster, "find", () => chain([]));
   stub(VmcEntry, "find", (q) => chain(match(q)));
   stub(VmcEntry, "findOne", (q) => chain(match(q)[0] || null));
+  // Entries sharing a day are worked out again after each save (reflagSiblings).
+  stub(VmcEntry, "findByIdAndUpdate", (id, update) => ({
+    lean: async () => {
+      const doc = table.find((r) => r._id === id);
+      if (doc) Object.assign(doc, update.$set);
+      return doc || null;
+    },
+  }));
+  stub(VmcEntry, "create", async (payload) => {
+    const doc = { _id: `r${table.length}`, ...payload };
+    table.push(doc);
+    return { toObject: () => doc };
+  });
   stub(VmcEntry, "findOneAndUpdate", (key, update) => ({
     lean: async () => {
       const doc = { _id: `r${table.length}`, ...key, ...update.$set };

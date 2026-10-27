@@ -156,6 +156,10 @@ class PowderCoatingSpec extends ProcessSpec {
         // column — its day figure is Productivity (without Lunch, Tea, etc.).
         for (final d in powderDayCalc(sortedRows)) {...d, 'oeeLosses': d['productivity']},
       ];
+  /// Which OEE figures the table has (web OEE_FIGURE_KEYS): the two Productivity figures.
+  @override
+  String get oeeFigureKind => 'worker';
+
   @override
   EntryMetrics metrics(Json values) => PowderMetrics(values);
   @override

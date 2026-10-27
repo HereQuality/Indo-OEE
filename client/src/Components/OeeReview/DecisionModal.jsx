@@ -3,7 +3,7 @@ import { AlertTriangle, Check, X } from "lucide-react";
 import { Col, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row, Spinner } from "reactstrap";
 import { decideReview } from "../../api/oeeReview.api";
 import { useAlert } from "../../context/AlertContext";
-import { METRIC_KEYS, METRIC_LABELS, MetricValue, entryTitle, flaggedText } from "./reviewShared";
+import { METRIC_KEYS, METRIC_LABELS, MetricValue, entryTitle, flaggedText, oeeKeysOf } from "./reviewShared";
 
 /**
  * Components/OeeReview/DecisionModal.jsx
@@ -100,8 +100,8 @@ const DecisionModal = ({ isOpen, row, decision, onClose, onDecided }) => {
             </Row>
 
             <Row className="g-2 mt-2">
-              {METRIC_KEYS.map((k) => (
-                <Col xs={12} sm={4} key={k}>
+              {[...METRIC_KEYS, ...oeeKeysOf(row.oee)].map((k) => (
+                <Col xs={12} sm={METRIC_KEYS.includes(k) ? 4 : 6} key={k}>
                   <div className="border rounded-3 px-3 py-2 d-flex d-sm-block align-items-center justify-content-between bg-body-tertiary">
                     <div className="text-muted small">{METRIC_LABELS[k]}</div>
                     <MetricValue value={row.oee?.[k]} className="fs-6" />

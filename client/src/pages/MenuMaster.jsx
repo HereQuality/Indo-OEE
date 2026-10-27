@@ -511,6 +511,7 @@ const MenuMaster = () => {
             sortable: true,
             sortField: "menuName",
             minWidth: "150px",
+            wrap: true,
         },
         {
             name: "Menu Group",
@@ -525,7 +526,7 @@ const MenuMaster = () => {
                     <div className="flex items-center gap-2">
                         <span>{groupName}</span>
                         {isDirectLink && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
                                 Direct Link
                             </span>
                         )}
@@ -535,11 +536,13 @@ const MenuMaster = () => {
             sortable: true,
             sortField: "menuGroup.menuGroupName",
             minWidth: "180px",
+            wrap: true,
         },
         {
             name: "Menu URL",
             selector: (row) => row.menuUrl,
             minWidth: "170px",
+            wrap: true,
         },
         {
             name: "Sequence",

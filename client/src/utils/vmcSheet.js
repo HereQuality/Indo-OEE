@@ -76,7 +76,8 @@ export const vmcRowCalc = (row) => {
   const minutes = num(row?.programTimeMin);
   const pieces = num(row?.pcsPerProgram);
   if (shiftMin === null || !isNum(minutes) || minutes <= 0 || !isNum(pieces)) return calc;
-  const idealQty = Math.floor((shiftMin * pieces) / minutes);
+  // Scaled to whole thousandths first so 180 min × 15 pcs ÷ 2.7 min is exactly 1000, not 999.99…
+  const idealQty = Math.floor(Math.round(shiftMin * pieces * 1000) / Math.round(minutes * 1000));
   return { ...calc, idealQty, idealQtyPerHour: calc.shiftHours ? idealQty / calc.shiftHours : null };
 };
 

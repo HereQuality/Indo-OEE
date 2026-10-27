@@ -10,6 +10,9 @@ const SpringEntry = require("../models/SpringEntry");
 const InjectionEntry = require("../models/InjectionEntry");
 const PrintingEntry = require("../models/PrintingEntry");
 const { compareBySequence, sortMachines } = require("../utils/machineOrder");
+const { sendError, pageParams } = require("../utils/httpErrors");
+const Process = require("../models/Process");
+const mongoose = require("mongoose");
 
 // `process` is only touched when the request actually sends it, so a form
 // that doesn't know about processes can't clear the link by accident.
@@ -85,6 +88,15 @@ const placeMachine = async (machineId, position = Infinity) => {
   if (ops.length) await Machine.bulkWrite(ops);
 };
 
+// A process id that points at nothing is refused (400) when a machine is saved; a blank
+// process, or an id the schema itself rejects as malformed, behaves as it always did.
+const checkProcessExists = async (processId) => {
+  if (!processId || !mongoose.isValidObjectId(processId)) return;
+  if (!(await Process.exists({ _id: processId }))) {
+    throw Object.assign(new Error("Process not found"), { status: 400 });
+  }
+};
+
 const isDuplicateName = async (machineName, excludeId) => {
   const escaped = String(machineName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const query = { ...NOT_DELETED, machineName: { $regex: `^${escaped}$`, $options: "i" } };
@@ -96,6 +108,7 @@ exports.createMachine = async (req, res) => {
   try {
     const data = pickMachine(req.body);
     const position = requestedPosition(req);
+    await checkProcessExists(data.process);
     if (await isDuplicateName(data.machineName)) {
       return res.status(409).json({ isOk: false, message: `Machine "${data.machineName}" already exists` });
     }
@@ -116,6 +129,7 @@ exports.updateMachine = async (req, res) => {
     const { machineId } = req.params;
     const data = pickMachine(req.body);
     const position = requestedPosition(req);
+    await checkProcessExists(data.process);
     if (data.machineName !== undefined && (await isDuplicateName(data.machineName, machineId))) {
       return res.status(409).json({ isOk: false, message: `Machine "${data.machineName}" already exists` });
     }
@@ -169,7 +183,7 @@ exports.deleteMachine = async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting machine:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -180,7 +194,7 @@ exports.getMachineById = async (req, res) => {
     res.status(200).json({ isOk: true, data: present(req, machine) });
   } catch (error) {
     console.error("Error fetching machine:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -192,7 +206,7 @@ exports.listMachines = async (req, res) => {
     res.status(200).json({ isOk: true, data: machines.map((m) => present(req, m)) });
   } catch (error) {
     console.error("Error listing machines:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -219,12 +233,12 @@ exports.listMachineByParams = async (req, res) => {
     // default order.
     const sortField = SORTABLE.includes(sorton) && sortdir && (sorton !== "sequence" || isSuperAdmin(req)) ? sorton : undefined;
     const all = sortMachines(await Machine.find(query).lean(), sortField, sortdir);
-    const from = Math.max(0, parseInt(skip, 10) || 0);
-    const page = all.slice(from, from + (parseInt(per_page, 10) || 10));
+    const paging = pageParams(skip, per_page, { max: 1000 });
+    const page = all.slice(paging.skip, paging.skip + paging.limit);
 
     res.status(200).json({ isOk: true, data: [{ count: all.length, data: page.map((m) => present(req, m)) }] });
   } catch (error) {
     console.error("Error searching machines:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

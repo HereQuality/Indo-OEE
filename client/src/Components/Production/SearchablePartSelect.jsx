@@ -15,7 +15,7 @@ import Select from "react-select";
  * deactivated since) still shows as its own option, so editing an old entry
  * never silently loses what it was pointed at; blank reads "Select part".
  */
-const SearchablePartSelect = ({ items, value, itemName, onSelect, label, invalid, placeholder = "Select part" }) => {
+const SearchablePartSelect = ({ items, value, itemName, onSelect, label, invalid, id, ariaLabel = "Part name", placeholder = "Select part" }) => {
   const toOption = (it) => ({
     value: it._id,
     itemName: it.itemName,
@@ -49,6 +49,8 @@ const SearchablePartSelect = ({ items, value, itemName, onSelect, label, invalid
   return (
     <Select
       classNamePrefix="select"
+      inputId={id}
+      aria-label={ariaLabel}
       options={options}
       value={selected}
       onChange={(picked) => onSelect(picked ? picked.value : "")}
@@ -76,8 +78,14 @@ const SearchablePartSelect = ({ items, value, itemName, onSelect, label, invalid
       }
       noOptionsMessage={() => "No matching part"}
       menuPlacement="auto"
-      maxMenuHeight={280}
+      // The list opens in a fixed layer on <body> (not inside the modal's
+      // scrolling body, which clipped it) and is never taller than ~40% of the
+      // visible screen, so it fits on a landscape phone too.
+      menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+      menuPosition="fixed"
+      maxMenuHeight={Math.min(280, Math.round((typeof window !== "undefined" ? window.visualViewport?.height || window.innerHeight : 700) * 0.4))}
       styles={{
+        menuPortal: (base) => ({ ...base, zIndex: 2000 }),
         control: (base) => (invalid ? { ...base, borderColor: "#dc3545" } : base),
         option: (base) => ({ ...base, padding: "8px 12px" }),
       }}

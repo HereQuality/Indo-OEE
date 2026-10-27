@@ -286,14 +286,21 @@ const ProcessMaster = () => {
   const col = [
     // Numbered on from the previous page rather than starting at 1 again.
     { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
-    { name: "Process", selector: (row) => row.processName, sortable: true, sortField: "processName", minWidth: "140px" },
+    { name: "Process", selector: (row) => row.processName, sortable: true, sortField: "processName", minWidth: "140px", wrap: true },
     {
       name: "Machines",
       cell: (row) =>
         row.machines?.length ? (
           <span className="d-flex flex-wrap gap-1 py-1">
             {row.machines.map((m) => (
-              <span key={m._id} className="badge bg-light text-body border fw-semibold">{m.machineName}</span>
+              m.isActive === false ? (
+                // A deactivated machine stays in the process but is not on the dashboard or in its machine count.
+                <span key={m._id} className="badge bg-light border fw-normal text-decoration-line-through machine-inactive" title="Inactive - not counted on the dashboard">
+                  {m.machineName} <span className="text-decoration-none d-inline-block fst-italic">(inactive)</span>
+                </span>
+              ) : (
+                <span key={m._id} className="badge bg-light text-body border fw-semibold">{m.machineName}</span>
+              )
             ))}
           </span>
         ) : (
@@ -313,6 +320,7 @@ const ProcessMaster = () => {
             selector: (row) =>
               `${resolveWidgets(row.stats, STATS_BY_KEY, DEFAULT_STATS).length} KPI tiles · ${resolveWidgets(row.charts, CHARTS_BY_KEY, DEFAULT_CHARTS).length} graphs`,
             minWidth: "150px",
+            wrap: true,
           },
           {
             name: "Data Entry Page",
@@ -329,6 +337,7 @@ const ProcessMaster = () => {
                 <span className="text-muted">Not linked</span>
               ),
             minWidth: "160px",
+            wrap: true,
           },
         ]
       : []),
@@ -336,6 +345,7 @@ const ProcessMaster = () => {
       name: "Planned Shift",
       selector: (row) => (row.plannedShiftLocked === false ? "Unlocked · manual" : `Locked · ${row.plannedShiftHours ?? LOCKED_SHIFT_HOURS} hr`),
       minWidth: "140px",
+      wrap: true,
     },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), maxWidth: "110px" },
     {

@@ -1,7 +1,7 @@
 import React from "react";
 import { displayDay, remarkParts } from "../../utils/productionSheet";
 import { DEFECT_FIELDS, POWDER_IDLE_FIELDS } from "../../utils/powderCoatingSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/powderCoatingColumns.jsx
@@ -91,7 +91,7 @@ export const POWDER_COLUMNS = [
   {
     key: "productivity",
     label: "Productivity without considering Lunch, Tea, etc. (%)",
-    get: (r, c, d) => pct(d.productivity),
+    get: (r, c, d) => pctOver(d.productivity),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -99,7 +99,7 @@ export const POWDER_COLUMNS = [
   {
     key: "productivityLunch",
     label: "Productivity considering Lunch, Tea, etc. (%)",
-    get: (r, c, d) => pct(d.productivityLunch),
+    get: (r, c, d) => pctOver(d.productivityLunch),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",

@@ -5,7 +5,7 @@
   --pd-border: rgba(11, 11, 11, 0.1);
   --pd-ink: #0b0b0b;
   --pd-ink-2: #52514e;
-  --pd-muted: #898781;
+  --pd-muted: #6b6a64;
   --pd-wash: rgba(37, 99, 235, 0.07);
   --pd-accent: #2563eb;
   --pd-track: #f0efec;
@@ -16,7 +16,7 @@
   --pd-border: rgba(255, 255, 255, 0.1);
   --pd-ink: #ffffff;
   --pd-ink-2: #c3c2b7;
-  --pd-muted: #898781;
+  --pd-muted: #a8a69e;
   --pd-wash: rgba(96, 165, 250, 0.14);
   --pd-accent: #60a5fa;
   --pd-track: #2c2c2a;
@@ -25,7 +25,7 @@
 /* Modals render outside .pd-root, so they carry the light tokens themselves. */
 .modal .pd-tabs, .modal .pd-split, .modal .pd-picker, .modal .pd-table, .pd-pop {
   --pd-surface: #ffffff; --pd-border: rgba(11, 11, 11, 0.1); --pd-ink: #0b0b0b; --pd-ink-2: #52514e;
-  --pd-muted: #898781; --pd-wash: rgba(37, 99, 235, 0.07); --pd-accent: #2563eb; --pd-track: #f0efec;
+  --pd-muted: #6b6a64; --pd-wash: rgba(37, 99, 235, 0.07); --pd-accent: #2563eb; --pd-track: #f0efec;
   --pd-s1: #2a78d6; --pd-s2: #eb6834; --pd-s3: #1baf7a; --pd-s4: #eda100;
 }
 
@@ -62,6 +62,7 @@
 .pd-chip:hover:not(:disabled):not(.pd-chip-static) { background: var(--pd-wash); }
 .pd-chip:disabled { opacity: 0.35; }
 .pd-chip.is-on { background: var(--pd-accent); border-color: var(--pd-accent); color: #fff; }
+.dark .pd-chip.is-on { color: #0b1220; } /* white on the light dark-mode accent was 2.5:1 */
 .pd-chip-static { background: var(--pd-surface); cursor: default; }
 .pd-chip-x { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; display: inline-flex; border-radius: 4px; }
 .pd-chip-x:hover { color: var(--pd-accent); }
@@ -84,7 +85,7 @@
 }
 .pd-clear-btn:hover:not(:disabled) { background: #ef444428; border-color: #ef4444; }
 .pd-clear-btn:disabled { opacity: 0.4; cursor: default; }
-.dark .pd-clear-btn { background: #ef444422; border-color: #ef444466; color: #f87171; }
+.dark .pd-clear-btn { background: #ef444422; border-color: #ef444466; color: #fecaca; }
 /* A corner badge rather than an inline dot, so the button is exactly the same
    width with and without it and nothing beside it moves. */
 .pd-filter > .pd-field-btn { position: relative; }
@@ -196,7 +197,7 @@
 }
 
 .pd-icon-btn {
-  width: 26px; height: 26px; border-radius: 6px; border: 0; background: transparent; color: var(--pd-muted, #898781);
+  width: 26px; height: 26px; border-radius: 6px; border: 0; background: transparent; color: var(--pd-muted, #6b6a64);
   display: inline-flex; align-items: center; justify-content: center;
 }
 .pd-icon-btn:hover:not(:disabled), .pd-icon-btn.is-on { background: var(--pd-wash, rgba(37, 99, 235, 0.07)); color: var(--pd-accent, #2563eb); }
@@ -206,7 +207,7 @@
 .pd-vt { display: inline-flex; border: 1px solid var(--pd-line, rgba(128, 128, 128, 0.3)); border-radius: 8px; overflow: hidden; }
 .pd-vt-btn {
   display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 0; background: transparent;
-  font-size: 12px; font-weight: 500; color: var(--pd-muted, #898781); white-space: nowrap;
+  font-size: 12px; font-weight: 500; color: var(--pd-muted, #6b6a64); white-space: nowrap;
 }
 .pd-vt-btn + .pd-vt-btn { border-left: 1px solid var(--pd-line, rgba(128, 128, 128, 0.3)); }
 .pd-vt-btn:hover { color: var(--pd-accent, #2563eb); }

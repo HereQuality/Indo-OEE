@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
 const DAYS_SHORT  = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -25,12 +25,19 @@ const DatePicker = ({
   value,
   onChange,
   name,
+  id,
   placeholder = "Select date",
   hasError = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState(null); // { year, month }
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popRef = useRef(null);
+  // Where the calendar sits (fixed to the screen, so a modal's scrolling body
+  // can't clip it): below the field when it fits, above it when there is more
+  // room there, and never wider or taller than the visible screen.
+  const [pos, setPos] = useState(null);
 
   // Parse "YYYY-MM-DD" safely (avoids timezone shifts)
   const toLocalDate = (iso) => {
@@ -50,6 +57,43 @@ const DatePicker = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const place = () => {
+    const t = triggerRef.current;
+    if (!t) return;
+    const vv = window.visualViewport;
+    const vw = vv?.width || window.innerWidth;
+    const vh = vv?.height || window.innerHeight;
+    const r = t.getBoundingClientRect();
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches;
+    const width = Math.min(coarse ? 308 : 256, vw - 16); // wider on touch: 40px day cells
+    const popH = popRef.current ? popRef.current.scrollHeight : 330;
+    const below = vh - r.bottom - 8;
+    const above = r.top - 8;
+    const useAbove = popH > below && above > below;
+    const room = Math.max(120, useAbove ? above : below);
+    const height = Math.min(popH, room);
+    setPos({
+      left: Math.max(8, Math.min(r.left, vw - width - 8)),
+      top: useAbove ? Math.max(8, r.top - 4 - height) : r.bottom + 4,
+      width,
+      maxHeight: room,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view]);
 
   // Close on outside click
   useEffect(() => {
@@ -102,11 +146,13 @@ const DatePicker = ({
     <div ref={containerRef} className="relative w-full">
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
+        id={id}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`w-full flex items-center gap-2 cursor-pointer border rounded-xl px-2.5 py-1.5 text-xs transition-all bg-white text-left ${
+        className={`w-full flex items-center gap-2 cursor-pointer border rounded-xl px-2.5 py-1.5 text-xs touch-hit transition-all bg-white text-left ${
           hasError
             ? "border-red-400 ring-4 ring-red-500/10"
             : open
@@ -122,18 +168,22 @@ const DatePicker = ({
 
       {/* Calendar popup */}
       {open && view && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 w-64 select-none">
+        <div
+          ref={popRef}
+          style={pos ? { position: "fixed", left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight, overflowY: "auto" } : { position: "fixed", visibility: "hidden" }}
+          className="z-[2000] bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 select-none"
+        >
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-2">
             <button type="button" onClick={prevMonth}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors touch-hit inline-flex items-center justify-center">
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="font-semibold text-slate-800 text-sm">
               {MONTHS_FULL[view.month]} {view.year}
             </span>
             <button type="button" onClick={nextMonth}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors touch-hit inline-flex items-center justify-center">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -153,7 +203,7 @@ const DatePicker = ({
               const tod = isToday(day);
               return (
                 <button type="button" key={day} onClick={() => handleSelect(day)}
-                  className={`h-6 w-6 mx-auto flex items-center justify-center rounded-full text-[11px] font-medium transition-colors ${
+                  className={`h-6 w-6 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 [@media(pointer:coarse)]:text-sm mx-auto flex items-center justify-center rounded-full text-[11px] font-medium transition-colors ${
                     sel
                       ? "bg-brand-600 text-white shadow-sm"
                       : tod
@@ -170,7 +220,7 @@ const DatePicker = ({
           <div className="mt-2 pt-2 border-t border-slate-100">
             <button type="button"
               onClick={() => pick(new Date())}
-              className="w-full text-[11px] text-center text-brand-600 hover:text-brand-700 font-medium py-1 rounded-lg hover:bg-brand-50 transition-colors">
+              className="w-full text-[11px] text-center text-brand-600 hover:text-brand-700 font-medium py-1 rounded-lg hover:bg-brand-50 transition-colors touch-hit">
               Today
             </button>
           </div>

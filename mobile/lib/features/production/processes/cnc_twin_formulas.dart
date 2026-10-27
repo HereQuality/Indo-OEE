@@ -21,7 +21,7 @@ const Map<String, String> twinFormulas = {
   'availability': 'Availability = Operating Time ÷ Planned Production Time, for this entry. Operating Time = Machine Shift − every stoppage; Planned Production Time = Planned Operator Shift − Lunch − Planned Down Time (the planned stops). Above 100% (red) sends the entry to Admin review.',
   'performance': 'Performance = Cycle Time × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong cycle time, quantity or stoppage.',
   'quality': 'Quality = OK Quantity ÷ (OK + Rejected), for this entry.',
-  'review': 'Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
+  'review': 'Admin review: an entry whose Availability, Performance, Quality or any of its OEE figures (the Productivity figures, on a worker sheet) is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
 };
 
 /// Spring's table: the same, worded for "Standard Time per Piece", and Effective

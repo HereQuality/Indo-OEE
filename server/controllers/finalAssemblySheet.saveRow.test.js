@@ -50,6 +50,12 @@ const fakeDb = ({ process = { _id: PROCESS, plannedShiftLocked: false }, existin
       stub(OperatorRoles, "find", () => chain([]));
       stub(FinalAssemblyEntry, "find", () => chain(others));
       stub(FinalAssemblyEntry, "findOne", () => chain(null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(FinalAssemblyEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(FinalAssemblyEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -136,7 +142,8 @@ test("paper row 1 saves — OK = Total − Total Defects, and 154% of Ideal goes
     assert.equal(doc.remarks, "AMIT , DILIP, AJAY");
     assert.equal(doc.plannedLocked, false);
     assert.equal(doc.review?.status, "pending");
-    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance", "productivity", "productivityLunch"]);
     assert.ok(Math.abs(doc.oee.performance - (185 * 30) / 3600) < 1e-3, "154.17%");
   });
 });

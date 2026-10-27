@@ -2,7 +2,7 @@ import React from "react";
 import { displayDay, fmtNum, remarkParts } from "../../utils/productionSheet";
 import { hoursToHm } from "../../utils/shiftHours";
 import { PRINTING_STOPPAGE_FIELDS } from "../../utils/printingSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/printingColumns.jsx
@@ -92,12 +92,12 @@ export const PRINTING_COLUMNS = [
   },
   { key: "effective", label: "Effective Machine Run Time (hours)", get: (r, c) => hours(c.effectiveHours), align: "text-center", tone: "calc" },
   { key: "unreported", label: "Unreported Time (min)", get: (r, c, d) => n(d.unreportedMin), align: "text-center", tone: "day" },
-  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-center", tone: "oee" },
-  { key: "oeeLunch", label: "OEE not considering losses but lunch (%)", get: (r, c, d) => pct(d.oeeLunch), align: "text-center", tone: "oee" },
+  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pctOver(d.oeeLosses), align: "text-center", tone: "oee" },
+  { key: "oeeLunch", label: "OEE not considering losses but lunch (%)", get: (r, c, d) => pctOver(d.oeeLunch), align: "text-center", tone: "oee" },
   {
     key: "oeeLunchCot",
     label: "OEE not considering losses but lunch and COT (%)",
-    get: (r, c, d) => pct(d.oeeLunchCot),
+    get: (r, c, d) => pctOver(d.oeeLunchCot),
     align: "text-center",
     tone: "oee",
   },

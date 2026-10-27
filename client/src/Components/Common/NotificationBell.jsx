@@ -144,7 +144,7 @@ export default function NotificationBell() {
       <button
         type="button"
         onClick={togglePanel}
-        className="relative h-9 w-9 flex items-center justify-center rounded-full transition"
+        className="relative h-9 w-9 touch-hit flex items-center justify-center rounded-full transition"
         style={{ color: isDarkMode ? "#cbd5e1" : "#475569", background: "transparent" }}
         title="Notifications"
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}

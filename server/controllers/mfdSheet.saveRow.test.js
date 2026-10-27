@@ -73,6 +73,12 @@ const fakeDb = ({ process = UNLOCKED, rows = [], existing = null } = {}) => {
       stub(MfdEntry, "find", (q) => chain(match(q), named(match(q))));
       stub(MfdEntry, "findOne", (q) => chain(match(q)[0] || null));
       stub(MfdEntry, "findById", () => chain(existing));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(MfdEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(MfdEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -233,7 +239,8 @@ test("Actual can't be more than the IDEAL Quantity — Lunch taken out — round
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     // 732 × 50 s over 495 min of operating time: Performance over 100% — goes to OEE Review.
     assert.equal(db.saved[0].review?.status, "pending");
-    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance", "oeeLosses"]);
   });
 });
 

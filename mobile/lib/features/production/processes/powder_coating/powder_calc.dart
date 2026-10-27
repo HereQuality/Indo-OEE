@@ -143,7 +143,7 @@ const Map<String, String> powderFormulas = {
   'performance':
       'Performance = Standard Inspection Time per Piece × Total Qty ÷ Operating Time, for this entry — how fast the inspection went against the standard time. Above 100% (red) sends the entry to Admin review: usually a wrong time per piece, quantity or idle time.',
   'review':
-      'Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
+      'Admin review: an entry whose Availability, Performance, Quality or any of its OEE figures (the Productivity figures, on a worker sheet) is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
   // This sheet's own wording.
   'shift': 'Inspection Working Hours = Inspection End Time − Inspection Start Time',
   'idealQty': 'Ideal Inspection Quantity = Inspection Working Hours × 3600 ÷ Standard Inspection Time per Piece, rounded down.',

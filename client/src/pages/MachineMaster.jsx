@@ -236,10 +236,11 @@ const MachineMaster = () => {
       sortable: true,
       sortField: "machineName",
       minWidth: "130px",
+      wrap: true,
     },
     // A machine's process stays named even after that process is deactivated.
-    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "130px" },
-    { name: "Description", selector: (row) => row.description || "", minWidth: "180px" },
+    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "130px", wrap: true },
+    { name: "Description", selector: (row) => row.description || "", minWidth: "180px", wrap: true },
     ...(isAdmin
       ? [{ name: "Sequence", selector: (row) => (row.sequence > 0 ? row.sequence : "—"), sortable: true, sortField: "sequence", maxWidth: "120px" }]
       : []),
@@ -312,7 +313,7 @@ const MachineMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static">
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Machine" : "Add Machine"}
         </ModalHeader>

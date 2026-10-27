@@ -90,7 +90,7 @@ const Map<String, String> mfaFormulas = {
   'oeeLunchCot':
       "OEE not considering losses but lunch and setup time = Effective Run Time ÷ (Available Hours − Lunch ÷ 60 − Setup Time ÷ 60), combined across every entry of this machine's date.",
   'review':
-      'Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
+      'Admin review: an entry whose Availability, Performance, Quality or any of its OEE figures (the Productivity figures, on a worker sheet) is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
   'shift': '$mfaHours = $mfaEnd − $mfaStart',
   'cycle': '$mfaCycle — filled in from the Part when picked, and can be changed for the day.',
   'rejectedQty': 'Rejected QTY = TOTAL QTY − OK QTY, so OK + Rejected = TOTAL.',

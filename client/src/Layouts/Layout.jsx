@@ -154,6 +154,19 @@ export default function Layout({ children }) {
 
   return (
     <div spellCheck={false} className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
+      {/* Keyboard users: the first Tab stop jumps past the whole sidebar and header. */}
+      <a
+        href="#main-content"
+        onClick={(e) => {
+          e.preventDefault();
+          const main = document.getElementById("main-content");
+          main?.focus();
+          main?.scrollIntoView?.({ block: "start" });
+        }}
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[3000] focus:rounded-lg focus:bg-blue-600 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <ConfirmAlert
         isOpen={logoutAlertOpen}
         variant="danger"
@@ -195,14 +208,14 @@ export default function Layout({ children }) {
             {logo ? (
               // object-contain: in the 72px collapsed rail the image is held to
               // the rail's width, and without it a wide logo gets squashed.
-              <img src={logo} alt={APP_NAME} className="h-12 w-auto max-w-full shrink-0 object-contain" />
+              <img src={logo} alt={APP_NAME} className={`h-12 w-auto max-w-full shrink-0 object-contain ${isDarkMode ? 'bg-white rounded-md px-1.5 py-0.5' : ''}`} />
             ) : (
               <span style={{ color: isDarkMode ? '#f1f5f9' : '#1e293b' }} className="font-bold text-lg truncate px-2">{APP_NAME}</span>
             )}
           </Link>
           <button
             style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}
-            className="md:hidden hover:opacity-80"
+            className="md:hidden hover:opacity-80 touch-hit inline-flex items-center justify-center"
             onClick={() => setMobileMenuOpen(false)}
             aria-label="Close menu"
           >
@@ -221,7 +234,7 @@ export default function Layout({ children }) {
             border: isDarkMode ? '1px solid #4b5563' : '1px solid #93c5fd',
             color: '#ffffff',
           }}
-          className="hidden md:flex absolute -right-3 top-[52px] h-6 w-6 rounded-full shadow-md items-center justify-center hover:scale-110 transition-all z-10"
+          className="hidden md:flex absolute -right-3 top-[52px] h-6 w-6 rounded-full shadow-md items-center justify-center hover:scale-110 transition-all z-10 after:content-[''] after:absolute after:-inset-2.5 after:rounded-full"
         >
           <svg className={`w-3 h-3 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -247,7 +260,7 @@ export default function Layout({ children }) {
                   <NavLink
                     to={toRolePath(group.url, roleSlug)}
                     title={sidebarCollapsed ? group.groupName : undefined}
-                    className={`relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-[15px] font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${sidebarCollapsed ? 'md:justify-center' : ''}`}
+                    className={`touch-row relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-[15px] font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${sidebarCollapsed ? 'md:justify-center' : ''}`}
                     style={({ isActive }) => ({
                       background: isActive
                         ? (isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(37,99,235,0.09)')
@@ -286,7 +299,7 @@ export default function Layout({ children }) {
                             color: isDarkMode ? '#ffffff' : '#2563eb',
                           }
                         : { color: isDarkMode ? '#94a3b8' : '#334155' }}
-                      className={`w-full flex items-center px-2.5 cursor-pointer transition-colors hover:opacity-80 ${sidebarCollapsed
+                      className={`touch-row w-full flex items-center px-2.5 cursor-pointer transition-colors hover:opacity-80 ${sidebarCollapsed
                           ? 'justify-center py-2.5 rounded-xl hover:bg-blue-50 hover:!text-blue-600'
                           : 'justify-between py-1.5 mb-1 mt-2 rounded-md'
                         }`}
@@ -326,13 +339,17 @@ export default function Layout({ children }) {
                         style={{ gridTemplateRows: isGroupOpen(group) ? '1fr' : '0fr' }}
                       >
                         <div className="min-h-0 overflow-hidden">
+                          {/* A folded group is invisible, so its links are taken out of the Tab order (and from screen readers) until it opens. */}
                           <div
+                            inert={isGroupOpen(group) ? undefined : ""}
+                            aria-hidden={isGroupOpen(group) ? undefined : true}
                             className={`space-y-0.5 pt-0.5 pb-0.5 transition-opacity duration-200 ${isGroupOpen(group) ? 'opacity-100 delay-100' : 'opacity-0'}`}
                           >
                             {group.menus && group.menus.map((menu) => (
                               <NavLink
                                 key={menu.id}
                                 to={toRolePath(menu.url, roleSlug)}
+                                tabIndex={isGroupOpen(group) ? undefined : -1}
                                 className={({ isActive }) =>
                                   `relative flex items-center gap-2.5 px-3 py-2 rounded-xl text-[15px] transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${isActive ? 'font-semibold' : 'font-medium'}`
                                 }
@@ -450,7 +467,7 @@ export default function Layout({ children }) {
           <div className="flex items-center gap-4 md:hidden">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="text-slate-500 hover:text-slate-700 p-1"
+              className="text-slate-500 hover:text-slate-700 p-1 touch-hit inline-flex items-center justify-center"
               aria-label="Open menu"
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -458,7 +475,7 @@ export default function Layout({ children }) {
               </svg>
             </button>
             {logo ? (
-              <img src={logo} alt={APP_NAME} className="h-6 w-auto" />
+              <img src={logo} alt={APP_NAME} className={`h-6 w-auto ${isDarkMode ? 'bg-white rounded px-1' : ''}`} />
             ) : (
               <span className="font-bold text-[15px] truncate">{APP_NAME}</span>
             )}
@@ -467,8 +484,8 @@ export default function Layout({ children }) {
           <div className="hidden md:flex items-center text-[15px] font-medium min-w-0 flex-1"
             style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}
           >
-            <span style={{ color: isDarkMode ? '#64748b' : '#94a3b8' }} className="mr-2 shrink-0">{isSuperAdmin ? "Owner Portal" : APP_NAME}</span>
-            <span style={{ color: isDarkMode ? '#374151' : '#cbd5e1' }} className="mx-2 shrink-0">/</span>
+            <span style={{ color: isDarkMode ? '#94a3b8' : '#55657b' }} className="mr-2 shrink-0">{isSuperAdmin ? "Owner Portal" : APP_NAME}</span>
+            <span aria-hidden="true" style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }} className="mx-2 shrink-0">/</span>
             <span style={{ color: isDarkMode ? '#e2e8f0' : '#1e293b' }} className="font-semibold truncate">{currentPageTitle}</span>
           </div>
 
@@ -478,8 +495,12 @@ export default function Layout({ children }) {
               <span style={{ color: isDarkMode ? '#f1f1f1' : '#1e293b' }} className="text-[15px] font-medium truncate w-full text-right">{displayName}</span>
               <span style={{ color: isDarkMode ? '#aaaaaa' : '#64748b' }} className="text-xs truncate w-full text-right">{roleLabel}</span>
             </div>
-            <div
-              className="h-9 w-9 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold text-white shadow-sm cursor-pointer hover:bg-brand-700 transition overflow-hidden border border-brand-700"
+            <button
+              type="button"
+              aria-label="Account menu"
+              aria-haspopup="menu"
+              aria-expanded={profileDropdownOpen}
+              className="h-9 w-9 p-0 touch-hit shrink-0 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold text-white shadow-sm cursor-pointer hover:bg-brand-700 transition overflow-hidden border border-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
             >
               {adminData?.profilePic ? (
@@ -497,7 +518,7 @@ export default function Layout({ children }) {
               ) : (
                 initials || "U"
               )}
-            </div>
+            </button>
 
             {profileDropdownOpen && (
               <div
@@ -514,7 +535,7 @@ export default function Layout({ children }) {
                 <Link
                   to={`/${roleSlug}/profile`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left touch-row px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -523,7 +544,7 @@ export default function Layout({ children }) {
                 <Link
                   to={`/${roleSlug}/shortcuts`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left touch-row px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
@@ -532,7 +553,7 @@ export default function Layout({ children }) {
                 <Link
                   to={`/${roleSlug}/settings`}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left touch-row px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                   onClick={() => setProfileDropdownOpen(false)}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
@@ -543,7 +564,7 @@ export default function Layout({ children }) {
                 <button
                   onClick={() => { toggleTheme(); setProfileDropdownOpen(false); }}
                   style={{ color: isDarkMode ? '#d1d5db' : '#374151' }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left touch-row px-4 py-2 text-[15px] hover:bg-blue-50 hover:!text-blue-600 transition-colors"
                 >
                   {isDarkMode ? (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
@@ -555,7 +576,7 @@ export default function Layout({ children }) {
                 <div style={{ borderTop: isDarkMode ? '1px solid #3f3f3f' : '1px solid #f1f5f9' }} className="my-1" />
                 <button
                   onClick={() => { setProfileDropdownOpen(false); handleLogout(); }}
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2 text-[15px] text-red-600 hover:bg-red-50 transition-colors"
+                  className="flex items-center gap-2.5 w-full text-left touch-row px-4 py-2 text-[15px] text-red-600 hover:bg-red-50 transition-colors"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                   Sign Out
@@ -567,8 +588,10 @@ export default function Layout({ children }) {
 
         {/* Scrollable Page Content */}
         <main
+          id="main-content"
+          tabIndex={-1}
           style={{ background: isDarkMode ? '#0a0a0a' : '#f1f5f9' }}
-          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 relative"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 relative focus:outline-none"
         >
           <div className="max-w-7xl mx-auto w-full min-w-0 h-full">
             {children}

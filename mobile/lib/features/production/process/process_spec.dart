@@ -5,6 +5,8 @@ import '../../../core/api/endpoints.dart';
 import '../entry_form/entry_form_logic.dart';
 import '../entry_form/entry_line_context.dart';
 import '../shared/production_entry_validation.dart' as rules;
+import '../shared/planned_shift.dart' show ShiftSetting;
+import '../shared/production_sheet_calc.dart' show dayFiguresFor, metricsOver100, withDayFigures;
 import '../sheet/sheet_model.dart';
 import '../shared/limit_notice.dart' show OverLimit;
 import '../sheet/table/sheet_columns.dart';
@@ -233,6 +235,31 @@ abstract class ProcessSpec {
   /// What the entry form derives from a block's values (caps, stoppage allowance,
   /// …). Override to subclass [EntryMetrics] with process-specific getters.
   EntryMetrics metrics(Json values) => EntryMetrics(values, calcFn: rowCalc);
+
+  /// Which OEE figures this sheet's table has, as the web's OEE_FIGURE_KEYS:
+  /// 'machine' (three OEE figures), 'bpc' (two) or 'worker' (the two
+  /// Productivity figures). Decides which day figures can hold an entry for review.
+  String get oeeFigureKind => 'machine';
+
+  /// The metric keys above 100% that send this entry to Admin review: its own
+  /// Availability / Performance / Quality as Save will work them out, plus the
+  /// sheet's OEE (Productivity) figures of its day. [saved] are the sheet's loaded
+  /// rows; those of the same machine (worker) and date join the entry in
+  /// [dayCalc] — the web's `dayFiguresFor` + `withDayFigures` + `metricsOver100`.
+  List<String> oeeOver100(Json values, {List<Json> saved = const [], ShiftSetting? plannedShift}) {
+    final own = metrics(values).oeeCalc;
+    final machine = '${values['machine'] ?? ''}';
+    final date = values['date'];
+    final day = dayFiguresFor(
+      dayCalc,
+      rules.withDecimalPlanned(values, plannedLocked: plannedShift != null && plannedShift.locked && !plannedShift.fromEntry),
+      [
+        for (final r in saved)
+          if ('${r['machine'] ?? ''}' == machine && r['date'] == date) r,
+      ],
+    );
+    return metricsOver100(withDayFigures(own, day, oeeFigureKind));
+  }
 
   // ── rules ────────────────────────────────────────────────────────────────
 

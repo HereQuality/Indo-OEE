@@ -265,7 +265,15 @@ export const stoppageLimitMin = (v) => {
 
 // A form block with Planned Operator Shift converted from the typed decimal hours
 // (to the whole minute) ("" when it isn't a usable time).
-export const withDecimalPlanned = (v) => ({ ...v, plannedOperatorShiftHours: parseShiftHours(v.plannedOperatorShiftHours).hours ?? "" });
+// With the entry form's `plannedLock` (the machine's process, from Process Master), a row whose
+// Planned is the locked day (a new entry on a locked process) is marked `plannedLocked`, as the
+// server does on Save — so the day's figures count that 12 h once, not on top of the other
+// entries'. An edited entry keeps the flag it was saved with (the form values carry it).
+export const withDecimalPlanned = (v, lock = null) => ({
+  ...v,
+  plannedOperatorShiftHours: parseShiftHours(v.plannedOperatorShiftHours).hours ?? "",
+  ...(lock && lock.locked && !lock.fromEntry ? { plannedLocked: true } : {}),
+});
 
 // The Rejection Master boxes as clean numbers: blanks dropped, the rest > 0.
 export const cleanSplit = (split) =>

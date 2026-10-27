@@ -6,6 +6,7 @@ import BulkActionBar from "./BulkActionBar";
 import { applyEntryShift } from "../../api/oeeReview.api";
 import {
   CYCLE_OP_FIELDS,
+  OEE_METRIC_LABELS,
   REJECT_REASONS,
   STOPPAGE_FIELDS,
   cycleOpLabel,
@@ -99,13 +100,13 @@ const dayBoundary = "border-t-2 border-t-slate-400 dark:border-t-slate-500";
 // Whichever frozen column borders the scrolling middle carries the shadow
 // that marks that freeze line. On a phone (below `sm`) the three together
 // took 296px of a 375px screen, leaving the data columns no room to scroll
-// into view — there Date and Machine are narrower (a long machine / worker
-// name wraps) and Action scrolls with the rest.
+// into view. Below `lg` (phones and tablets, where the sidebar also eats
+// width) only Date is frozen; Machine and Action scroll with the rest.
 const FROZEN = {
-  date: "sticky left-0 w-[84px] min-w-[84px] sm:w-[104px] sm:min-w-[104px]",
+  date: "sticky left-0 w-[84px] min-w-[84px] sm:w-[104px] sm:min-w-[104px] max-lg:shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
   machine:
-    "sticky left-[84px] w-[88px] min-w-[88px] max-sm:whitespace-normal sm:left-[104px] sm:w-[96px] sm:min-w-[96px] shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
-  action: "sm:sticky sm:right-0 w-[136px] min-w-[136px] sm:shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
+    "w-[88px] min-w-[88px] max-sm:whitespace-normal sm:w-[96px] sm:min-w-[96px] lg:sticky lg:left-[104px] lg:shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
+  action: "w-[136px] min-w-[136px] lg:sticky lg:right-0 lg:shadow-[-4px_0_10px_rgba(0,0,0,0.06)]",
 };
 
 // A white header, with each column family's own colour carried in its text
@@ -358,7 +359,7 @@ export const MACHINE_STATUS_COLUMN = {
 
 // A percentage, in red when it's over 100% — such an entry is held for Admin
 // review, and the figure is shown exactly as worked out, never capped.
-const pctOver = (v) =>
+export const pctOver = (v) =>
   Number.isFinite(v) && v > 1 + 1e-9 ? <span className="text-danger fw-semibold">{fmtPct(v)}</span> : pct(v);
 
 const REVIEW_STYLE = {
@@ -366,7 +367,7 @@ const REVIEW_STYLE = {
   approved: ["Approved", "bg-success-subtle text-success-emphasis"],
   rejected: ["Rejected", "bg-danger-subtle text-danger-emphasis"],
 };
-const METRIC_LABEL = { availability: "Availability", performance: "Performance", quality: "Quality" };
+const METRIC_LABEL = OEE_METRIC_LABELS;
 
 // The entry's Admin review state, with what was over 100% (and any reviewer's
 // remark) on hover. "—" for an entry that never needed review.
@@ -562,7 +563,7 @@ const COLUMNS = [
   {
     key: "oeeLosses",
     label: "OEE considering losses (%)",
-    get: (r, c, d) => pct(d.oeeLosses),
+    get: (r, c, d) => pctOver(d.oeeLosses),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -570,7 +571,7 @@ const COLUMNS = [
   {
     key: "oeeLunch",
     label: "OEE not considering losses but lunch (%)",
-    get: (r, c, d) => pct(d.oeeLunch),
+    get: (r, c, d) => pctOver(d.oeeLunch),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -578,7 +579,7 @@ const COLUMNS = [
   {
     key: "oeeLunchCot",
     label: "OEE not considering losses but lunch and setup time (%)",
-    get: (r, c, d) => pct(d.oeeLunchCot),
+    get: (r, c, d) => pctOver(d.oeeLunchCot),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -993,16 +994,19 @@ const ProductionEntriesTable = ({
                       {(() => {
                         const locked = lockInfo(r);
                         const box = bulkOn ? (
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 flex-shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
-                            checked={isPicked}
-                            onChange={(e) => tick(i, e.nativeEvent.shiftKey)}
-                            // Shift + click shouldn't also highlight the text between the two rows.
-                            onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-                            title="Tick — hold Shift and tick another to tick every row in between"
-                            aria-label="Select this entry"
-                          />
+                          // The label gives the small checkbox a 44px tap area on touch screens.
+                          <label className="touch-hit-label m-0 inline-flex flex-shrink-0 items-center justify-center leading-none cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 flex-shrink-0 rounded border-slate-300 accent-blue-600 cursor-pointer"
+                              checked={isPicked}
+                              onChange={(e) => tick(i, e.nativeEvent.shiftKey)}
+                              // Shift + click shouldn't also highlight the text between the two rows.
+                              onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+                              title="Tick — hold Shift and tick another to tick every row in between"
+                              aria-label="Select this entry"
+                            />
+                          </label>
                         ) : null;
                         if (locked) {
                           if (isAdmin) {
@@ -1013,7 +1017,7 @@ const ProductionEntriesTable = ({
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  className="inline-flex items-center gap-1 px-2 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60 text-xs font-medium"
+                                  className="touch-hit inline-flex items-center gap-1 px-2 h-7 rounded-full text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60 text-xs font-medium"
                                   title={`${locked} — click to unlock for 24 hours`}
                                   onClick={() => onUnlock?.(r)}
                                 >
@@ -1036,7 +1040,7 @@ const ProductionEntriesTable = ({
                             {canEdit && (
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
+                                className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
                                 title="Edit"
                                 onClick={() => onEdit(r)}
                               >
@@ -1049,7 +1053,7 @@ const ProductionEntriesTable = ({
                               if (change.tooShort) {
                                 return (
                                   <span
-                                    className="inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-300 dark:text-slate-600 cursor-not-allowed"
+                                    className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-300 dark:text-slate-600 cursor-not-allowed"
                                     title={`Can't apply the current ${hoursToHm(change.now)} shift: this entry's machine ran ${hoursToHm(change.run / 60)}, longer than that. Edit its ON/OFF times first.`}
                                   >
                                     <Clock size={14} />
@@ -1059,7 +1063,7 @@ const ProductionEntriesTable = ({
                               return (
                                 <button
                                   type="button"
-                                  className="inline-flex items-center justify-center w-7 h-7 rounded-full text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors"
+                                  className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors"
                                   title={`Saved on a ${hoursToHm(change.was)} shift — apply the current ${hoursToHm(change.now)} shift to this entry`}
                                   onClick={() => setConfirm({ kind: "shift", rows: [r], ...change })}
                                 >
@@ -1070,7 +1074,7 @@ const ProductionEntriesTable = ({
                             {canDelete && (
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
+                                className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
                                 title="Remove"
                                 onClick={() => onDelete(r)}
                               >

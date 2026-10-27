@@ -45,11 +45,16 @@ const AuditLogSchema = new mongoose.Schema(
       type: [{ field: String, label: String, from: mongoose.Schema.Types.Mixed, to: mongoose.Schema.Types.Mixed, _id: false }],
       default: [],
     },
-    // Availability / Performance / Quality (fractions, 1 = 100%) at the time.
+    // Availability / Performance / Quality and the OEE figures (fractions, 1 = 100%) at the time.
     metrics: {
       availability: { type: Number, default: null },
       performance: { type: Number, default: null },
       quality: { type: Number, default: null },
+      oeeLosses: { type: Number, default: undefined },
+      oeeLunch: { type: Number, default: undefined },
+      oeeLunchCot: { type: Number, default: undefined },
+      productivity: { type: Number, default: undefined },
+      productivityLunch: { type: Number, default: undefined },
     },
     // The metric(s) over 100% that triggered a review.
     flagged: { type: [{ metric: String, value: Number, _id: false }], default: undefined },

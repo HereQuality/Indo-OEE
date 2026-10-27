@@ -292,7 +292,7 @@ export default function Home() {
               to={`/${roleSlug}/shortcuts`}
               style={{
                 textDecoration: "none",
-                color: "#2563eb",
+                color: isDarkMode ? "#93c5fd" : "#2563eb",
                 background: isDarkMode ? "rgba(37,99,235,0.14)" : "rgba(239,246,255,1)",
                 border: isDarkMode ? "1px solid rgba(37,99,235,0.22)" : "1px solid rgba(147,197,253,0.4)",
               }}

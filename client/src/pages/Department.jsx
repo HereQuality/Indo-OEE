@@ -460,6 +460,7 @@ const Department = () => {
                     tog_list();
                 }}
                 centered
+                scrollable
                 backdrop="static"
             >
                 <ModalHeader
@@ -563,6 +564,7 @@ const Department = () => {
                     handleTog_edit();
                 }}
                 centered
+                scrollable
                 backdrop="static"
             >
                 <ModalHeader

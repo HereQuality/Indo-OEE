@@ -1,5 +1,5 @@
 import { FORMULAS } from "./sheetFormulas";
-import { dayCalc, rowCalc } from "./productionSheet";
+import { cycleAfterExcluded, dayCalc, rowCalc } from "./productionSheet";
 
 /**
  * utils/spmSheet.js
@@ -71,7 +71,7 @@ export const spmCycleSec = (row) => {
   if (!String(row?.itemName || "").trim()) return null;
   const excluded = new Set(row?.excludedOps || []);
   const ownTotal = num(row?.totalCycleSec);
-  if (isNum(ownTotal)) return ownTotal - sumOrZero(SPM_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
+  if (isNum(ownTotal)) return cycleAfterExcluded(ownTotal, sumOrZero(SPM_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key]))));
   const ops = SPM_OP_FIELDS.filter((f) => !excluded.has(f.key)).map((f) => num(row?.[f.key]));
   return ops.some(isNum) ? sumOrZero(ops) : null;
 };

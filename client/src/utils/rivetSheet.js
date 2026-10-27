@@ -1,5 +1,5 @@
 import { FORMULAS } from "./sheetFormulas";
-import { dayCalc, rowCalc } from "./productionSheet";
+import { cycleAfterExcluded, dayCalc, rowCalc } from "./productionSheet";
 
 /**
  * utils/rivetSheet.js
@@ -59,7 +59,7 @@ export const rivetCycleSec = (row) => {
   const excluded = new Set(row?.excludedOps || []);
   const excludedSec = sumOrZero(RIVET_OP_FIELDS.filter((f) => excluded.has(f.key)).map((f) => num(row?.[f.key])));
   const ownTotal = num(row?.totalCycleSec);
-  return isNum(ownTotal) ? ownTotal - excludedSec : null;
+  return isNum(ownTotal) ? cycleAfterExcluded(ownTotal, excludedSec) : null;
 };
 
 // The row as the shared formulas read it: its own cycle time in `totalCycleSec`.

@@ -56,7 +56,13 @@ class EntryLineContext {
     required this.machineBox,
     this.plannedShift,
     this.popups = false,
+    this.oeeOver100,
   });
+
+  /// The metric keys above 100% that hold this entry for Admin review — its own
+  /// figures and its day's OEE / Productivity figures ([ProcessSpec.oeeOver100]).
+  /// Null = only the entry's own (what [metrics] knows).
+  final List<String>? oeeOver100;
 
   /// The Planned Operator Shift Process Master sets for this block's machine
   /// (null = typed by hand): `shiftLine` fills/locks its box from it. Only

@@ -87,7 +87,7 @@ const FormsHeader = ({
         ) : filter !== undefined && (
           <label className="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none" title="Show Active Only">
             {/* Shown at every width: a bare switch on a phone doesn't say what it does. */}
-            <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+            <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
               Active only
             </span>
             <span className="relative inline-flex">

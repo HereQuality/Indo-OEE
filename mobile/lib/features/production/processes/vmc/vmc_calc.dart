@@ -8,7 +8,7 @@
 // reused as they are.
 
 import '../../shared/production_sheet_calc.dart' as calc;
-import '../../shared/production_sheet_calc.dart' show isNum, jsNumber, spanMinutes;
+import '../../shared/production_sheet_calc.dart' show isNum, jsNumber, jsRound, spanMinutes;
 import '../../sheet/sheet_model.dart';
 
 /// Why a machine did not run (MACHINE_NOT_RUN in server/models/VmcEntry.js).
@@ -43,7 +43,8 @@ Json vmcRowCalc(Json? row) {
   final minutes = jsNumber(row['programTimeMin']);
   final pieces = jsNumber(row['pcsPerProgram']);
   if (shiftMin == null || !isNum(minutes) || minutes! <= 0 || !isNum(pieces)) return calcRow;
-  final idealQty = ((shiftMin * pieces!) / minutes).floorToDouble();
+  // Scaled to whole thousandths first so 180 min x 15 pcs / 2.7 min is exactly 1000, not 999.99...
+  final idealQty = (jsRound(shiftMin * pieces! * 1000) / jsRound(minutes * 1000)).floorToDouble();
   final shiftHours = calcRow['shiftHours'] as double?;
   // JS: calc.shiftHours ? idealQty / calc.shiftHours : null  (0 and null are falsy)
   return {
@@ -88,7 +89,7 @@ const Map<String, String> vmcFormulas = {
       'Performance = Cycle Time × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong cycle time, quantity or stoppage.',
   'quality': 'Quality = OK Quantity ÷ (OK + Rejected), for this entry.',
   'review':
-      'Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
+      'Admin review: an entry whose Availability, Performance, Quality or any of its OEE figures (the Productivity figures, on a worker sheet) is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
   'idealQtyPerHour': 'Ideal Quantity / Hour = Ideal Quantity ÷ Machine Shift Time (hours).',
   // Not in the web map, but the phone's stoppage-allowed note reads it.
   'stoppageAllowed':

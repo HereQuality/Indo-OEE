@@ -13,6 +13,7 @@
 const mongoose = require("mongoose");
 const Vendor = require("../models/Vendor");
 const Process = require("../models/Process");
+const { sendError, pageParams } = require("../utils/httpErrors");
 
 // The request's processes as a de-duplicated id list, or { error }. Every id
 // must be a real process. Required (at least one) when `required` is set.
@@ -30,6 +31,9 @@ exports.createVendor = async (req, res) => {
   try {
     const { name, isActive } = req.body;
 
+    if (name !== null && typeof name === "object") {
+      return res.status(400).json({ isOk: false, message: "Vendor name must be text" });
+    }
     if (!name || !String(name).trim()) {
       return res.status(400).json({ isOk: false, message: "Vendor name is required" });
     }
@@ -46,7 +50,7 @@ exports.createVendor = async (req, res) => {
     res.status(201).json({ isOk: true, data: created, message: "Vendor created successfully" });
   } catch (error) {
     console.error("Error creating vendor:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -56,6 +60,9 @@ exports.updateVendor = async (req, res) => {
     const { vendorId } = req.params;
     const { name, isActive } = req.body;
 
+    if (name !== null && typeof name === "object") {
+      return res.status(400).json({ isOk: false, message: "Vendor name must be text" });
+    }
     if (name !== undefined && !String(name).trim()) {
       return res.status(400).json({ isOk: false, message: "Vendor name cannot be empty" });
     }
@@ -77,7 +84,7 @@ exports.updateVendor = async (req, res) => {
     res.status(200).json({ isOk: true, data: vendor, message: "Vendor updated successfully" });
   } catch (error) {
     console.error("Error updating vendor:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -100,7 +107,7 @@ exports.deleteVendor = async (req, res) => {
     return res.status(200).json({ isOk: true, message: "Vendor deleted successfully" });
   } catch (error) {
     console.error("Error deleting vendor:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -114,7 +121,7 @@ exports.getVendorById = async (req, res) => {
     res.status(200).json({ isOk: true, data: vendor });
   } catch (error) {
     console.error("Error fetching vendor:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -126,7 +133,7 @@ exports.listVendors = async (req, res) => {
     res.status(200).json({ isOk: true, data: vendors });
   } catch (error) {
     console.error("Error listing vendors:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -134,6 +141,7 @@ exports.listVendors = async (req, res) => {
 exports.listVendorsByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+    const page = pageParams(skip, per_page);
 
     const query = {};
     // Matched as plain text, so a "(" or "*" typed in can't break the search.
@@ -147,12 +155,12 @@ exports.listVendorsByParams = async (req, res) => {
     const [totalCount, vendors] = await Promise.all([
       Vendor.countDocuments(query),
       // Case-insensitive, so "acme" sorts beside "Acme" rather than after every capital.
-      Vendor.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).populate("processes", "processName").lean(),
+      Vendor.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(page.skip).limit(page.limit).populate("processes", "processName").lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: vendors }] });
   } catch (error) {
     console.error("Error searching vendors:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

@@ -268,7 +268,7 @@ const VendorMaster = () => {
 
       {/* guardEscape: Escape that only closes the process picker's open list
           leaves the form open. */}
-      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="md">
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="md" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Vendor" : "Add Vendor"}
         </ModalHeader>

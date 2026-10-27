@@ -81,7 +81,7 @@ const Column = ({ label, items, selected, disabled, onPick, open }) => {
   );
 };
 
-const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = false, minTime = null }) => {
+const TimePicker = ({ value, onChange, name, id, placeholder = "hh:mm", hasError = false, minTime = null }) => {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(null); // what is being typed, until the box is left
   const wrap = useRef(null);
@@ -178,6 +178,7 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
           type="text"
           inputMode="numeric"
           autoComplete="off"
+          id={id}
           name={name}
           maxLength={5}
           className={`form-control form-control-sm ${hasError ? "is-invalid" : ""}`}
@@ -204,7 +205,7 @@ const TimePicker = ({ value, onChange, name, placeholder = "hh:mm", hasError = f
         <button
           ref={clockBtn}
           type="button"
-          className="btn btn-outline-secondary"
+          className="btn btn-outline-secondary touch-hit"
           aria-label="Choose time"
           aria-haspopup="listbox"
           aria-expanded={open}

@@ -367,7 +367,7 @@ const WorkOrderMaster = () => {
 
       {/* guardEscape: Escape that only closes the part picker's open list (or
           the date calendar) leaves the form open. */}
-      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="lg">
+      <Modal isOpen={modalMode !== null} toggle={guardEscape(closeModal)} centered backdrop="static" size="lg" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Work Order" : "Add Work Order"}
         </ModalHeader>

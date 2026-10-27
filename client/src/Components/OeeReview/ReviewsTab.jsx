@@ -7,12 +7,12 @@ import { displayDay } from "../../utils/productionSheet";
 import { toRolePath } from "../../utils/roleUrl";
 import { useCanOpenPage } from "../../utils/notifications";
 import DecisionModal from "./DecisionModal";
-import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, StatusBadge, flaggedText, fmtDateTime, isWorkerSheet, useElementWidth } from "./reviewShared";
+import { METRIC_KEYS, METRIC_LABELS, MetricValue, oeeKeysOf, REVIEW_STYLE, SHEET_PATHS, StatusBadge, flaggedText, fmtDateTime, isWorkerSheet, useElementWidth } from "./reviewShared";
 
 /**
  * Components/OeeReview/ReviewsTab.jsx
  * ─────────────────────────────────────
- * The review desk: every entry whose Availability, Performance or Quality
+ * The review desk: every entry whose Availability, Performance, Quality or an OEE figure
  * went above 100%, by status (Pending first — the ones waiting on a
  * decision), with a text search over machine (or worker) / operator / part /
  * drawing no. A pending row is approved or rejected through DecisionModal; every
@@ -25,9 +25,14 @@ import { METRIC_KEYS, METRIC_LABELS, MetricValue, REVIEW_STYLE, SHEET_PATHS, Sta
  * that hides the Approve / Reject buttons off to the right.
  */
 
-// The table's columns at their minimum widths add up to a little over
-// 1000px; below this the cards take over.
-const TABLE_MIN_WIDTH = 1060;
+// The table's columns at their minimum widths add up to about 1350px; given
+// less room (1210 clipped the Approve button and the Status text) the cards
+// take over, so nothing is ever cut off. The Actions column is also frozen on
+// the right (ACTIONS_STICKY) as a safeguard if the table ever has to scroll.
+const TABLE_MIN_WIDTH = 1360;
+const ACTIONS_STICKY = { position: "sticky", right: 0, zIndex: 1, boxShadow: "-4px 0 8px rgba(0,0,0,0.08)" };
+// A short name for the OEE column's lines (the full name is on hover).
+const METRIC_SHORT = { oeeLosses: "Losses", oeeLunch: "Lunch", oeeLunchCot: "Lunch+Setup", productivity: "Prod.", productivityLunch: "Prod. (lunch)" };
 
 const STATUS_TABS = [
   { key: "pending", label: "Pending" },
@@ -138,8 +143,9 @@ const ReviewTable = ({ rows, roleSlug, onDecide }) => (
           <th scope="col" className="text-end">Availability</th>
           <th scope="col" className="text-end">Performance</th>
           <th scope="col" className="text-end">Quality</th>
+          <th scope="col" className="text-end">OEE</th>
           <th scope="col">Status</th>
-          <th scope="col" className="text-end">Actions</th>
+          <th scope="col" className="text-end oee-actions-sticky" style={ACTIONS_STICKY}>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -168,12 +174,23 @@ const ReviewTable = ({ rows, roleSlug, onDecide }) => (
                 <MetricValue value={row.oee?.[k]} />
               </td>
             ))}
+            <td className="text-end text-nowrap" style={{ minWidth: 150 }}>
+              {oeeKeysOf(row.oee).length ? (
+                oeeKeysOf(row.oee).map((k) => (
+                  <div key={k} title={METRIC_LABELS[k]}>
+                    <span className="text-muted">{METRIC_SHORT[k]}</span> <MetricValue value={row.oee[k]} />
+                  </div>
+                ))
+              ) : (
+                <MetricValue value={null} />
+              )}
+            </td>
             <td style={{ minWidth: 180 }}>
               <StatusBadge status={row.review?.status} />
               <FlaggedLine flagged={row.review?.flagged} className="mt-1" />
               <DecidedInfo review={row.review} className="mt-1" />
             </td>
-            <td className="text-end">
+            <td className="text-end oee-actions-sticky" style={ACTIONS_STICKY}>
               <div className="d-flex flex-column align-items-end gap-1">
                 {row.review?.status === "pending" && (
                   <div className="d-flex gap-1">
@@ -222,8 +239,8 @@ const ReviewCards = ({ rows, roleSlug, onDecide }) => (
           {/* One figure per line — three side-by-side tiles break words apart
               on a phone, and a two-up card grid on a tablet is no wider. */}
           <div className="border rounded-3 bg-body-tertiary px-3 py-1 mt-2 small">
-            {METRIC_KEYS.map((k, i) => (
-              <div key={k} className={`d-flex justify-content-between align-items-center gap-2 py-1 ${i ? "border-top" : ""}`}>
+            {[...METRIC_KEYS, ...oeeKeysOf(row.oee)].map((k, i) => (
+              <div key={k} className={`d-flex justify-content-between align-items-start gap-2 py-1 ${i ? "border-top" : ""}`}>
                 <span className="text-muted">{METRIC_LABELS[k]}</span>
                 <MetricValue value={row.oee?.[k]} />
               </div>

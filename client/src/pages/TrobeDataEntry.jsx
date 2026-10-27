@@ -992,10 +992,10 @@ const TrobeDataEntry = () => {
           </div>
         </ModalHeader>
         <form noValidate onSubmit={handleSave}>
-          {/* The form is far taller than the viewport. An explicit height here
-              rather than relying on Bootstrap's .modal-dialog-scrollable, so the
-              body scrolls and the Save/Cancel footer stays reachable. */}
-          <ModalBody style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+          {/* The form is far taller than the viewport. index.css makes this <form>
+              part of the scrollable modal's flex column, so the body scrolls
+              and the Save/Cancel footer stays reachable. */}
+          <ModalBody>
             <TrobeEntryForm
               entries={entries}
               errors={errorsList}
@@ -1008,6 +1008,7 @@ const TrobeDataEntry = () => {
               isEdit={modalMode === "edit"}
               booked={bookedList}
               plannedLocks={plannedLocks}
+              savedRows={rows}
               onChange={handleChange}
               onItemSelect={handleItemSelect}
               onRejectChange={handleRejectChange}

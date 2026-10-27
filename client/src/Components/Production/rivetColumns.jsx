@@ -1,6 +1,6 @@
 import React from "react";
 import { REJECT_REASONS, displayDay, remarkParts } from "../../utils/productionSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, DOWNTIME_LABEL, RemarkCell, WithRemark, dash, hm, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/rivetColumns.jsx
@@ -132,11 +132,11 @@ export const RIVET_COLUMNS = [
   },
   { key: "setupEff", label: "Setup Efficiency (%)", get: (r, c) => pct(c.setupEfficiency), align: "text-center", tone: "calc" },
   ...APQ_COLUMNS,
-  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pct(d.oeeLosses), align: "text-center", tone: "oee", merge: "machineDay" },
+  { key: "oeeLosses", label: "OEE considering losses (%)", get: (r, c, d) => pctOver(d.oeeLosses), align: "text-center", tone: "oee", merge: "machineDay" },
   {
     key: "oeeLunch",
     label: "OEE not considering losses but lunch (%)",
-    get: (r, c, d) => pct(d.oeeLunch),
+    get: (r, c, d) => pctOver(d.oeeLunch),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -144,7 +144,7 @@ export const RIVET_COLUMNS = [
   {
     key: "oeeLunchCot",
     label: "OEE not considering losses but lunch and setup time (%)",
-    get: (r, c, d) => pct(d.oeeLunchCot),
+    get: (r, c, d) => pctOver(d.oeeLunchCot),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",

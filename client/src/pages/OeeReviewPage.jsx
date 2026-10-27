@@ -9,7 +9,7 @@ import AuditLogTab from "../Components/OeeReview/AuditLogTab";
 /**
  * OEE Review — the Admin / Super Admin review desk and the audit log.
  *
- * Any production entry whose Availability, Performance or Quality is above
+ * Any production entry whose Availability, Performance, Quality or OEE figure is above
  * 100% is held for review (the figure itself is never capped). The Reviews
  * tab lists those entries by status and takes the approve / reject decision;
  * the Audit log tab is the permanent record of every entry change, flag,
@@ -44,7 +44,7 @@ const OeeReviewPage = () => {
                   <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
                     <div style={{ minWidth: 0 }}>
                       <h5 className="mb-0 fs-6 fw-semibold">OEE Review</h5>
-                      <div className="text-muted small">Entries with Availability, Performance or Quality above 100%, and the audit log.</div>
+                      <div className="text-muted small">Entries with Availability, Performance, Quality or an OEE figure above 100%, and the audit log.</div>
                     </div>
                     {!loading && canReview && (
                       <ul className="nav nav-pills gap-1 mb-0" role="tablist">

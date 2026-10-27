@@ -42,15 +42,23 @@ const entryCommonFields = {
     type: [{ type: String, enum: MACHINE_STATUSES }],
     default: undefined,
   },
-  // Availability / Performance / Quality as last saved (fractions, 1 = 100%)
+  // Availability / Performance / Quality, and the OEE figures, as last saved (fractions, 1 = 100%)
   // — worked out by the server on every save (utils/oeeMetrics.js), so the
   // review list and reports don't depend on the browser's figures.
   oee: {
     availability: { type: Number, default: null },
     performance: { type: Number, default: null },
     quality: { type: Number, default: null },
+    // The OEE figures (the day's — see dayOeeFor in utils/oeeMetrics.js): a machine
+    // sheet's three, BEFORE POWDER COATING's two, a worker sheet's two Productivity
+    // figures. Only the sheet's own are stored.
+    oeeLosses: { type: Number, default: undefined },
+    oeeLunch: { type: Number, default: undefined },
+    oeeLunchCot: { type: Number, default: undefined },
+    productivity: { type: Number, default: undefined },
+    productivityLunch: { type: Number, default: undefined },
   },
-  // Set only while one of those three is (or was, when reviewed) above 100%:
+  // Set only while one of those is (or was, when reviewed) above 100%:
   // the entry is held for Admin review — see utils/entryAudit.js. The figures
   // themselves are never capped.
   review: {

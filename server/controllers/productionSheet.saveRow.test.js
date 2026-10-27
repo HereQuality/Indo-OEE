@@ -61,6 +61,12 @@ const fakeDb = (rows = [], process = null) => {
       stub(ProductionEntry, "findOne", (q) => chain(match(q)[0] || null));
       // An edit by _id; its update goes through findOneAndUpdate below ({ _id }).
       stub(ProductionEntry, "findById", (id) => chain(table.find((r) => String(r._id) === String(id)) || null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(ProductionEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(ProductionEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };

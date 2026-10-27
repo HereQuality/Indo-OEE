@@ -262,7 +262,7 @@ const OperatorMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="md">
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="md" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Operator" : "Add Operator"}
         </ModalHeader>

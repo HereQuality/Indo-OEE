@@ -296,7 +296,7 @@ void main() {
       await tester.ensureVisible(k('entry0/oeeCheck'));
       expect(k('entry0/oeeCheck'), findsOneWidget);
       expect(
-        find.text('Performance above 100% — this entry will still save, but goes to Admin review. Check the cycle time, quantities and stoppage.'),
+        find.text('Performance, Productivity without considering Lunch, Tea, etc., Productivity considering Lunch, Tea, etc. above 100% — this entry will still save, but goes to Admin review. Check the cycle time, quantities and stoppage.'),
         findsOneWidget,
       );
       expect(canSave(tester), isTrue, reason: 'above 100% is flagged, never blocked');

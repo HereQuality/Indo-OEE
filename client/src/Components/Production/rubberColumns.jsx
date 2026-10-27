@@ -1,7 +1,7 @@
 import React from "react";
 import { REJECT_REASONS, displayDay, remarkParts } from "../../utils/productionSheet";
 import { RUBBER_STOPPAGE_FIELDS } from "../../utils/rubberSheet";
-import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
+import { APQ_COLUMNS, REVIEW_COLUMN, MACHINE_STATUS_COLUMN, RemarkCell, WithRemark, dash, hm, min, n, pct, pctOver, zeroIfBlank, VENDOR_COLUMN } from "./ProductionEntriesTable";
 
 /**
  * components/Production/rubberColumns.jsx
@@ -93,7 +93,7 @@ export const RUBBER_COLUMNS = [
   {
     key: "productivity",
     label: "Productivity without considering Lunch, tea, etc. (%)",
-    get: (r, c, d) => pct(d.productivity),
+    get: (r, c, d) => pctOver(d.productivity),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",
@@ -101,7 +101,7 @@ export const RUBBER_COLUMNS = [
   {
     key: "productivityLunch",
     label: "Productivity Considering Lunch, tea, etc. (%)",
-    get: (r, c, d) => pct(d.productivityLunch),
+    get: (r, c, d) => pctOver(d.productivityLunch),
     align: "text-center",
     tone: "oee",
     merge: "machineDay",

@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../process/process_registry.dart';
+
 /// Add-entry drafts (port of loadDraft / saveDraft / clearDraft in
 /// client/src/pages/ProductionSheet.jsx). What was typed is kept when the form
 /// is closed so an accidental close does not lose it; reopening "Add Entry"
@@ -68,5 +70,15 @@ class EntryDraftStore {
     } catch (_) {
       // ignore
     }
+  }
+}
+
+/// Deletes every stored add-entry draft (the default key plus each process's
+/// own `draftKey`). Called when a session ends so the next person to sign in on
+/// this device never sees someone else's unsaved entry.
+Future<void> clearEntryDrafts() async {
+  final keys = <String>{EntryDraftStore.key, for (final s in ProcessRegistry.all) s.draftKey};
+  for (final k in keys) {
+    await EntryDraftStore.clear(draftKey: k);
   }
 }

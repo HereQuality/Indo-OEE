@@ -141,3 +141,11 @@ test("the dashboard shows PRINTING's own three downtime causes on their own, and
   assert.equal(causeLabel("bdMechMin", causeLabelsFor({ processName: "BEFORE POWDER COATING" })), "B.D. (Breakdown)");
   assert.equal(causeLabel("bdMechMin", causeLabelsFor(printing)), "B.D. Mech.");
 });
+
+test("a worker dashboard doesn't crash on a chart whose measure isn't a tile (Unreported Time by Worker)", async () => {
+  const { worded, UNIT_WORDS, STATS_BY_KEY } = await import("./processDashboard.js");
+  assert.equal(STATS_BY_KEY.unreportedMin, undefined);
+  assert.equal(worded(STATS_BY_KEY.unreportedMin, UNIT_WORDS.worker), undefined);
+  assert.deepEqual(worded({ label: "A", worker: { label: "B" } }, UNIT_WORDS.worker), { label: "B", worker: { label: "B" } });
+  assert.deepEqual(worded({ label: "A", worker: { label: "B" } }, UNIT_WORDS.machine), { label: "A", worker: { label: "B" } });
+});

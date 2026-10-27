@@ -2,6 +2,7 @@ const RoleMaster = require("../models/RoleMaster");
 const OperatorRoles = require("../models/OperatorRoles");
 const Operator = require("../models/Operator");
 const { slugify, RESERVED_SLUGS } = require("../utils/slugify");
+const { sendError, pageParams } = require("../utils/httpErrors");
 
 // Create Role
 exports.createRole = async (req, res) => {
@@ -49,7 +50,7 @@ exports.createRole = async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({ isOk: false, message: "That role code is already taken. Please choose a different one." });
     }
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -105,7 +106,7 @@ exports.updateRole = async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({ isOk: false, message: "That role code is already taken. Please choose a different one." });
     }
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -150,7 +151,7 @@ exports.deleteRole = async (req, res) => {
     }
   } catch (error) {
     console.error("Error deleting role:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -171,7 +172,7 @@ exports.getRoleById = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching role:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -186,7 +187,7 @@ exports.listAllRoles = async (req, res) => {
     });
   } catch (error) {
     console.error("Error listing roles:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -194,6 +195,7 @@ exports.listAllRoles = async (req, res) => {
 exports.listRoleByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+    const page = pageParams(skip, per_page);
 
     let query = {};
     if (match) {
@@ -218,8 +220,8 @@ exports.listRoleByParams = async (req, res) => {
       RoleMaster.countDocuments(query),
       RoleMaster.find(query)
         .sort(sortQuery)
-        .skip(parseInt(skip))
-        .limit(parseInt(per_page))
+        .skip(page.skip)
+        .limit(page.limit)
         .lean(),
     ]);
 
@@ -234,6 +236,6 @@ exports.listRoleByParams = async (req, res) => {
     });
   } catch (error) {
     console.error("Error searching roles:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

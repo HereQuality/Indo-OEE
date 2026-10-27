@@ -65,6 +65,12 @@ const fakeDb = ({ process = UNLOCKED, rows = [], existing = null } = {}) => {
       stub(EmbossingEntry, "find", (q) => chain(match(q)));
       stub(EmbossingEntry, "findOne", (q) => chain(match(q)[0] || null));
       stub(EmbossingEntry, "findById", () => chain(existing));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(EmbossingEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(EmbossingEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -169,7 +175,8 @@ test("TOTAL above Ideal (JAYA BEN 15/05: 5400 against 4800) saves, and is held f
     assert.equal(doc.actualQty, 5400);
     assert.equal(doc.rejectedQty, 22);
     assert.equal(doc.review?.status, "pending");
-    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance", "oeeLosses", "oeeLunch", "oeeLunchCot"]);
     // 5400 × 7.5 s ÷ 60 over 555 min: the paper's 121.62%.
     assert.ok(Math.abs(doc.oee.performance - 675 / 555) < 1e-4);
     assert.equal(Math.round(doc.oee.performance * 10000) / 100, 121.62);

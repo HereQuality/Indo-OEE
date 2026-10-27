@@ -27,6 +27,15 @@ bool isOver100(Object? v) => isNum(v) && (v as num) > 1 + 1e-9;
 /// The red emphasis of a value above 100%, else null (plain).
 CellStyle? over100Style(Object? v) => isOver100(v) ? CellStyle.danger : null;
 
+/// The red emphasis of a day figure column (OEE considering losses, … and the
+/// worker sheets' Productivity): above 100% the entry is held for Admin review,
+/// so the web's `pctOver` paints it red. Null for any other column, or one that
+/// brings its own style.
+CellStyle? oeeFigureStyle(SheetCol col, Json day) =>
+    (col.style == null && col.tone == ColTone.oee && _oeeFigureColumnKeys.contains(col.key)) ? over100Style(day[col.key]) : null;
+
+const Set<String> _oeeFigureColumnKeys = {'oeeLosses', 'oeeLunch', 'oeeLunchCot', 'productivity', 'productivityLunch'};
+
 // ── Machine Working Status ───────────────────────────────────────────────
 
 /// Web MACHINE_STATUS_COLUMN: "Working", "Working — a, b" or "Non Working — a, b".

@@ -4,10 +4,12 @@ import '../processes/contact/contact_spec.dart';
 import '../processes/embossing/embossing_spec.dart';
 import '../processes/final_assembly/final_assembly_spec.dart';
 import '../processes/injection/injection_spec.dart';
+import '../processes/mfa/mfa_spec.dart';
 import '../processes/mfd/mfd_spec.dart';
 import '../processes/powder_coating/powder_spec.dart';
 import '../processes/press/press_spec.dart';
 import '../processes/printing/printing_spec.dart';
+import '../processes/raw_casting/raw_casting_spec.dart';
 import '../processes/rivet/rivet_spec.dart';
 import '../processes/rubber/rubber_spec.dart';
 import '../processes/spm/spm_spec.dart';
@@ -37,7 +39,9 @@ class ProcessRegistry {
     printingSpec,
     injectionSpec,
     bpcSpec,
+    rawCastingSpec,
     mfdSpec,
+    mfaSpec,
     embossingSpec,
     finalAssemblySpec,
   ];

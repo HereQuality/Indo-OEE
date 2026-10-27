@@ -160,6 +160,10 @@ class BpcSpec extends ProcessSpec {
   Json rowCalc(Json row) => bpcRowCalc(row);
   @override
   List<Json> dayCalc(List<Json> sortedRows) => bpcDayCalc(sortedRows);
+  /// Which OEE figures the table has (web OEE_FIGURE_KEYS): two on BEFORE POWDER COATING.
+  @override
+  String get oeeFigureKind => 'bpc';
+
   @override
   EntryMetrics metrics(Json values) => BpcMetrics(values);
 

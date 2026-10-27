@@ -105,14 +105,9 @@ export default function Login() {
       } else if (res.status === 403) {
         setError(res.data?.message || 'Access denied. Your account may be blocked or inactive.')
       } else if (res.status === 401) {
-        // The last allowed attempt locks the account (attemptsRemaining is 0
-        // then) — the server's own "Account locked…" message says so, where
-        // "0 attempt(s) left" didn't.
-        if (res.data.attemptsRemaining > 0) {
-          setError(`Invalid credentials. ${res.data.attemptsRemaining} attempt(s) left.`)
-        } else {
-          setError(res.data.message || 'Authentication failed')
-        }
+        // The server answers the same for an unknown username and a wrong password
+        // (and says so itself when the last attempt locks the account).
+        setError(res.data?.message || 'Authentication failed')
       } else if (res.status === 200 || res.data?.status === 'success') {
         toast.success('Logged in successfully!')
         setCookie('token', res.data.token, remember ? 30 : 1)
@@ -163,7 +158,7 @@ export default function Login() {
             {/* Card header */}
             <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Line 2 · Toughening Furnace</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">OEE overview</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">Shift B &middot; 06:00 – 14:00</p>
               </div>
               <span className="flex items-center gap-1.5 rounded-full bg-stock-in/15 px-2.5 py-1 text-[10px] font-semibold text-stock-in">

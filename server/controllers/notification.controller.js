@@ -1,4 +1,5 @@
 const Notification = require("../models/Notification");
+const { sendError } = require("../utils/httpErrors");
 
 const identify = (req) => ({
   model: req.user.roleType === "SuperAdmin" ? "User" : "Operator",
@@ -18,7 +19,7 @@ exports.getNotifications = async (req, res) => {
 
     res.json({ isOk: true, data: notifications });
   } catch (error) {
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -32,7 +33,7 @@ exports.getUnreadNotificationCount = async (req, res) => {
     });
     res.json({ isOk: true, unreadCount });
   } catch (error) {
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -47,7 +48,7 @@ exports.markNotificationRead = async (req, res) => {
     if (!notification) return res.status(404).json({ isOk: false, message: "Notification not found" });
     res.json({ isOk: true, data: notification });
   } catch (error) {
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -60,6 +61,6 @@ exports.markAllNotificationsRead = async (req, res) => {
     );
     res.json({ isOk: true });
   } catch (error) {
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

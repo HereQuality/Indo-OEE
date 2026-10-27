@@ -15,7 +15,7 @@ const OperatorRoles = require("../models/OperatorRoles");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
 const Notification = require("../models/Notification");
-const { saveRow } = require("./productionSheet.controller");
+const { saveRow, deleteRow } = require("./productionSheet.controller");
 const { updateProcess } = require("./process.controller");
 const { decide, getAccess, reopen, applyShift } = require("./oeeReview.controller");
 const { requireAdmin } = require("../utils/adminAccess");
@@ -79,6 +79,11 @@ const fakeWorld = ({ process = null } = {}) => {
   stub(ProductionEntry, "find", (q) => chain(clone(match(q))));
   stub(ProductionEntry, "findOne", (q) => chain(clone(match(q)[0] || null)));
   stub(ProductionEntry, "findById", (id) => chain(clone(entries.find((e) => sameId(e._id, id)) || null)));
+  stub(ProductionEntry, "create", async (payload) => {
+    const doc = { _id: newId(), createdAt: new Date(), ...payload };
+    entries.push(doc);
+    return { toObject: () => clone(doc) };
+  });
   stub(ProductionEntry, "findOneAndUpdate", (q, update) => ({
     lean: async () => {
       let doc = match(q)[0];
@@ -95,6 +100,10 @@ const fakeWorld = ({ process = null } = {}) => {
       return doc ? clone(apply(doc, update)) : null;
     },
   }));
+  stub(ProductionEntry, "findByIdAndDelete", async (id) => {
+    const i = entries.findIndex((e) => sameId(e._id, id));
+    return i >= 0 ? entries.splice(i, 1)[0] : null;
+  });
   stub(ProductionEntry, "deleteOne", async ({ _id }) => {
     const i = entries.findIndex((e) => sameId(e._id, _id));
     if (i >= 0) entries.splice(i, 1);
@@ -162,7 +171,8 @@ test("an entry with Performance over 100% saves, is held for review, and the fig
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     const saved = entries[0];
     assert.equal(saved.review.status, "pending");
-    assert.deepEqual(saved.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(saved.review.flagged.map((f) => f.metric), ["performance", "oeeLosses", "oeeLunch", "oeeLunchCot"]);
     assert.ok(Math.abs(saved.oee.performance - 490 / 480) < 1e-4, "kept at 102.08%, not 100%");
     assert.deepEqual(logs.map((l) => l.action), ["create", "flagged"]);
     assert.match(logs[1].remark, /Performance 102\.1%/);
@@ -502,4 +512,123 @@ test("apply current shift: not for a process with no fixed shift, nor when the r
     assert.match(res.payload.message, /shorter than this entry's Machine Shift/);
     assert.equal(entries[0].plannedOperatorShiftHours, 12, "unchanged");
   });
+});
+
+// ── The OEE figures hold an entry for review too ──────────────────────────
+// A machine's day shares one OEE figure on the older sheets, so an entry whose
+// own Availability / Performance / Quality are all fine can still be held
+// because the day it belongs to goes over 100%.
+//   D  08:00–12:00, 4 h planned, 264 pieces × 60 s → Performance 110%
+//   C  13:00–17:00, 4 h planned, 228 pieces × 60 s → Performance  95%
+//   the day: (264 + 228) min of work in 8 h available → OEE 102.5%
+const half = (o = {}) => body({ machineOnTime: "08:00", machineOffTime: "12:00", plannedOperatorShiftHours: 4, ...o });
+const late = (o = {}) => half({ machineOnTime: "13:00", machineOffTime: "17:00", ...o });
+const metricsOf = (entry) => entry.review.flagged.map((f) => f.metric);
+
+test("OEE alone over 100% holds an entry whose Availability, Performance and Quality are all fine (combined-day sheet)", async () => {
+  await withWorld({}, async ({ entries, logs }) => {
+    await call(saveRow, { body: half({ actualQty: 264, okQty: 264 }) });
+    const res = await call(saveRow, { body: late({ actualQty: 228, okQty: 228 }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    const [d, c] = entries;
+    assert.ok(c.oee.performance < 1 && c.oee.availability <= 1 + 1e-9 && c.oee.quality <= 1);
+    assert.equal(c.review.status, "pending");
+    assert.deepEqual(metricsOf(c), ["oeeLosses", "oeeLunch", "oeeLunchCot"]);
+    assert.ok(Math.abs(c.oee.oeeLosses - 492 / 480) < 1e-4, "the day's 102.5% is stored with the entry");
+    assert.ok(Math.abs(c.review.flagged[0].value - 492 / 480) < 1e-4);
+    // D carries the same day figure now (it was 110% on its own).
+    assert.ok(Math.abs(d.oee.oeeLosses - 492 / 480) < 1e-4);
+    const flagged = logs.filter((l) => l.action === "flagged" && String(l.entity) === String(c._id));
+    assert.equal(flagged.length, 1);
+    assert.match(flagged[0].remark, /OEE considering losses 102\.5%/);
+  });
+});
+
+test("saving one entry of a day re-flags its siblings — and clears them when the day comes back under 100%", async () => {
+  await withWorld({}, async ({ entries, logs }) => {
+    await call(saveRow, { body: half({ actualQty: 240, okQty: 240 }) });
+    const [a] = entries;
+    assert.equal(a.review, undefined, "alone, the morning entry is at exactly 100%");
+
+    await call(saveRow, { body: late({ actualQty: 264, okQty: 264 }) });
+    const b = entries[1];
+    assert.deepEqual(metricsOf(b), ["performance", "oeeLosses", "oeeLunch", "oeeLunchCot"]);
+    // The morning entry was never edited, yet the day's OEE (105%) now holds it.
+    assert.equal(a.review.status, "pending");
+    assert.deepEqual(metricsOf(a), ["oeeLosses", "oeeLunch", "oeeLunchCot"]);
+    assert.ok(Math.abs(a.oee.oeeLosses - 504 / 480) < 1e-4);
+    assert.ok(logs.some((l) => l.action === "flagged" && String(l.entity) === String(a._id)), "logged through the audit log");
+
+    // The afternoon entry comes down to 95%: the day is 97.5% and both are clear.
+    await call(saveRow, { body: late({ _id: b._id, slot: 2, actualQty: 228, okQty: 228 }) });
+    assert.equal(b.review, undefined);
+    assert.equal(a.review, undefined);
+    assert.ok(Math.abs(a.oee.oeeLosses - 468 / 480) < 1e-4);
+    assert.ok(logs.some((l) => l.action === "cleared" && String(l.entity) === String(a._id)));
+  });
+});
+
+test("deleting an entry re-works its siblings out too", async () => {
+  await withWorld({}, async ({ entries }) => {
+    await call(saveRow, { body: half({ actualQty: 240, okQty: 240 }) });
+    await call(saveRow, { body: late({ actualQty: 264, okQty: 264 }) });
+    const [a, b] = entries;
+    assert.equal(a.review.status, "pending");
+    // The afternoon entry is cleared (a row with nothing left is removed): the morning one is back to 100%.
+    const res = await call(deleteRow, { params: { id: b._id } });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(a.review, undefined);
+  });
+});
+
+test("an approved sibling stays approved while the day figures it was reviewed on are unchanged; a change sends it back", async () => {
+  await withWorld({}, async ({ entries, logs }) => {
+    await call(saveRow, { body: half({ actualQty: 240, okQty: 240 }) });
+    await call(saveRow, { body: late({ actualQty: 264, okQty: 264 }) });
+    const [a, b] = entries;
+    const approve = await call(decide, { params: { sheet: "cnc", id: a._id }, body: { decision: "approved", remark: "Day checked", flaggedAt: a.review.flaggedAt } });
+    assert.equal(approve.statusCode, 200, JSON.stringify(approve.payload));
+
+    // A remark on the other entry leaves the day's figures alone.
+    await call(saveRow, { body: late({ _id: b._id, slot: 2, actualQty: 264, okQty: 264, remarks: "note" }) });
+    assert.equal(a.review.status, "approved");
+    assert.equal(a.review.decidedBy.name, "HQEPL Admin");
+
+    // More pieces on the other entry move the day to 105.6% — the review reopens.
+    const before = logs.length;
+    await call(saveRow, { body: late({ _id: b._id, slot: 2, actualQty: 270, okQty: 270, remarks: "note" }) });
+    assert.equal(a.review.status, "pending");
+    assert.ok(Math.abs(a.oee.oeeLosses - 510 / 480) < 1e-4);
+    assert.ok(logs.slice(before).some((l) => l.action === "flagged" && String(l.entity) === String(a._id)));
+  });
+});
+
+// The per-entry sheets (calcMode "perEntry") work each entry out alone — unless a
+// sibling took its Planned Operator Shift from Process Master's lock, which
+// makes the day one: the same sibling-driven OEE-only breach as above.
+test("per-entry sheet: OEE alone over 100% holds an entry, only through a locked sibling (the day is then combined)", () => {
+  const entry = (o) => ({ itemName: "Part", totalCycleSec: 60, plannedOperatorShiftHours: 4, ...o });
+  const lockedMorning = entry({ _id: "s1", machineOnTime: "08:00", machineOffTime: "12:00", actualQty: 264, okQty: 264, plannedLocked: true });
+  const afternoon = entry({ machineOnTime: "13:00", machineOffTime: "17:00", actualQty: 228, okQty: 228 });
+
+  const alone = reviewFor("injection", null, afternoon, {}, [{ ...lockedMorning, plannedLocked: false }]);
+  assert.equal(alone.transition, null, "unlocked day: each entry on its own (95%)");
+
+  const combined = reviewFor("injection", null, afternoon, {}, [lockedMorning]);
+  assert.equal(combined.transition, "flagged");
+  assert.deepEqual(combined.over.map((f) => f.metric), ["oeeLosses", "oeeLunch", "oeeLunchCot"]);
+  assert.ok(Math.abs(combined.oee.oeeLosses - 492 / 480) < 1e-4);
+  assert.ok(combined.oee.performance < 1);
+});
+
+test("worker sheets name their two Productivity figures; BEFORE POWDER COATING has two OEE figures", () => {
+  const entry = (o) => ({ itemName: "Part", totalCycleSec: 60, plannedOperatorShiftHours: 4, ...o });
+  const morning = entry({ _id: "s1", machineOnTime: "08:00", machineOffTime: "12:00", actualQty: 264, okQty: 264 });
+  const afternoon = entry({ machineOnTime: "13:00", machineOffTime: "17:00", actualQty: 228, okQty: 228 });
+  const rubber = reviewFor("rubber", null, afternoon, {}, [morning]);
+  assert.deepEqual(rubber.over.map((f) => f.metric), ["productivity", "productivityLunch"]);
+  assert.deepEqual(Object.keys(rubber.oee).filter((k) => /^(productivity|oee)/.test(k)), ["productivity", "productivityLunch"]);
+  // BPC: each entry alone, so no breach from a sibling — but its own figure shows two OEE keys.
+  const bpc = reviewFor("bpc", null, afternoon, {}, [morning]);
+  assert.deepEqual(Object.keys(bpc.oee).filter((k) => /^(productivity|oee)/.test(k)), ["oeeLosses", "oeeLunch"]);
 });

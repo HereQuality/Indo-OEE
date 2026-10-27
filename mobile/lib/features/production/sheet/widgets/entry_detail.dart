@@ -6,6 +6,7 @@ import '../../process/process_spec.dart';
 import '../../processes/cnc/cnc_spec.dart' show cncSpec;
 import '../sheet_model.dart';
 import '../table/sheet_columns.dart' show CellMark, CellStyle, cellMarkColor;
+import '../table/shared_columns.dart' show isOver100;
 import 'sheet_popovers.dart';
 import 'sheet_style.dart';
 
@@ -69,7 +70,7 @@ class EntryDetail extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (model.oee.isNotEmpty) ...[
-            _OeeStrip(tiles: model.oee, formulas: formulas),
+            _OeeStrip(tiles: model.oee, formulas: formulas, day: day),
             const SizedBox(height: 10),
           ],
           for (final g in model.groups)
@@ -127,8 +128,11 @@ class EntryDetail extends StatelessWidget {
 /// The headline OEE percentages. Combined across every entry of the machine's
 /// date, so every entry of that day shows the same.
 class _OeeStrip extends StatelessWidget {
-  const _OeeStrip({required this.tiles, required this.formulas});
+  const _OeeStrip({required this.tiles, required this.formulas, required this.day});
   final List<DetailOee> tiles;
+
+  /// The entry's day figures: a tile above 100% is red (the entry is held for Admin review).
+  final Json day;
   final Map<String, String> formulas;
 
   @override
@@ -140,6 +144,7 @@ class _OeeStrip extends StatelessWidget {
           title: t.title,
           label: t.label,
           value: t.value,
+          over: isOver100(day[t.formulaKey]),
           wide: big,
         );
     if (big) {
@@ -163,17 +168,18 @@ class _OeeStrip extends StatelessWidget {
 }
 
 class _OeeTile extends StatelessWidget {
-  const _OeeTile({required this.formulaKey, required this.formulas, required this.title, required this.label, required this.value, required this.wide});
+  const _OeeTile({required this.formulaKey, required this.formulas, required this.title, required this.label, required this.value, required this.wide, this.over = false});
   final String formulaKey;
   final Map<String, String> formulas;
   final String title;
   final String label;
   final String value;
   final bool wide;
+  final bool over;
 
   @override
   Widget build(BuildContext context) {
-    final tone = SheetTones.text(context, SheetTones.oee);
+    final tone = over ? SheetTones.text(context, AppColors.critical) : SheetTones.text(context, SheetTones.oee);
     final labelText = Text(
       label,
       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -234,9 +240,13 @@ class _Group extends StatelessWidget {
               children: [
                 Icon(icon, size: 14, color: s.onSurfaceVariant),
                 const SizedBox(width: 5),
-                Text(
-                  title.toUpperCase(),
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: s.onSurfaceVariant),
+                Expanded(
+                  child: Text(
+                    title.toUpperCase(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: s.onSurfaceVariant),
+                  ),
                 ),
               ],
             ),

@@ -143,6 +143,10 @@ class FinalAssemblySpec extends ProcessSpec {
         // The day card's chip reads `oeeLosses`; this sheet's own figure is Productivity.
         for (final d in faDayCalc(sortedRows)) {...d, 'oeeLosses': d['productivity']},
       ];
+  /// Which OEE figures the table has (web OEE_FIGURE_KEYS): the two Productivity figures.
+  @override
+  String get oeeFigureKind => 'worker';
+
   @override
   EntryMetrics metrics(Json values) => FaMetrics(values);
   @override

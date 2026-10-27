@@ -172,6 +172,16 @@ export const totalCycleSec = (ops) => {
 };
 
 const sumOrZero = (vals) => vals.reduce((s, v) => s + (isNum(v) ? v : 0), 0);
+// A Part's own Total Cycle Time less the seconds of the operations unticked for this
+// entry. Unticking more than the Part has leaves float noise (7.1e-15) or a negative
+// figure: rounded to the millionth, anything not above zero is no cycle at all (null),
+// so Ideal Quantity and the figures built on it stay blank. Mirrored in
+// server/utils/oeeMetrics.js and the app's production_sheet_calc.dart.
+export const cycleAfterExcluded = (ownTotal, excludedSec) => {
+  if (excludedSec === 0) return ownTotal;
+  const c = Math.round((ownTotal - excludedSec) * 1e6) / 1e6;
+  return c > 0 ? c : null;
+};
 const ratio = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? a / b : null);
 
 export function rowCalc(row) {
@@ -193,7 +203,7 @@ export function rowCalc(row) {
   const hasOpFields = opFields.some(isNum);
   const legacySingle = num(row.cycleTimeSec);
   const opsTotal = isNum(ownTotal)
-    ? ownTotal - excludedSec
+    ? cycleAfterExcluded(ownTotal, excludedSec)
     : hasOpFields
       ? sumOrZero(opFields)
       : isNum(legacySingle)
@@ -218,7 +228,9 @@ export function rowCalc(row) {
   // (e.g. 292.3) can never actually be produced; the lower whole number is
   // the real ceiling on what the shift could make.
   const idealQtyRaw = shiftMin !== null ? ratio(shiftMin * 60, cycle) : null;
-  const idealQty = isNum(idealQtyRaw) ? Math.floor(idealQtyRaw) : null;
+  // + 1e-9: a quotient that is a whole number mathematically can land just under it
+  // in floating point (9300 ÷ 37.2 = 249.99999999999997) and must not floor one low.
+  const idealQty = isNum(idealQtyRaw) ? Math.floor(idealQtyRaw + 1e-9) : null;
 
   const ok = num(row.okQty);
   // Actual Quantity is typed (and the form keeps it at or under Ideal
@@ -308,12 +320,59 @@ function oeeParts({ shiftMin, totalStoppageMin, row, cycle, ok, totalQty }) {
   };
 }
 
-// Whichever of Availability / Performance / Quality is above 100% on a row's
-// calc — [] when none. Uses a tiny tolerance so a figure that's 100% on paper
-// isn't flagged over floating-point dust.
-export const OEE_METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
+// Whichever of Availability / Performance / Quality — and the sheet's OEE
+// figures (OEE considering losses, … but lunch, … but lunch & setup time; the
+// worker sheets' two Productivity figures) — is above 100% on a calc object, as
+// metric keys; [] when none. The OEE figures are the day's (dayCalc / the sheet's
+// own xxxDayCalc), so a caller merges them onto the row's calc first
+// (withDayFigures). Uses a tiny tolerance so a figure that's 100% on paper isn't
+// flagged over floating-point dust. Mirrored on the server by metricsOver100 in
+// server/utils/oeeMetrics.js.
+export const OEE_METRIC_LABELS = {
+  availability: "Availability",
+  performance: "Performance",
+  quality: "Quality",
+  oeeLosses: "OEE considering losses",
+  oeeLunch: "OEE not considering losses but lunch",
+  oeeLunchCot: "OEE not considering losses but lunch & setup time",
+  productivity: "Productivity without considering Lunch, Tea, etc.",
+  productivityLunch: "Productivity considering Lunch, Tea, etc.",
+};
 export const metricsOver100 = (calc) =>
   Object.keys(OEE_METRIC_LABELS).filter((k) => isNum(calc?.[k]) && calc[k] > 1 + 1e-9);
+
+// The OEE figure keys a sheet's table has: three on a machine sheet, two on
+// BEFORE POWDER COATING, the two Productivity figures on a worker sheet.
+// (dayCalc works out all five for every sheet; only the sheet's own count.)
+export const OEE_FIGURE_KEYS = {
+  machine: ["oeeLosses", "oeeLunch", "oeeLunchCot"],
+  bpc: ["oeeLosses", "oeeLunch"],
+  worker: ["productivity", "productivityLunch"],
+};
+
+// A row's calc with the day's OEE figures added, only the ones `kind` ("machine"
+// | "bpc" | "worker") has — what metricsOver100 reads for the "goes to Admin
+// review" notice. `day` is that row's entry of the sheet's xxxDayCalc.
+export const withDayFigures = (calc, day, kind = "machine") => {
+  const out = { ...calc };
+  for (const k of OEE_FIGURE_KEYS[kind] || []) out[k] = day?.[k] ?? null;
+  return out;
+};
+
+// This form entry's day figures, among the sheet's already-saved entries: the
+// entry (`values`, planned shift already in decimal hours) joins `saved` (the
+// other entries of the same machine / worker and date — the entry's own saved
+// copy, matched by _id, is replaced by `values`), and `dayCalcFn` (the sheet's
+// xxxDayCalc) is run over the group. Same figures the table will show after Save.
+export function dayFiguresFor(dayCalcFn, values, saved = []) {
+  const mark = {};
+  const mine = { ...values, __form: mark };
+  const others = (saved || []).filter((r) => r && !(values?._id && String(r._id) === String(values._id)));
+  const sorted = sortByMachineOn([...others, mine]);
+  const results = dayCalcFn(sorted);
+  const i = sorted.findIndex((r) => r.__form === mark);
+  return i < 0 ? null : results[i];
+}
 
 // Unutilized Machine Time is one result per row of one machine's one date,
 // not one shared value for the whole group: the Excel formula reads "this
@@ -543,9 +602,16 @@ export const remarkParts = (r) => {
 // ── Formatting ─────────────────────────────────────────────────────────────
 export const fmtNum = (v, digits = 2) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return "";
-  return Number.isInteger(v) ? String(v) : v.toFixed(digits).replace(/\.?0+$/, "");
+  if (Number.isInteger(v)) return String(v);
+  const fixed = v.toFixed(digits);
+  // Rounds to zero (float noise like -2.8e-14): "0", never "-0".
+  return Number(fixed) === 0 ? "0" : fixed.replace(/\.?0+$/, "");
 };
-export const fmtPct = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "" : `${(v * 100).toFixed(2)}%`);
+export const fmtPct = (v) => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "";
+  const fixed = (v * 100).toFixed(2);
+  return Number(fixed) === 0 ? "0.00%" : `${fixed}%`;
+};
 
 // A Part Name option's label, as every entry form's Part Name picker shows
 // it: the name, plus " — N sec" when the part actually has a usable Total

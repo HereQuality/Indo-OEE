@@ -27,6 +27,7 @@ const { settingOf } = require("../utils/plannedShift");
 const { viewableProcessIds } = require("../utils/processAccess");
 const { CYCLE_SEC } = require("../utils/oeeMetrics");
 const AuditLog = require("../models/AuditLog");
+const { sendError, pageParams } = require("../utils/httpErrors");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
@@ -220,7 +221,7 @@ exports.deleteProcess = async (req, res) => {
     res.status(200).json({ isOk: true, message: "Process deleted successfully" });
   } catch (error) {
     console.error("Error deleting process:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -232,7 +233,7 @@ exports.getProcessById = async (req, res) => {
     res.status(200).json({ isOk: true, data });
   } catch (error) {
     console.error("Error fetching process:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -246,13 +247,14 @@ exports.listProcesses = async (req, res) => {
     res.status(200).json({ isOk: true, data: await withMachines(processes, true, isSuperAdmin(req)) });
   } catch (error) {
     console.error("Error listing processes:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
 exports.listProcessByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive } = req.body;
+    const page = pageParams(skip, per_page, { max: 1000 });
 
     const query = {};
     if (match) {
@@ -268,15 +270,15 @@ exports.listProcessByParams = async (req, res) => {
       Process.countDocuments(query),
       Process.find(query)
         .sort(sortQuery)
-        .skip(parseInt(skip))
-        .limit(parseInt(per_page))
+        .skip(page.skip)
+        .limit(page.limit)
         .lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: await withMachines(processes, false, isSuperAdmin(req)) }] });
   } catch (error) {
     console.error("Error searching processes:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -339,8 +341,9 @@ const DASHBOARD_SHEETS = [
   // MODULAR FRAME DRILLING is a machine sheet: its cycle is the entry's own
   // Total Cycle Time (CYCLE_SEC.mfd), Effective Machine Run Time counts OK Qty
   // like CNC, and each entry is worked out on its own (calcMode "perEntry",
-  // see client entryDayCalc).
-  { Model: MfdEntry, cycleSec: CYCLE_SEC.mfd, extra: { calcMode: "perEntry" } },
+  // see client entryDayCalc). Its IDEAL Quantity takes Lunch / Tea out of the
+  // shift (idealLessLunch), so the dashboard's Ideal QTY matches the table.
+  { Model: MfdEntry, cycleSec: CYCLE_SEC.mfd, extra: { calcMode: "perEntry", idealLessLunch: true } },
   // MODULAR FRAME ASSEMBLY is per worker (byProcess), on RAW CASTING's template:
   // Ideal Assembly Time counts TOTAL QTY, and each entry is worked out on its
   // own (calcMode "perEntry", see client entryDayCalc).
@@ -443,6 +446,6 @@ exports.getDashboardEntries = async (req, res) => {
     });
   } catch (error) {
     console.error("Error loading dashboard entries:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

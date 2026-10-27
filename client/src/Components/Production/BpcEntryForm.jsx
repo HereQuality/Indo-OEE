@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { withControlId } from "./controlId";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
@@ -12,9 +13,9 @@ import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
 import { BPC_WORDS, stoppageNotice } from "../../utils/limitNotice";
 import { ProductionMasterFields, RejectionMasterFields } from "./QuantityMaster";
-import { MACHINE_STATUSES, fmtNum, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
+import { MACHINE_STATUSES, fmtNum, isNonWorking, dayFiguresFor, metricsOver100, withDayFigures, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { BPC_REJECT_REASONS, BPC_STOPPAGE_FIELDS, bpcRowCalc, isStatusOnly } from "../../utils/bpcSheet";
+import { BPC_REJECT_REASONS, BPC_STOPPAGE_FIELDS, bpcDayCalc, bpcRowCalc, isStatusOnly } from "../../utils/bpcSheet";
 import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 
 /**
@@ -48,27 +49,33 @@ const THIRD = { xs: 12, sm: 6, lg: 4 };
 const FULL = { xs: 12 };
 
 // A calculated box — greyed so nobody tries to type in it.
-const Calc = ({ label, value, cols = QUARTER, title }) => (
-  <Col {...cols}>
-    <div className="mb-1" title={title}>
-      <Label className={labelClass}>{label}</Label>
-      <Input type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
-    </div>
-  </Col>
-);
+const Calc = ({ label, value, cols = QUARTER, title }) => {
+  const id = useId();
+  return (
+    <Col {...cols}>
+      <div className="mb-1" title={title}>
+        <Label htmlFor={id} className={labelClass}>{label}</Label>
+        <Input id={id} type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
+      </div>
+    </Col>
+  );
+};
 
 // A typed field. `fieldKey` is what Save's scroll-to-first-error looks for.
-const Field = ({ label, required, error, children, cols = QUARTER, fieldKey }) => (
-  <Col {...cols}>
-    <div className="mb-1" data-field={fieldKey}>
-      <Label className={labelClass}>
-        {label} {required && <span className="text-danger">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
-    </div>
-  </Col>
-);
+const Field = ({ label, required, error, children, cols = QUARTER, fieldKey }) => {
+  const id = useId();
+  return (
+    <Col {...cols}>
+      <div className="mb-1" data-field={fieldKey}>
+        <Label htmlFor={id} className={labelClass}>
+          {label} {required && <span className="text-danger">*</span>}
+        </Label>
+        {withControlId(children, id)}
+        {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
+      </div>
+    </Col>
+  );
+};
 
 // Decimal hours as the sheet shows them: "6.75 hr".
 const hrs = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "" : `${fmtNum(v)} hr`);
@@ -125,6 +132,7 @@ const EntryBlock = ({
   booked = [],
   takenWorkers = [],
   plannedLock = null,
+  savedRows = [],
   onExpand,
   onChange,
   onItemSelect,
@@ -138,7 +146,13 @@ const EntryBlock = ({
   // Availability / Performance / Quality as Save will work them out (planned
   // shift converted from its typed decimal hours first) — any above 100% sends the
   // entry to Admin review, so it's flagged here before Save.
-  const oeeCalc = useMemo(() => bpcRowCalc(withDecimalPlanned(values)), [values]);
+  // The day's OEE figures too (this machine's / worker's date, with the entries
+  // already saved on it) — any above 100% also sends the entry to Admin review.
+  const dayFigures = useMemo(
+    () => dayFiguresFor(bpcDayCalc, withDecimalPlanned(values, plannedLock), savedRows.filter((r) => String(r.machine) === String(values.machine) && r.date === values.date)),
+    [values, savedRows, plannedLock],
+  );
+  const oeeCalc = useMemo(() => withDayFigures(bpcRowCalc(withDecimalPlanned(values, plannedLock)), dayFigures, "bpc"), [values, dayFigures, plannedLock]);
   const overMetrics = metricsOver100(oeeCalc);
   const statusOnly = isStatusOnly(values) || nonWorking;
   // Vendor Name shows only when this process has vendors (Vendor Master) — or
@@ -524,8 +538,8 @@ const EntryBlock = ({
 
         <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional>
           <div className="mb-2">
-            <Label className={labelClass}>Reason/Remarks</Label>
-            <Input type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
+            <Label htmlFor={`remarks-${index}`} className={labelClass}>Reason/Remarks</Label>
+            <Input id={`remarks-${index}`} type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
           </div>
         </Line>
       </div>
@@ -544,6 +558,7 @@ const BpcEntryForm = ({
   isEdit = false,
   booked = [],
   plannedLocks = [],
+  savedRows = [],
   onChange,
   onItemSelect,
   onRejectChange,
@@ -651,6 +666,7 @@ const BpcEntryForm = ({
           // their times just can't overlap (checked on the page and the server).
           takenWorkers={[]}
           plannedLock={plannedLocks[i] || null}
+          savedRows={savedRows}
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}

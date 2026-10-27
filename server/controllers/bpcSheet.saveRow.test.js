@@ -53,6 +53,12 @@ const fakeDb = ({ process = { _id: PROCESS, plannedShiftLocked: false }, existin
       stub(OperatorRoles, "find", () => chain([]));
       stub(BeforePowderCoatingEntry, "find", () => chain(others));
       stub(BeforePowderCoatingEntry, "findOne", () => chain(null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(BeforePowderCoatingEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(BeforePowderCoatingEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -243,7 +249,8 @@ test("more than Ideal Quantity saves and goes to OEE Review instead of being ref
     const res = await call(saveRow, { body: paperRow({ actualQty: 950, okQty: 950, rejectBreakdown: {}, lunchMin: 0 }) });
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     assert.equal(db.saved[0].review?.status, "pending");
-    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(db.saved[0].review.flagged.map((f) => f.metric), ["performance", "oeeLosses", "oeeLunch"]);
   });
 });
 

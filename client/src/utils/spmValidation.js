@@ -90,7 +90,8 @@ export const validateSpmEntry = (v, { saved = null } = {}) => {
   // every operation here has been unticked, there's no cycle time to compute
   // from, so Save can't go through.
   else if (!isNum(calc.totalCycleSec) || calc.totalCycleSec <= 0) {
-    errors.itemName = calc.totalCycleSec === null
+    // (More operations unticked than the Part has leaves no cycle too — that one has its own wording.)
+    errors.itemName = calc.totalCycleSec === null && blank(v.totalCycleSec)
       ? "This Part has no Operation Times set — edit it in Parts first"
       : "Total Cycle Time must be more than 0 — untick fewer operations";
   }

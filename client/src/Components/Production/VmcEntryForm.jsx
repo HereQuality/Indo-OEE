@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { withControlId } from "./controlId";
 import { operatorsForMachine } from "../../utils/operatorsForMachine";
 import { vendorsForMachine } from "../../utils/vendorsFor";
 import { isNonWorking } from "../../utils/productionSheet";
@@ -10,7 +11,7 @@ import NumberInput from "./NumberInput";
 import MachineStatusSelect from "./MachineStatusSelect";
 import OeeCheck from "./OeeCheck";
 import FormLine from "./FormLine";
-import { metricsOver100 } from "../../utils/productionSheet";
+import { dayFiguresFor, metricsOver100, withDayFigures } from "../../utils/productionSheet";
 import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
@@ -18,7 +19,7 @@ import { stoppageNotice } from "../../utils/limitNotice";
 import { ProductionMasterFields, RejectionMasterFields } from "./QuantityMaster";
 import { fmtNum, fmtPct, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { VMC_PROGRAM_FIELDS, vmcRowCalc } from "../../utils/vmcSheet";
+import { VMC_PROGRAM_FIELDS, vmcDayCalc, vmcRowCalc } from "../../utils/vmcSheet";
 import { VMC_DOWNTIME_KEYS } from "../../utils/vmcValidation";
 import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 
@@ -44,27 +45,33 @@ import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 const labelClass = "form-label small text-muted mb-1";
 
 // A calculated box — greyed so nobody tries to type in it.
-const Calc = ({ label, value, md = 3, title }) => (
-  <Col md={md}>
-    <div className="mb-1" title={title}>
-      <Label className={labelClass}>{label}</Label>
-      <Input type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
-    </div>
-  </Col>
-);
+const Calc = ({ label, value, md = 3, title }) => {
+  const id = useId();
+  return (
+    <Col md={md}>
+      <div className="mb-1" title={title}>
+        <Label htmlFor={id} className={labelClass}>{label}</Label>
+        <Input id={id} type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
+      </div>
+    </Col>
+  );
+};
 
 // A typed field. `fieldKey` is what Save's scroll-to-first-error looks for.
-const Field = ({ label, required, error, children, md = 3, lg, fieldKey }) => (
-  <Col md={md} lg={lg}>
-    <div className="mb-1" data-field={fieldKey}>
-      <Label className={labelClass}>
-        {label} {required && <span className="text-danger">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
-    </div>
-  </Col>
-);
+const Field = ({ label, required, error, children, md = 3, lg, fieldKey }) => {
+  const id = useId();
+  return (
+    <Col md={md} lg={lg}>
+      <div className="mb-1" data-field={fieldKey}>
+        <Label htmlFor={id} className={labelClass}>
+          {label} {required && <span className="text-danger">*</span>}
+        </Label>
+        {withControlId(children, id)}
+        {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
+      </div>
+    </Col>
+  );
+};
 
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
@@ -131,6 +138,7 @@ const EntryBlock = ({
   booked = [],
   takenMachines = [],
   plannedLock = null,
+  savedRows = [],
   onExpand,
   onChange,
   onItemSelect,
@@ -150,7 +158,13 @@ const EntryBlock = ({
   // Availability / Performance / Quality as Save will work them out (planned
   // shift converted from its typed decimal hours first) — any above 100% sends the
   // entry to Admin review, so it's flagged here before Save.
-  const oeeCalc = useMemo(() => vmcRowCalc(withDecimalPlanned(values)), [values]);
+  // The day's OEE figures too (this machine's / worker's date, with the entries
+  // already saved on it) — any above 100% also sends the entry to Admin review.
+  const dayFigures = useMemo(
+    () => dayFiguresFor(vmcDayCalc, withDecimalPlanned(values, plannedLock), savedRows.filter((r) => String(r.machine) === String(values.machine) && r.date === values.date)),
+    [values, savedRows, plannedLock],
+  );
+  const oeeCalc = useMemo(() => withDayFigures(vmcRowCalc(withDecimalPlanned(values, plannedLock)), dayFigures, "machine"), [values, dayFigures, plannedLock]);
   const overMetrics = metricsOver100(oeeCalc);
   const selectedItem = useMemo(() => items.find((it) => it._id === values.item) || null, [items, values.item]);
 
@@ -589,8 +603,8 @@ const EntryBlock = ({
 
         <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional>
           <div className="mb-2">
-            <Label className={labelClass}>Remarks</Label>
-            <Input type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
+            <Label htmlFor={`remarks-${index}`} className={labelClass}>Remarks</Label>
+            <Input id={`remarks-${index}`} type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
           </div>
         </Line>
       </div>
@@ -611,6 +625,7 @@ const VmcEntryForm = ({
   isEdit = false,
   booked = [],
   plannedLocks = [],
+  savedRows = [],
   onChange,
   onItemSelect,
   onWorkOrderSelect,
@@ -733,6 +748,7 @@ const VmcEntryForm = ({
           // Machines another block of this form already has on the same date can't be picked again.
           takenMachines={entries.filter((o, j) => j !== i && o.machine && o.date === values.date).map((o) => String(o.machine))}
           plannedLock={plannedLocks[i] || null}
+          savedRows={savedRows}
           onExpand={setExpandedIndex}
           onChange={onChange}
           onItemSelect={onItemSelect}

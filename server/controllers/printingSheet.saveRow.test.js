@@ -54,6 +54,12 @@ const fakeDb = ({ process = { _id: PROCESS, plannedShiftLocked: false }, existin
       stub(RoleMaster, "find", () => chain([]));
       stub(PrintingEntry, "find", () => chain(others));
       stub(PrintingEntry, "findOne", () => chain(null));
+      // A new entry is inserted (utils/insertEntry.js), not upserted.
+      stub(PrintingEntry, "create", async (payload) => {
+        const doc = { _id: "64b0c0ffee0000000000cccc", ...payload };
+        saved.push(doc);
+        return { toObject: () => doc };
+      });
       stub(PrintingEntry, "findOneAndUpdate", (key, update) => ({
         lean: async () => {
           const doc = { _id: "64b0c0ffee0000000000cccc", ...key, ...update.$set };
@@ -163,7 +169,8 @@ test("over 100% (paper row 874 pcs × 21 s in 10:30–16:00) saves and goes to O
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     const doc = db.saved[0];
     assert.equal(doc.review?.status, "pending");
-    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance"]);
+    // Performance over 100% takes the day's OEE figures over 100% with it.
+    assert.deepEqual(doc.review.flagged.map((f) => f.metric), ["performance", "oeeLosses", "oeeLunch", "oeeLunchCot"]);
     assert.ok(Math.abs(doc.oee.performance - (874 * 21) / 60 / 300) < 1e-3, "101.97%");
   });
 });

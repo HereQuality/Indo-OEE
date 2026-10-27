@@ -10,6 +10,7 @@ import '../sheet_model.dart';
 import '../widgets/machine_day_card.dart' show SheetAccess, EntryAction;
 import '../widgets/sheet_popovers.dart';
 import '../widgets/sheet_style.dart';
+import 'shared_columns.dart' show oeeFigureStyle;
 import 'sheet_columns.dart';
 
 /// One body row of the table, with where it sits in its date / machine run
@@ -896,7 +897,7 @@ class _BodyCell extends StatelessWidget {
     if (show) {
       final txt = col.remarkKind == 'general' ? '' : col.text(data);
       // A spec may emphasise one value (red over 100%, a review badge).
-      final emph = txt.isEmpty ? null : col.style?.call(data);
+      final emph = txt.isEmpty ? null : (col.style?.call(data) ?? oeeFigureStyle(col, data.day));
       final mark = emph?.mark ?? CellMark.none;
       final markColor = mark == CellMark.none
           ? null

@@ -12,6 +12,7 @@
  * machine-day pairs, never over entries.
  */
 import { STOPPAGE_FIELDS, dayCalc, displayDay, entryDayCalc, fmtNum, fmtPct, rowCalc } from "./productionSheet";
+import { mfdRowCalc } from "./mfdSheet";
 import { RUBBER_STOPPAGE_FIELDS, isRubberProcess } from "./rubberSheet";
 import { POWDER_IDLE_FIELDS, isPowderCoatingProcess } from "./powderCoatingSheet";
 import { BPC_STOPPAGE_FIELDS, isBpcProcess } from "./bpcSheet";
@@ -120,7 +121,7 @@ export const UNIT_WORDS = {
 export const unitWordsFor = (process) => (isWorkerProcess(process) ? UNIT_WORDS.worker : UNIT_WORDS.machine);
 
 // A catalog entry (tile or graph) in the dashboard's own words.
-export const worded = (widget, words) => (words?.byWorker && widget.worker ? { ...widget, ...widget.worker } : widget);
+export const worded = (widget, words) => (widget && words?.byWorker && widget.worker ? { ...widget, ...widget.worker } : widget);
 
 // A dimension's name as the dashboard says it ("By Worker", "Worker: …").
 export const dimLabel = (dim, ctx) => (dim === "machine" && ctx?.words ? ctx.words.one : DIMENSIONS[dim].label);
@@ -235,6 +236,9 @@ export const calcOf = (row) => {
   let c = calcCache.get(row);
   if (!c) {
     c = rowCalc(row);
+    // MODULAR FRAME DRILLING's own IDEAL Quantity takes Lunch / Tea out of the shift
+    // (mfdSheet.js) — the feed marks its rows so the tile agrees with the table.
+    if (row.idealLessLunch === true) c = { ...c, idealQty: mfdRowCalc(row).idealQtyExact };
     calcCache.set(row, c);
   }
   return c;

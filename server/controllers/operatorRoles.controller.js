@@ -1,5 +1,19 @@
 const OperatorRoles = require("../models/OperatorRoles");
 const { isAdminUser } = require("../utils/adminAccess");
+const { sendError } = require("../utils/httpErrors");
+const MenuMaster = require("../models/MenuMaster");
+const mongoose = require("mongoose");
+
+// Every menuId in the permission rows has to be a real menu (400 otherwise); an empty or
+// absent menuId, or one the schema itself rejects as malformed, behaves as it always did.
+const checkMenusExist = async (roles) => {
+  if (!Array.isArray(roles)) return;
+  const ids = [...new Set(roles.map((r) => r?.menuId).filter((id) => id && mongoose.isValidObjectId(id)).map(String))];
+  if (!ids.length) return;
+  if ((await MenuMaster.countDocuments({ _id: { $in: ids } })) < ids.length) {
+    throw Object.assign(new Error("Menu not found"), { status: 400 });
+  }
+};
 
 // Granting or taking away Full access is itself a Full access power — the
 // Manage Role write permission alone must not be a way to promote yourself.
@@ -16,6 +30,7 @@ const DENIED = { isOk: false, message: "Only a Full Access user or Super Admin c
 exports.createOperatorRoles = async (req, res) => {
   try {
     const { roleId, roles, isActive } = req.body;
+    await checkMenusExist(roles);
     const fullAccess = await fullAccessChange(req, null);
     if (fullAccess.denied) return res.status(403).json(DENIED);
 
@@ -39,7 +54,7 @@ exports.createOperatorRoles = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating operator roles:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -60,7 +75,7 @@ exports.getOperatorRoles = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching operator roles:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -69,6 +84,7 @@ exports.updateOperatorRoles = async (req, res) => {
   try {
     const { roleId } = req.params;
     const { roles, isActive } = req.body;
+    await checkMenusExist(roles);
 
     const current = await OperatorRoles.findOne({ roleId }).select("fullAccess").lean();
     const fullAccess = await fullAccessChange(req, current);
@@ -91,6 +107,6 @@ exports.updateOperatorRoles = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating operator roles:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };

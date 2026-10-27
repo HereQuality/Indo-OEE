@@ -35,7 +35,10 @@ import 'package:collection/collection.dart' show mergeSort;
 
 import '../shared/production_sheet_calc.dart' show dayCalc, displayDay, entryDayCalc, fmtNum, fmtPct, rowCalc, stoppageFields;
 import '../processes/bpc/bpc_calc.dart' show bpcStoppageFields, isBpcProcess;
+import '../processes/raw_casting/raw_casting_calc.dart' show isRawCastingProcess, rawCastingIdleFields;
 import '../processes/final_assembly/fa_calc.dart' show faIdleFields, isFinalAssemblyProcess;
+import '../processes/mfa/mfa_calc.dart' show isMfaProcess, mfaIdleFields;
+import '../processes/mfd/mfd_calc.dart' show mfdRowCalc;
 import '../processes/printing/printing_calc.dart' show isPrintingProcess, printingExtraStoppageFields, printingStoppageKeys;
 import '../processes/powder_coating/powder_calc.dart' show isPowderCoatingProcess, powderIdleFields;
 import '../processes/rubber/rubber_calc.dart' show isRubberProcess, rubberMinuteKeys;
@@ -409,7 +412,9 @@ bool isWorkerProcess(Map<String, dynamic>? process) =>
     (isRubberProcess(process) ||
         isPowderCoatingProcess(process) ||
         isBpcProcess(process) ||
+        isRawCastingProcess(process) ||
         isFinalAssemblyProcess(process) ||
+        isMfaProcess(process) ||
         isPrintingProcess(process));
 
 /// Web `unitWordsFor`.
@@ -442,8 +447,12 @@ List<String> stoppageKeysFor(Map<String, dynamic>? process) {
   if (isPowderCoatingProcess(process)) return [for (final f in powderIdleFields) f.$1];
   // BEFORE POWDER COATING: Setup, B.D. (Breakdown) (bdMechMin), Lunch, Other.
   if (isBpcProcess(process)) return [for (final f in bpcStoppageFields) f.$1];
+  // RAW CASTING: Lunch / Tea and Other only.
+  if (isRawCastingProcess(process)) return [for (final f in rawCastingIdleFields) f.$1];
   // FINAL ASSEMBLY: Lunch / Tea and Other only.
   if (isFinalAssemblyProcess(process)) return [for (final f in faIdleFields) f.$1];
+  // MODULAR FRAME ASSEMBLY: Lunch / Tea and Other only.
+  if (isMfaProcess(process)) return [for (final f in mfaIdleFields) f.$1];
   if (process != null && isPrintingProcess(process)) return printingStoppageKeys;
   return [for (final f in stoppageFields) f['key'] as String];
 }
@@ -777,6 +786,9 @@ Map<String, dynamic> calcOf(Map<String, dynamic> row) {
   var c = _calcCache[row];
   if (c == null) {
     c = rowCalc(row);
+    // MODULAR FRAME DRILLING's own IDEAL Quantity takes Lunch / Tea out of the shift
+    // (mfd_calc.dart) — the feed marks its rows so the tile agrees with the table.
+    if (row['idealLessLunch'] == true) c = {...c, 'idealQty': mfdRowCalc(row)['idealQtyExact']};
     _calcCache[row] = c;
   }
   return c;

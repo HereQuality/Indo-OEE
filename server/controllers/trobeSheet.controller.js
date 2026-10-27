@@ -1,11 +1,13 @@
 const mongoose = require("mongoose");
+const { strictNumber, isBlankNumber } = require("../utils/strictNumber");
 const TrobeEntry = require("../models/TrobeEntry");
 const { WORKING_STATUSES, NON_WORKING_STATUSES } = require("../models/TrobeEntry");
 const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
-const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
+const { insertNewEntry } = require("../utils/insertEntry");
+const { reviewFor, siblingsOf, reflagSiblings, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
 const { vendorFields, machineProcess } = require("../utils/entryVendor");
 const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
@@ -60,7 +62,10 @@ const buildFields = (body) => {
   const set = {};
   const unset = {};
   for (const k of TEXT_KEYS) {
-    if (body[k] !== undefined) set[k] = String(body[k] ?? "").trim();
+    if (body[k] !== undefined) {
+      if (body[k] !== null && typeof body[k] === "object") throw fail(`"${k}" must be text`);
+      set[k] = String(body[k] ?? "").trim();
+    }
   }
   if (set.workingStatus && !WORKING_STATUSES.includes(set.workingStatus)) {
     throw fail(`"${set.workingStatus}" is not a valid Working Status`);
@@ -68,14 +73,15 @@ const buildFields = (body) => {
   for (const k of TIME_KEYS) {
     if (body[k] === undefined) continue;
     if (body[k] === "" || body[k] === null) unset[k] = "";
+    else if (typeof body[k] === "object") throw fail(`"${k}" must be text`);
     else set[k] = String(body[k]);
   }
   for (const k of NUMBER_KEYS) {
     if (body[k] === undefined) continue;
-    if (body[k] === "" || body[k] === null) {
+    if (isBlankNumber(body[k])) {
       unset[k] = "";
     } else {
-      const n = Number(body[k]);
+      const n = strictNumber(body[k]);
       if (!Number.isFinite(n)) throw fail(`"${k}" must be a number`);
       set[k] = n;
     }
@@ -184,7 +190,7 @@ const entryRuleError = (body, existing = null) => {
 
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
   // The most the shift could make: floor(shift seconds ÷ cycle seconds).
-  const ideal = Math.floor((shiftMin * 60) / cycleSec);
+  const ideal = Math.floor((shiftMin * 60) / cycleSec + 1e-9);
   if (Number(body.actualQty) > ideal) {
     return `Actual Quantity (${Number(body.actualQty)}) can't be more than Ideal Quantity (${ideal})`;
   }
@@ -364,7 +370,10 @@ exports.saveRow = async (req, res) => {
     // because only the server sees every entry, so a new one can never overwrite
     // an existing one.
     let slotNo;
-    if (slot === "auto") {
+    if (slot === "auto" && existing && !moved) {
+      // Editing in place: the entry keeps its own slot.
+      slotNo = existing.slot;
+    } else if (slot === "auto") {
       const used = new Set((await TrobeEntry.find({ date: day, machine }).select("slot").lean()).map((e) => e.slot));
       slotNo = SLOT_NUMBERS.find((n) => !used.has(n));
       if (!slotNo) {
@@ -445,14 +454,15 @@ exports.saveRow = async (req, res) => {
     else unset.plannedLocked = "";
     // Availability / Performance / Quality, and whether this save needs Admin
     // review — written in the same update as the entry (utils/entryAudit.js).
-    const review = reviewFor(SHEET, existing, set, unset);
+    // The day's OEE figures read the entries sharing this machine's date.
+    const review = reviewFor(SHEET, existing, set, unset, await siblingsOf(TrobeEntry, SHEET, { date: day, key: machine }));
     // date/machine/slot aren't in `set` (buildFields never touches them), but
     // an edit by _id has to carry them explicitly, since it's no longer the
     // findOneAndUpdate filter doing that for free the way an upsert's match
     // fields do.
     const fields = { ...set, date: day, machine, slot: slotNo };
 
-    const doc = existing
+    let doc = existing
       ? await TrobeEntry.findByIdAndUpdate(
           existing._id,
           {
@@ -461,21 +471,40 @@ exports.saveRow = async (req, res) => {
           },
           { new: true, runValidators: true },
         ).lean()
-      : await TrobeEntry.findOneAndUpdate(
-          { date: day, machine, slot: slotNo },
-          {
-            $set: { ...set, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
-            ...(Object.keys({ ...unset, ...review.unset }).length ? { $unset: { ...unset, ...review.unset } } : {}),
-          },
-          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
-        ).lean();
+      : null;
+    if (!existing) {
+      // A NEW entry is inserted, not upserted: two saves racing for the same free slot
+      // would otherwise merge into one row (utils/insertEntry.js retries on the next free slot).
+      const inserted = await insertNewEntry(TrobeEntry, {
+        filter: { date: day, machine },
+        slots: SLOT_NUMBERS,
+        slotNo,
+        payload: { ...fields, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+        recheck: async () => {
+          // Another save may have taken a slot since the overlap check above.
+          const others = await TrobeEntry.find({ date: day, machine }).select("slot machineOnTime machineOffTime").lean();
+          const clash = findOverlap(req.body.machineOnTime, req.body.machineOffTime, others);
+          return clash ? `This machine already has an entry from ${clash.text} on ${dayLabel(date)}. Machine ON/OFF times can't overlap.` : null;
+        },
+      });
+      if (inserted.clash) return res.status(400).json({ isOk: false, message: inserted.clash });
+      if (inserted.full) {
+        return res.status(400).json({
+          isOk: false,
+          message: `This machine already has ${MAX_SLOTS} entries on ${dayLabel(date)} — edit one of them instead`,
+        });
+      }
+      doc = inserted.doc;
+    }
 
     if (isRowEmpty(doc)) {
       await TrobeEntry.deleteOne({ _id: doc._id });
       if (existing) await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
+      await reflagSiblings({ sheet: SHEET, Model: TrobeEntry, req, before: existing, date: day, key: machine });
       return res.status(200).json({ isOk: true, data: null, message: "Row cleared" });
     }
     await logEntrySave({ sheet: SHEET, req, before: existing, after: doc, fields: LOG_FIELDS, review });
+    await reflagSiblings({ sheet: SHEET, Model: TrobeEntry, req, before: existing, date: day, key: machine, id: doc._id });
     res.status(200).json({ isOk: true, data: toRow(doc), message: "Row saved" });
   } catch (error) {
     console.error("Error saving Trobe row:", error);
@@ -538,6 +567,7 @@ exports.deleteRow = async (req, res) => {
     const deleted = await TrobeEntry.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ isOk: false, message: "Entry not found" });
     await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
+    await reflagSiblings({ sheet: SHEET, Model: TrobeEntry, req, before: existing, date: existing.date, key: existing.machine });
     res.status(200).json({ isOk: true, message: "Entry deleted" });
   } catch (error) {
     console.error("Error deleting Trobe row:", error);

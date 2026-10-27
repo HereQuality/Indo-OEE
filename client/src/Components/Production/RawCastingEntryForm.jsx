@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { withControlId } from "./controlId";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { Col, Input, Label, Row } from "reactstrap";
 import DatePicker from "../Common/DatePicker";
@@ -11,9 +12,9 @@ import SearchablePartSelect from "./SearchablePartSelect";
 import VendorSelect from "./VendorSelect";
 import { useAlert } from "../../context/AlertContext";
 import { WORKER_WORDS, stoppageNotice } from "../../utils/limitNotice";
-import { MACHINE_STATUSES, fmtNum, isNonWorking, metricsOver100, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
+import { MACHINE_STATUSES, fmtNum, isNonWorking, dayFiguresFor, metricsOver100, withDayFigures, normalizeTime, partCycleLabel } from "../../utils/productionSheet";
 import { isEndBeforeStartMessage, isLiveMessage, stoppageLimitMin, withDecimalPlanned } from "../../utils/entryValidation";
-import { RAW_CASTING_DEFECTS, isStatusOnly, rawCastingRowCalc } from "../../utils/rawCastingSheet";
+import { RAW_CASTING_DEFECTS, isStatusOnly, rawCastingDayCalc, rawCastingRowCalc } from "../../utils/rawCastingSheet";
 import { hoursToHm, parseShiftHours } from "../../utils/shiftHours";
 
 /**
@@ -60,27 +61,33 @@ const FULL = { xs: 12 };
 const hoursText = (h) => (h === null || h === undefined || !Number.isFinite(h) ? "" : `${fmtNum(h)} hr (${hoursToHm(h)})`);
 
 // A calculated box — greyed so nobody tries to type in it.
-const Calc = ({ label, value, cols = QUARTER, title }) => (
-  <Col {...cols}>
-    <div className="mb-1" title={title}>
-      <Label className={labelClass}>{label}</Label>
-      <Input type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
-    </div>
-  </Col>
-);
+const Calc = ({ label, value, cols = QUARTER, title }) => {
+  const id = useId();
+  return (
+    <Col {...cols}>
+      <div className="mb-1" title={title}>
+        <Label htmlFor={id} className={labelClass}>{label}</Label>
+        <Input id={id} type="text" bsSize="sm" value={value ?? ""} readOnly disabled className="bg-light" />
+      </div>
+    </Col>
+  );
+};
 
 // A typed field. `fieldKey` is what Save's scroll-to-first-error looks for.
-const Field = ({ label, required, error, children, cols = QUARTER, fieldKey }) => (
-  <Col {...cols}>
-    <div className="mb-1" data-field={fieldKey}>
-      <Label className={labelClass}>
-        {label} {required && <span className="text-danger">*</span>}
-      </Label>
-      {children}
-      {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
-    </div>
-  </Col>
-);
+const Field = ({ label, required, error, children, cols = QUARTER, fieldKey }) => {
+  const id = useId();
+  return (
+    <Col {...cols}>
+      <div className="mb-1" data-field={fieldKey}>
+        <Label htmlFor={id} className={labelClass}>
+          {label} {required && <span className="text-danger">*</span>}
+        </Label>
+        {withControlId(children, id)}
+        {error && <p className="text-danger mb-0 small mt-1">{error}</p>}
+      </div>
+    </Col>
+  );
+};
 
 // The lines, in sheet order. `fields` lists the typed keys in each line, so a
 // line containing a validation error can flag itself in its heading.
@@ -103,7 +110,7 @@ const findLine = (id) => LINES.find((l) => l.id === id);
 // inside EntryBlock would make React see a brand-new component type on every
 // keystroke and remount the whole subtree, dropping focus out of whatever input
 // was being typed in.
-const Line = ({ id, ...rest }) => <FormLine title={findLine(id).title} fields={findLine(id).fields} {...rest} />;
+const Line = ({ id, title, ...rest }) => <FormLine title={title ?? findLine(id).title} fields={findLine(id).fields} {...rest} />;
 
 // Everything a block can hold beyond the worker itself — used to tell a
 // collapsed block that still has typing in it from an untouched one.
@@ -127,6 +134,7 @@ const EntryBlock = ({
   expanded,
   booked = [],
   plannedLock = null,
+  savedRows = [],
   onExpand,
   onChange,
   onDefectChange,
@@ -140,7 +148,13 @@ const EntryBlock = ({
   // Availability / Performance / Quality as Save will work them out (planned
   // shift converted from its typed decimal hours first) — any above 100% sends the
   // entry to Admin review, so it's flagged here before Save.
-  const oeeCalc = useMemo(() => rawCastingRowCalc(withDecimalPlanned(values)), [values]);
+  // The day's OEE figures too (this machine's / worker's date, with the entries
+  // already saved on it) — any above 100% also sends the entry to Admin review.
+  const dayFigures = useMemo(
+    () => dayFiguresFor(rawCastingDayCalc, withDecimalPlanned(values, plannedLock), savedRows.filter((r) => String(r.machine) === String(values.machine) && r.date === values.date)),
+    [values, savedRows, plannedLock],
+  );
+  const oeeCalc = useMemo(() => withDayFigures(rawCastingRowCalc(withDecimalPlanned(values, plannedLock)), dayFigures, "worker"), [values, dayFigures, plannedLock]);
   const overMetrics = metricsOver100(oeeCalc);
   const statusOnly = isStatusOnly(values) || nonWorking;
   // Vendor Name shows only when this process has vendors (Vendor Master) — or
@@ -572,10 +586,10 @@ const EntryBlock = ({
           </>
         )}
 
-        <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional>
+        <Line id={12} errors={errors} isSubmit={isSubmit} values={values} optional title={nonWorking ? "Remarks" : undefined}>
           <div className="mb-2">
-            <Label className={labelClass}>Reason/Remarks for Rejection</Label>
-            <Input type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
+            <Label htmlFor={`remarks-${index}`} className={labelClass}>{nonWorking ? "Remarks" : "Reason/Remarks for Rejection"}</Label>
+            <Input id={`remarks-${index}`} type="textarea" bsSize="sm" name="remarks" value={values.remarks} onChange={handle} maxLength={500} style={{ height: "60px" }} />
           </div>
         </Line>
       </div>
@@ -594,6 +608,7 @@ const RawCastingEntryForm = ({
   isEdit = false,
   booked = [],
   plannedLocks = [],
+  savedRows = [],
   onChange,
   onDefectChange,
   onItemSelect,
@@ -697,6 +712,7 @@ const RawCastingEntryForm = ({
           expanded={isEdit || expandedIndex === i}
           booked={booked[i] || []}
           plannedLock={plannedLocks[i] || null}
+          savedRows={savedRows}
           onExpand={setExpandedIndex}
           onChange={onChange}
           onDefectChange={onDefectChange}

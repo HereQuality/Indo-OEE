@@ -13,6 +13,7 @@ const {
   MFD_OPERATIONS,
 } = require("../models/Item");
 const { diffItem, updateAction, partLabel } = require("../utils/itemDiff");
+const { sendError, pageParams } = require("../utils/httpErrors");
 
 // Keeps Op 1…Op 5 positional: blanks in the middle stay null so Op 3 never
 // shifts into Op 2's column. Trailing blanks are trimmed.
@@ -234,7 +235,7 @@ exports.deleteItem = async (req, res) => {
     res.status(200).json({ isOk: true, message: "Part deleted successfully" });
   } catch (error) {
     console.error("Error deleting item:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -245,7 +246,7 @@ exports.getItemById = async (req, res) => {
     res.status(200).json({ isOk: true, data: item });
   } catch (error) {
     console.error("Error fetching item:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -257,13 +258,14 @@ exports.listItems = async (req, res) => {
     res.status(200).json({ isOk: true, data: items });
   } catch (error) {
     console.error("Error listing items:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
 exports.listItemByParams = async (req, res) => {
   try {
     const { skip = 0, per_page = 10, sorton, sortdir, match, isActive, process } = req.body;
+    const page = pageParams(skip, per_page);
 
     const query = {};
     if (match) {
@@ -289,13 +291,13 @@ exports.listItemByParams = async (req, res) => {
 
     const [totalCount, items] = await Promise.all([
       Item.countDocuments(query),
-      Item.find(query).sort(sortQuery).skip(parseInt(skip)).limit(parseInt(per_page)).lean(),
+      Item.find(query).sort(sortQuery).skip(page.skip).limit(page.limit).lean(),
     ]);
 
     res.status(200).json({ isOk: true, data: [{ count: totalCount, data: items }] });
   } catch (error) {
     console.error("Error searching items:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -324,7 +326,7 @@ exports.listItemLogs = async (req, res) => {
     res.status(200).json({ isOk: true, data: logs, total });
   } catch (error) {
     console.error("Error listing item history:", error);
-    res.status(500).json({ isOk: false, message: error.message });
+    sendError(res, error);
   }
 };
 

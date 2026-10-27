@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { strictNumber, isBlankNumber } = require("../utils/strictNumber");
 const PrintingEntry = require("../models/PrintingEntry");
 const { WORKING_STATUSES, NON_WORKING_STATUSES, MAX_SLOTS, PRINTING_STOPPAGE_KEYS } = require("../models/PrintingEntry");
 const MachineOperator = require("../models/MachineOperator");
@@ -6,7 +7,8 @@ const Machine = require("../models/Machine");
 const Process = require("../models/Process");
 const { clockMinutes } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
-const { reviewFor, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
+const { insertNewEntry } = require("../utils/insertEntry");
+const { reviewFor, siblingsOf, reflagSiblings, logEntrySave, logEntryDelete, logEntryUnlock, withAuthors } = require("../utils/entryAudit");
 const { vendorFields } = require("../utils/entryVendor");
 const { enforcePlannedShiftForProcess } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
@@ -78,7 +80,10 @@ const buildFields = (body) => {
   const set = {};
   const unset = {};
   for (const k of TEXT_KEYS) {
-    if (body[k] !== undefined) set[k] = String(body[k] ?? "").trim();
+    if (body[k] !== undefined) {
+      if (body[k] !== null && typeof body[k] === "object") throw fail(`"${k}" must be text`);
+      set[k] = String(body[k] ?? "").trim();
+    }
   }
   if (set.workingStatus && !WORKING_STATUSES.includes(set.workingStatus)) {
     throw fail(`"${set.workingStatus}" is not a valid Working Status`);
@@ -86,14 +91,15 @@ const buildFields = (body) => {
   for (const k of TIME_KEYS) {
     if (body[k] === undefined) continue;
     if (body[k] === "" || body[k] === null) unset[k] = "";
+    else if (typeof body[k] === "object") throw fail(`"${k}" must be text`);
     else set[k] = String(body[k]);
   }
   for (const k of NUMBER_KEYS) {
     if (body[k] === undefined) continue;
-    if (body[k] === "" || body[k] === null) {
+    if (isBlankNumber(body[k])) {
       unset[k] = "";
     } else {
-      const n = Number(body[k]);
+      const n = strictNumber(body[k]);
       if (!Number.isFinite(n)) throw fail(`"${k}" must be a number`);
       set[k] = n;
     }
@@ -198,7 +204,7 @@ const entryRuleError = (body, existing = null) => {
   const shiftMin = off - on < 0 ? off - on + 1440 : off - on;
   // The most the shift could make: the Ideal Quantity rounded down (the sheet
   // shows it unrounded, but a part-piece can't be made).
-  const ideal = Math.floor((shiftMin * 60) / cycleSec);
+  const ideal = Math.floor((shiftMin * 60) / cycleSec + 1e-9);
   if (Number(body.actualQty) > ideal) {
     return `Total Quantity (${Number(body.actualQty)}) can't be more than Ideal Quantity (${ideal})`;
   }
@@ -401,7 +407,10 @@ exports.saveRow = async (req, res) => {
     // because only the server sees every entry, so a new one can never overwrite
     // an existing one. No overlap check: one operator may run two jobs at once.
     let slotNo;
-    if (slot === "auto") {
+    if (slot === "auto" && existing && !moved) {
+      // Editing in place: the entry keeps its own slot.
+      slotNo = existing.slot;
+    } else if (slot === "auto") {
       const used = new Set((await PrintingEntry.find({ date: day, worker }).select("slot").lean()).map((e) => e.slot));
       slotNo = SLOT_NUMBERS.find((n) => !used.has(n));
       if (!slotNo) {
@@ -452,31 +461,47 @@ exports.saveRow = async (req, res) => {
     else unset.plannedLocked = "";
     // Availability / Performance / Quality, and whether this save needs Admin
     // review — written in the same update as the entry (utils/entryAudit.js).
-    const review = reviewFor(SHEET, existing, set, unset);
+    // The day's OEE figures read the entries sharing this worker's date.
+    const review = reviewFor(SHEET, existing, set, unset, await siblingsOf(PrintingEntry, SHEET, { date: day, key: worker }));
     // date/worker/process/slot aren't in `set`, but an edit by _id has to carry
     // them explicitly, since it's no longer the upsert's match doing that.
     const fields = { ...set, date: day, worker, process: processId, slot: slotNo };
     const stamp = { updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName };
     const $unset = { ...unset, ...review.unset };
 
-    const doc = existing
+    let doc = existing
       ? await PrintingEntry.findByIdAndUpdate(
           existing._id,
           { $set: { ...fields, ...review.set, ...stamp }, ...(Object.keys($unset).length ? { $unset } : {}) },
           { new: true, runValidators: true },
         ).lean()
-      : await PrintingEntry.findOneAndUpdate(
-          { date: day, worker, slot: slotNo },
-          { $set: { ...set, process: processId, ...review.set, ...stamp }, ...(Object.keys($unset).length ? { $unset } : {}) },
-          { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
-        ).lean();
+      : null;
+    if (!existing) {
+      // A NEW entry is inserted, not upserted: two saves racing for the same free slot
+      // would otherwise merge into one row (utils/insertEntry.js retries on the next free slot).
+      const inserted = await insertNewEntry(PrintingEntry, {
+        filter: { date: day, worker },
+        slots: SLOT_NUMBERS,
+        slotNo,
+        payload: { ...fields, ...review.set, updatedBy: req.user._id, updatedByModel: req.user.constructor.modelName },
+      });
+      if (inserted.full) {
+        return res.status(400).json({
+          isOk: false,
+          message: `${workerDoc.name} already has ${MAX_SLOTS} entries on ${dayLabel(date)} — edit one of them instead`,
+        });
+      }
+      doc = inserted.doc;
+    }
 
     if (isRowEmpty(doc)) {
       await PrintingEntry.deleteOne({ _id: doc._id });
       if (existing) await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
+      await reflagSiblings({ sheet: SHEET, Model: PrintingEntry, req, before: existing, date: day, key: worker });
       return res.status(200).json({ isOk: true, data: null, message: "Row cleared" });
     }
     await logEntrySave({ sheet: SHEET, req, before: existing, after: doc, fields: LOG_FIELDS, review });
+    await reflagSiblings({ sheet: SHEET, Model: PrintingEntry, req, before: existing, date: day, key: worker, id: doc._id });
     res.status(200).json({ isOk: true, data: toRow(doc), message: "Row saved" });
   } catch (error) {
     console.error("Error saving Printing row:", error);
@@ -521,6 +546,7 @@ exports.deleteRow = async (req, res) => {
     const deleted = await PrintingEntry.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ isOk: false, message: "Entry not found" });
     await logEntryDelete({ sheet: SHEET, req, before: existing, fields: LOG_FIELDS });
+    await reflagSiblings({ sheet: SHEET, Model: PrintingEntry, req, before: existing, date: existing.date, key: existing.worker });
     res.status(200).json({ isOk: true, message: "Entry deleted" });
   } catch (error) {
     console.error("Error deleting Printing row:", error);

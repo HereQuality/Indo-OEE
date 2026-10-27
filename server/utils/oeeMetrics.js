@@ -38,7 +38,21 @@ const EXTRA_STOPPAGE_KEYS = {
   printing: require("../models/PrintingEntry").PRINTING_EXTRA_STOPPAGE_KEYS,
 };
 const METRICS = ["availability", "performance", "quality"];
-const METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
+// The OEE figures — a machine's day (or a per-entry sheet's entry) worked out
+// in dayCalc (client/src/utils/productionSheet.js): OEE considering losses,
+// not considering losses but lunch, and … but lunch & Setup Time (COT); and the
+// worker sheets' two Productivity figures. Over 100% also holds an entry (dayOeeFor).
+const OEE_METRICS = ["oeeLosses", "oeeLunch", "oeeLunchCot", "productivity", "productivityLunch"];
+const METRIC_LABELS = {
+  availability: "Availability",
+  performance: "Performance",
+  quality: "Quality",
+  oeeLosses: "OEE considering losses",
+  oeeLunch: "OEE not considering losses but lunch",
+  oeeLunchCot: "OEE not considering losses but lunch & setup time",
+  productivity: "Productivity without considering Lunch, Tea, etc.",
+  productivityLunch: "Productivity considering Lunch, Tea, etc.",
+};
 
 const toMinutes = (t) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim());
@@ -59,7 +73,11 @@ const minusExcluded = (e, fields) => {
   const own = num(e.totalCycleSec);
   if (!isNum(own)) return null;
   const excluded = new Set(e.excludedOps || []);
-  return own - sumOrZero(fields.filter((f) => excluded.has(f.key)).map((f) => num(e[f.key])));
+  const excludedSec = sumOrZero(fields.filter((f) => excluded.has(f.key)).map((f) => num(e[f.key])));
+  if (excludedSec === 0) return own;
+  // Unticking more than the Part has left float noise or a negative figure: no cycle at all.
+  const c = Math.round((own - excludedSec) * 1e6) / 1e6;
+  return c > 0 ? c : null;
 };
 
 // SPM: the Part's own figure as above; an entry saved before SPM entries
@@ -152,8 +170,121 @@ const entryMetrics = (sheet, e) => {
   return out;
 };
 
-// The metrics above 100% — [{ metric, value }] (value as a fraction), [] when none.
+// The metrics above 100% — Availability / Performance / Quality and the OEE
+// figures — [{ metric, value }] (value as a fraction), [] when none.
 const metricsOver100 = (m) =>
-  METRICS.filter((k) => isNum(m?.[k]) && m[k] > 1 + 1e-9).map((k) => ({ metric: k, value: m[k] }));
+  [...METRICS, ...OEE_METRICS].filter((k) => isNum(m?.[k]) && m[k] > 1 + 1e-9).map((k) => ({ metric: k, value: m[k] }));
 
-module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, METRIC_LABELS, CYCLE_SEC, EXTRA_STOPPAGE_KEYS };
+
+// ── The OEE figures ─────────────────────────────────────────────────────────
+// The server's copy of dayCalc / entryDayCalc (client/src/utils/productionSheet.js)
+// and of each sheet's adapter (withCycle / withBasis / withDerived / withPrinting
+// in client/src/utils/<sheet>Sheet.js): the figures the entries table shows.
+//   · Older sheets (calcMode "day"): every entry of a machine's (or worker's)
+//     date shares one combined figure.
+//   · Per-entry sheets (perEntry): each entry on its own — unless an entry of
+//     that day took its Planned Operator Shift from Process Master's lock, which
+//     is the whole day's, so the day is combined once as on the older sheets.
+// A sheet's `figures` are the ones its table has: three OEE columns on a machine
+// sheet, two on BEFORE POWDER COATING, the two Productivity columns on a worker
+// sheet. `total`: Effective Run Time counts every piece (TOTAL QTY), not OK.
+const MACHINE_OEE = ["oeeLosses", "oeeLunch", "oeeLunchCot"];
+const PRODUCTIVITY = ["productivity", "productivityLunch"];
+const SHEET_DAY = {
+  cnc: { owner: "machine", figures: MACHINE_OEE },
+  vmc: { owner: "machine", figures: MACHINE_OEE },
+  spm: { owner: "machine", figures: MACHINE_OEE },
+  rivet: { owner: "machine", figures: MACHINE_OEE },
+  press: { owner: "machine", figures: MACHINE_OEE },
+  contact: { owner: "machine", figures: MACHINE_OEE },
+  trobe: { owner: "machine", figures: MACHINE_OEE },
+  spring: { owner: "machine", figures: MACHINE_OEE, total: true },
+  injection: { owner: "machine", figures: MACHINE_OEE, total: true, perEntry: true },
+  embossing: { owner: "machine", figures: MACHINE_OEE, total: true, perEntry: true },
+  mfd: { owner: "machine", figures: MACHINE_OEE, perEntry: true },
+  printing: { owner: "worker", figures: MACHINE_OEE, total: true, perEntry: true },
+  bpc: { owner: "worker", figures: ["oeeLosses", "oeeLunch"], total: true, perEntry: true, lossesExceptLunch: true },
+  powder: { owner: "worker", figures: PRODUCTIVITY, total: true },
+  rubber: { owner: "worker", figures: PRODUCTIVITY },
+  rawCasting: { owner: "worker", figures: PRODUCTIVITY, total: true, perEntry: true },
+  mfa: { owner: "worker", figures: PRODUCTIVITY, total: true, perEntry: true },
+  finalAssembly: { owner: "worker", figures: PRODUCTIVITY, total: true, perEntry: true },
+};
+
+// The field a sheet's entries are grouped on within a date: its machine, or its worker.
+const ownerFieldOf = (sheet) => SHEET_DAY[sheet]?.owner || "machine";
+
+const ratio = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? a / b : null);
+
+// What dayCalc reads off one entry (client rowCalc): Machine Shift, Total
+// Stoppage and Effective Run Time.
+const rowParts = (sheet, e) => {
+  const cfg = SHEET_DAY[sheet];
+  const shiftMin = spanMinutes(e.machineOnTime, e.machineOffTime);
+  const cycle = String(e.itemName || "").trim() ? CYCLE_SEC[sheet](e) : null;
+  const ok = num(e.okQty);
+  const actual = num(e.actualQty);
+  const rej = isNum(actual) && isNum(ok) ? Math.max(0, actual - ok) : num(e.rejectedQty);
+  const totalProduced = isNum(actual) ? actual : (ok || 0) + (rej || 0);
+  const runQty = cfg.total ? totalProduced : ok || 0;
+  return {
+    shiftHours: shiftMin === null ? null : shiftMin / 60,
+    stoppageMin: sumOrZero([...STOPPAGE_KEYS, ...(EXTRA_STOPPAGE_KEYS[sheet] || [])].map((k) => num(e[k]))),
+    effectiveHours: isNum(cycle) ? (runQty * cycle) / 3600 : null,
+  };
+};
+
+// dayCalc's combined figures over `rows` (one machine's or worker's one date).
+const combinedFigures = (sheet, rows) => {
+  const cfg = SHEET_DAY[sheet];
+  const calcs = rows.map((r) => rowParts(sheet, r));
+  // A Planned that came from Process Master's lock is the whole day's: counted
+  // once, never less than those entries' own runs added up.
+  const lockedIdx = rows.map((r, i) => i).filter((i) => rows[i].plannedLocked === true && isNum(plannedMinOf(rows[i])) && isNum(calcs[i].shiftHours));
+  const locked = new Set(lockedIdx);
+  const lockedHours = lockedIdx.length
+    ? Math.max(Math.max(...lockedIdx.map((i) => plannedMinOf(rows[i]) / 60)), sumOrZero(lockedIdx.map((i) => calcs[i].shiftHours)))
+    : 0;
+  const dayAvailH =
+    sumOrZero(
+      rows.map((r, i) => {
+        if (locked.has(i)) return null;
+        const shift = calcs[i].shiftHours;
+        if (!isNum(shift)) return null;
+        const plannedMin = plannedMinOf(r);
+        return isNum(plannedMin) && plannedMin / 60 > shift ? plannedMin / 60 : shift;
+      }),
+    ) + lockedHours;
+  const dayStoppageMin = sumOrZero(calcs.map((c) => c.stoppageMin));
+  const dayEffectiveH = sumOrZero(calcs.map((c) => c.effectiveHours));
+  const dayLunchMin = sumOrZero(rows.map((r) => num(r.lunchMin)));
+  const daySetupMin = sumOrZero(rows.map((r) => num(r.setupMin)));
+  const dayOtherActivityMin = sumOrZero(rows.map((r) => num(r.otherActivityMin)));
+  const dayHasShift = calcs.some((c) => isNum(c.shiftHours));
+  const losses = cfg.lossesExceptLunch ? dayStoppageMin - dayLunchMin : dayStoppageMin;
+  const workH = dayAvailH - dayOtherActivityMin / 60;
+  const all = {
+    oeeLosses: dayHasShift ? ratio(dayEffectiveH, dayAvailH - losses / 60) : null,
+    oeeLunch: dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60) : null,
+    oeeLunchCot: dayHasShift ? ratio(dayEffectiveH, dayAvailH - dayLunchMin / 60 - daySetupMin / 60) : null,
+    productivity: dayHasShift ? ratio(dayEffectiveH, workH) : null,
+    productivityLunch: dayHasShift ? ratio(dayEffectiveH, workH - dayLunchMin / 60) : null,
+  };
+  return Object.fromEntries(cfg.figures.map((k) => [k, all[k]]));
+};
+
+// The OEE figures the entries table shows for `entry` — { oeeLosses, … } or
+// { productivity, … } by sheet, each null when it can't be worked out. `entry`
+// is the entry as it stands (or will stand once saved); `siblings` are the other
+// entries of its machine's (worker's) date from the same collection — the entry
+// itself, if among them, is ignored.
+const dayOeeFor = (sheet, entry, siblings = []) => {
+  const cfg = SHEET_DAY[sheet];
+  if (!cfg) return {};
+  const others = (siblings || []).filter((s) => s && !(entry._id !== undefined && String(s._id) === String(entry._id)));
+  const day = [...others, entry];
+  if (cfg.perEntry && !day.some((r) => r.plannedLocked === true)) return combinedFigures(sheet, [entry]);
+  return combinedFigures(sheet, day);
+};
+
+module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, OEE_METRICS, METRIC_LABELS, CYCLE_SEC, EXTRA_STOPPAGE_KEYS, SHEET_DAY, ownerFieldOf, dayOeeFor };

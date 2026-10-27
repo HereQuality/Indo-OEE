@@ -570,10 +570,10 @@ const ItemMaster = () => {
   const col = [
     // Numbered on from the previous page rather than starting at 1 again.
     { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
-    { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px" },
+    { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px", wrap: true },
     // A part's process stays named even after that process is deactivated.
-    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "110px" },
-    { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px" },
+    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "110px", wrap: true },
+    { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px", wrap: true },
     { name: cycleColumn, selector: (row) => showSec(row.totalCycleSec), sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
@@ -677,7 +677,7 @@ const ItemMaster = () => {
         </Container>
       </div>
 
-      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="lg">
+      <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="lg" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
           {modalMode === "edit" ? "Update Part" : "Add Part"}
         </ModalHeader>

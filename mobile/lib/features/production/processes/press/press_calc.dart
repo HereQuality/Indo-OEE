@@ -1,5 +1,5 @@
 import '../../shared/production_sheet_calc.dart' as calc;
-import '../../shared/production_sheet_calc.dart' show isNum, jsNumber, spanMinutes;
+import '../../shared/production_sheet_calc.dart' show isNum, jsNumber, jsRound, spanMinutes;
 
 /// Port of client/src/utils/pressSheet.js — the PRESS sheet's figures.
 ///
@@ -52,7 +52,8 @@ Map<String, dynamic> pressRowCalc(Map<String, dynamic>? row) {
   final minutes = _num(r['standardTimeMin']);
   final pieces = _num(r['pcsPerStandardTime']);
   if (shiftMin == null || !isNum(minutes) || minutes! <= 0 || !isNum(pieces)) return c;
-  final idealQty = (shiftMin * pieces! / minutes).floorToDouble();
+  // Scaled to whole thousandths first so 180 min x 15 pcs / 2.7 min is exactly 1000, not 999.99...
+  final idealQty = (jsRound(shiftMin * pieces! * 1000) / jsRound(minutes * 1000)).floorToDouble();
   final shiftHours = c['shiftHours'] as double?;
   return {
     ...c,
@@ -99,5 +100,5 @@ const Map<String, String> pressFormulas = {
       'Performance = Cycle Time × (OK + Rejected) ÷ Operating Time, for this entry — how fast it ran against its ideal speed. Above 100% (red) sends the entry to Admin review: usually a wrong cycle time, quantity or stoppage.',
   'quality': 'Quality = OK Quantity ÷ (OK + Rejected), for this entry.',
   'review':
-      'Admin review: an entry whose Availability, Performance or Quality is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
+      'Admin review: an entry whose Availability, Performance, Quality or any of its OEE figures (the Productivity figures, on a worker sheet) is above 100% is held as Pending review until an Admin or Super Admin approves or rejects it. Editing the figures sends it back for review; hover for details.',
 };

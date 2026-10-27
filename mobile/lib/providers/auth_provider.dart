@@ -18,10 +18,14 @@ class LoginResult {
 
 /// Session state: who is signed in (mirrors client/src/context/AuthContext.jsx).
 class AuthProvider extends ChangeNotifier {
-  AuthProvider() {
+  AuthProvider({this.onSessionEnd}) {
     ApiClient.instance.onUnauthorized = () => _endSession(AuthStatus.unauthenticated);
     ApiClient.instance.onBlocked = () => _endSession(AuthStatus.blocked);
   }
+
+  /// Runs whenever a session ends (logout, 401, blocked) so per-user local data
+  /// (unsaved entry-form drafts) never reaches the next person on this device.
+  final Future<void> Function()? onSessionEnd;
 
   AuthStatus status = AuthStatus.unknown;
   AppUser? user;
@@ -46,9 +50,11 @@ class AuthProvider extends ChangeNotifier {
       // 403 = blocked or inactive; 401 already handled by the interceptor.
       if (e.statusCode == 403) {
         await AuthStorage.instance.clear();
+        await _runSessionEnd();
         status = AuthStatus.blocked;
       } else if (e.statusCode == 401) {
         await AuthStorage.instance.clear();
+        await _runSessionEnd();
         status = AuthStatus.unauthenticated;
       } else {
         // Offline at launch: keep the token, show login so the person can retry.
@@ -115,8 +121,15 @@ class AuthProvider extends ChangeNotifier {
     await _endSession(AuthStatus.unauthenticated);
   }
 
+  Future<void> _runSessionEnd() async {
+    try {
+      await onSessionEnd?.call();
+    } catch (_) {/* best effort: never block sign-out */}
+  }
+
   Future<void> _endSession(AuthStatus next) async {
     await AuthStorage.instance.clear();
+    await _runSessionEnd();
     SocketService.instance.disconnect();
     user = null;
     status = next;

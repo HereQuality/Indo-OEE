@@ -10,8 +10,22 @@ import { displayDay, fmtPct } from "../../utils/productionSheet";
  * models/AuditLog.js), the small badges, and the formatting helpers.
  */
 
-export const METRIC_LABELS = { availability: "Availability", performance: "Performance", quality: "Quality" };
+export const METRIC_LABELS = {
+  availability: "Availability",
+  performance: "Performance",
+  quality: "Quality",
+  oeeLosses: "OEE considering losses",
+  oeeLunch: "OEE not considering losses but lunch",
+  oeeLunchCot: "OEE not considering losses but lunch & setup time",
+  productivity: "Productivity without considering Lunch, Tea, etc.",
+  productivityLunch: "Productivity considering Lunch, Tea, etc.",
+};
 export const METRIC_KEYS = ["availability", "performance", "quality"];
+// The OEE figures an entry also is held for (the day's: a machine sheet's three,
+// BEFORE POWDER COATING's two, a worker sheet's two Productivity figures).
+export const OEE_KEYS = ["oeeLosses", "oeeLunch", "oeeLunchCot", "productivity", "productivityLunch"];
+// The ones this row / audit entry actually carries.
+export const oeeKeysOf = (metrics) => OEE_KEYS.filter((k) => metrics && metrics[k] !== null && metrics[k] !== undefined && Number.isFinite(metrics[k]));
 
 // Where each sheet's entries are edited — stored like a menu URL ("/hqepl/…"),
 // so toRolePath() swaps the leading slug for whichever role is browsing.
@@ -92,7 +106,7 @@ export const fmtDateTime = (iso) => (iso ? dayjs(iso).format("D MMM YYYY, HH:mm"
 // that's exactly what the entry is being reviewed for. Never capped.
 export const MetricValue = ({ value, className = "" }) => {
   if (!hasValue(value)) return <span className={`text-muted ${className}`}>—</span>;
-  return <span className={`${isOver(value) ? "text-danger fw-bold" : "fw-semibold"} ${className}`}>{fmtPct(value)}</span>;
+  return <span className={`${isOver(value) ? "pct-over fw-bold" : "fw-semibold"} ${className}`}>{fmtPct(value)}</span>;
 };
 
 export const StatusBadge = ({ status }) => {
@@ -111,7 +125,7 @@ export const MetricsLine = ({ metrics, className = "" }) => {
   if (!metrics || !METRIC_KEYS.some((k) => hasValue(metrics[k]))) return null;
   return (
     <div className={`d-flex flex-wrap column-gap-3 row-gap-1 small ${className}`}>
-      {METRIC_KEYS.map((k) => (
+      {[...METRIC_KEYS, ...oeeKeysOf(metrics)].map((k) => (
         <span key={k} className="text-nowrap">
           <span className="text-muted">{METRIC_LABELS[k]}</span> <MetricValue value={metrics[k]} />
         </span>

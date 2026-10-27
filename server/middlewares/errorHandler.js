@@ -46,6 +46,18 @@ const handleMulterError = (err) => {
   return new AppError(`File upload error: ${err.message}`, 400);
 };
 
+// Errors raised by body-parser and friends (malformed JSON, oversized body,
+// unsupported charset...) carry their own 4xx status. They are the caller's
+// mistake, so they keep that status with a safe message — never a 500, and never
+// the parser's internals.
+const handleClientError = (err) => {
+  const code = [err.status, err.statusCode].map(Number).find((c) => c >= 400 && c < 500);
+  if (!code) return null;
+  if (err.type === "entity.parse.failed") return new AppError("Invalid JSON in request body", 400);
+  if (err.type === "entity.too.large") return new AppError("Request body is too large", 413);
+  return new AppError(err.expose && err.message ? err.message : "Bad request", code);
+};
+
 // ── Dev error response (full stack trace) ────────────────────────────────────
 const sendErrorDev = (err, res) => {
   logger.error("DEV ERROR:", { message: err.message, stack: err.stack });
@@ -108,6 +120,7 @@ const globalErrorHandler = (err, req, res, next) => {
     if (error.name === "JsonWebTokenError") error = handleJWTError();
     if (error.name === "TokenExpiredError") error = handleJWTExpiredError();
     if (error.name === "MulterError") error = handleMulterError(error);
+    if (!error.isOperational) error = handleClientError(error) || error;
 
     sendErrorProd(error, res);
   }
