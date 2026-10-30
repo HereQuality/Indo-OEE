@@ -14,12 +14,11 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useMachines, useInvalidateMachines } from "../hooks/useMachines";
 import { useInvalidateProcesses, useProcesses } from "../hooks/useProcesses";
-import { createProcess, deleteProcess, getProcessById, updateProcess, searchProcesses } from "../api/processes.api";
+import { createProcess, deleteProcess, getProcessById, updateProcess, searchProcesses, getShiftAccess, setShiftAccess } from "../api/processes.api";
 import { getAllMenus, getAllMenuGroups } from "../api/menus.api";
 import { CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, STATS_BY_KEY, resolveWidgets } from "../utils/processDashboard";
 import { toRolePath } from "../utils/roleUrl";
 import NumberInput from "../Components/Production/NumberInput";
-import { useReviewAccess } from "../hooks/useReviewAccess";
 import { LOCKED_SHIFT_HOURS } from "../utils/plannedShift";
 import { guardEscape } from "../utils/modalEscape";
 
@@ -60,7 +59,42 @@ const ProcessMaster = () => {
   const toast = useAlert();
   const { currentPagePermissions = { read: true, write: true, edit: true, delete: true }, isAdmin } = useContext(MenuContext) || {};
   // Admin / Super Admin — the only ones who may change the Operator Planned Shift.
-  const { canReview: canSetShift } = useReviewAccess();
+  // Who may lock / unlock the Planned Shift: the Super Admin picks them (list below).
+  const [shiftAccess, setShiftAccessState] = useState({ canChange: false, isSuperAdmin: false, configured: true, operators: [], roles: [], selected: [], selectedRoles: [] });
+  const [shiftPick, setShiftPick] = useState([]);
+  const [savingAccess, setSavingAccess] = useState(false);
+  const canSetShift = shiftAccess.canChange;
+  const shiftAccessOptions = useMemo(
+    () => [
+      { label: "Roles — everyone with the role", options: shiftAccess.roles.map((r) => ({ value: `role:${r._id}`, label: r.name })) },
+      { label: "People", options: shiftAccess.operators.map((o) => ({ value: `op:${o._id}`, label: o.username ? `${o.name} (${o.username})` : o.name })) },
+    ],
+    [shiftAccess.roles, shiftAccess.operators],
+  );
+  const loadShiftAccess = () =>
+    getShiftAccess()
+      .then((res) => {
+        const d = res?.data?.data || {};
+        setShiftAccessState({ canChange: !!d.canChange, isSuperAdmin: !!d.isSuperAdmin, configured: d.configured !== false, operators: d.operators || [], roles: d.roles || [], selected: d.selected || [], selectedRoles: d.selectedRoles || [] });
+        setShiftPick([...(d.selectedRoles || []).map((id) => `role:${id}`), ...(d.selected || []).map((id) => `op:${id}`)]);
+      })
+      .catch(() => {});
+  useEffect(() => { loadShiftAccess(); }, []);
+  const saveShiftAccess = async () => {
+    setSavingAccess(true);
+    try {
+      await setShiftAccess(
+        shiftPick.filter((k) => k.startsWith("op:")).map((k) => k.slice(3)),
+        shiftPick.filter((k) => k.startsWith("role:")).map((k) => k.slice(5)),
+      );
+      toast.success("Access saved");
+      await loadShiftAccess();
+    } catch (ex) {
+      toast.error(ex?.response?.data?.message || "Could not save access");
+    } finally {
+      setSavingAccess(false);
+    }
+  };
   const { roleSlug } = useParams();
 
   const [values, setValues] = useState(initialState);
@@ -538,8 +572,31 @@ const ProcessMaster = () => {
               <div className="text-muted small mb-2">
                 Planned Operator Shift for this process's machines. Locked: the
                 hours below, fixed on every entry. Unlocked: the hours are typed by hand on each data entry. Entries already saved keep their own value.
-                {!canSetShift && " Only a Super Admin or a Full access user can change this."}
+                {!canSetShift && " You have not been given access to change this. Ask the Super Admin."}
               </div>
+              {shiftAccess.isSuperAdmin && (
+                <div className="border-top pt-2">
+                  <Label className="mb-1 small fw-semibold">Who can lock / unlock the Planned Shift</Label>
+                  <Select
+                    isMulti
+                    classNamePrefix="select"
+                    options={shiftAccessOptions}
+                    value={shiftAccessOptions.flatMap((g) => g.options).filter((o) => shiftPick.includes(o.value))}
+                    onChange={(picked) => setShiftPick((picked || []).map((o) => o.value))}
+                    placeholder="Select roles or people…"
+                    noOptionsMessage={() => "Nothing to pick"}
+                    closeMenuOnSelect={false}
+                  />
+                  <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <button type="button" className="btn btn-sm btn-primary" onClick={saveShiftAccess} disabled={savingAccess}>
+                      {savingAccess ? "Saving…" : "Save access"}
+                    </button>
+                    <span className="text-muted small">
+                      Every role and every active operator is listed, and new ones appear automatically. The Super Admin can always do this. {shiftAccess.configured === false ? "Until you save, Full access users can too." : "Applies to all processes."}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {isAdmin && (

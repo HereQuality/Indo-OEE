@@ -14,6 +14,7 @@ const RoleMaster = require("../models/RoleMaster");
 const OperatorRoles = require("../models/OperatorRoles");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const ShiftLockAccess = require("../models/ShiftLockAccess");
 const Notification = require("../models/Notification");
 const { saveRow, deleteRow } = require("./productionSheet.controller");
 const { updateProcess } = require("./process.controller");
@@ -291,6 +292,8 @@ test("Machine Working Status: any of the three are saved; anything else is refus
 });
 
 test("only Admin / Super Admin may lock, unlock or change the planned shift — and it's logged", async () => {
+  const realFindOne = ShiftLockAccess.findOne;
+  ShiftLockAccess.findOne = () => ({ select: () => ({ lean: async () => null }) }); // no list saved: the Full access rule
   await withWorld({ process: { plannedShiftLocked: true, plannedShiftHours: 12 } }, async ({ processes, logs }) => {
     const denied = await call(updateProcess, { user: OTHER_OP, params: { processId: PROCESS }, body: { processName: "CNC", plannedShiftLocked: false, plannedShiftHours: 10 } });
     assert.equal(denied.statusCode, 403);
@@ -312,7 +315,15 @@ test("only Admin / Super Admin may lock, unlock or change the planned shift — 
     assert.match(log.changes[0].from, /^Locked — 12 hr/);
     assert.equal(log.changes[0].to, "Unlocked — entered on each entry");
     assert.equal(log.actor.role, "Admin");
+
+    // A saved list replaces that rule: only the people on it (and the Super Admin) may.
+    ShiftLockAccess.findOne = () => ({ select: () => ({ lean: async () => ({ operators: [OTHER_OP._id] }) }) });
+    const listed = await call(updateProcess, { user: OTHER_OP, params: { processId: PROCESS }, body: { processName: "CNC", plannedShiftLocked: true, plannedShiftHours: 12 } });
+    assert.equal(listed.statusCode, 200, JSON.stringify(listed.payload));
+    const notListed = await call(updateProcess, { user: ADMIN_OP, params: { processId: PROCESS }, body: { processName: "CNC", plannedShiftLocked: false, plannedShiftHours: 9 } });
+    assert.equal(notListed.statusCode, 403);
   });
+  ShiftLockAccess.findOne = realFindOne;
 });
 
 test("review decisions: Admin only, a reject needs a remark, and a stale screen can't decide", async () => {

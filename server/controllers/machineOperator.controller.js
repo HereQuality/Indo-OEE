@@ -14,6 +14,17 @@ const mongoose = require("mongoose");
 const MachineOperator = require("../models/MachineOperator");
 const Process = require("../models/Process");
 const { sendError, pageParams } = require("../utils/httpErrors");
+const { viewableProcessIds } = require("../utils/processAccess");
+
+// The processes this person's role can see (utils/processAccess.js) as a Set of
+// id strings, or null when there is no limit (Super Admin, or a role that sees
+// every process). Operators of a process they can't see are kept out of view.
+const visibleProcesses = async (req) =>
+  viewableProcessIds(req, await Process.find().select("processName dataEntryMenu isActive").lean());
+
+// Is this operator (its `processes` ids or populated docs) in a process they may see?
+const inScope = (operator, allowed) =>
+  !allowed || (operator.processes || []).some((p) => allowed.has(String(p?._id || p)));
 
 // The request's processes as a de-duplicated id list, or { error }. Every id
 // must be a real process. Required (at least one) when `required` is set.
@@ -40,6 +51,10 @@ exports.createMachineOperator = async (req, res) => {
 
     const { ids, error } = await pickProcesses(req.body.processes, true);
     if (error) return res.status(400).json({ isOk: false, message: error });
+    const allowed = await visibleProcesses(req);
+    if (allowed && ids.some((id) => !allowed.has(String(id)))) {
+      return res.status(403).json({ isOk: false, message: "You don't have access to one of the selected processes" });
+    }
 
     const created = await MachineOperator.create({
       name: String(name).trim(),
@@ -73,9 +88,18 @@ exports.updateMachineOperator = async (req, res) => {
     if (req.body.processes !== undefined) {
       const { ids, error } = await pickProcesses(req.body.processes, true);
       if (error) return res.status(400).json({ isOk: false, message: error });
+      const allowedNew = await visibleProcesses(req);
+      if (allowedNew && ids.some((id) => !allowedNew.has(String(id)))) {
+        return res.status(403).json({ isOk: false, message: "You don't have access to one of the selected processes" });
+      }
       update.processes = ids;
     }
 
+    const allowed = await visibleProcesses(req);
+    if (allowed) {
+      const existing = await MachineOperator.findById(operatorId).select("processes").lean();
+      if (existing && !inScope(existing, allowed)) return res.status(404).json({ isOk: false, message: "Operator not found" });
+    }
     const operator = await MachineOperator.findOneAndUpdate({ _id: operatorId }, update, { new: true });
     if (!operator) {
       return res.status(404).json({ isOk: false, message: "Operator not found" });
@@ -93,7 +117,7 @@ exports.deleteMachineOperator = async (req, res) => {
   try {
     const { operatorId } = req.params;
     const operator = await MachineOperator.findById(operatorId);
-    if (!operator) {
+    if (!operator || !inScope(operator, await visibleProcesses(req))) {
       return res.status(404).json({ isOk: false, message: "Operator not found" });
     }
 
@@ -115,7 +139,7 @@ exports.deleteMachineOperator = async (req, res) => {
 exports.getMachineOperatorById = async (req, res) => {
   try {
     const operator = await MachineOperator.findById(req.params.operatorId);
-    if (!operator) {
+    if (!operator || !inScope(operator, await visibleProcesses(req))) {
       return res.status(404).json({ isOk: false, message: "Operator not found" });
     }
     res.status(200).json({ isOk: true, data: operator });
@@ -146,7 +170,13 @@ exports.listMachineOperatorsByParams = async (req, res) => {
     // Matched as plain text, so a "(" or "*" typed in can't break the search.
     if (match) query.name = { $regex: String(match).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     if (isActive !== undefined) query.isActive = isActive;
-    if (req.body.process) query.processes = req.body.process;
+    const allowed = await visibleProcesses(req);
+    if (allowed) {
+      // Only operators of a process this person can see; a process picked in the
+      // filter that they can't see gives nothing.
+      const mine = [...allowed];
+      query.processes = req.body.process ? (allowed.has(String(req.body.process)) ? req.body.process : { $in: [] }) : { $in: mine };
+    } else if (req.body.process) query.processes = req.body.process;
 
     let sortQuery = { createdAt: -1 };
     if (sorton && sortdir) sortQuery = { [sorton]: sortdir === "desc" ? -1 : 1 };
@@ -157,7 +187,9 @@ exports.listMachineOperatorsByParams = async (req, res) => {
       MachineOperator.find(query).collation({ locale: "en", strength: 2 }).sort(sortQuery).skip(page.skip).limit(page.limit).populate("processes", "processName").lean(),
     ]);
 
-    res.status(200).json({ isOk: true, data: [{ count: totalCount, data: operators }] });
+    // Badges show only the processes they can see.
+    const shown = allowed ? operators.map((o) => ({ ...o, processes: (o.processes || []).filter((p) => allowed.has(String(p?._id || p))) })) : operators;
+    res.status(200).json({ isOk: true, data: [{ count: totalCount, data: shown }] });
   } catch (error) {
     console.error("Error searching machine operators:", error);
     sendError(res, error);

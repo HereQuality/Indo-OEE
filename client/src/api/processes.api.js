@@ -19,3 +19,8 @@ export const searchProcesses = async (params) => api.post(ENDPOINTS.PROCESSES.SE
 
 // { from, to, process? } — omit `process` for every machine.
 export const getDashboardEntries = async (params) => api.get(ENDPOINTS.PROCESSES.ENTRIES, { params });
+
+// Who may lock / unlock the Planned Shift. GET: { canChange, isSuperAdmin, and for the
+// Super Admin: operators (everyone active), selected, configured }. PUT: { operatorIds }.
+export const getShiftAccess = async () => api.get(ENDPOINTS.PROCESSES.SHIFT_ACCESS);
+export const setShiftAccess = async (operatorIds, roleIds = []) => api.put(ENDPOINTS.PROCESSES.SHIFT_ACCESS, { operatorIds, roleIds });

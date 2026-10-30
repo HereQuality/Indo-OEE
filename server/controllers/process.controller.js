@@ -22,7 +22,11 @@ const MfdEntry = require("../models/MfdEntry");
 const MfaEntry = require("../models/MfaEntry");
 const { sortMachines } = require("../utils/machineOrder");
 const { machineNamesFor } = require("../utils/machineNames");
-const { isAdminUser, actorOf } = require("../utils/adminAccess");
+const { actorOf } = require("../utils/adminAccess");
+const { canChangeShift, validOperatorIds } = require("../utils/shiftAccess");
+const ShiftLockAccess = require("../models/ShiftLockAccess");
+const Operator = require("../models/Operator");
+const RoleMaster = require("../models/RoleMaster");
 const { settingOf } = require("../utils/plannedShift");
 const { viewableProcessIds } = require("../utils/processAccess");
 const { CYCLE_SEC } = require("../utils/oeeMetrics");
@@ -74,15 +78,15 @@ const shiftText = (raw) => {
   return locked ? `Locked — ${Number(raw.plannedShiftHours ?? 12)} hr` : "Unlocked — entered on each entry";
 };
 
-// Only Admin / Super Admin may change the Operator Planned Shift — the lock
-// or the hours, even the hours kept behind a lock. Anyone else may still save
+// Only people the Super Admin allowed (see utils/shiftAccess.js) may change the
+// Operator Planned Shift — the lock or the hours, even the hours kept behind a lock. Anyone else may still save
 // the rest of the process, as long as what they send matches what's there
 // (the form always sends it back unchanged).
 const shiftChangeError = async (req, current, next) => {
   const before = { plannedShiftLocked: current?.plannedShiftLocked !== false, plannedShiftHours: current?.plannedShiftHours ?? 12 };
   const after = { ...before, ...next };
   const changed = before.plannedShiftLocked !== after.plannedShiftLocked || Number(before.plannedShiftHours) !== Number(after.plannedShiftHours);
-  if (changed && !(await isAdminUser(req))) return { status: 403, message: "Only a Super Admin or a Full access user can change the Operator Planned Shift" };
+  if (changed && !(await canChangeShift(req))) return { status: 403, message: "You have not been given access to lock or unlock the Operator Planned Shift. Ask the Super Admin." };
   return { changed, before, after };
 };
 
@@ -447,5 +451,52 @@ exports.getDashboardEntries = async (req, res) => {
   } catch (error) {
     console.error("Error loading dashboard entries:", error);
     sendError(res, error);
+  }
+};
+
+// GET /processes/shift-access — can I change the Planned Shift, and (Super Admin
+// only) who else may. The operator list is read fresh each time, so a newly
+// created operator shows up in the dropdown on its own.
+exports.getShiftAccess = async (req, res) => {
+  try {
+    const canChange = await canChangeShift(req);
+    if (!isSuperAdmin(req)) return res.status(200).json({ isOk: true, data: { canChange, isSuperAdmin: false } });
+    const [setting, operators, roles] = await Promise.all([
+      ShiftLockAccess.findOne().select("operators roles").lean(),
+      Operator.find({ isActive: true }).select("employeeName username").sort({ employeeName: 1 }).lean(),
+      RoleMaster.find({ isActive: { $ne: false } }).select("roleName").sort({ roleName: 1 }).lean(),
+    ]);
+    res.status(200).json({
+      isOk: true,
+      data: {
+        canChange,
+        isSuperAdmin: true,
+        configured: !!setting,
+        selected: (setting?.operators || []).map(String),
+        selectedRoles: (setting?.roles || []).map(String),
+        roles: roles.map((r) => ({ _id: String(r._id), name: r.roleName })),
+        operators: operators.map((o) => ({ _id: String(o._id), name: o.employeeName, username: o.username })),
+      },
+    });
+  } catch (error) {
+    console.error("Error reading shift access:", error);
+    res.status(500).json({ isOk: false, message: error.message });
+  }
+};
+
+// PUT /processes/shift-access { operatorIds } — Super Admin only.
+exports.setShiftAccess = async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ isOk: false, message: "Only the Super Admin can choose who may lock or unlock the Planned Shift" });
+    const { operatorIds, roleIds = [] } = req.body || {};
+    if (!validOperatorIds(operatorIds)) return res.status(400).json({ isOk: false, message: "Invalid operator list" });
+    if (!validOperatorIds(roleIds)) return res.status(400).json({ isOk: false, message: "Invalid role list" });
+    const operators = [...new Set(operatorIds.map(String))];
+    const roles = [...new Set(roleIds.map(String))];
+    await ShiftLockAccess.findOneAndUpdate({}, { operators, roles }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    res.status(200).json({ isOk: true, data: { selected: operators, selectedRoles: roles }, message: "Access saved" });
+  } catch (error) {
+    console.error("Error saving shift access:", error);
+    res.status(500).json({ isOk: false, message: error.message });
   }
 };

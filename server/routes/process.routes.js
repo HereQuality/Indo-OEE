@@ -9,6 +9,8 @@ const {
   listProcesses,
   listProcessByParams,
   getDashboardEntries,
+  getShiftAccess,
+  setShiftAccess,
 } = require("../controllers/process.controller");
 
 const router = express.Router();
@@ -23,6 +25,9 @@ router.use(authorize("SuperAdmin", "Operator"));
 // (or the master's) rather than requiring access to the master itself.
 router.get("/", requireMenuPermission([DASHBOARD_URL, MENU_URL], "read"), listProcesses);
 router.get("/entries", requireMenuPermission(DASHBOARD_URL, "read"), getDashboardEntries);
+
+router.get("/shift-access", requireMenuPermission([DASHBOARD_URL, MENU_URL], "read"), getShiftAccess);
+router.put("/shift-access", setShiftAccess);
 
 router.post("/", requireMenuPermission(MENU_URL, "write"), createProcess);
 router.post("/search", requireMenuPermission(MENU_URL, "read"), listProcessByParams);

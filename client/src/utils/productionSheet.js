@@ -61,6 +61,7 @@ export const CYCLE_OP_FIELDS = [
   { key: "threadingSec", label: "Threading (sec)" },
   { key: "tappingSec", label: "Tapping (sec)" },
   { key: "chamferingSec", label: "Chamfering (sec)" },
+  { key: "turningSec", label: "Turning (sec)" },
   { key: "otherOp1Sec", label: "Other Operation (sec)" },
   { key: "otherOp2Sec", label: "Other Operation (sec)" },
   { key: "clampDeclampSec", label: "Clamp/Declamp (sec)" },

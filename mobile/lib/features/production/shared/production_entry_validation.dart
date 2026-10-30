@@ -41,6 +41,7 @@ const List<String> _cycleOpKeys = [
   'threadingSec',
   'tappingSec',
   'chamferingSec',
+  'turningSec',
   'otherOp1Sec',
   'otherOp2Sec',
   'clampDeclampSec',

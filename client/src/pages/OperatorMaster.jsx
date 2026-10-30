@@ -10,6 +10,7 @@ import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useInvalidateMachineOperators } from "../hooks/useMachineOperators";
 import { useProcesses } from "../hooks/useProcesses";
+import { useProcessAccess } from "../utils/processAccess";
 import {
   createMachineOperator,
   deleteMachineOperator,
@@ -43,7 +44,9 @@ const OperatorMaster = () => {
   const [operators, setOperators] = useState([]);
   const invalidateOperators = useInvalidateMachineOperators();
   const { data: processes = [] } = useProcesses();
-  const activeProcesses = processes.filter((p) => p.isActive !== false);
+  // Only the processes this role can view (the server limits the list and saves the same way).
+  const { canView } = useProcessAccess();
+  const activeProcesses = processes.filter((p) => p.isActive !== false && canView(p));
   const [query, setQuery] = useState("");
 
   const [_id, set_Id] = useState("");

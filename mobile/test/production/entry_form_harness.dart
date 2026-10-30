@@ -68,7 +68,7 @@ Map<String, dynamic> validEntry({Map<String, dynamic> overrides = const {}}) => 
       ...overrides,
     };
 
-const _cycleKeys = ['drillingSec', 'boringSec', 'threadingSec', 'tappingSec', 'chamferingSec', 'otherOp1Sec', 'otherOp2Sec', 'clampDeclampSec'];
+const _cycleKeys = ['drillingSec', 'boringSec', 'threadingSec', 'tappingSec', 'chamferingSec', 'turningSec', 'otherOp1Sec', 'otherOp2Sec', 'clampDeclampSec'];
 
 /// The parent the form is built for: it owns the entries, applies every edit
 /// the way ProductionSheet.jsx's handlers do, runs validateEntry over each

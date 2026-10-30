@@ -21,7 +21,7 @@ const MAX_CYCLE_OPS = 5;
 // The named operation-time boxes, in sheet order — Total Cycle Time is their
 // sum. Kept in one place so the Item master, Production Entry row and the
 // client's own copy of this list (client/src/utils/productionSheet.js) name
-// the same eight fields the same way. Two operations really are both called
+// the same nine fields the same way. Two operations really are both called
 // "Other Operation (sec)" on the sheet; they're told apart here only by key.
 const CYCLE_OP_FIELDS = [
   { key: "drillingSec", label: "Drilling (sec)" },
@@ -29,6 +29,7 @@ const CYCLE_OP_FIELDS = [
   { key: "threadingSec", label: "Threading (sec)" },
   { key: "tappingSec", label: "Tapping (sec)" },
   { key: "chamferingSec", label: "Chamfering (sec)" },
+  { key: "turningSec", label: "Turning (sec)" },
   { key: "otherOp1Sec", label: "Other Operation (sec)" },
   { key: "otherOp2Sec", label: "Other Operation (sec)" },
   { key: "clampDeclampSec", label: "Clamp/Declamp (sec)" },

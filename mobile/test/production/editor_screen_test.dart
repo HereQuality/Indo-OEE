@@ -230,7 +230,7 @@ void main() {
         'actualQty', 'okQty', 'plannedOperatorShiftHours', 'totalCycleSec',
         'plannedDownMin', 'setupMin', 'noManPowerMin', 'materialShiftingMin', 'noMaterialMin',
         'bdMechMin', 'bdEleMin', 'noPowerMin', 'lunchMin', 'otherMin',
-        'drillingSec', 'boringSec', 'threadingSec', 'tappingSec', 'chamferingSec',
+        'drillingSec', 'boringSec', 'threadingSec', 'tappingSec', 'chamferingSec', 'turningSec',
         'otherOp1Sec', 'otherOp2Sec', 'clampDeclampSec',
       });
       expect(b['date'], emptyEntry()['date']);

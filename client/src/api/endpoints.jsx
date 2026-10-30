@@ -71,6 +71,7 @@ export const ENDPOINTS = {
         BY_ID: (id) => `${V1}/processes/${id}`,
         SEARCH: `${V1}/processes/search`,
         ENTRIES: `${V1}/processes/entries`,
+        SHIFT_ACCESS: `${V1}/processes/shift-access`,
     },
 
     // Item master endpoints (Production > Items)

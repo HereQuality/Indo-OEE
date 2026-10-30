@@ -129,3 +129,9 @@ test("CALC-006: unticking more seconds than the Part has leaves no cycle, not a 
   // A normal untick still works: 20 − 5.5 = 14.5 s
   assert.equal(rowCalc({ itemName: "P", totalCycleSec: 20, boringSec: 5.5, excludedOps: ["boringSec"], ...times }).totalCycleSec, 14.5);
 });
+
+test("Turning (sec) is one of the operations that add up to the cycle time, and can be unticked per entry", () => {
+  const base = { itemName: "P", drillingSec: 10, boringSec: 5, turningSec: 7 };
+  assert.equal(rowCalc(base).totalCycleSec, 22);
+  assert.equal(rowCalc({ ...base, excludedOps: ["turningSec"] }).totalCycleSec, 15);
+});
