@@ -7,7 +7,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/form_widgets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/company_provider.dart';
-import 'demo_dashboard_screen.dart';
 
 /// Sign in (mirrors pages/Login.jsx): username + password, "Remember me",
 /// server error messages (locked / blocked / attempts left).
@@ -185,24 +184,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon: Icons.arrow_forward_rounded,
                     loading: _submitting,
                     onPressed: _submit,
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _submitting
-                          ? null
-                          : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DemoDashboardScreen())),
-                      icon: const Icon(Icons.visibility_outlined, size: 18),
-                      label: const Text('Try demo'),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Text(
-                      'Just looking? See sample data, no account needed.',
-                      style: TextStyle(fontSize: 12, color: s.onSurfaceVariant),
-                    ),
                   ),
                   const SizedBox(height: 26),
                   Center(
