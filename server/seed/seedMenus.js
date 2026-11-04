@@ -97,6 +97,9 @@ const DATA_ENTRY_MENUS = [
   { menuName: "EMBOSSING", menuUrl: "/hqepl/production/embossing-data-entry", sequence: 17, icon: "ClipboardList" },
   // A worker sheet on AFTER POWDER COATING's template — see seed/seedFinalAssemblyProcess.js.
   { menuName: "FINAL ASSEMBLY", menuUrl: "/hqepl/production/final-assembly-data-entry", sequence: 18, icon: "ClipboardList" },
+  // KPI pages (controllers/kpi.controller.js), after the last process.
+  { menuName: "KPI", menuUrl: "/hqepl/production/kpi", sequence: 19, icon: "Target" },
+  { menuName: "COMPANY LEVEL OBJECTIVE", menuUrl: "/hqepl/production/company-objective", sequence: 20, icon: "Building2" },
 ];
 
 const EMPLOYEE_MANAGEMENT_MENUS = [

@@ -62,6 +62,9 @@ const EmbossingDataEntry = lazyWithRetry(() => import("../pages/EmbossingDataEnt
 const PrintingDataEntry = lazyWithRetry(() => import("../pages/PrintingDataEntry"));
 const BeforePowderCoatingDataEntry = lazyWithRetry(() => import("../pages/BeforePowderCoatingDataEntry"));
 const FinalAssemblyDataEntry = lazyWithRetry(() => import("../pages/FinalAssemblyDataEntry"));
+// KPI (with its graph) and Company Level Objective (Data Entry, after the processes).
+const Kpi = lazyWithRetry(() => import("../pages/Kpi"));
+const CompanyObjective = lazyWithRetry(() => import("../pages/CompanyObjective"));
 const RawCastingDataEntry = lazyWithRetry(() => import("../pages/RawCastingDataEntry"));
 const ModularFrameDrillingDataEntry = lazyWithRetry(() => import("../pages/ModularFrameDrillingDataEntry"));
 const ModularFrameAssemblyDataEntry = lazyWithRetry(() => import("../pages/ModularFrameAssemblyDataEntry"));
@@ -157,6 +160,8 @@ const protectedRoutes = [
   { path: "/production/printing-data-entry", component: <PrintingDataEntry /> },
   { path: "/production/before-powder-coating-data-entry", component: <BeforePowderCoatingDataEntry /> },
   { path: "/production/final-assembly-data-entry", component: <FinalAssemblyDataEntry /> },
+  { path: "/production/kpi", component: <Kpi /> },
+  { path: "/production/company-objective", component: <CompanyObjective /> },
   { path: "/production/raw-casting-data-entry", component: <RawCastingDataEntry /> },
   { path: "/production/modular-frame-drilling-data-entry", component: <ModularFrameDrillingDataEntry /> },
   { path: "/production/modular-frame-assembly-data-entry", component: <ModularFrameAssemblyDataEntry /> },

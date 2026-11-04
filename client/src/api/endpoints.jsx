@@ -74,6 +74,16 @@ export const ENDPOINTS = {
         SHIFT_ACCESS: `${V1}/processes/shift-access`,
     },
 
+    // KPI, Graph and Company Level Objective (Data Entry)
+    KPI: {
+        OBJECTIVES: `${V1}/kpi/objectives`,
+        OBJECTIVE: (id) => `${V1}/kpi/objectives/${id}`,
+        OBJECTIVES_IMPORT: `${V1}/kpi/objectives/import`,
+        COMPANY_IMPORT: `${V1}/kpi/company/import`,
+        COMPANY: `${V1}/kpi/company`,
+        COMPANY_ONE: (id) => `${V1}/kpi/company/${id}`,
+    },
+
     // Item master endpoints (Production > Items)
     ITEMS: {
         BASE: `${V1}/items`,

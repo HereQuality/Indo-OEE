@@ -59,6 +59,12 @@ class Endpoints {
   // Admin review of entries over 100% (GET /access → { canReview }).
   static const oeeReviewAccess = '$v1/oee-review/access';
 
+  // KPI (department objectives with their months) and Company Level Objective.
+  static const kpiObjectives = '$v1/kpi/objectives';
+  static String kpiObjectiveById(String id) => '$v1/kpi/objectives/$id';
+  static const kpiCompany = '$v1/kpi/company';
+  static String kpiCompanyById(String id) => '$v1/kpi/company/$id';
+
   // Items
   static const items = '$v1/items';
   static String itemById(String id) => '$v1/items/$id';

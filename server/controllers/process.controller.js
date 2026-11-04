@@ -354,6 +354,9 @@ const DASHBOARD_SHEETS = [
   { Model: MfaEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
 ];
 
+// The KPI pages sum OK Qty by month over the same sheets (utils/kpiOkQty.js).
+exports.DASHBOARD_SHEETS = DASHBOARD_SHEETS;
+
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]
 // The raw entries a dashboard computes from — one process's machines, or
 // every machine when `process` is omitted — pooled across every sheet's own

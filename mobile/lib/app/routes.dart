@@ -23,6 +23,8 @@ import '../features/profile/profile_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/shortcuts/shortcuts_screen.dart';
 import '../features/support/support_screen.dart';
+import '../features/kpi/kpi_screen.dart';
+import '../features/kpi/company_objective_screen.dart';
 import '../features/teams/teams_board_screen.dart';
 import '../core/utils/role_slug.dart';
 import '../models/app_user.dart';
@@ -115,6 +117,9 @@ class AppRoutes {
         builder: (_) => ProductionSheetScreen(key: ValueKey('data-entry-${spec.key}'), spec: spec),
       ),
     AppRoute(path: '/production/dashboard', title: 'Production dashboard', builder: (_) => const ProductionDashboardScreen()),
+    // KPI (with its graph) and Company Level Objective — the last Data Entry pages.
+    AppRoute(path: '/production/kpi', title: 'KPI', builder: (_) => const KpiScreen()),
+    AppRoute(path: '/production/company-objective', title: 'Company Level Objective', builder: (_) => const CompanyObjectiveScreen()),
 
     // Other.
     AppRoute(path: '/teams', title: 'Teams', builder: (_) => const TeamsBoardScreen()),

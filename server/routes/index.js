@@ -101,6 +101,8 @@ router.use("/mfd-sheet", mfdSheetRoutes);
 // MODULAR FRAME ASSEMBLY.
 router.use("/mfa-sheet", mfaSheetRoutes);
 router.use("/oee-review", oeeReviewRoutes);
+// KPI, Graph and Company Level Objective (Data Entry).
+router.use("/kpi", require("./kpi.routes"));
 router.use("/processes", processRoutes);
 router.use("/maintenance", maintenanceRoutes);
 router.use("/announcement", announcementRoutes);
