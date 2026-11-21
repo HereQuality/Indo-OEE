@@ -7,9 +7,10 @@ import '../../../core/api/endpoints.dart';
 import '../../../core/utils/alerts.dart';
 import '../process/process_spec.dart';
 import '../processes/cnc/cnc_spec.dart' show cncSpec;
-import '../shared/production_sheet_calc.dart' show isoDay, jsTruthy, sortByMachineOn;
+import '../shared/production_sheet_calc.dart' show jsTruthy, sortByMachineOn;
 import '../shared/vendors.dart' show anyVendorFor;
 import 'table/sheet_columns.dart' show SheetColumns, SheetEnv;
+import 'machine_day_status.dart';
 import 'sheet_model.dart';
 import 'sheet_period.dart';
 import 'working_days.dart';
@@ -195,7 +196,20 @@ class SheetController extends ChangeNotifier {
   /// ones this page hides. A spec without optional columns gets its own object.
   SheetColumns columnsFor(Set<String> open) => spec.columns(open).where(env);
 
-  /// The date/machine groups the list draws (filters and search applied).
+  /// The loaded pages' dates (server meta.dates): every working day up to
+  /// today, so a day with nothing entered still shows — see [days].
+  List<String> _dates = const [];
+
+  /// The machines expected on every day: the page's scoped machines on a
+  /// machine sheet; none on a worker sheet (its row key is a person).
+  List<Json> get placeholderMachines {
+    if (spec.machineNoun != 'machine') return const [];
+    final picked = filters.machine.toSet();
+    return [for (final m in scopedMachines) if (picked.isEmpty || picked.contains('${m['_id']}')) m];
+  }
+
+  /// The date/machine groups the list draws (filters and search applied),
+  /// with a "Not filled yet" card for every machine missing from a day.
   List<SheetDay> get days => _days ??= buildSheetDays(
         rows: _rows,
         filters: filters,
@@ -204,7 +218,88 @@ class SheetController extends ChangeNotifier {
         rankOf: rankOf,
         searchKeys: spec.searchKeys,
         byMachineOn: spec.entriesByMachineOn,
+        dates: _dates,
+        placeholderMachines: placeholderMachines,
+        dayPlaceholder: spec.machineNoun != 'machine',
       );
+
+  // ── "Not running" marks (machine-day-status) ─────────────────────────────
+
+  late final DayStatusRepository dayStatus = DayStatusRepository(dayStatusSheetKey(spec.key));
+
+  /// The reasons a day can be marked with (the server's list once loaded).
+  List<DayStatusReason> reasons = DayStatusReason.fallback;
+  bool _reasonsLoaded = false;
+
+  Map<String, DayMark> _marks = const {};
+  int _marksGen = 0;
+
+  /// The "Not running" mark of an empty card, if any.
+  DayMark? markOf(String date, String machineId) => _marks[markKey(date, machineId)];
+
+  /// The unmarked empty cards' row keys on [date] (machines that could still be
+  /// marked together).
+  List<String> unfilledOn(String date) {
+    for (final d in days) {
+      if (d.date != date) continue;
+      return [
+        for (final m in d.machines)
+          if (m.entries.isEmpty && m.totalEntries == 0 && markOf(date, m.machineId) == null) m.machineId,
+      ];
+    }
+    return const [];
+  }
+
+  Future<void> ensureReasons() async {
+    if (_reasonsLoaded) return;
+    try {
+      final list = await dayStatus.reasons();
+      if (list.isNotEmpty) reasons = list;
+      _reasonsLoaded = true;
+      notifyListeners();
+    } catch (_) {
+      // Keep the built-in list; the server re-checks the reason anyway.
+    }
+  }
+
+  /// Marks for every loaded date (silently empty when the call fails).
+  Future<void> loadMarks() async {
+    if (_dates.isEmpty) return;
+    final sorted = [..._dates]..sort();
+    final gen = ++_marksGen;
+    try {
+      final list = await dayStatus.marks(sorted.first, sorted.last);
+      if (_disposed || gen != _marksGen) return;
+      _marks = {for (final m in list) m.key: m};
+      notifyListeners();
+    } catch (_) {
+      // The cards just read "Not filled yet".
+    }
+  }
+
+  /// PUT /machine-day-status. Throws [ApiException] with the server's message.
+  Future<void> saveMark({required String date, required List<String> machines, required List<String> reasons, required String remarks}) async {
+    final msg = await dayStatus.save(date: date, machines: machines, reasons: reasons, remarks: remarks);
+    Alerts.success(msg ?? 'Marked as not running');
+    await loadMarks();
+  }
+
+  /// DELETE /machine-day-status — the card reads "Not filled yet" again.
+  Future<bool> removeMark(DayMark mark) async {
+    try {
+      await dayStatus.remove(date: mark.date, machine: mark.machine);
+      _marks = {..._marks}..remove(mark.key);
+      notifyListeners();
+      Alerts.success('Not running mark removed');
+      unawaited(loadMarks());
+      return true;
+    } on ApiException catch (e) {
+      Alerts.error(e.message.isEmpty ? 'Could not remove the mark' : e.message);
+    } catch (_) {
+      Alerts.error('Could not remove the mark');
+    }
+    return false;
+  }
 
   /// dayCalc figures of an entry (Unutilized, Unreported, the three OEEs, gap).
   /// Worked out over the machine's WHOLE date as fetched — never just the
@@ -256,17 +351,33 @@ class SheetController extends ChangeNotifier {
   /// When a Super-Admin unlock on this entry still runs, until when.
   DateTime? unlockedUntilOf(Json row) => _unlockedUntil(row);
 
-  /// "" while the entry can still be edited / deleted, else why it is locked
-  /// (an entry with a still-current `unlockedUntil` is never locked).
+  /// Super Admin / Full access: edits a locked row anyway (server:
+  /// utils/adminAccess.js decides the same). Set by the screen.
+  bool isAdmin = false;
+
+  /// "" while the entry is still open to everyone, else why it is locked: an
+  /// entry is open for [lockHours] after it was saved (createdAt); one with a
+  /// still-current `unlockedUntil` is never locked. An admin is let through
+  /// a locked row ([canChange]) and offered Unlock for it, for everyone else.
+  /// Preview only — the server re-checks on every save / delete.
   String lockInfo(Json row) {
     if (_unlockedUntil(row) != null) return '';
-    final date = '${row['date']}';
-    final deadline = calendar.lockDeadline(date);
-    if (isoDay(DateTime.now()).compareTo(deadline) <= 0) return '';
-    return 'Locked — more than $lockWorkingDays working days old (editable through ${dmy(deadline)})';
+    final created = DateTime.tryParse('${row['createdAt'] ?? ''}');
+    if (created == null) return '';
+    final until = created.add(lockWindow).toLocal();
+    if (until.isAfter(DateTime.now())) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return 'Locked — saved more than $lockHours hours ago (was editable until ${two(until.day)}/${two(until.month)}/${until.year} ${two(until.hour)}:${two(until.minute)})';
   }
 
   bool isLocked(Json row) => lockInfo(row).isNotEmpty;
+
+  /// Whether this user may edit / delete the row despite its lock.
+  bool canChange(Json row) => isAdmin || !isLocked(row);
+
+  /// Whether this user may edit / undo a Not running mark: on the day it was
+  /// saved anyone who can add entries may; after that only an Admin.
+  bool canChangeMark(DayMark m) => isAdmin || !m.locked;
 
   // ── loading ──────────────────────────────────────────────────────────────
 
@@ -402,12 +513,13 @@ class SheetController extends ChangeNotifier {
     return out;
   }
 
-  ({int page, int totalPages, int totalDays}) _meta(Json res, int asked) {
+  ({int page, int totalPages, int totalDays, List<String> dates}) _meta(Json res, int asked) {
     final meta = res['meta'];
     int intOf(Object? v, int d) => v is num ? (v.isFinite ? v.toInt() : d) : (int.tryParse('$v') ?? d);
-    if (meta is! Map) return (page: asked, totalPages: 1, totalDays: 0);
+    if (meta is! Map) return (page: asked, totalPages: 1, totalDays: 0, dates: const []);
     final tp = intOf(meta['totalPages'], 1);
-    return (page: intOf(meta['page'], asked), totalPages: tp < 1 ? 1 : tp, totalDays: intOf(meta['totalDays'], 0));
+    final dates = [for (final d in (meta['dates'] as List? ?? const [])) if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch('$d')) '$d'];
+    return (page: intOf(meta['page'], asked), totalPages: tp < 1 ? 1 : tp, totalDays: intOf(meta['totalDays'], 0), dates: dates);
   }
 
   void _setRows(List<Json> rows) {
@@ -452,10 +564,12 @@ class SheetController extends ChangeNotifier {
       final res = await _fetchPage(1);
       if (gen != _gen) return;
       final meta = _meta(res, 1);
+      _dates = meta.dates;
       _setRows(_normalize(res));
       page = meta.page;
       totalPages = meta.totalPages;
       totalDays = meta.totalDays;
+      unawaited(loadMarks());
     } on ApiException catch (e) {
       if (gen != _gen) return;
       error = e.message;
@@ -486,10 +600,12 @@ class SheetController extends ChangeNotifier {
         totalPages = page;
       } else {
         final seen = {for (final r in _rows) '${r['_id']}'};
+        _dates = {..._dates, ...meta.dates}.toList();
         _setRows([..._rows, ..._normalize(res).where((r) => !seen.contains('${r['_id']}'))]);
         page = meta.page;
         totalPages = meta.totalPages;
         totalDays = meta.totalDays;
+        unawaited(loadMarks());
       }
     } on ApiException catch (e) {
       if (gen != _gen) return;
@@ -514,8 +630,9 @@ class SheetController extends ChangeNotifier {
     notifyListeners();
     try {
       final merged = <String, Json>{};
-      var last = (page: 1, totalPages: totalPages, totalDays: totalDays);
+      var last = (page: 1, totalPages: totalPages, totalDays: totalDays, dates: const <String>[]);
       var loaded = 0;
+      final dates = <String>{};
       for (var start = 1; start <= upTo; start += _reloadBatch) {
         final end = (start + _reloadBatch - 1) < upTo ? start + _reloadBatch - 1 : upTo;
         final answers = await Future.wait([for (var p = start; p <= end; p++) _fetchPage(p)]);
@@ -533,14 +650,17 @@ class SheetController extends ChangeNotifier {
           }
           last = meta;
           loaded = meta.page;
+          dates.addAll(meta.dates);
         }
         if (clamped) break;
       }
+      _dates = dates.toList();
       _setRows(merged.values.toList());
       page = loaded < 1 ? 1 : loaded;
       totalPages = last.totalPages;
       totalDays = last.totalDays;
       error = null;
+      unawaited(loadMarks());
     } on ApiException catch (e) {
       if (gen != _gen) return;
       Alerts.error(e.message);

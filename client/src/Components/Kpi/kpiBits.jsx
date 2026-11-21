@@ -78,10 +78,14 @@ export const YearStepper = ({ years, value, onChange, label = "Year" }) => {
 };
 
 // Jan … Dec in a soft track; `hasData` marks the months with a figure.
-export const MonthSegments = ({ value, onChange, hasData = [], label = "Month" }) => (
+// `allLabel` adds a first segment (value 0) for the whole year.
+export const MonthSegments = ({ value, onChange, hasData = [], label = "Month", allLabel }) => (
   <div className="min-w-0">
     {label && <div className="kpi-period__label">{label}</div>}
     <div className="kpi-seg" role="tablist" aria-label={label || "Month"}>
+      {allLabel && (
+        <button type="button" role="tab" aria-selected={value === 0} className={`kpi-seg__btn kpi-seg__btn--all${value === 0 ? " is-active" : ""}`} onClick={() => onChange(0)}>{allLabel}</button>
+      )}
       {MONTHS.map((m, i) => (
         <button key={m} type="button" role="tab" aria-selected={value === i + 1} className={`kpi-seg__btn${value === i + 1 ? " is-active" : ""}`} onClick={() => onChange(i + 1)}>
           {m}
@@ -93,20 +97,18 @@ export const MonthSegments = ({ value, onChange, hasData = [], label = "Month" }
 );
 
 // The period bar both pages share: year, and the month when the page has one.
-export const PeriodPicker = ({ years, year, onYear, month, onMonth, hasData }) => (
+export const PeriodPicker = ({ years, year, onYear, month, onMonth, hasData, allLabel }) => (
   <div className="kpi-period">
     <YearStepper years={years} value={year} onChange={onYear} />
-    {onMonth && <MonthSegments value={month} onChange={onMonth} hasData={hasData} />}
+    {onMonth && <MonthSegments value={month} onChange={onMonth} hasData={hasData} allLabel={allLabel} />}
   </div>
 );
 
-// Kept for the forms: a short row of years to pick from.
-export const YearChips = ({ years, value, onChange }) => (
-  <div className="kpi-seg" role="tablist" aria-label="Year">
-    {years.map((y) => (
-      <button key={y} type="button" role="tab" aria-selected={y === value} className={`kpi-seg__btn${y === value ? " is-active" : ""}`} onClick={() => onChange(y)}>{y}</button>
-    ))}
-  </div>
+// The forms' Year box: a dropdown over the given years (utils/kpi.js yearRange).
+export const YearSelect = ({ id, years, value, onChange }) => (
+  <Input id={id} type="select" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+    {years.map((y) => <option key={y} value={y}>{y}</option>)}
+  </Input>
 );
 
 // A value with its own unit (Qty or %).

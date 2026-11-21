@@ -5,9 +5,8 @@ const { STOPPAGE_KEYS, REJECT_REASONS } = require("../models/ProductionEntry");
 const Machine = require("../models/Machine");
 const { CYCLE_OP_FIELDS } = require("../models/Item");
 const { normalizeCycleOps } = require("./item.controller");
-const CompanyHoliday = require("../models/CompanyHoliday");
-const WeeklyOffSetting = require("../models/WeeklyOffSetting");
-const { isEntryLocked } = require("../utils/workingDays");
+const { isAdminUser } = require("../utils/adminAccess");
+const { pageDatesFor } = require("../utils/sheetDates");
 const { clockMinutes, findOverlap } = require("../utils/machineTimes");
 const { machineNamesFor } = require("../utils/machineNames");
 const { insertNewEntry } = require("../utils/insertEntry");
@@ -17,29 +16,29 @@ const { enforcePlannedShift } = require("../utils/plannedShift");
 const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workingMode");
 const { MACHINE_STATUSES } = require("../models/entryCommon");
 
-// An existing entry can only be edited/deleted within 2 *working* days of
-// when it was actually SAVED (its own createdAt) — not its own Date field.
+// An existing entry can only be edited/deleted for LOCK_HOURS (24 hours)
+// after it was actually SAVED (its own createdAt) — not its own Date field.
 // A catch-up entry typed in today for a date from last week starts its own
-// 2-day window today, the moment it's created, exactly like any other entry
-// — it used to start from the entry's (already old) Date instead, which
-// meant a backdated row could be locked the instant it was first saved,
-// with no real chance to fix a typo in it. Past that window it's treated as
-// closed, the same way a finalized ledger period would be — for Super Admin
-// too; the only way past it (for anyone, Super Admin included) is a still-
-// current `unlockedUntil` (see unlockRow below), a Super Admin-granted,
-// 24-hour, one-entry exception. Deliberately explicit rather than a silent
-// SuperAdmin bypass, so unlocking an old entry is always its own visible
-// action, not an invisible standing power.
-const LOCK_WORKING_DAYS = 2;
+// 24 hours today, the moment it's created, exactly like any other entry.
+// Past that window it's treated as closed, the same way a finalized ledger
+// period would be. Two ways past it:
+//   • a Super Admin or Full access user is never locked — their edits are
+//     always allowed (and still audited like any other save);
+//   • anyone else needs a still-current `unlockedUntil` (see unlockRow
+//     below): a one-entry exception a Super Admin / Full access user grants,
+//     which itself lapses 24 hours after it was given.
+const LOCK_HOURS = 24;
+const LOCK_MS = LOCK_HOURS * 60 * 60 * 1000;
 
-const checkNotLocked = async (createdAtISO, user, unlockedUntil) => {
+// `req` is the request (its user decides the admin bypass); older callers
+// passed `req.user` — then there's no admin bypass, only the time rule.
+const checkNotLocked = async (createdAt, req, unlockedUntil) => {
   if (unlockedUntil && new Date(unlockedUntil) > new Date()) return null;
-  const [{ weeklyOffDays }, holidays] = await Promise.all([
-    WeeklyOffSetting.findOne().lean().then((d) => d || { weeklyOffDays: [0] }),
-    CompanyHoliday.find({ isActive: true }).lean(),
-  ]);
-  if (isEntryLocked(createdAtISO, weeklyOffDays, holidays, undefined, LOCK_WORKING_DAYS)) {
-    return `This entry was saved more than ${LOCK_WORKING_DAYS} working days ago and is locked. Ask a Super Admin or a Full Access user to unlock it.`;
+  if (req?.user && (await isAdminUser(req))) return null;
+  const created = createdAt ? new Date(createdAt) : null;
+  if (!created || Number.isNaN(created.getTime())) return null;
+  if (Date.now() - created.getTime() > LOCK_MS) {
+    return `This entry was saved more than ${LOCK_HOURS} hours ago and is locked. Ask a Super Admin or a Full Access user to unlock it.`;
   }
   return null;
 };
@@ -346,19 +345,25 @@ exports.getSheet = async (req, res) => {
     if (req.query.operator) dateFilterQuery.operator = { $in: parseList(req.query.operator) };
     if (req.query.item) dateFilterQuery.itemName = { $in: parseList(req.query.item) };
 
-    const distinctDates = await ProductionEntry.find(dateFilterQuery).distinct("date");
-    const sortedDates = distinctDates.map((d) => d.toISOString().slice(0, 10)).sort().reverse();
-    const totalDays = sortedDates.length;
-    const totalPages = Math.max(1, Math.ceil(totalDays / PAGE_SIZE_DAYS));
-    const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), totalPages);
-    const pageDates = sortedDates
-      .slice((page - 1) * PAGE_SIZE_DAYS, page * PAGE_SIZE_DAYS)
-      .map(parseDay);
+    // Every working day up to today is paged, not just the dates with entries
+    // (utils/sheetDates.js) — a day nothing's been entered on yet shows a
+    // "Not filled yet" row per machine. An Operator / Part filter pages only
+    // the dates with a match, as before.
+    const paged = await pageDatesFor({
+      Model: ProductionEntry,
+      from,
+      to,
+      dateFilterQuery,
+      filtered: !!(req.query.operator || req.query.item || req.query.worker),
+      page: req.query.page,
+      pageSize: PAGE_SIZE_DAYS,
+    });
+    const { page, totalPages, totalDays, pageDates } = paged;
 
     const entries = pageDates.length
       ? await ProductionEntry.find({ ...query, date: { $in: pageDates } })
           // createdAt and unlockedUntil stay in: the sheet works out each row's
-          // working-day lock, and whether to offer Unlock, from them.
+          // 24-hour lock, and whether to offer Unlock, from them.
           .select("-__v")
           .lean()
           .then((rows) => withAuthors(SHEET, rows))
@@ -369,7 +374,7 @@ exports.getSheet = async (req, res) => {
     res.status(200).json({
       isOk: true,
       data: entries.map(toRow),
-      meta: { page, totalPages, totalDays },
+      meta: { page, totalPages, totalDays, dates: paged.dates },
       machineNames: await machineNamesFor(entries.map((e) => e.machine)),
     });
   } catch (error) {
@@ -473,8 +478,7 @@ exports.saveRow = async (req, res) => {
     // counts from when that row was first saved (createdAt), not from its own
     // Date — see checkNotLocked above.
     if (existing) {
-      const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
-      const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
+      const lockMessage = await checkNotLocked(existing.createdAt, req, existing.unlockedUntil);
       if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
     }
     // Whether this save moves the saved entry to another Date or Machine — for the
@@ -715,7 +719,7 @@ exports.deleteRow = async (req, res) => {
     }
     const existing = await ProductionEntry.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ isOk: false, message: "Entry not found" });
-    const lockMessage = await checkNotLocked(new Date(existing.createdAt).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
+    const lockMessage = await checkNotLocked(existing.createdAt, req, existing.unlockedUntil);
     if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
 
     const deleted = await ProductionEntry.findByIdAndDelete(req.params.id);
@@ -731,7 +735,7 @@ exports.deleteRow = async (req, res) => {
 
 // PUT /production-sheet/row/:id/unlock — Super Admin or Full access (route-level
 // authorize check). Grants exactly 24 hours of edit/delete access on this
-// one entry regardless of the normal 2-working-day lock, so an Operator can
+// one entry regardless of the normal 24-hour lock, so an Operator can
 // fix it themselves instead of Super Admin doing the edit.
 exports.unlockRow = async (req, res) => {
   try {
@@ -755,7 +759,7 @@ exports.listRejectReasons = async (req, res) => {
 };
 
 // Shared with the VMC sheet's controller (vmcSheet.controller.js), which has the
-// same 2-working-day lock and the same date/list parsing.
+// same 24-hour lock and the same date/list parsing.
 exports.checkNotLocked = checkNotLocked;
 exports.parseDay = parseDay;
 exports.parseList = parseList;

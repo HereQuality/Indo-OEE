@@ -60,7 +60,7 @@ const parseDay = (s) => {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : d;
 };
 const MAX_ROWS = 500;
-// A rejected entry is opened for correction this long — whatever the 2-working-day lock says.
+// A rejected entry is opened for correction this long — whatever the 24-hour lock says.
 const FIX_WINDOW_MS = 24 * 60 * 60 * 1000;
 const FIX_REMARK = "Unlocked for 24 hours so it can be corrected after the OEE review rejection";
 
@@ -188,7 +188,7 @@ exports.decide = async (req, res) => {
           "review.decidedAt": decidedAt,
           "review.remark": remark,
           // A rejection hands the entry back to be fixed, so it opens for 24 hours
-          // even if the 2-working-day lock has closed it (see reopen below for later).
+          // even if the 24-hour lock has closed it (see reopen below for later).
           ...(decision === "rejected" ? { unlockedUntil: new Date(decidedAt.getTime() + FIX_WINDOW_MS) } : {}),
         },
       },
@@ -244,7 +244,7 @@ exports.decide = async (req, res) => {
 
 // PUT /oee-review/:sheet/:id/reopen — what opening a "rejected" notification does:
 // the entry is unlocked for another 24 hours from now, so someone who comes back
-// after the first window (or after the 2-working-day lock closed it again) can
+// after the first window (or after the 24-hour lock closed it again) can
 // still correct it. Only while the entry is still rejected, and only for who last
 // saved it (the person the notification went to) or a Full access user.
 exports.reopen = async (req, res) => {
@@ -278,7 +278,7 @@ exports.reopen = async (req, res) => {
 // say by mistake) onto the process's CURRENT shift. The hours are never typed
 // here — they are the process's own setting — and the entry's Availability /
 // Performance / Quality are worked out again, so it may be flagged for review
-// (or cleared) by the new figures. An entry past the 2-working-day lock must be
+// (or cleared) by the new figures. An entry past the 24-hour lock must be
 // unlocked first, like any edit. Logged as an ordinary update of the entry.
 exports.applyShift = async (req, res) => {
   try {
@@ -300,7 +300,7 @@ exports.applyShift = async (req, res) => {
       return res.status(409).json({ isOk: false, message: `Already on the current shift (${setting.hours} hr)` });
     }
 
-    const lockMessage = await checkNotLocked(new Date(entry.createdAt).toISOString().slice(0, 10), req.user, entry.unlockedUntil);
+    const lockMessage = await checkNotLocked(entry.createdAt, req, entry.unlockedUntil);
     if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
 
     // The same rule the entry form enforces: the shift can't be shorter than the run.

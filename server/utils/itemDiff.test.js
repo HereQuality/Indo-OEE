@@ -86,9 +86,10 @@ test("old-format operation times are watched as a list", () => {
 });
 
 test("diffing against nothing gives the whole record — what was created, what was deleted", () => {
-  const p = part({ process: VMC, programTimeMin: 6, pcsPerProgram: 2, drillingSec: null });
+  const p = part({ process: VMC, programTimeMin: 6, pcsPerProgram: 2, drillingSec: null, description: "Brass, nickel plated" });
   const created = diffItem({}, p, names);
-  assert.deepEqual(fields(created), ["itemName", "process", "drawingNo", "setupNo", "programTimeMin", "pcsPerProgram", "totalCycleSec", "isActive"]);
+  assert.deepEqual(fields(created), ["itemName", "process", "drawingNo", "setupNo", "description", "programTimeMin", "pcsPerProgram", "totalCycleSec", "isActive"]);
+  assert.equal(created.find((c) => c.field === "description").to, "Brass, nickel plated");
   assert.ok(created.every((c) => c.from === null && c.to !== null));
   assert.equal(created.find((c) => c.field === "process").to, "VMC");
 

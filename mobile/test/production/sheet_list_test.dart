@@ -31,6 +31,8 @@ Map<String, dynamic> row(
     {
       '_id': id,
       'date': '${date ?? today}T00:00:00.000Z',
+      // Saved when dated: an old date means saved more than 24 h ago (locked).
+      'createdAt': '${date ?? today}T06:00:00.000Z',
       'machine': machine,
       'slot': slot,
       'item': 'i1',
@@ -52,7 +54,7 @@ Map<String, dynamic> row(
 
 /// Every route the screen calls. [pages] maps a page number to its rows;
 /// [totalPages] is what meta reports.
-FakeApi install({Map<int, List<Map<String, dynamic>>>? pages, int totalPages = 1}) {
+FakeApi install({Map<int, List<Map<String, dynamic>>>? pages, int totalPages = 1, List<String>? dates}) {
   final api = FakeApi.install();
   final data = pages ?? {1: [row('r1'), row('r2', machine: 'm2', operator: 'Asha')]};
   api.on('GET', Endpoints.productionSheet, (r) {
@@ -60,7 +62,7 @@ FakeApi install({Map<int, List<Map<String, dynamic>>>? pages, int totalPages = 1
     return {
       'isOk': true,
       'data': data[p] ?? const [],
-      'meta': {'page': p, 'totalPages': totalPages, 'totalDays': totalPages * 2},
+      'meta': {'page': p, 'totalPages': totalPages, 'totalDays': totalPages * 2, 'dates': ?dates},
     };
   });
   api.list(Endpoints.machines, [
@@ -77,6 +79,7 @@ FakeApi install({Map<int, List<Map<String, dynamic>>>? pages, int totalPages = 1
   api.list(Endpoints.processes, []);
   api.list(Endpoints.vendors, []); // CNC loads Vendor Master (the Vendor Name column / box)
   api.list(Endpoints.companyHolidays, []);
+  api.on('GET', Endpoints.oeeReviewAccess, (_) => {'isOk': true, 'canReview': false});
   api.on('GET', Endpoints.weeklyOff, (_) => {'isOk': true, 'data': {'weeklyOffDays': [0]}});
   api.on('GET', Endpoints.productionSheetExtent, (_) => {'isOk': true, 'data': {'from': '2025-01-01', 'to': today}});
   api.on('GET', Endpoints.productionSheetFilterOptions, (_) => {

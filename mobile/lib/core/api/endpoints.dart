@@ -37,6 +37,10 @@ class Endpoints {
   static const departmentSearch = '$v1/departments/search';
 
   // Company holidays + weekly off
+  // Machine day status — "Not running" marks on empty data entry days
+  static const machineDayStatus = '$v1/machine-day-status';
+  static const machineDayStatusReasons = '$v1/machine-day-status/reasons';
+
   static const companyHolidays = '$v1/company-holidays';
   static String companyHolidayById(String id) => '$v1/company-holidays/$id';
   static const weeklyOff = '$v1/company-holidays/weekly-off';
@@ -52,6 +56,13 @@ class Endpoints {
   static String processById(String id) => '$v1/processes/$id';
   static const processSearch = '$v1/processes/search';
   static const processEntries = '$v1/processes/entries';
+  // The Efficiency Report (OEE) PDF for the dashboard's scope, and the same by mail.
+  static const dashboardReportPdf = '$v1/processes/entries/report.pdf';
+  static const dashboardReportEmail = '$v1/processes/entries/report/email';
+
+  // Company page: who gets the daily / weekly report by email, and when.
+  static const summaryMail = '$v1/summary-mail';
+  static const summaryMailSend = '$v1/summary-mail/send';
 
   // Vendor Master (GET → { data: [...] }) — the Vendor Name picker / column.
   static const vendors = '$v1/vendors';
@@ -64,6 +75,7 @@ class Endpoints {
   static String kpiObjectiveById(String id) => '$v1/kpi/objectives/$id';
   static const kpiCompany = '$v1/kpi/company';
   static String kpiCompanyById(String id) => '$v1/kpi/company/$id';
+  static const kpiCompanyMonthly = '$v1/kpi/company/monthly';
 
   // Items
   static const items = '$v1/items';

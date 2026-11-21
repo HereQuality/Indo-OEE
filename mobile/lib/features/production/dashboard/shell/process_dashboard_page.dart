@@ -5,17 +5,21 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' show NumberFormat;
 import 'package:provider/provider.dart';
 
+import '../../../../core/api/api_client.dart';
+import '../../../../core/utils/alerts.dart';
 import '../../../../core/widgets/states.dart';
 import '../../../../providers/menu_provider.dart';
 import '../charts/chart_props.dart';
 import '../charts/charts_registry.dart';
 import '../dashboard_engine.dart' as eng;
 import '../data/dashboard_models.dart';
+import '../data/dashboard_report.dart';
 import '../data/dashboard_repository.dart';
 import '../data/processes_controller.dart';
 import '../sheets/date_range_sheet.dart';
 import '../sheets/drill_sheet.dart';
 import '../sheets/filter_sheet.dart';
+import '../sheets/report_email_dialog.dart';
 import '../widgets/chart_maximize_page.dart';
 import '../widgets/control_bar.dart';
 import '../widgets/dash_card.dart';
@@ -150,6 +154,47 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
 
   void _customize() => openDashboardCustomize(context, processes: widget.processes, processId: widget.processId);
 
+  // ── The Efficiency Report (OEE): the web header's PDF / Email buttons ──
+  String? _reporting;
+
+  /// What is on screen: the period, this process (none = all), the ticked machines.
+  Map<String, String> _reportParams() => DashboardReport.params(
+        range: _ctl.range,
+        processId: widget.processId,
+        machineIds: _ctl.filters['machine'] ?? const [],
+      );
+
+  Future<void> _downloadReport() async {
+    if (_reporting != null) return;
+    setState(() => _reporting = 'pdf');
+    try {
+      final r = await DashboardReport.pdf(_reportParams());
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+      await sharePdf(r.bytes, r.filename, origin: origin);
+    } catch (e) {
+      Alerts.error(e is ApiException ? e.message : "Couldn't build the report");
+    } finally {
+      if (mounted) setState(() => _reporting = null);
+    }
+  }
+
+  Future<void> _emailReport() async {
+    if (_reporting != null) return;
+    final to = await showReportEmailDialog(context);
+    if (to == null || !mounted) return;
+    setState(() => _reporting = 'mail');
+    try {
+      final message = await DashboardReport.email(_reportParams(), to: to);
+      Alerts.success(message);
+    } catch (e) {
+      Alerts.error(e is ApiException ? e.message : "Couldn't send the report");
+    } finally {
+      if (mounted) setState(() => _reporting = null);
+    }
+  }
+
   Future<void> _refresh() async {
     setState(() => _pulling = true);
     try {
@@ -195,6 +240,9 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
                   filtersActive: _ctl.filtersActive,
                   onClearAll: _ctl.clearAll,
                   onCustomize: isAdmin ? _customize : null,
+                  onReportPdf: _downloadReport,
+                  onReportEmail: _emailReport,
+                  reporting: _reporting,
                   chips: _ctl.activeFilters,
                   onRemoveChip: (c) => _toggle(c.dim, c.value),
                   refreshing: _ctl.loading && _ctl.rows.isNotEmpty,
@@ -211,6 +259,9 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
                 chips: _ctl.activeFilters,
                 onRemoveChip: (c) => _toggle(c.dim, c.value),
                 onClearAll: _ctl.clearAll,
+                onReportPdf: _downloadReport,
+                onReportEmail: _emailReport,
+                reporting: _reporting,
                 refreshing: _ctl.loading && _ctl.rows.isNotEmpty,
               );
 

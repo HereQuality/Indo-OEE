@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
-import { SlidersHorizontal, X } from "lucide-react";
+import { CalendarRange, SlidersHorizontal, X } from "lucide-react";
 import DateRangeField from "./DateRangeField";
 import { MONTH_LABELS, describeRange, isoDate, monthRange, parseIsoDate, yearRange, yearsOfExtent } from "../../utils/processDashboard";
 
@@ -63,7 +63,10 @@ const DEFAULT_LABELS = {
   item: ["Part", "All parts"],
 };
 
-const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, options, active, onClearAll, labels: labelsIn }) => {
+// `onOpenPeriod`: the dashboard keeps its period in its own "Select period"
+// sheet (PeriodSheet.jsx, the app's), so its panel only shows what's applied
+// and a button to change it; the data entry sheets pick the period in here.
+const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, options, active, onClearAll, labels: labelsIn, onOpenPeriod }) => {
   const labels = { ...DEFAULT_LABELS, ...labelsIn };
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState(() => periodTabOf(range));
@@ -131,6 +134,14 @@ const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, optio
 
         <div>
           <div className="pd-filter-label">Period</div>
+          {onOpenPeriod ? (
+            <button type="button" className="pd-field-btn w-100" onClick={() => { setOpen(false); onOpenPeriod(); }}>
+              <CalendarRange size={15} className="flex-shrink-0" />
+              <span className="text-truncate">{appliedLabel}</span>
+              <span className="ms-auto small text-primary">Change</span>
+            </button>
+          ) : (
+          <>
           <div className="pd-seg" role="tablist" aria-label="Period type">
             {PERIOD_TABS.map((t) => (
               <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`pd-seg-btn ${tab === t.key ? "is-on" : ""}`} onClick={() => setTab(t.key)}>
@@ -172,6 +183,8 @@ const FilterPanel = ({ range, onRangeChange, extent, filters, onFilterSet, optio
             </div>
           )}
           <div className="pd-filter-note">Showing <b>{appliedLabel}</b></div>
+          </>
+          )}
         </div>
 
         <MultiSelect label={labels.machine[0]} options={options.machine} selected={filters.machine} onChange={(v) => onFilterSet("machine", v)} placeholder={labels.machine[1]} />

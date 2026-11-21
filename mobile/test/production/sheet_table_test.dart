@@ -148,7 +148,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a date shows once per run; edit and delete are in the Actions column; locked rows lose them (Super Admin gets Unlock)', (tester) async {
+  testWidgets('a date shows once per run; edit and delete are in the Actions column; a Super Admin keeps them on a locked row and gets Unlock', (tester) async {
     final api = install(pages: {
       1: [
         row('r1'),
@@ -166,8 +166,9 @@ void main() {
     expect(find.text('7A'), findsOneWidget);
     expect(byKey('edit-r1'), findsOneWidget);
     expect(byKey('delete-r2'), findsOneWidget);
-    expect(byKey('edit-r9'), findsNothing);
-    expect(byKey('delete-r9'), findsNothing);
+    // Locked for everyone else; the Super Admin is never locked out.
+    expect(byKey('edit-r9'), findsOneWidget);
+    expect(byKey('delete-r9'), findsOneWidget);
     expect(byKey('unlock-r9'), findsOneWidget);
 
     await tapA(tester, 'delete-r1');
@@ -182,6 +183,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.called('PUT', '${Endpoints.productionSheetRow}/r9/unlock').length, 1);
     expect(byKey('edit-r9'), findsOneWidget);
+  });
+
+  testWidgets('the days the server lists get a "Not filled yet" row per machine; Add opens the editor on that day and machine', (tester) async {
+    // Today: 7A has an entry, 7B none. Yesterday: nothing at all.
+    final api = install(pages: {1: [row('r1')]}, dates: [today, yesterday]);
+    await open(tester);
+    expect(byKey('trow-r1'), findsOneWidget);
+    expect(byKey('placeholder-ph|$today|m2'), findsOneWidget);
+    expect(byKey('placeholder-ph|$today|m1'), findsNothing);
+    expect(byKey('placeholder-ph|$yesterday|m1'), findsOneWidget);
+    expect(byKey('placeholder-ph|$yesterday|m2'), findsOneWidget);
+    expect(find.text('Not filled yet'), findsNWidgets(3));
+    expect(api.misses, isEmpty);
+
+    await tapA(tester, 'add-ph|$yesterday|m2');
+    final editor = tester.widget<EntryEditorScreen>(find.byType(EntryEditorScreen));
+    expect(editor.row, isNull);
+    expect(editor.initialDate, yesterday);
+    expect(editor.initialMachineId, 'm2');
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+
+    // A search narrows the view: no placeholders then.
+    await tester.enterText(find.byType(TextField).first, 'Bracket');
+    await tester.pumpAndSettle(const Duration(milliseconds: 600));
+    expect(find.text('Not filled yet'), findsNothing);
   });
 
   testWidgets('permissions: a view-only role sees no edit / delete / add; a non-admin sees the lock instead of Unlock', (tester) async {

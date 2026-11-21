@@ -81,8 +81,9 @@ void main() {
             const ValueKey<String>('line-toggle/Reason / Remarks for Rejection / Rework'),
           );
           await ensureBuilt(t, fold);
-          if (boxField('remarks').evaluate().isEmpty)
+          if (boxField('remarks').evaluate().isEmpty) {
             await tapKey(t, 'line-toggle/Reason / Remarks for Rejection / Rework');
+          }
         }
         await typeBox(t, 'remarks', tag);
         await shot(t, 'nonworking_$short');
@@ -99,8 +100,9 @@ void main() {
           contains('nonworking'),
           reason: 'row says Non Working: $row',
         );
-        if (p.hasMachineOperator)
+        if (p.hasMachineOperator) {
           expect('${row['machineStatus']}', contains('No Planning'));
+        }
         expect(
           row['okQty'] == null || row['okQty'] == 0 || row['okQty'] == '',
           isTrue,

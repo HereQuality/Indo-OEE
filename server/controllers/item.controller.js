@@ -93,10 +93,12 @@ const pickMfdOperation = (body) => (body.mfdOperation !== undefined ? { mfdOpera
 // `process` is only touched when the request actually sends it, so a form that
 // doesn't know about processes can't clear the link by accident; "" (the "Not
 // in any process" choice) clears it.
-const pickItem = ({ itemName, drawingNo, setupNo, cycleOpsSec, isActive, process }, body = {}) => ({
+const pickItem = ({ itemName, drawingNo, setupNo, description, cycleOpsSec, isActive, process }, body = {}) => ({
   itemName,
   drawingNo,
   setupNo,
+  // Optional; only touched when the request sends it, like `process` below.
+  ...(description !== undefined ? { description: description ?? "" } : {}),
   ...(cycleOpsSec !== undefined ? { cycleOpsSec: normalizeCycleOps(cycleOpsSec) } : {}),
   ...pickCycleOps(body),
   ...pickProgram(body),
@@ -275,6 +277,7 @@ exports.listItemByParams = async (req, res) => {
         { itemName: { $regex: escaped, $options: "i" } },
         { drawingNo: { $regex: escaped, $options: "i" } },
         { setupNo: { $regex: escaped, $options: "i" } },
+        { description: { $regex: escaped, $options: "i" } },
       ];
     }
     if (isActive !== undefined) query.isActive = isActive;

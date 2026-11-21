@@ -1,10 +1,10 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CalendarRange, LayoutDashboard, X } from "lucide-react";
+import { ArrowLeft, CalendarRange, FileDown, LayoutDashboard, Mail, X } from "lucide-react";
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "reactstrap";
 import { ThemeContext } from "../../context/ThemeContext";
 import { MenuContext } from "../../context/MenuContext";
 import { useAlert } from "../../context/AlertContext";
-import { getDashboardEntries, updateProcess } from "../../api/processes.api";
+import { downloadDashboardReport, emailDashboardReport, getDashboardEntries, updateProcess } from "../../api/processes.api";
 import { useInvalidateProcesses } from "../../hooks/useProcesses";
 import {
   CHARTS_BY_KEY, DEFAULT_CHARTS, DEFAULT_STATS, DIMENSIONS, EMPTY_FILTERS, FORMATS, MAX_RANGE_DAYS, STATS_BY_KEY,
@@ -17,6 +17,7 @@ import WidgetCard from "./WidgetCard";
 import WidgetPicker from "./WidgetPicker";
 import DrillModal from "./DrillModal";
 import FilterPanel from "./FilterPanel";
+import PeriodSheet from "./PeriodSheet";
 import "./processDashboard.css";
 
 /**
@@ -160,6 +161,50 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
     setRange(next);
   }, []);
 
+  // The "Select period" sheet (the app's), opened from the header chip or the Filters panel.
+  const [periodOpen, setPeriodOpen] = useState(false);
+
+  // The Efficiency Report (OEE) PDF for what's on screen: this period, this
+  // process (or all), the ticked machines (or all of them combined).
+  const [reporting, setReporting] = useState("");
+  const reportParams = () => ({ from: range[0], to: range[1], ...(processId ? { process: processId } : {}), ...(filters.machine.length ? { machine: filters.machine.join(",") } : {}) });
+  const downloadReport = async () => {
+    setReporting("pdf");
+    try {
+      const res = await downloadDashboardReport(reportParams());
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (res.headers?.["content-disposition"] || "").match(/filename="([^"]+)"/)?.[1] || "OEE-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      let message = "Couldn't build the report";
+      try {
+        message = JSON.parse(await err?.response?.data?.text?.())?.message || message;
+      } catch {
+        /* not JSON */
+      }
+      toast.error(message);
+    } finally {
+      setReporting("");
+    }
+  };
+  const emailReport = async () => {
+    const typed = window.prompt("Email this report to (leave blank for the Company page's saved recipients):", "");
+    if (typed === null) return;
+    setReporting("mail");
+    try {
+      const res = await emailDashboardReport({ ...reportParams(), ...(typed.trim() ? { recipients: typed.trim() } : {}) });
+      toast.success(res?.data?.message || "Report sent");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't send the report");
+    } finally {
+      setReporting("");
+    }
+  };
   const isDefaultRange = range.join() === baseRange.join();
   // The untouched default is "this month" — named after the actual month
   // (e.g. "September 2026"), not a generic "Last 30 days"/"This month" label.
@@ -215,15 +260,24 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           <h4 className="mb-0 fw-bold">{process ? process.processName : "All machines"}</h4>
         </div>
         <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
-          <span className="pd-chip pd-chip-static d-inline-flex align-items-center gap-1">
-            <CalendarRange size={13} /> {periodLabel}
+          <span className="pd-chip d-inline-flex align-items-center gap-1">
+            <button type="button" className="pd-chip-x d-inline-flex align-items-center gap-1" onClick={() => setPeriodOpen(true)} title="Select period" aria-haspopup="dialog">
+              <CalendarRange size={13} /> {periodLabel}
+            </button>
             {!isDefaultRange && (
               <button type="button" className="pd-chip-x" onClick={resetRange} aria-label="Reset the period to this month" title="Reset to this month"><X size={12} /></button>
             )}
           </span>
           <FilterPanel range={range} onRangeChange={onRangeChange} extent={extent} filters={filters} onFilterSet={onFilterSet}
-            options={filterOptions} active={filtersActive} onClearAll={clearAll}
+            options={filterOptions} active={filtersActive} onClearAll={clearAll} onOpenPeriod={() => setPeriodOpen(true)}
             labels={words.byWorker ? { machine: [words.mcNo, `All ${words.many}`] } : undefined} />
+          <PeriodSheet isOpen={periodOpen} onClose={() => setPeriodOpen(false)} range={range} extent={extent} onChange={onRangeChange} />
+          <Button size="sm" color="light" className="pd-field-btn" disabled={!!reporting} onClick={downloadReport} title="Download the Efficiency Report (OEE) for this period, process and machines as a PDF">
+            {reporting === "pdf" ? <Spinner size="sm" /> : <FileDown size={15} />} PDF
+          </Button>
+          <Button size="sm" color="light" className="pd-field-btn" disabled={!!reporting} onClick={emailReport} title="Email the same report (PDF attached)">
+            {reporting === "mail" ? <Spinner size="sm" /> : <Mail size={15} />} Email
+          </Button>
           {isAdmin && (
             <Button size="sm" color="light" className="pd-field-btn" onClick={() => setCustomizing({ stats: stats.map((s) => s.key), charts: charts.map((w) => w.key) })}>
               <LayoutDashboard size={15} /> Customize

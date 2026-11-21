@@ -297,34 +297,35 @@ exports.listProcessByParams = async (req, res) => {
 // their own Data Entry page. CNC needs none: rowCalc takes its unticked
 // operations out itself.
 const DASHBOARD_SHEETS = [
-  { Model: ProductionEntry, cycleSec: null },
-  { Model: VmcEntry, cycleSec: CYCLE_SEC.vmc },
-  { Model: SpmEntry, cycleSec: CYCLE_SEC.spm },
-  { Model: RivetEntry, cycleSec: CYCLE_SEC.rivet },
-  { Model: PressEntry, cycleSec: CYCLE_SEC.press },
-  { Model: ContactEntry, cycleSec: null },
-  { Model: TrobeEntry, cycleSec: null },
+  { Model: ProductionEntry, sheet: "cnc", cycleSec: null },
+  { Model: VmcEntry, sheet: "vmc", cycleSec: CYCLE_SEC.vmc },
+  { Model: SpmEntry, sheet: "spm", cycleSec: CYCLE_SEC.spm },
+  { Model: RivetEntry, sheet: "rivet", cycleSec: CYCLE_SEC.rivet },
+  { Model: PressEntry, sheet: "press", cycleSec: CYCLE_SEC.press },
+  { Model: ContactEntry, sheet: "contact", cycleSec: null },
+  { Model: TrobeEntry, sheet: "trobe", cycleSec: null },
   // SPRING FOR PINS works out Effective Run Time on OK + Rejected (its own
   // sheet's rule) — the flag tells the client's shared rowCalc to do so.
-  { Model: SpringEntry, cycleSec: null, extra: { runQtyBasis: "total" } },
+  { Model: SpringEntry, sheet: "spring", cycleSec: null, extra: { runQtyBasis: "total" } },
   // AFTER POWDER COATING has no machines: its entries carry their own process
   // and a worker, who stands in the machine's place on the dashboard. Its
   // Ideal Inspection Time counts Total Qty, like SPRING FOR PINS.
-  { Model: PowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total" } },
+  { Model: PowderCoatingEntry, sheet: "powder", cycleSec: null, byProcess: true, extra: { runQtyBasis: "total" } },
   // RUBBER is per worker too; its Effective Working Time counts OK Qty, like CNC.
-  { Model: RubberEntry, cycleSec: null, byProcess: true },
+  { Model: RubberEntry, sheet: "rubber", cycleSec: null, byProcess: true },
   // INJECTION MOULDING is a machine sheet: Effective Machine Run Time counts
   // TOTAL QTY like SPRING FOR PINS, and each entry is worked out on its own
   // (calcMode "perEntry", see client entryDayCalc).
-  { Model: InjectionEntry, cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  { Model: InjectionEntry, sheet: "injection", cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
   // EMBOSSING: the same as INJECTION MOULDING (a machine sheet, TOTAL QTY, per entry).
-  { Model: EmbossingEntry, cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  { Model: EmbossingEntry, sheet: "embossing", cycleSec: null, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
   // PRINTING is per operator (byProcess; its optional MC No. is mcMachine, not
   // the row key). Effective Machine Run Time counts TOTAL QTY like SPRING FOR
   // PINS; each entry is worked out on its own (calcMode "perEntry", see client
   // entryDayCalc); its three own downtime columns count as stoppage too.
   {
     Model: PrintingEntry,
+    sheet: "printing",
     cycleSec: null,
     byProcess: true,
     extra: { runQtyBasis: "total", calcMode: "perEntry", extraStoppageKeys: PrintingEntry.PRINTING_EXTRA_STOPPAGE_KEYS },
@@ -333,28 +334,30 @@ const DASHBOARD_SHEETS = [
   // Time counts TOTAL QTY like SPRING FOR PINS; each entry is worked out on its
   // own (calcMode "perEntry", see client entryDayCalc), and its OEE considering
   // losses takes every stoppage off except Lunch.
-  { Model: BeforePowderCoatingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry", lossesExceptLunch: true } },
+  { Model: BeforePowderCoatingEntry, sheet: "bpc", cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry", lossesExceptLunch: true } },
   // FINAL ASSEMBLY is per worker (byProcess); Effective Time counts TOTAL QTY
   // like AFTER POWDER COATING, and each entry is worked out on its own.
-  { Model: FinalAssemblyEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  { Model: FinalAssemblyEntry, sheet: "finalAssembly", cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
   // RAW CASTING is per worker (byProcess), on AFTER POWDER COATING's template:
   // Ideal Inspection Time counts TOTAL QTY, and each entry is worked out on its
   // own (calcMode "perEntry", see client entryDayCalc). Its Types of Defects are
   // its rejectBreakdown, so Rejection by Reason names them.
-  { Model: RawCastingEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  { Model: RawCastingEntry, sheet: "rawCasting", cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
   // MODULAR FRAME DRILLING is a machine sheet: its cycle is the entry's own
   // Total Cycle Time (CYCLE_SEC.mfd), Effective Machine Run Time counts OK Qty
   // like CNC, and each entry is worked out on its own (calcMode "perEntry",
   // see client entryDayCalc). Its IDEAL Quantity takes Lunch / Tea out of the
   // shift (idealLessLunch), so the dashboard's Ideal QTY matches the table.
-  { Model: MfdEntry, cycleSec: CYCLE_SEC.mfd, extra: { calcMode: "perEntry", idealLessLunch: true } },
+  { Model: MfdEntry, sheet: "mfd", cycleSec: CYCLE_SEC.mfd, extra: { calcMode: "perEntry", idealLessLunch: true } },
   // MODULAR FRAME ASSEMBLY is per worker (byProcess), on RAW CASTING's template:
   // Ideal Assembly Time counts TOTAL QTY, and each entry is worked out on its
   // own (calcMode "perEntry", see client entryDayCalc).
-  { Model: MfaEntry, cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
+  { Model: MfaEntry, sheet: "mfa", cycleSec: null, byProcess: true, extra: { runQtyBasis: "total", calcMode: "perEntry" } },
 ];
 
-// The KPI pages sum OK Qty by month over the same sheets (utils/kpiOkQty.js).
+// The KPI pages sum OK Qty by month over the same sheets (utils/kpiOkQty.js),
+// and the summary mail (utils/dashboardSummary.js) totals them by process —
+// `sheet` names each one for utils/oeeMetrics.js's day figures.
 exports.DASHBOARD_SHEETS = DASHBOARD_SHEETS;
 
 // GET /processes/entries?from=YYYY-MM-DD&to=YYYY-MM-DD[&process=id]

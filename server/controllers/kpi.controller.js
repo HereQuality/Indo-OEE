@@ -15,7 +15,9 @@ const KpiObjective = require("../models/KpiObjective");
 const CompanyObjective = require("../models/CompanyObjective");
 const Department = require("../models/Department");
 const CompanyHistory = require("../models/CompanyHistory");
+const CompanyMonthly = require("../models/CompanyMonthly");
 const Process = require("../models/Process");
+const { METRICS, METRIC_KEYS, summarizeMetrics, monthsWithFigures } = require("../utils/companyMetrics");
 const { UOMS, TARGET_PERIODS } = require("../models/KpiObjective");
 const { isAdminUser } = require("../utils/adminAccess");
 const { sendError } = require("../utils/httpErrors");
@@ -51,6 +53,16 @@ const inScope = (scope, departmentId) => !scope || scope.has(String(departmentId
 const pctOfTarget = (okQty, target) =>
   target?.uom === "Qty" && Number(target.value) > 0 ? (okQty / Number(target.value)) * 100 : null;
 
+// Quality % = OK ÷ (OK + Rejected); null when nothing was produced.
+const qualityOf = (ok, rejected) => (ok + rejected > 0 ? (ok / (ok + rejected)) * 100 : null);
+
+// Achievement against the target: a Qty target takes the OK Qty, a % target
+// takes the Quality % (so "Target 89%" means at least 89% of the pieces OK).
+const achievementOf = (okQty, qualityPct, target) => {
+  if (target?.uom === "%") return Number(target.value) > 0 && qualityPct !== null ? (qualityPct / Number(target.value)) * 100 : null;
+  return pctOfTarget(okQty, target);
+};
+
 // On track / Near / Behind for a month that has OK Qty, against its achievement %.
 const statusOf = (pct) => (pct === null ? null : pct >= 100 ? "On track" : pct >= 80 ? "Near" : "Behind");
 
@@ -58,26 +70,51 @@ const withMonths = (objective, byProcess) => {
   // A process deleted from Process Master populates as null — dropped here so
   // the pages never see one, and its past OK Qty is simply no longer counted.
   const processes = (objective.processes || []).filter(Boolean);
-  const entries = monthsFor(byProcess, processes.map((p) => p?._id || p));
+  const ids = processes.map((p) => p?._id || p);
+  const entries = monthsFor(byProcess, ids);
+  const rejectedMonths = monthsFor(byProcess, ids, "rejected");
   // A month with no entries takes the figure uploaded from Excel, if any.
   const uploaded = new Map((objective.uploadedMonths || []).map((m) => [m.month, m.okQty]));
   const months = entries.map((ok, i) => (ok > 0 || !uploaded.has(i + 1) ? ok : uploaded.get(i + 1)));
   const yearly = objective.targetPeriod === "Yearly";
-  let cumulative = 0;
+  let cumulative = 0, cumulativeRejected = 0;
   const rows = months.map((okQty, i) => {
     cumulative += okQty;
+    // Rejected Qty only comes from the entries (an uploaded month has none).
+    const rejectedQty = entries[i] > 0 ? rejectedMonths[i] : 0;
+    cumulativeRejected += rejectedQty;
     const source = entries[i] > 0 ? "entries" : uploaded.has(i + 1) ? "excel" : null;
-    // Yearly: the OK Qty so far against the year's target; Monthly: this month's.
-    const pct = pctOfTarget(yearly ? cumulative : okQty, objective.target);
+    const qualityPct = entries[i] > 0 ? qualityOf(okQty, rejectedQty) : null;
+    // Yearly: the figures so far against the year's target; Monthly: this month's.
+    const pct = yearly ? achievementOf(cumulative, qualityOf(cumulative, cumulativeRejected), objective.target) : achievementOf(okQty, qualityPct, objective.target);
     const has = okQty > 0;
-    return { month: i + 1, okQty, cumulative, source, pctOfTarget: has ? pct : null, status: has ? statusOf(pct) : null };
+    return { month: i + 1, okQty, rejectedQty, qualityPct, cumulative, cumulativeRejected, source, pctOfTarget: has ? pct : null, status: has ? statusOf(pct) : null };
   });
   const yearOkQty = cumulative;
+  const yearRejectedQty = cumulativeRejected;
+  const yearQualityPct = qualityOf(yearOkQty, yearRejectedQty);
   const withData = rows.filter((r) => r.pctOfTarget !== null);
-  // The year's achievement: Yearly → OK Qty so far against the target; Monthly → average of the months with data.
-  const yearPct = yearly ? pctOfTarget(yearOkQty, objective.target) : withData.length ? withData.reduce((a, r) => a + r.pctOfTarget, 0) / withData.length : null;
-  return { ...objective, processes, months: rows, yearOkQty, yearPct, yearStatus: statusOf(yearPct), monthsWithData: withData.length };
+  // The year's achievement: Yearly → the year so far against the target; Monthly → average of the months with data.
+  const yearPct = yearly ? achievementOf(yearOkQty, yearQualityPct, objective.target) : withData.length ? withData.reduce((a, r) => a + r.pctOfTarget, 0) / withData.length : null;
+  return { ...objective, processes, months: rows, yearOkQty, yearRejectedQty, yearQualityPct, yearPct, yearStatus: statusOf(yearPct), monthsWithData: withData.length };
 };
+
+// One line per department: how its year's objectives stand.
+const summarizeDepartments = (objectives, departments) =>
+  departments.map((d) => {
+    const mine = objectives.filter((o) => String(o.department?._id || o.department) === String(d._id));
+    const pcts = mine.map((o) => o.yearPct).filter((p) => p !== null);
+    return {
+      _id: d._id,
+      departmentName: d.departmentName,
+      objectives: mine.length,
+      onTrack: mine.filter((o) => o.yearStatus === "On track").length,
+      near: mine.filter((o) => o.yearStatus === "Near").length,
+      behind: mine.filter((o) => o.yearStatus === "Behind").length,
+      okQty: mine.reduce((a, o) => a + (o.yearOkQty || 0), 0),
+      avgPct: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null,
+    };
+  });
 
 // ── KPI objectives ────────────────────────────────────────────────────────
 
@@ -91,19 +128,23 @@ exports.listObjectives = async (req, res) => {
     if (req.query.department) {
       if (!mongoose.isValidObjectId(req.query.department)) return res.status(400).json({ isOk: false, message: "Invalid department" });
       if (!inScope(scope, req.query.department)) return res.status(403).json({ isOk: false, message: "You don't have access to this department" });
-      query.department = req.query.department;
-    } else if (scope) query.department = { $in: [...scope] };
+    }
+    if (scope) query.department = { $in: [...scope] };
 
-    const [objectives, byProcess, departments] = await Promise.all([
+    const [all, byProcess, departments] = await Promise.all([
       KpiObjective.find(query).populate("department", "departmentName").populate("processes", "processName").sort({ createdAt: 1 }).lean(),
       okQtyByProcessMonth(year),
       // Active departments only (an inactive one keeps its old objectives under "All").
       Department.find({ isActive: { $ne: false }, ...(scope ? { _id: { $in: [...scope] } } : {}) }).select("departmentName").sort({ departmentName: 1 }).lean(),
     ]);
+    const everything = all.map((o) => withMonths(o, byProcess));
+    const wanted = req.query.department ? everything.filter((o) => String(o.department?._id || o.department) === String(req.query.department)) : everything;
     res.status(200).json({
       isOk: true,
-      data: objectives.map((o) => withMonths(o, byProcess)),
+      data: wanted,
       departments,
+      // Every department this person can see, whatever the filter — the status summary.
+      byDepartment: summarizeDepartments(everything, departments),
       canAddAnyDepartment: !scope,
     });
   } catch (error) {
@@ -261,8 +302,23 @@ exports.importObjectives = async (req, res) => {
   }
 };
 
-// POST /kpi/company/import { rows: [{ year, month, okQty }] } — company-wide
-// month totals from an old sheet; a month with data entries keeps the entries.
+// The metric figures of one row / form: { sales: 12.5, … } for the keys given
+// (blank = leave as is). A bad number names the metric.
+const pickMetricValues = (raw) => {
+  const values = {};
+  for (const m of METRICS) {
+    if (raw?.[m.key] === undefined) continue;
+    const n = parseQty(raw[m.key]);
+    if (Number.isNaN(n)) return { error: `${m.label} "${raw[m.key]}" is not a number of 0 or more` };
+    if (n !== null && m.unit === "%" && n > 100) return { error: `${m.label} must be 0–100%` };
+    values[m.key] = n;
+  }
+  return { values };
+};
+
+// POST /kpi/company/import { rows: [{ year, month, okQty?, sales?, salary?, … }] }
+// Old sheets, one row per month: OK Qty goes to CompanyHistory (a month with
+// data entries keeps the entries); the business figures to CompanyMonthly.
 exports.importCompanyHistory = async (req, res) => {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
@@ -278,13 +334,43 @@ exports.importCompanyHistory = async (req, res) => {
       const month = parseMonth(r.month);
       if (!month) { errors.push({ row: line, message: `Month "${r.month}" is not valid` }); continue; }
       const okQty = parseQty(r.okQty);
-      if (okQty === null || Number.isNaN(okQty)) { errors.push({ row: line, message: `OK Qty "${r.okQty}" is not a number` }); continue; }
-      await CompanyHistory.findOneAndUpdate({ year, month }, { okQty, uploadedByName: nameOf(req) }, { upsert: true, new: true, setDefaultsOnInsert: true });
+      if (Number.isNaN(okQty)) { errors.push({ row: line, message: `OK Qty "${r.okQty}" is not a number` }); continue; }
+      const picked = pickMetricValues(r);
+      if (picked.error) { errors.push({ row: line, message: picked.error }); continue; }
+      // Only the figures the sheet has — blank cells never wipe a stored figure.
+      const set = Object.fromEntries(Object.entries(picked.values).filter(([, v]) => v !== null).map(([k, v]) => [`values.${k}`, v]));
+      if (okQty === null && !Object.keys(set).length) { errors.push({ row: line, message: "No figure on this row" }); continue; }
+      if (okQty !== null) await CompanyHistory.findOneAndUpdate({ year, month }, { okQty, uploadedByName: nameOf(req) }, { upsert: true, new: true, setDefaultsOnInsert: true });
+      if (Object.keys(set).length) await CompanyMonthly.findOneAndUpdate({ year, month }, { $set: { ...set, updatedByName: nameOf(req), source: "excel" } }, { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true });
       imported += 1;
     }
-    res.status(200).json({ isOk: true, data: { imported, errors }, message: `${imported} month figure${imported === 1 ? "" : "s"} loaded` });
+    res.status(200).json({ isOk: true, data: { imported, errors }, message: `${imported} month${imported === 1 ? "" : "s"} loaded` });
   } catch (error) {
     console.error("Error importing company history:", error);
+    sendError(res, error);
+  }
+};
+
+// PUT /kpi/company/monthly { year, month, values: { sales, salary, … } } —
+// the month's business figures typed on the page; every metric is written
+// (blank clears it).
+exports.saveCompanyMonthly = async (req, res) => {
+  try {
+    const year = parseYear(req.body?.year);
+    if (!year) return res.status(400).json({ isOk: false, message: "Invalid year" });
+    const month = parseMonth(req.body?.month);
+    if (!month) return res.status(400).json({ isOk: false, message: "Invalid month" });
+    const raw = req.body?.values || {};
+    const picked = pickMetricValues(Object.fromEntries(METRIC_KEYS.map((k) => [k, raw[k] ?? ""])));
+    if (picked.error) return res.status(400).json({ isOk: false, message: picked.error });
+    const doc = await CompanyMonthly.findOneAndUpdate(
+      { year, month },
+      { $set: { values: picked.values, updatedByName: nameOf(req), source: "entry" } },
+      { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
+    );
+    res.status(200).json({ isOk: true, data: doc, message: "Monthly figures saved" });
+  } catch (error) {
+    console.error("Error saving company monthly figures:", error);
     sendError(res, error);
   }
 };
@@ -298,12 +384,14 @@ exports.companySummary = async (req, res) => {
   try {
     const year = parseYear(req.query.year);
     if (!year) return res.status(400).json({ isOk: false, message: "Invalid year" });
-    const [objectives, entriesAll, history, kpis, byProcess] = await Promise.all([
+    const [objectives, entriesAll, history, kpis, byProcess, monthlyDocs] = await Promise.all([
       CompanyObjective.find({ year, isActive: { $ne: false } }).sort({ createdAt: 1 }).lean(),
       okQtyAllByYearMonth(),
       CompanyHistory.find().select("year month okQty").lean(),
       KpiObjective.find({ year, isActive: { $ne: false } }).select("processes target targetPeriod").lean(),
       okQtyByProcessMonth(year),
+      // This year's business figures and last year's, for the comparisons.
+      CompanyMonthly.find({ year: { $in: [year, year - 1] } }).lean(),
     ]);
     // Entries first; an uploaded month only counts where the entries have nothing.
     const have = new Set(entriesAll.filter((r) => r.okQty > 0).map((r) => `${r.year}-${r.month}`));
@@ -338,6 +426,10 @@ exports.companySummary = async (req, res) => {
         kpiObjectiveCount: kpis.length,
         kpiOnTrack: onTrack,
         kpiBehind: pcts.filter((p) => p < 80).length,
+        // The business figures: { sales: { months[12], year, prevYear }, … }.
+        metrics: summarizeMetrics(monthlyDocs, year),
+        monthsWithFigures: monthsWithFigures(monthlyDocs, year),
+        monthly: monthlyDocs.filter((d) => d.year === year).map((d) => ({ month: d.month, values: d.values || {}, source: d.source, updatedByName: d.updatedByName })).sort((a, b) => a.month - b.month),
       },
     });
   } catch (error) {

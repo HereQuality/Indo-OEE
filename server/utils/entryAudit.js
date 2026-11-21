@@ -489,7 +489,7 @@ const logEntryDelete = async ({ sheet, req, before, fields }) => {
   }
 };
 
-const logEntryUnlock = async ({ sheet, req, entry, remark = "Unlocked for 24 hours past the 2-working-day lock" }) => {
+const logEntryUnlock = async ({ sheet, req, entry, remark = "Unlocked for 24 hours past the 24-hour lock" }) => {
   try {
     const names = await machineNamesOf(keyOf(entry));
     const machineName = names[String(keyOf(entry))] || "";

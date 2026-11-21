@@ -19,3 +19,5 @@ export const deleteCompanyObjective = async (id) => api.delete(ENDPOINTS.KPI.COM
 // Old Excel figures: rows → { imported, created?, errors: [{ row, message }] }.
 export const importKpiObjectives = async (rows) => api.post(ENDPOINTS.KPI.OBJECTIVES_IMPORT, { rows });
 export const importCompanyHistory = async (rows) => api.post(ENDPOINTS.KPI.COMPANY_IMPORT, { rows });
+// One month's business figures: { year, month, values: { sales, salary, … } }.
+export const saveCompanyMonthly = async (data) => api.put(ENDPOINTS.KPI.COMPANY_MONTHLY, data);

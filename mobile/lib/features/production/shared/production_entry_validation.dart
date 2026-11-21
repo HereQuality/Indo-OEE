@@ -292,8 +292,9 @@ List<Map<String, String>> overlapErrors(
     if (mine == null ||
         isBlank(v['machine']) ||
         isBlank(v['date']) ||
-        _timesUnchanged(v, saved))
+        _timesUnchanged(v, saved)) {
       return const {};
+    }
 
     final others = <TimeSpan>[];
     for (final o in _savedFor(v, occupied, editSlot, saved)) {
@@ -304,8 +305,9 @@ List<Map<String, String>> overlapErrors(
       final e = entries[j];
       if (j == i ||
           '${e['machine']}' != '${v['machine']}' ||
-          '${e['date']}' != '${v['date']}')
+          '${e['date']}' != '${v['date']}') {
         continue;
+      }
       final span = timeInterval(e['machineOnTime'], e['machineOffTime']);
       if (span != null) others.add(span);
     }
@@ -349,10 +351,12 @@ List<Map<String, String>> operatorOverlapErrors(
     if (op.isEmpty ||
         mine == null ||
         isBlank(v['machine']) ||
-        isBlank(v['date']))
+        isBlank(v['date'])) {
       return const {};
-    if (_timesUnchanged(v, saved) && '${saved?['operator'] ?? ''}'.trim() == op)
+    }
+    if (_timesUnchanged(v, saved) && '${saved?['operator'] ?? ''}'.trim() == op) {
       return const {};
+    }
 
     final others = <({String name, TimeSpan span})>[];
     for (final o
@@ -362,11 +366,13 @@ List<Map<String, String>> operatorOverlapErrors(
       if (editing != null &&
           '${o['machine']}' == editing.machine &&
           (o['slot'] as num?)?.toInt() == editing.slot &&
-          (saved == null || v['date'] == saved['date']))
+          (saved == null || v['date'] == saved['date'])) {
         continue;
+      }
       final span = timeInterval(o['machineOnTime'], o['machineOffTime']);
-      if (span != null)
+      if (span != null) {
         others.add((name: '${o['machineName'] ?? ''}', span: span));
+      }
     }
     for (var j = 0; j < entries.length; j++) {
       final e = entries[j];
@@ -377,11 +383,12 @@ List<Map<String, String>> operatorOverlapErrors(
         continue;
       }
       final span = timeInterval(e['machineOnTime'], e['machineOffTime']);
-      if (span != null)
+      if (span != null) {
         others.add((
           name: machineName?.call('${e['machine']}') ?? '',
           span: span,
         ));
+      }
     }
 
     final hit = others.where((o) => mine.overlaps(o.span)).firstOrNull;

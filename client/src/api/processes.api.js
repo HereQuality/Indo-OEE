@@ -19,6 +19,10 @@ export const searchProcesses = async (params) => api.post(ENDPOINTS.PROCESSES.SE
 
 // { from, to, process? } — omit `process` for every machine.
 export const getDashboardEntries = async (params) => api.get(ENDPOINTS.PROCESSES.ENTRIES, { params });
+// The Efficiency Report (OEE) PDF for { from, to, process?, machine? } — a Blob.
+export const downloadDashboardReport = async (params) => api.get(ENDPOINTS.PROCESSES.REPORT_PDF, { params, responseType: "blob" });
+// Mails the same report: { from, to, process?, machine?, recipients? } (typed addresses; else the Company page's).
+export const emailDashboardReport = async (data) => api.post(ENDPOINTS.PROCESSES.REPORT_EMAIL, data);
 
 // Who may lock / unlock the Planned Shift. GET: { canChange, isSuperAdmin, and for the
 // Super Admin: operators (everyone active), selected, configured }. PUT: { operatorIds }.

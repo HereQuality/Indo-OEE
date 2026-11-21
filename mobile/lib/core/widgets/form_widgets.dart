@@ -365,11 +365,10 @@ class AppDropdownField<T> extends FormField<T> {
     String? hint,
     bool required = false,
     bool allowClear = false,
-    bool enabled = true,
+    super.enabled,
     String? Function(T?)? validator,
   }) : super(
           initialValue: value,
-          enabled: enabled,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: validator ?? (required ? (v) => v == null ? '$label is required' : null : null),
           builder: (state) {
@@ -432,13 +431,12 @@ class AppDateField extends FormField<DateTime> {
     DateTime? value,
     ValueChanged<DateTime?>? onChanged,
     bool required = false,
-    bool enabled = true,
+    super.enabled,
     DateTime? firstDate,
     DateTime? lastDate,
     String? Function(DateTime?)? validator,
   }) : super(
           initialValue: value,
-          enabled: enabled,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: validator ?? (required ? (v) => v == null ? '$label is required' : null : null),
           builder: (state) {
@@ -491,11 +489,10 @@ class AppTimeField extends FormField<String> {
     String? value,
     ValueChanged<String?>? onChanged,
     bool required = false,
-    bool enabled = true,
+    super.enabled,
     String? Function(String?)? validator,
   }) : super(
           initialValue: value,
-          enabled: enabled,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: validator ?? (required ? (v) => (v == null || v.isEmpty) ? '$label is required' : null : null),
           builder: (state) {

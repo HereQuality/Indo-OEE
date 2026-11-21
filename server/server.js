@@ -21,6 +21,7 @@ const connectDB = require("./config/db");
 const logger = require("./config/logger");
 const { initSocket } = require("./socket");
 require("./workers/profileWorker"); // Initialize BullMQ worker for profile tasks
+const summaryMail = require("./jobs/summaryMail"); // daily / weekly OEE + OK Qty summary email
 
 const PORT = process.env.PORT;
 const NODE_ENV = process.env.NODE_ENV;
@@ -42,6 +43,7 @@ const startServer = async () => {
 
     const httpServer = http.createServer(app);
     initSocket(httpServer);
+    summaryMail.start();
 
     const server = httpServer.listen(PORT, () => {
       const host = process.env.APP_HOST;

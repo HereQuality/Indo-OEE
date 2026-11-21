@@ -33,6 +33,7 @@ class EntryEditorScreen extends StatefulWidget {
     super.key,
     this.row,
     this.initialMachineId,
+    this.initialDate,
     required this.machines,
     required this.items,
     required this.operators,
@@ -68,6 +69,9 @@ class EntryEditorScreen extends StatefulWidget {
 
   /// Machine to pre-select when adding.
   final String? initialMachineId;
+
+  /// A new entry's date when opened from a "Not filled yet" row (YYYY-MM-DD).
+  final String? initialDate;
 
   /// Selectable machines, already scoped to the process, in sheet order.
   final List<Map<String, dynamic>> machines;
@@ -142,8 +146,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   @override
   void didUpdateWidget(EntryEditorScreen old) {
     super.didUpdateWidget(old);
-    if (!identical(old.machines, widget.machines))
+    if (!identical(old.machines, widget.machines)) {
       _machinesForForm = _machinesWithSaved();
+    }
   }
 
   // An edited record's machine may have been deactivated since — keep it in the
@@ -151,8 +156,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   List<Map<String, dynamic>> _machinesWithSaved() {
     if (!_isEdit) return widget.machines;
     final id = '${widget.row!['machine'] ?? ''}';
-    if (id.isEmpty || widget.machines.any((m) => '${m['_id']}' == id))
+    if (id.isEmpty || widget.machines.any((m) => '${m['_id']}' == id)) {
       return widget.machines;
+    }
     final noun = widget.spec.machineNoun;
     return [
       ...widget.machines,
@@ -165,11 +171,16 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
 
   Map<String, dynamic> _freshEntry() {
     final e = widget.spec.emptyEntry();
+    final date = widget.initialDate;
+    if (date != null && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) {
+      e['date'] = date;
+    }
     final id = widget.initialMachineId;
     if (id != null &&
         id.isNotEmpty &&
-        widget.machines.any((m) => '${m['_id']}' == id))
+        widget.machines.any((m) => '${m['_id']}' == id)) {
       e['machine'] = id;
+    }
     return e;
   }
 
@@ -316,8 +327,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   void _warnNewTimeProblems(List<String?> before) {
     for (var i = 0; i < _errors.length; i++) {
       final now = _timeProblem(i);
-      if (now != null && now != (i < before.length ? before[i] : null))
+      if (now != null && now != (i < before.length ? before[i] : null)) {
         EntryFormToast.warn(now);
+      }
     }
   }
 
@@ -343,8 +355,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       if (_occupied.containsKey(key)) continue;
       if (_occupiedAsked.containsKey(key)) {
         final failedAt = _occupiedAsked[key];
-        if (failedAt == null || now.difference(failedAt) < _occupiedRetry)
+        if (failedAt == null || now.difference(failedAt) < _occupiedRetry) {
           continue; // in flight, or failed recently
+        }
       }
       _occupiedAsked[key] = null;
       unawaited(_loadOccupied(key, machine, date));
@@ -358,8 +371,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
       if (_operatorOccupied.containsKey(key)) continue;
       if (_operatorAsked.containsKey(key)) {
         final failedAt = _operatorAsked[key];
-        if (failedAt == null || now.difference(failedAt) < _occupiedRetry)
+        if (failedAt == null || now.difference(failedAt) < _occupiedRetry) {
           continue;
+        }
       }
       _operatorAsked[key] = null;
       unawaited(_loadOperatorOccupied(key, op, date));
@@ -467,8 +481,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
     if (_saving ||
         _entries.length <= 1 ||
         index < 0 ||
-        index >= _entries.length)
+        index >= _entries.length) {
       return;
+    }
     _apply([
       for (var i = 0; i < _entries.length; i++)
         if (i != index) _entries[i],

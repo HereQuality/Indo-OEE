@@ -7,6 +7,7 @@ import { ImagePlus, Trash2, Building2, Globe } from 'lucide-react';
 import defaultFavicon from '../assets/Fevicon_hqepl.png';
 import MaintenanceModeCard from '../Components/Common/MaintenanceModeCard';
 import AnnouncementModeCard from '../Components/Common/AnnouncementModeCard';
+import SummaryMailCard from '../Components/Common/SummaryMailCard';
 
 export default function CompanyManagement() {
   const queryClient = useQueryClient();
@@ -277,6 +278,10 @@ export default function CompanyManagement() {
 
               <div className="mt-4">
                 <AnnouncementModeCard />
+              </div>
+
+              <div className="mt-4">
+                <SummaryMailCard />
               </div>
             </Col>
           </Row>

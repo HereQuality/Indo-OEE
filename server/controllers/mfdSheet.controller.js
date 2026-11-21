@@ -14,13 +14,14 @@ const { WORKING_MODES, isNonWorking, nonWorkingBody } = require("../utils/workin
 const { MACHINE_STATUSES } = require("../models/entryCommon");
 const { applyQuantities } = require("../utils/rejectSplit");
 const { checkNotLocked, parseDay, parseList } = require("./productionSheet.controller");
+const { pageDatesFor } = require("../utils/sheetDates");
 
 /**
  * controllers/mfdSheet.controller.js
  * ────────────────────────────────────
  * The MODULAR FRAME DRILLING sheet's API — INJECTION MOULDING's
  * (injectionSheet.controller.js) over its own collection: paged by date, a
- * 2-working-day lock with a Super Admin unlock, Operator Planned Shift from
+ * 24-hour lock with a Super Admin unlock, Operator Planned Shift from
  * Process Master (utils/plannedShift.js), vendors where the process has them,
  * Admin review of an entry over 100%, and the audit log.
  *
@@ -247,17 +248,25 @@ exports.getSheet = async (req, res) => {
     if (req.query.operator) dateFilterQuery.operator = { $in: parseList(req.query.operator) };
     if (req.query.item) dateFilterQuery.itemName = { $in: parseList(req.query.item) };
 
-    const distinctDates = await MfdEntry.find(dateFilterQuery).distinct("date");
-    const sortedDates = distinctDates.map((d) => d.toISOString().slice(0, 10)).sort().reverse();
-    const totalDays = sortedDates.length;
-    const totalPages = Math.max(1, Math.ceil(totalDays / PAGE_SIZE_DAYS));
-    const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), totalPages);
-    const pageDates = sortedDates.slice((page - 1) * PAGE_SIZE_DAYS, page * PAGE_SIZE_DAYS).map(parseDay);
+    // Every working day up to today is paged, not just the dates with entries
+    // (utils/sheetDates.js) — a day nothing's been entered on yet shows a
+    // "Not filled yet" row per machine. An Operator / Part filter pages only
+    // the dates with a match, as before.
+    const paged = await pageDatesFor({
+      Model: MfdEntry,
+      from,
+      to,
+      dateFilterQuery,
+      filtered: !!(req.query.operator || req.query.item || req.query.worker),
+      page: req.query.page,
+      pageSize: PAGE_SIZE_DAYS,
+    });
+    const { page, totalPages, totalDays, pageDates } = paged;
 
     const entries = pageDates.length
       ? await MfdEntry.find({ ...query, date: { $in: pageDates } })
           // createdAt and unlockedUntil stay in: the sheet works out each row's
-          // working-day lock, and whether to offer Unlock, from them.
+          // 24-hour lock, and whether to offer Unlock, from them.
           .select("-__v")
           .lean()
           .then((rows) => withAuthors(SHEET, rows))
@@ -266,7 +275,7 @@ exports.getSheet = async (req, res) => {
     res.status(200).json({
       isOk: true,
       data: entries.map(toRow),
-      meta: { page, totalPages, totalDays },
+      meta: { page, totalPages, totalDays, dates: paged.dates },
       machineNames: await machineNamesFor(entries.map((e) => e.machine)),
     });
   } catch (error) {
@@ -351,8 +360,7 @@ exports.saveRow = async (req, res) => {
     // new entry is fine. The window counts from when that row was first saved
     // (createdAt), not from its own Date — see checkNotLocked's own comment.
     if (existing) {
-      const createdAtISO = new Date(existing.createdAt).toISOString().slice(0, 10);
-      const lockMessage = await checkNotLocked(createdAtISO, req.user, existing.unlockedUntil);
+      const lockMessage = await checkNotLocked(existing.createdAt, req, existing.unlockedUntil);
       if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
     }
     // Whether this save moves the saved entry to another Date or Machine — for
@@ -530,7 +538,7 @@ exports.deleteRow = async (req, res) => {
     }
     const existing = await MfdEntry.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ isOk: false, message: "Entry not found" });
-    const lockMessage = await checkNotLocked(new Date(existing.createdAt).toISOString().slice(0, 10), req.user, existing.unlockedUntil);
+    const lockMessage = await checkNotLocked(existing.createdAt, req, existing.unlockedUntil);
     if (lockMessage) return res.status(403).json({ isOk: false, message: lockMessage });
 
     const deleted = await MfdEntry.findByIdAndDelete(req.params.id);
@@ -545,7 +553,7 @@ exports.deleteRow = async (req, res) => {
 };
 
 // PUT /mfd-sheet/row/:id/unlock — Super Admin or Full access (route-level requireAdmin):
-// 24 hours of edit/delete on this one entry despite the working-day lock.
+// 24 hours of edit/delete on this one entry despite the 24-hour lock.
 exports.unlockRow = async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {

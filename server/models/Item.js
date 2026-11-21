@@ -109,6 +109,13 @@ const ItemSchema = new mongoose.Schema(
       maxlength: [40, "Setup No. must be 40 characters or fewer"],
       default: "",
     },
+    // A free note about the part (material, finish, where it's used…) — optional.
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [500, "Description must be 500 characters or fewer"],
+      default: "",
+    },
     ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, cycleOpNumber])),
     // The authoritative cycle time every formula uses — typed on its own,
     // not the sum of the eight operations above. On the real sheet the two

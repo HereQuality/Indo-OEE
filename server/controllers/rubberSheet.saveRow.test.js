@@ -215,7 +215,7 @@ const ENTRY = "64b0c0ffee0000000000eeee";
 const savedRow = (o = {}) => ({ ...savita(), _id: ENTRY, date: new Date("2025-01-07T00:00:00.000Z"), slot: 1, createdAt: new Date(), ...o });
 
 test("a locked entry can't be edited, whatever slot the save names", async () => {
-  // Saved a month ago: well past the 2-working-day window.
+  // Saved a month ago: well past the 24-hour window.
   const existing = savedRow({ createdAt: new Date(Date.now() - 30 * 86400000) });
   await withDb({ existing }, async (db) => {
     // slot "auto" with the entry's _id used to skip the lock check.

@@ -1,7 +1,7 @@
 /**
  * Company Holidays API Service
  * Handles Company Holidays + Weekly Off calls (Operator Management > Company Holidays).
- * This calendar is what the production entry lock (2 working days) is checked against.
+ * This calendar feeds the working-day sums (the entry lock itself is 24 hours from saving).
  */
 import api from "./index";
 import { ENDPOINTS } from "./endpoints";

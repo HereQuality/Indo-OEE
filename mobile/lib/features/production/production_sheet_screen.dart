@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import 'process/process_spec.dart';
 import 'processes/cnc/cnc_spec.dart' show cncSpec;
 import 'shared/production_sheet_calc.dart' show jsNumber;
+import 'shared/review_access.dart';
 import 'sheet/editor/entry_editor_screen.dart';
 import 'sheet/sheet_controller.dart';
 import 'sheet/sheet_model.dart';
@@ -72,10 +73,15 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
   @override
   bool get wantKeepAlive => true;
 
+  bool _fullAccess = false;
+
   @override
   void initState() {
     super.initState();
     unawaited(_c.start());
+    unawaited(const ReviewAccessRepository().canReview().then((v) {
+      if (mounted && v != _fullAccess) setState(() => _fullAccess = v);
+    }));
     _tableV.addListener(_onTableScroll);
     unawaited(_loadView());
   }
@@ -191,7 +197,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
     );
   }
 
-  Future<void> _openEditor(Json? row) async {
+  Future<void> _openEditor(Json? row, {String? date, String? machineId}) async {
     if (_opening) return;
     _opening = true;
     try {
@@ -204,7 +210,8 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
       final saved = await _presentEditor(
         EntryEditorScreen(
           row: row,
-          initialMachineId: row == null ? _initialMachine() : null,
+          initialMachineId: row == null ? (machineId ?? _initialMachine()) : null,
+          initialDate: row == null ? date : null,
           machines: _c.scopedMachines,
           items: _c.scopedItems,
           operators: _c.operators,
@@ -224,7 +231,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
 
   Future<void> _edit(Json row) async {
     final lock = _c.lockInfo(row);
-    if (lock.isNotEmpty) {
+    if (lock.isNotEmpty && !_c.isAdmin) {
       Alerts.error(lock);
       return;
     }
@@ -240,7 +247,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
 
   Future<void> _delete(Json row) async {
     final lock = _c.lockInfo(row);
-    if (lock.isNotEmpty) {
+    if (lock.isNotEmpty && !_c.isAdmin) {
       Alerts.error(lock);
       return;
     }
@@ -360,7 +367,10 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
   Widget build(BuildContext context) {
     super.build(context);
     final perms = PagePermissions.of(context);
-    final isAdmin = context.select<AuthProvider, bool>((a) => a.isSuperAdmin);
+    // Super Admin, or a Full access role (GET /oee-review/access, the same
+    // answer the web's useReviewAccess gets): never locked, may unlock others'.
+    final isAdmin = context.select<AuthProvider, bool>((a) => a.isSuperAdmin) || _fullAccess;
+    _c.isAdmin = isAdmin;
     final access = SheetAccess(canEdit: perms.edit, canDelete: perms.delete, isAdmin: isAdmin);
     final size = MediaQuery.sizeOf(context);
     _tablet = size.shortestSide >= 600;
@@ -558,6 +568,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
       onRefresh: _c.refresh,
       footer: footer,
       footerExtent: wide ? 96 : 132,
+      onAddFor: PagePermissions.of(context).create ? (date, machineId) => _openEditor(null, date: date, machineId: machineId.isEmpty ? null : machineId) : null,
     );
   }
 
@@ -588,6 +599,7 @@ class _ProductionSheetScreenState extends State<ProductionSheetScreen> with Auto
             onEdit: _edit,
             onDelete: _delete,
             onUnlock: _unlock,
+            onAdd: PagePermissions.of(context).create ? () => _openEditor(null, date: group.date, machineId: group.machineId.isEmpty ? null : group.machineId) : null,
           ),
         );
     return RefreshIndicator(

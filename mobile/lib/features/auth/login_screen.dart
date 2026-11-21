@@ -222,8 +222,8 @@ class _Brand extends StatelessWidget {
         height: _height,
         fit: BoxFit.contain,
         fadeInDuration: const Duration(milliseconds: 150),
-        placeholder: (_, __) => const SizedBox(height: _height),
-        errorWidget: (_, __, ___) => _label(context),
+        placeholder: (_, _) => const SizedBox(height: _height),
+        errorWidget: (_, _, _) => _label(context),
       );
       // A dark logo on transparent would vanish on the dark background.
       return isDark

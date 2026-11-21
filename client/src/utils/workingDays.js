@@ -52,4 +52,30 @@ export const getLockDeadline = (entryDateISO, weeklyOffDays, holidays, workingDa
 export const isEntryLocked = (entryDateISO, weeklyOffDays, holidays, asOfISO, workingDaysAhead = 2) =>
   (asOfISO || toISO(new Date())) > getLockDeadline(entryDateISO, weeklyOffDays, holidays, workingDaysAhead);
 
+// The entry lock (server: controllers/productionSheet.controller.js
+// checkNotLocked): an entry can be edited / deleted for 24 hours after it was
+// saved (createdAt). A Super Admin or Full access user is never locked; anyone
+// else needs a still-current `unlockedUntil` (an unlock, which itself lasts
+// 24 hours). Preview only — the server re-checks on every Save/Delete.
+export const LOCK_HOURS = 24;
+export const LOCK_MS = LOCK_HOURS * 60 * 60 * 1000;
+
+const twoDigits = (n) => String(n).padStart(2, "0");
+const localDateTime = (d) => `${twoDigits(d.getDate())}/${twoDigits(d.getMonth() + 1)}/${d.getFullYear()} ${twoDigits(d.getHours())}:${twoDigits(d.getMinutes())}`;
+
+// "" while `row` is still open to everyone, else why it is locked. An admin
+// (Super Admin / Full access) edits a locked row anyway — the pages and the
+// table let them through — and is offered Unlock for it, for everyone else.
+export const entryLockInfo = (row) => {
+  if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
+  // A row without a usable createdAt can't be dated, so it isn't shown as
+  // locked (rather than worked out from "NaN") — Save is still checked.
+  const created = row.createdAt ? new Date(row.createdAt) : null;
+  if (!created || Number.isNaN(created.getTime())) return "";
+  const until = new Date(created.getTime() + LOCK_MS);
+  if (until > new Date()) return "";
+  return `Locked — saved more than ${LOCK_HOURS} hours ago (was editable until ${localDateTime(until)})`;
+};
+
+// Kept for the Company Holidays page's own checks.
 export const LOCK_WORKING_DAYS = 2;

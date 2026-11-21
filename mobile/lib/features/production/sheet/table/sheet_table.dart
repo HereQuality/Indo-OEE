@@ -6,8 +6,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/alerts.dart';
 import '../../process/process_spec.dart';
 import '../sheet_controller.dart';
+import '../machine_day_status.dart';
 import '../sheet_model.dart';
-import '../widgets/machine_day_card.dart' show SheetAccess, EntryAction;
+import '../widgets/not_running_dialog.dart';
+import '../widgets/machine_day_card.dart'
+    show SheetAccess, EntryAction, notRunningHint, notRunningKindColor;
 import '../widgets/sheet_popovers.dart';
 import '../widgets/sheet_style.dart';
 import 'shared_columns.dart' show oeeFigureStyle;
@@ -53,6 +56,9 @@ class SheetTableItem {
   bool get boundary => dateStart && dayIndex > 0;
 
   String get id => '${row['_id']}';
+
+  /// A "Not filled yet" row: a machine with nothing entered on the date.
+  bool get placeholder => row['_placeholder'] == true;
 }
 
 /// The flat list of rows, in the order the web sheet sorts them.
@@ -60,24 +66,38 @@ List<SheetTableItem> buildTableItems(List<SheetDay> days) {
   final out = <SheetTableItem>[];
   for (var d = 0; d < days.length; d++) {
     final day = days[d];
-    final total = day.entryCount;
+    final total = day.machines.fold(
+      0,
+      (sum, m) => sum + (m.entries.isEmpty ? 1 : m.entries.length),
+    );
     var n = 0;
     for (final m in day.machines) {
-      for (var j = 0; j < m.entries.length; j++) {
+      // A machine with nothing entered yet is one row of its own.
+      final rows = m.entries.isEmpty
+          ? [
+              <String, dynamic>{
+                '_id': 'ph|${day.date}|${m.machineId}',
+                '_placeholder': true,
+                'date': day.date,
+                'machine': m.machineId,
+              },
+            ]
+          : m.entries;
+      for (var j = 0; j < rows.length; j++) {
         out.add(
           SheetTableItem(
-            row: m.entries[j],
+            row: rows[j],
             date: day.date,
             machineId: m.machineId,
             dayIndex: d,
             dateStart: n == 0,
             dateEnd: n == total - 1,
             machineStart: j == 0,
-            machineEnd: j == m.entries.length - 1,
+            machineEnd: j == rows.length - 1,
             dateIndex: n,
             dateRun: total,
             machineIndex: j,
-            machineRun: m.entries.length,
+            machineRun: rows.length,
           ),
         );
         n++;
@@ -143,7 +163,11 @@ class SheetTable extends StatefulWidget {
     required this.onRefresh,
     required this.footer,
     required this.footerExtent,
+    this.onAddFor,
   });
+
+  /// "Add entry" on a "Not filled yet" row: (date, machineId). Null = no button.
+  final void Function(String date, String machineId)? onAddFor;
 
   final SheetController controller;
   final List<SheetTableItem> items;
@@ -177,8 +201,9 @@ class _SheetTableState extends State<SheetTable> {
     // closing only pulls the table back if it is now shorter than the scroll.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final m = soleScrollPosition(widget.hController);
-      if (!mounted || m == null || !m.hasPixels || !m.hasContentDimensions)
+      if (!mounted || m == null || !m.hasPixels || !m.hasContentDimensions) {
         return;
+      }
       if (m.pixels > m.maxScrollExtent) {
         m.jumpTo(m.maxScrollExtent);
         return;
@@ -202,12 +227,13 @@ class _SheetTableState extends State<SheetTable> {
             .min(end - _visible, start)
             .clamp(0.0, m.maxScrollExtent)
             .toDouble();
-        if ((target - m.pixels).abs() > 1)
+        if ((target - m.pixels).abs() > 1) {
           m.animateTo(
             target,
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
           );
+        }
       }
     });
   }
@@ -218,13 +244,34 @@ class _SheetTableState extends State<SheetTable> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final tablet = widget.tablet;
     final metrics = TableMetrics(context, tablet: tablet);
-    final cols = widget.controller.columnsFor(_open);
     final k = metrics.k;
+    // Every scrolling column is at least wide enough for its header to sit on
+    // two lines without an ellipsis or a word broken in half.
+    final raw = widget.controller.columnsFor(_open);
+    final cols = SheetColumns(
+      left: raw.left,
+      middle: [
+        for (final c in raw.middle)
+          c.withWidth(
+            math.max(
+              c.width,
+              _headerNeed(context, c, metrics.headFont) / k,
+            ),
+          ),
+      ],
+      expandSummary: raw.expandSummary,
+    );
     // The frozen columns keep close to their design width however large the
     // text is (their text ellipsises instead), or they would eat the screen.
     final kf = math.min(k, 1.15);
-    final leftW = cols.leftWidth(kf);
-    final midW0 = cols.middleWidth(k);
+    // The Status column before Date: a row's state and its quick actions
+    // (Add / Not running), as on the web.
+    final statusW = (tablet ? 196.0 : 164.0) * kf;
+    // Date + Machine stay frozen as before; Status is the first scrolling
+    // column, right after Machine.
+    final frozenW = cols.leftWidth(kf);
+    final leftW = frozenW;
+    final midW0 = statusW + cols.middleWidth(k);
     final actW = tablet ? actionsWidth : actionsWidthPhone;
 
     Widget table = LayoutBuilder(
@@ -238,17 +285,18 @@ class _SheetTableState extends State<SheetTable> {
           for (final c in cols.left) c.key: c.width * kf,
           for (final c in cols.middle) c.key: c.width * k,
         };
-        if (extra > 0 && cols.middle.isNotEmpty)
+        if (extra > 0 && cols.middle.isNotEmpty) {
           widths[cols.middle.last.key] = widths[cols.middle.last.key]! + extra;
+        }
 
         // On a very narrow screen at a large text size there is no room left for
         // the scrolling middle: let Actions (then Date + Machine) scroll instead.
         _k = k;
         _visible = math.max(0.0, vw - leftW - actW);
-        final freezeLeft = vw - leftW >= 140;
+        final freezeLeft = vw - frozenW >= 140;
         // Actions stay pinned (visible on every row) whenever the columns still get a
         // usable width; on a phone they are compact for exactly that reason.
-        final freezeRight = vw - leftW - actW >= 120;
+        final freezeRight = vw - frozenW - actW >= 120;
         final palette = _Palette(context);
         final h = widget.hController;
         final items = widget.items;
@@ -280,6 +328,12 @@ class _SheetTableState extends State<SheetTable> {
                   width: midW,
                   child: Row(
                     children: [
+                      _HeadCell.actions(
+                        width: statusW,
+                        metrics: metrics,
+                        palette: palette,
+                        title: 'Status',
+                      ),
                       for (final c in cols.middle)
                         _HeadCell(
                           col: c,
@@ -337,7 +391,7 @@ class _SheetTableState extends State<SheetTable> {
 
         // Width of the middle columns to the left of each one.
         final before = <String, double>{};
-        var run = 0.0;
+        var run = statusW;
         for (final c in cols.middle) {
           before[c.key] = run;
           run += widths[c.key]!;
@@ -345,10 +399,11 @@ class _SheetTableState extends State<SheetTable> {
 
         Widget bodyRow(int i) {
           final it = items[i];
+          final ph = it.placeholder;
           final d = CellData(
             row: it.row,
-            calc: widget.controller.calcOf(it.row),
-            day: widget.controller.dayOf(it.row),
+            calc: ph ? const {} : widget.controller.calcOf(it.row),
+            day: ph ? const {} : widget.controller.dayOf(it.row),
             machineName: widget.controller.machineName[it.machineId] ?? '—',
           );
           Widget cell(SheetCol c, {double? before}) => _BodyCell(
@@ -392,8 +447,41 @@ class _SheetTableState extends State<SheetTable> {
                   width: midW,
                   child: Row(
                     children: [
-                      for (final c in cols.middle)
-                        cell(c, before: before[c.key]!),
+                      _StatusCell(
+                        item: it,
+                        mark: ph
+                            ? widget.controller.markOf(it.date, it.machineId)
+                            : null,
+                        width: statusW,
+                        metrics: metrics,
+                        palette: palette,
+                        controller: widget.controller,
+                        canAdd:
+                            widget.access.canEdit && widget.onAddFor != null,
+                        onAdd: () =>
+                            widget.onAddFor?.call(it.date, it.machineId),
+                      ),
+                      Expanded(
+                        child: ph
+                            ? _PlaceholderCells(
+                                item: it,
+                                mark: widget.controller.markOf(
+                                  it.date,
+                                  it.machineId,
+                                ),
+                                widths: [
+                                  for (final c in cols.middle) widths[c.key]!,
+                                ],
+                                metrics: metrics,
+                                palette: palette,
+                              )
+                            : Row(
+                                children: [
+                                  for (final c in cols.middle)
+                                    cell(c, before: before[c.key]!),
+                                ],
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -416,17 +504,24 @@ class _SheetTableState extends State<SheetTable> {
                   child: frozen(
                     freezeRight,
                     (o) => o + vw - totalW,
-                    _ActionsCell(
-                      item: it,
-                      width: actW,
-                      metrics: metrics,
-                      palette: palette,
-                      controller: widget.controller,
-                      access: widget.access,
-                      onEdit: widget.onEdit,
-                      onDelete: widget.onDelete,
-                      onUnlock: widget.onUnlock,
-                    ),
+                    ph
+                        ? _AddCell(
+                            item: it,
+                            width: actW,
+                            metrics: metrics,
+                            palette: palette,
+                          )
+                        : _ActionsCell(
+                            item: it,
+                            width: actW,
+                            metrics: metrics,
+                            palette: palette,
+                            controller: widget.controller,
+                            access: widget.access,
+                            onEdit: widget.onEdit,
+                            onDelete: widget.onDelete,
+                            onUnlock: widget.onUnlock,
+                          ),
                   ),
                 ),
               ],
@@ -639,12 +734,14 @@ class _HeadCell extends StatelessWidget {
     required this.palette,
     required this.onToggle,
     required ProcessSpec this.spec,
-  }) : _actions = false;
+  }) : _actions = false,
+       title = '';
 
   const _HeadCell.actions({
     required this.width,
     required this.metrics,
     required this.palette,
+    this.title = 'Actions',
   }) : col = null,
        onToggle = null,
        spec = null,
@@ -657,11 +754,12 @@ class _HeadCell extends StatelessWidget {
   final void Function(String id)? onToggle;
   final ProcessSpec? spec;
   final bool _actions;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     final c = col;
-    final label = _actions ? 'Actions' : c!.label;
+    final label = _actions ? title : c!.label;
     final tone = _actions ? ColTone.none : c!.tone;
     final formulaKey = c?.formulaKey;
     final expand = c?.expand;
@@ -722,7 +820,7 @@ class _HeadCell extends StatelessWidget {
       );
     }
     return Container(
-      key: ValueKey('head-${_actions ? 'actions' : c!.key}'),
+      key: ValueKey('head-${_actions ? title.toLowerCase() : c!.key}'),
       width: width,
       height: metrics.head,
       decoration: decoration,
@@ -897,7 +995,9 @@ class _BodyCell extends StatelessWidget {
     if (show) {
       final txt = col.remarkKind == 'general' ? '' : col.text(data);
       // A spec may emphasise one value (red over 100%, a review badge).
-      final emph = txt.isEmpty ? null : (col.style?.call(data) ?? oeeFigureStyle(col, data.day));
+      final emph = txt.isEmpty
+          ? null
+          : (col.style?.call(data) ?? oeeFigureStyle(col, data.day));
       final mark = emph?.mark ?? CellMark.none;
       final markColor = mark == CellMark.none
           ? null
@@ -927,7 +1027,10 @@ class _BodyCell extends StatelessWidget {
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             );
-      if (textWidget != null && emph != null && emph.pill && markColor != null) {
+      if (textWidget != null &&
+          emph != null &&
+          emph.pill &&
+          markColor != null) {
         textWidget = DecoratedBox(
           key: ValueKey('pill-${col.key}-${item.id}'),
           decoration: BoxDecoration(
@@ -1042,6 +1145,330 @@ class _RemarkEye extends StatelessWidget {
   }
 }
 
+/// The Actions cell of a "Not filled yet" row: an Add button (when this user
+/// may add entries), else nothing.
+class _AddCell extends StatelessWidget {
+  const _AddCell({
+    required this.item,
+    required this.width,
+    required this.metrics,
+    required this.palette,
+  });
+
+  final SheetTableItem item;
+  final double width;
+  final TableMetrics metrics;
+  final _Palette palette;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: metrics.row,
+    decoration: BoxDecoration(
+      color: palette.bg(ColTone.none, item.dayIndex),
+      border: Border(
+        left: BorderSide(color: palette.grid),
+        top: item.boundary
+            ? BorderSide(color: palette.strong, width: 2)
+            : BorderSide.none,
+        bottom: BorderSide(color: palette.grid),
+      ),
+    ),
+  );
+}
+
+/// The middle columns of a row with nothing entered, as before: the first
+/// says "Not filled yet" (or the Not running reasons, remarks and who), the
+/// rest show a dash.
+class _PlaceholderCells extends StatelessWidget {
+  const _PlaceholderCells({
+    required this.item,
+    required this.mark,
+    required this.widths,
+    required this.metrics,
+    required this.palette,
+  });
+
+  final SheetTableItem item;
+  final DayMark? mark;
+  final List<double> widths;
+  final TableMetrics metrics;
+  final _Palette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Theme.of(context).colorScheme;
+    final m = mark;
+    final border = Border(
+      right: BorderSide(color: palette.grid),
+      top: item.boundary
+          ? BorderSide(color: palette.strong, width: 2)
+          : BorderSide.none,
+      bottom: BorderSide(color: palette.grid),
+    );
+    final muted = TextStyle(fontSize: metrics.font, color: s.onSurfaceVariant);
+    Widget first() {
+      if (m == null) {
+        return Text(
+          'Not filled yet',
+          key: ValueKey('placeholder-${item.id}'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: muted.copyWith(fontStyle: FontStyle.italic),
+        );
+      }
+      final extra = [
+        if (m.remarks.isNotEmpty && m.remarks != m.reasonLabel) m.remarks,
+        if (m.markedBy.isNotEmpty) 'by ${m.markedBy}',
+      ].join(' · ');
+      return Tooltip(
+        message: extra.isEmpty ? m.reasonLabel : '${m.reasonLabel} — $extra',
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: m.reasonLabel,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: notRunningKindColor(context, m.kind == 'planned'),
+                ),
+              ),
+              if (extra.isNotEmpty) TextSpan(text: '  $extra'),
+            ],
+          ),
+          key: ValueKey('notrunning-label-${item.id}'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: muted,
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        for (var i = 0; i < widths.length; i++)
+          Container(
+            width: widths[i],
+            height: metrics.row,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: i == 0 ? Alignment.centerLeft : Alignment.center,
+            decoration: BoxDecoration(
+              color: palette.bg(ColTone.none, item.dayIndex),
+              border: border,
+            ),
+            child: i == 0 ? first() : Text('—', style: muted),
+          ),
+      ],
+    );
+  }
+}
+
+/// The Status cell before Date. A saved entry reads "Filled"; a row with
+/// nothing entered offers "Add" and "Not running" (labelled pills); a row
+/// marked not running reads "Not running" with Edit and Undo.
+class _StatusCell extends StatelessWidget {
+  const _StatusCell({
+    required this.item,
+    required this.mark,
+    required this.width,
+    required this.metrics,
+    required this.palette,
+    required this.controller,
+    required this.canAdd,
+    required this.onAdd,
+  });
+
+  final SheetTableItem item;
+  final DayMark? mark;
+  final double width;
+  final TableMetrics metrics;
+  final _Palette palette;
+  final SheetController controller;
+  final bool canAdd;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Theme.of(context).colorScheme;
+    final m = mark;
+    final name =
+        controller.machineName[item.machineId] ??
+        (item.machineId.isEmpty ? 'Whole day' : '—');
+    final blue = SheetTones.text(context, AppColors.brand600);
+    final amber = notRunningKindColor(context, false);
+    Widget pill(
+      String key,
+      String label,
+      String tip,
+      IconData icon,
+      Color c,
+      VoidCallback? onTap, {
+      bool filled = false,
+    }) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: tip,
+        child: OutlinedButton.icon(
+          key: ValueKey(key),
+          onPressed: onTap,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: filled ? Colors.white : c,
+            disabledForegroundColor: c,
+            backgroundColor: filled ? c : c.withValues(alpha: 0.10),
+            side: BorderSide(color: c.withValues(alpha: filled ? 1 : 0.6)),
+            shape: const StadiumBorder(),
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            minimumSize: const Size(0, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          icon: Icon(icon, size: 15),
+          label: Text(label, maxLines: 1),
+        ),
+      ),
+    );
+    Widget iconBtn(
+      String key,
+      String tip,
+      IconData icon,
+      Color c,
+      VoidCallback onTap,
+    ) => IconButton(
+      key: ValueKey(key),
+      tooltip: tip,
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: c),
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      padding: EdgeInsets.zero,
+    );
+
+    final List<Widget> children;
+    if (!item.placeholder) {
+      final green = SheetTones.text(context, const Color(0xFF059669));
+      children = [
+        pill(
+          'filled-${item.id}',
+          'Filled',
+          'Entry saved',
+          Icons.check_rounded,
+          green,
+          null,
+        ),
+      ];
+    } else if (m != null) {
+      final c = notRunningKindColor(context, m.kind == 'planned');
+      children = [
+        pill(
+          'nr-chip-${item.id}',
+          'Not running',
+          m.reasonLabel,
+          Icons.block_rounded,
+          c,
+          null,
+        ),
+        if (canAdd && !controller.canChangeMark(m))
+          Tooltip(
+            message:
+                'Locked — it can only be changed on the day it was saved. Ask an Admin.',
+            child: Padding(
+              key: ValueKey('nr-locked-${item.id}'),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(
+                Icons.lock_outline_rounded,
+                size: 16,
+                color: s.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (canAdd && controller.canChangeMark(m)) ...[
+          iconBtn(
+            'nr-edit-${item.id}',
+            'Edit not running',
+            Icons.edit_outlined,
+            blue,
+            () => showNotRunningDialog(
+              context,
+              controller: controller,
+              date: item.date,
+              machineId: item.machineId,
+              machineName: name,
+              existing: m,
+            ),
+          ),
+          iconBtn(
+            'nr-undo-${item.id}',
+            'Undo not running',
+            Icons.undo_rounded,
+            s.error,
+            () => controller.removeMark(m),
+          ),
+        ],
+      ];
+    } else if (canAdd) {
+      children = [
+        pill(
+          'add-${item.id}',
+          'Add',
+          'The machine ran — fill in its entry',
+          Icons.add_rounded,
+          blue,
+          onAdd,
+          filled: true,
+        ),
+        pill(
+          'notrunning-${item.id}',
+          'Not running',
+          notRunningHint,
+          Icons.block_rounded,
+          amber,
+          () => showNotRunningDialog(
+            context,
+            controller: controller,
+            date: item.date,
+            machineId: item.machineId,
+            machineName: name,
+          ),
+        ),
+      ];
+    } else {
+      children = [
+        Text(
+          'Pending',
+          style: TextStyle(
+            fontSize: metrics.font,
+            fontStyle: FontStyle.italic,
+            color: s.onSurfaceVariant,
+          ),
+        ),
+      ];
+    }
+
+    return Container(
+      key: ValueKey('status-${item.id}'),
+      width: width,
+      height: metrics.row,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: palette.bg(ColTone.none, item.dayIndex),
+        border: Border(
+          right: BorderSide(color: palette.grid),
+          top: item.boundary
+              ? BorderSide(color: palette.strong, width: 2)
+              : BorderSide.none,
+          bottom: BorderSide(color: palette.grid),
+        ),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    );
+  }
+}
+
 class _ActionsCell extends StatelessWidget {
   const _ActionsCell({
     required this.item,
@@ -1071,8 +1498,9 @@ class _ActionsCell extends StatelessWidget {
     final id = item.id;
     final lock = controller.lockInfo(row);
     final locked = lock.isNotEmpty;
-    final canEdit = access.canEdit && !locked;
-    final canDelete = access.canDelete && !locked;
+    // An admin edits a locked row anyway, and is offered Unlock for it.
+    final canEdit = access.canEdit && (!locked || access.isAdmin);
+    final canDelete = access.canDelete && (!locked || access.isAdmin);
     final side = math.min(44.0, metrics.row);
     final s = palette.s;
 
@@ -1098,35 +1526,58 @@ class _ActionsCell extends StatelessWidget {
     );
 
     Widget child;
+    final deleting = controller.deletingId == id;
+    final editButtons = <Widget>[
+      if (canEdit)
+        iconBtn(
+          key: ValueKey('edit-$id'),
+          icon: Icons.edit_outlined,
+          tip: 'Edit',
+          color: SheetTones.text(context, AppColors.brand600),
+          onTap: () => onEdit(row),
+        ),
+      if (canDelete)
+        iconBtn(
+          key: ValueKey('delete-$id'),
+          icon: Icons.delete_outline_rounded,
+          tip: 'Delete',
+          color: SheetTones.text(context, AppColors.critical),
+          onTap: deleting ? null : () => onDelete(row),
+        ),
+    ];
     if (locked) {
       if (access.isAdmin) {
+        // An admin is never locked out: Unlock (for everyone else) sits
+        // beside their own edit / delete — three icons, scaled to fit the
+        // narrow Actions column on a phone.
         final busy = controller.unlockingId == id;
-        final warn = SheetTones.text(context, SheetTones.lock);
         child = Center(
-          child: TextButton.icon(
-            key: ValueKey('unlock-$id'),
-            onPressed: busy ? null : () => onUnlock(row),
-            style: TextButton.styleFrom(
-              foregroundColor: warn,
-              minimumSize: Size(64, side),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: TextStyle(
-                fontSize: metrics.font,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            icon: busy
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.lock_open_rounded, size: 16),
-            label: Text(
-              busy ? 'Unlocking…' : 'Unlock',
-              maxLines: 1,
-              softWrap: false,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                busy
+                    ? SizedBox(
+                        width: side,
+                        height: side,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    : iconBtn(
+                        key: ValueKey('unlock-$id'),
+                        icon: Icons.lock_open_rounded,
+                        tip: 'Unlock for 24 hours',
+                        color: SheetTones.text(context, SheetTones.lock),
+                        onTap: () => onUnlock(row),
+                      ),
+                ...editButtons,
+              ],
             ),
           ),
         );
@@ -1142,27 +1593,9 @@ class _ActionsCell extends StatelessWidget {
         );
       }
     } else if (canEdit || canDelete) {
-      final deleting = controller.deletingId == id;
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (canEdit)
-            iconBtn(
-              key: ValueKey('edit-$id'),
-              icon: Icons.edit_outlined,
-              tip: 'Edit',
-              color: SheetTones.text(context, AppColors.brand600),
-              onTap: () => onEdit(row),
-            ),
-          if (canDelete)
-            iconBtn(
-              key: ValueKey('delete-$id'),
-              icon: Icons.delete_outline_rounded,
-              tip: 'Delete',
-              color: SheetTones.text(context, AppColors.critical),
-              onTap: deleting ? null : () => onDelete(row),
-            ),
-        ],
+        children: editButtons,
       );
     } else {
       child = const SizedBox.shrink();
@@ -1273,4 +1706,60 @@ class _SheetTableSkeletonState extends State<SheetTableSkeleton>
       ),
     );
   }
+}
+
+final Map<String, double> _headerNeedCache = {};
+
+/// The narrowest width at which [c]'s header label fits on two lines (bold,
+/// at [font] and the device text size) without breaking a word, plus the
+/// cell's padding and its formula / chevron icons.
+double _headerNeed(BuildContext context, SheetCol c, double font) {
+  final scaler = MediaQuery.textScalerOf(context);
+  final scale = scaler.scale(font) / font;
+  final key = '${c.label}|$font|$scale|${c.formulaKey != null}|${c.expand != null}';
+  return _headerNeedCache.putIfAbsent(key, () {
+    final style = TextStyle(fontSize: font, height: 1.15, fontWeight: FontWeight.w700);
+    double widthOf(String t) {
+      final tp = TextPainter(
+        text: TextSpan(text: t, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      return tp.width;
+    }
+
+    final words = c.label.split(' ');
+    final space = widthOf('a a') - widthOf('aa');
+    final ws = [for (final w in words) widthOf(w)];
+    final longest = ws.fold(0.0, math.max);
+    // Lines a greedy wrap takes at width w.
+    int lines(double w) {
+      var n = 1;
+      var cur = -1.0;
+      for (final x in ws) {
+        if (cur < 0) {
+          cur = x;
+        } else if (cur + space + x <= w) {
+          cur += space + x;
+        } else {
+          n++;
+          cur = x;
+        }
+      }
+      return n;
+    }
+
+    var lo = longest, hi = math.max(longest, widthOf(c.label));
+    for (var i = 0; i < 20 && hi - lo > 0.5; i++) {
+      final mid = (lo + hi) / 2;
+      if (lines(mid) <= 2) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    final icons = (c.formulaKey != null ? 17.0 : 0.0) + (c.expand != null ? 24.0 : 0.0);
+    return (hi + 14 + icons).ceilToDouble();
+  });
 }

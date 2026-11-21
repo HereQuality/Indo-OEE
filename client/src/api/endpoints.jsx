@@ -37,6 +37,16 @@ export const ENDPOINTS = {
         BASE: `${V1}/maintenance`,
     },
 
+    // Daily / weekly OEE + OK Qty summary email (Company page)
+    MACHINE_DAY_STATUS: {
+        BASE: `${V1}/machine-day-status`,
+        REASONS: `${V1}/machine-day-status/reasons`,
+    },
+    SUMMARY_MAIL: {
+        BASE: `${V1}/summary-mail`,
+        SEND: `${V1}/summary-mail/send`,
+    },
+
     // Announcement mode endpoints
     ANNOUNCEMENT: {
         STATUS: `${V1}/announcement/status`,
@@ -71,6 +81,8 @@ export const ENDPOINTS = {
         BY_ID: (id) => `${V1}/processes/${id}`,
         SEARCH: `${V1}/processes/search`,
         ENTRIES: `${V1}/processes/entries`,
+        REPORT_PDF: `${V1}/processes/entries/report.pdf`,
+        REPORT_EMAIL: `${V1}/processes/entries/report/email`,
         SHIFT_ACCESS: `${V1}/processes/shift-access`,
     },
 
@@ -80,6 +92,7 @@ export const ENDPOINTS = {
         OBJECTIVE: (id) => `${V1}/kpi/objectives/${id}`,
         OBJECTIVES_IMPORT: `${V1}/kpi/objectives/import`,
         COMPANY_IMPORT: `${V1}/kpi/company/import`,
+        COMPANY_MONTHLY: `${V1}/kpi/company/monthly`,
         COMPANY: `${V1}/kpi/company`,
         COMPANY_ONE: (id) => `${V1}/kpi/company/${id}`,
     },

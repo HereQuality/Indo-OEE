@@ -6,7 +6,12 @@
 // Save/Delete/Unlock, so a stale calendar here can only show the wrong hint
 // until the request comes back — it can never let a locked entry be changed.
 
-/// An entry can be edited / deleted until this many working days after its date.
+/// An entry can be edited / deleted for this long after it was saved
+/// (server: controllers/productionSheet.controller.js LOCK_HOURS).
+const int lockHours = 24;
+const Duration lockWindow = Duration(hours: lockHours);
+
+/// Kept for the company calendar's own working-day sums.
 const int lockWorkingDays = 2;
 
 String _pad(int n) => n.toString().padLeft(2, '0');

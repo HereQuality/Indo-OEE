@@ -49,7 +49,8 @@ import { bookedRanges, isTimeRuleMessage, overlapErrors, slotsFullErrors } from 
 import { guardEscape } from "../utils/modalEscape";
 import { DIMENSIONS, EMPTY_FILTERS, applyFilters, defaultEntryRange, hasFilters } from "../utils/processDashboard";
 import { getCompanyHolidays, getWeeklyOff } from "../api/companyHolidays.api";
-import { LOCK_WORKING_DAYS, getLockDeadline } from "../utils/workingDays";
+import { entryLockInfo } from "../utils/workingDays";
+import { withPlaceholders } from "../utils/sheetPlaceholders";
 import { hmToWireHours, hoursToShiftInput, parseShiftHours } from "../utils/shiftHours";
 import { shiftSettingForMachine } from "../utils/plannedShift";
 
@@ -227,7 +228,7 @@ const BeforePowderCoatingDataEntry = () => {
   const canEdit = currentPagePermissions ? !!currentPagePermissions.edit : true;
   const canDelete = currentPagePermissions ? !!currentPagePermissions.delete : true;
 
-  // ── Entry lock (2 working days) ───────────────────────────────────────
+  // ── Entry lock (24 hours) ───────────────────────────────────────
   // Preview only — see utils/workingDays.js's file comment. The server
   // (bpcSheet.controller.js) re-checks this against the real date
   // on every Save/Delete/Unlock. A row already carrying an active
@@ -243,24 +244,10 @@ const BeforePowderCoatingDataEntry = () => {
   // its own Date — a catch-up entry for an old date gets its own fresh
   // 2 working days starting from today, the moment it's created (see the
   // server's matching comment on checkNotLocked).
-  const lockInfo = useCallback(
-    (row) => {
-      if (row.unlockedUntil && new Date(row.unlockedUntil) > new Date()) return "";
-      // A row without a usable createdAt can't be dated, so it isn't shown as
-      // locked (rather than worked out from "NaN-NaN-NaN") — Save is still checked.
-      const created = row.createdAt ? new Date(row.createdAt) : null;
-      if (!created || Number.isNaN(created.getTime())) return "";
-      // Both days in UTC, as the server's own check counts them (utils/workingDays.js
-      // toISO) — a local day would show a row saved after midnight IST as
-      // editable a day longer than Save allows.
-      const asOf = new Date().toISOString().slice(0, 10);
-      const deadline = getLockDeadline(created.toISOString().slice(0, 10), weeklyOffDays, holidays, LOCK_WORKING_DAYS);
-      if (asOf <= deadline) return "";
-      const [y, m, d] = deadline.split("-");
-      return `Locked — saved more than ${LOCK_WORKING_DAYS} working days ago (editable through ${d}/${m}/${y})`;
-    },
-    [weeklyOffDays, holidays],
-  );
+  // 24 hours from when the row was saved. A Super Admin / Full access user
+  // (isAdmin above) is let through a locked row anyway — see blockedReason
+  // and the table — and offered Unlock for it, for everyone else.
+  const lockInfo = useCallback((row) => entryLockInfo(row), []);
 
   // The process's fixed Operator Planned Shift for a row (null when its hours are typed on each entry),
   // and the Full access button that moves one earlier entry onto it.
@@ -307,6 +294,8 @@ const BeforePowderCoatingDataEntry = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalDays, setTotalDays] = useState(0);
+  // The page's dates from the server (meta.dates) — the empty ones get "Not filled yet" rows.
+  const [pageDates, setPageDates] = useState([]);
   // Blank by default — the field shows the current page only as a
   // placeholder hint, not a real value sitting there to be typed over.
   const [goTo, setGoTo] = useState("");
@@ -432,6 +421,7 @@ const BeforePowderCoatingDataEntry = () => {
         const meta = res.data.meta || {};
         setTotalPages(Math.max(1, meta.totalPages || 1));
         setTotalDays(meta.totalDays || 0);
+        setPageDates(meta.dates || []);
         // The server clamps an out-of-range page to its own last page —
         // mirror that back into local state so "Page X of Y" reads right.
         if (meta.page && meta.page !== page) setPage(meta.page);
@@ -687,6 +677,12 @@ const BeforePowderCoatingDataEntry = () => {
     setModalMode("add");
   };
 
+  // "Add entry" on a "Not filled yet" row: the form opens on that date (and machine).
+  const openAddFor = (date, machine) => {
+    openAdd();
+    setEntries((list) => list.map((e, i) => (i === 0 ? { ...e, date, ...(machine ? { machine } : {}) } : e)));
+  };
+
   // The "Clear form" button in the Add Entry modal — wipes every block back
   // to blank and drops the saved draft, so a bad start doesn't linger.
   const clearForm = () => {
@@ -713,7 +709,7 @@ const BeforePowderCoatingDataEntry = () => {
     range,
     onRangeChange,
     openEdit,
-    blockedReason: (row) => (!canEdit ? "You don't have permission to edit entries on this page." : lockInfo(row)),
+    blockedReason: (row) => (!canEdit ? "You don't have permission to edit entries on this page." : isAdmin ? "" : lockInfo(row)),
   });
 
   const handleChange = useCallback((index, name, value) => {
@@ -849,6 +845,20 @@ const BeforePowderCoatingDataEntry = () => {
     return sortedRows.filter((r) => [r.itemName, r.operator, r.vendorName].some((v) => String(v || "").toLowerCase().includes(q)));
   }, [sortedRows, search]);
 
+  // Every empty day gets a "Not filled yet" row on each of the
+  // page's days until an entry is saved for it (utils/sheetPlaceholders.js) —
+  // not while a search or an Operator / Part filter narrows the view.
+  const tableRows = useMemo(
+    () =>
+      withPlaceholders(searchedRows, {
+        dates: pageDates,
+        machines: [],
+        rankOf,
+        enabled: !search.trim() && !filters.operator.length && !filters.item.length,
+      }),
+    [searchedRows, pageDates, filters.operator, filters.item, search, rankOf],
+  );
+
   document.title = `BEFORE POWDER COATING Data Entry | ${window.localStorage.getItem("companyName") || import.meta.env.VITE_APP_NAME}`;
 
   return (
@@ -943,7 +953,8 @@ const BeforePowderCoatingDataEntry = () => {
             </div>
             <CardBody className="d-flex flex-column flex-grow-1 overflow-hidden" style={{ minHeight: 0 }}>
               <ProductionEntriesTable
-                rows={searchedRows}
+                rows={tableRows}
+                onAddFor={canCreate ? openAddFor : undefined}
                 showVendor={showVendorColumn}
                 machineName={machineName}
                 dayResultByKey={dayResultByKey}

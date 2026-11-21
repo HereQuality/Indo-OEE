@@ -1,4 +1,5 @@
 const express = require("express");
+const { getDashboardReportPdf, emailDashboardReport } = require("../controllers/dashboardReport.controller");
 const { protect, authorize } = require("../middlewares/auth.middleware");
 const { requireMenuPermission } = require("../middlewares/permission.middleware");
 const {
@@ -25,6 +26,10 @@ router.use(authorize("SuperAdmin", "Operator"));
 // (or the master's) rather than requiring access to the master itself.
 router.get("/", requireMenuPermission([DASHBOARD_URL, MENU_URL], "read"), listProcesses);
 router.get("/entries", requireMenuPermission(DASHBOARD_URL, "read"), getDashboardEntries);
+// The dashboard's Efficiency Report as a PDF: download, or mail to the
+// Company page's recipients (controllers/dashboardReport.controller.js).
+router.get("/entries/report.pdf", requireMenuPermission(DASHBOARD_URL, "read"), getDashboardReportPdf);
+router.post("/entries/report/email", requireMenuPermission(DASHBOARD_URL, "read"), emailDashboardReport);
 
 router.get("/shift-access", requireMenuPermission([DASHBOARD_URL, MENU_URL], "read"), getShiftAccess);
 router.put("/shift-access", setShiftAccess);

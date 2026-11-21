@@ -37,14 +37,16 @@ class E2eApi {
     final hit = _cache[username];
     if (hit != null) return hit;
     final minted = e2eTokens()[username];
-    if (minted != null)
+    if (minted != null) {
       return _cache[username] = E2eApi._('${minted['token']}');
+    }
     final r = await _call('POST', '/auth/login', null, {
       'username': username,
       'password': e2ePasswords[username],
     });
-    if (r.status != 200 || r.map['token'] == null)
+    if (r.status != 200 || r.map['token'] == null) {
       throw StateError('API login failed for $username: ${r.status}');
+    }
     return _cache[username] = E2eApi._('${r.map['token']}');
   }
 
@@ -103,8 +105,9 @@ class E2eApi {
       for (final x in list) {
         final m = Map<String, dynamic>.from(x as Map);
         if ('${m['remarks'] ?? ''}'.contains(tag) ||
-            '${m['otherMinRemark'] ?? ''}'.contains(tag))
+            '${m['otherMinRemark'] ?? ''}'.contains(tag)) {
           out.add(m);
+        }
       }
       final meta = r.map['meta'];
       final pages = meta is Map
@@ -160,7 +163,8 @@ Future<Map<String, dynamic>> seedVmcRow(
     'rejectedQty': 2,
     'remarks': tag,
   });
-  if (r.status != 200)
+  if (r.status != 200) {
     throw StateError('seedVmcRow failed: ${r.status} ${r.message}');
+  }
   return Map<String, dynamic>.from(r.data as Map);
 }

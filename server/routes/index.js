@@ -60,6 +60,7 @@ const oeeReviewRoutes = require("./oeeReview.routes");
 const processRoutes = require("./process.routes");
 const maintenanceRoutes = require("./maintenance.routes");
 const announcementRoutes = require("./announcement.routes");
+const summaryMailRoutes = require("./summaryMail.routes");
 // const inventoryRoutes = require("./inventory.routes");
 
 // ── Mount routes ─────────────────────────────────────────────────────────────
@@ -106,6 +107,8 @@ router.use("/kpi", require("./kpi.routes"));
 router.use("/processes", processRoutes);
 router.use("/maintenance", maintenanceRoutes);
 router.use("/announcement", announcementRoutes);
+router.use("/summary-mail", summaryMailRoutes);
+router.use("/machine-day-status", require("./machineDayStatus.routes"));
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

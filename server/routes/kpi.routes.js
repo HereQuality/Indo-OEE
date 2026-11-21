@@ -8,6 +8,7 @@ const {
   deleteObjective,
   importObjectives,
   importCompanyHistory,
+  saveCompanyMonthly,
   companySummary,
   createCompanyObjective,
   updateCompanyObjective,
@@ -32,6 +33,7 @@ router.delete("/objectives/:id", requireMenuPermission(KPI_URL, "write"), delete
 router.get("/company", requireMenuPermission(COMPANY_URL, "read"), companySummary);
 router.post("/company", requireMenuPermission(COMPANY_URL, "write"), createCompanyObjective);
 router.post("/company/import", requireMenuPermission(COMPANY_URL, "write"), importCompanyHistory);
+router.put("/company/monthly", requireMenuPermission(COMPANY_URL, "write"), saveCompanyMonthly);
 router.put("/company/:id", requireMenuPermission(COMPANY_URL, "write"), updateCompanyObjective);
 router.delete("/company/:id", requireMenuPermission(COMPANY_URL, "write"), deleteCompanyObjective);
 

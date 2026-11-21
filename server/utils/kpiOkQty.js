@@ -24,40 +24,46 @@ const machineProcessMap = async () => {
 };
 
 /**
- * Map of process id → [Jan…Dec OK Qty] for one year, over every process that
- * has entries. A process with none that year is absent.
+ * Map of process id → { ok: [Jan…Dec OK Qty], rejected: [Jan…Dec Rejected Qty] }
+ * for one year, over every process that has entries. A process with none that
+ * year is absent. Rejected Qty is what a % target is measured on: Quality % =
+ * OK ÷ (OK + Rejected).
  */
 const okQtyByProcessMonth = async (year) => {
   const from = new Date(Date.UTC(year, 0, 1));
   const to = new Date(Date.UTC(year + 1, 0, 1));
   const byMachine = await machineProcessMap();
   const out = new Map();
-  const add = (processId, month, qty) => {
+  const add = (processId, month, ok, rejected) => {
     if (!processId) return;
-    if (!out.has(processId)) out.set(processId, Array(MONTHS).fill(0));
-    out.get(processId)[month - 1] += qty;
+    if (!out.has(processId)) out.set(processId, { ok: Array(MONTHS).fill(0), rejected: Array(MONTHS).fill(0) });
+    out.get(processId).ok[month - 1] += ok;
+    out.get(processId).rejected[month - 1] += rejected;
   };
   await Promise.all(
     DASHBOARD_SHEETS.map(async ({ Model, byProcess }) => {
       const key = byProcess ? "$process" : "$machine";
       const rows = await Model.aggregate([
         { $match: { date: { $gte: from, $lt: to } } },
-        { $group: { _id: { owner: key, month: { $month: "$date" } }, ok: { $sum: { $ifNull: ["$okQty", 0] } } } },
+        { $group: { _id: { owner: key, month: { $month: "$date" } }, ok: { $sum: { $ifNull: ["$okQty", 0] } }, rejected: { $sum: { $ifNull: ["$rejectedQty", 0] } } } },
       ]);
       for (const r of rows) {
         const owner = r._id.owner ? String(r._id.owner) : null;
-        add(byProcess ? owner : byMachine.get(owner), r._id.month, num(r.ok));
+        add(byProcess ? owner : byMachine.get(owner), r._id.month, num(r.ok), num(r.rejected));
       }
     }),
   );
   return out;
 };
 
-/** [Jan…Dec] OK Qty for the given processes in one year, from the map above. */
-const monthsFor = (byProcess, processIds) => {
+/**
+ * [Jan…Dec] for the given processes in one year, from the map above — OK Qty
+ * by default, Rejected Qty with field "rejected".
+ */
+const monthsFor = (byProcess, processIds, field = "ok") => {
   const totals = Array(MONTHS).fill(0);
   for (const id of processIds || []) {
-    const months = byProcess.get(String(id));
+    const months = byProcess.get(String(id))?.[field];
     if (months) months.forEach((q, i) => (totals[i] += q));
   }
   return totals;

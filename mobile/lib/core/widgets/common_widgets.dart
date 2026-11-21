@@ -26,7 +26,7 @@ class SectionCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(child: Text(title!, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
-                    if (trailing != null) trailing!,
+                    ?trailing,
                   ],
                 ),
               ),
@@ -96,8 +96,8 @@ class UserAvatar extends StatelessWidget {
       memCacheWidth: px,
       memCacheHeight: px,
       imageBuilder: (_, provider) => CircleAvatar(radius: radius, backgroundImage: provider),
-      placeholder: (_, __) => fallback,
-      errorWidget: (_, __, ___) => fallback,
+      placeholder: (_, _) => fallback,
+      errorWidget: (_, _, _) => fallback,
     );
   }
 }

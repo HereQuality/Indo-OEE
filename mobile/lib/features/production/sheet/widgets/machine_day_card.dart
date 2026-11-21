@@ -7,7 +7,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../shared/production_sheet_calc.dart';
 import '../sheet_controller.dart';
 import '../sheet_model.dart';
+import '../machine_day_status.dart';
 import 'entry_detail.dart';
+import 'not_running_dialog.dart';
 import 'sheet_format.dart';
 import 'sheet_popovers.dart';
 import 'sheet_style.dart';
@@ -38,7 +40,11 @@ class MachineDayCard extends StatelessWidget {
     required this.onDelete,
     required this.onUnlock,
     this.margin = const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    this.onAdd,
   });
+
+  /// "Add entry" on a machine with nothing entered yet; null = no button.
+  final VoidCallback? onAdd;
 
   final EdgeInsets margin;
   final SheetMachineDay group;
@@ -54,6 +60,7 @@ class MachineDayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
     final tone = MachineColors.of(controller.machineOf(group.machineId), group.rank);
+    if (group.entries.isEmpty) return _emptyCard(context, s, tone);
     final first = group.entries.first;
     final oee = controller.dayOf(first)['oeeLosses'];
     // A sheet that works every entry out on its own (BEFORE POWDER COATING — the
@@ -157,6 +164,207 @@ class MachineDayCard extends StatelessWidget {
   }
 }
 
+extension on MachineDayCard {
+  /// A machine with nothing entered on the date: "Not filled yet" with Add
+  /// entry / Not running (when this user may add entries), or — once marked —
+  /// "Not running · reason" with Edit / Undo.
+  Widget _emptyCard(BuildContext context, ColorScheme s, Color tone) {
+    final mark = controller.markOf(group.date, group.machineId);
+    final canAct = onAdd != null && access.canEdit;
+    final grey = mark != null;
+    return Padding(
+      padding: margin,
+      child: Container(
+        key: ValueKey('card-${group.key}'),
+        decoration: BoxDecoration(
+          color: grey ? s.surfaceContainerHighest : (Theme.of(context).cardTheme.color ?? s.surface),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: s.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned(left: 0, top: 0, bottom: 0, width: 4, child: ColoredBox(color: grey ? s.outline : tone.withValues(alpha: 0.5))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(group.machineName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 1),
+                  if (mark == null)
+                    Text(
+                      'Not filled yet',
+                      key: ValueKey('placeholder-${group.key}'),
+                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: s.onSurfaceVariant),
+                    )
+                  else
+                    NotRunningSummary(mark: mark, keyId: group.key),
+                  if (canAct)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: mark == null
+                            ? [
+                                NotRunningPill(
+                                  key: ValueKey('notrunning-${group.key}'),
+                                  onPressed: () => showNotRunningDialog(context, controller: controller, date: group.date, machineId: group.machineId, machineName: group.machineName),
+                                ),
+                                AddEntryPill(key: ValueKey('add-${group.key}'), onPressed: onAdd!),
+                              ]
+                            : !controller.canChangeMark(mark)
+                            ? [
+                                Tooltip(
+                                  message: 'Locked — it can only be changed on the day it was saved. Ask an Admin.',
+                                  child: Row(
+                                    key: ValueKey('nr-locked-${group.key}'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.lock_outline_rounded, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      const SizedBox(width: 4),
+                                      Text('Locked', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                                    ],
+                                  ),
+                                ),
+                              ]
+                            : [
+                                TextButton.icon(
+                                  key: ValueKey('nr-edit-${group.key}'),
+                                  onPressed: () => showNotRunningDialog(context, controller: controller, date: group.date, machineId: group.machineId, machineName: group.machineName, existing: mark),
+                                  icon: const Icon(Icons.edit_outlined, size: 18),
+                                  label: const Text('Edit'),
+                                ),
+                                TextButton.icon(
+                                  key: ValueKey('nr-undo-${group.key}'),
+                                  onPressed: () => controller.removeMark(mark),
+                                  icon: const Icon(Icons.undo_rounded, size: 18),
+                                  label: const Text('Undo'),
+                                ),
+                              ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Not running · reason" + a planned / unplanned chip, the remarks and who
+/// marked it.
+/// Amber for an unplanned stop, grey for a planned one.
+Color notRunningKindColor(BuildContext context, bool planned) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  if (planned) return Theme.of(context).colorScheme.onSurfaceVariant;
+  return dark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
+}
+
+/// Blue tinted pill: the machine ran — fill its entry.
+class AddEntryPill extends StatelessWidget {
+  const AddEntryPill({super.key, required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = SheetTones.text(context, AppColors.brand600);
+    return Tooltip(
+      message: 'The machine ran — fill in its entry',
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: _pill(c),
+        icon: const Icon(Icons.add_rounded, size: 18),
+        label: const Text('Add entry'),
+      ),
+    );
+  }
+}
+
+/// Amber tinted pill: the machine did not run — record why.
+class NotRunningPill extends StatelessWidget {
+  const NotRunningPill({super.key, required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = notRunningKindColor(context, false);
+    return Tooltip(
+      message: notRunningHint,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: _pill(c),
+        icon: const Icon(Icons.block_rounded, size: 18),
+        label: const Text('Mark not running'),
+      ),
+    );
+  }
+}
+
+const String notRunningHint = 'The machine did NOT run this day — give the reason';
+
+ButtonStyle _pill(Color c) => OutlinedButton.styleFrom(
+      foregroundColor: c,
+      backgroundColor: c.withValues(alpha: 0.10),
+      side: BorderSide(color: c.withValues(alpha: 0.6)),
+      shape: const StadiumBorder(),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      visualDensity: VisualDensity.compact,
+    );
+
+class NotRunningSummary extends StatelessWidget {
+  const NotRunningSummary({super.key, required this.mark, required this.keyId, this.dense = false});
+  final DayMark mark;
+  final String keyId;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Theme.of(context).colorScheme;
+    final planned = mark.kind == 'planned';
+    final chip = notRunningKindColor(context, planned);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Not running · ${mark.reasonLabel}',
+              key: ValueKey('notrunning-label-$keyId'),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: s.onSurfaceVariant),
+            ),
+            if (mark.kind.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: chip.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: chip.withValues(alpha: 0.5)),
+                ),
+                child: Text(planned ? 'Planned' : 'Unplanned', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: chip)),
+              ),
+          ],
+        ),
+        if (!dense && mark.remarks.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(mark.remarks, style: TextStyle(fontSize: 12, color: s.onSurfaceVariant)),
+          ),
+        if (!dense && mark.markedBy.isNotEmpty)
+          Text('Marked by ${mark.markedBy}', style: TextStyle(fontSize: 11, color: s.onSurfaceVariant.withValues(alpha: 0.8))),
+      ],
+    );
+  }
+}
+
 class _OeeChip extends StatelessWidget {
   const _OeeChip({required this.value});
   final Object? value;
@@ -218,8 +426,9 @@ class EntryRow extends StatelessWidget {
     final lock = controller.lockInfo(row);
     final locked = lock.isNotEmpty;
     final unlockedUntil = controller.unlockedUntilOf(row);
-    final canEdit = access.canEdit && !locked;
-    final canDelete = access.canDelete && !locked;
+    // An admin edits a locked row anyway, and is offered Unlock for it.
+    final canEdit = access.canEdit && (!locked || access.isAdmin);
+    final canDelete = access.canDelete && (!locked || access.isAdmin);
     final canUnlock = access.isAdmin && locked;
 
     final startAction = canUnlock ? _SwipeKind.unlock : (canEdit ? _SwipeKind.edit : null);

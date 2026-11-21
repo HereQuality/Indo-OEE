@@ -24,8 +24,9 @@ class KpiScreen extends StatefulWidget {
 const _help = [
   'Pick a department. Each department\'s own people add its objectives; Super Admin and Full access users can add for any department.',
   'Add Objective: name it, tick the processes it covers, and type the Baseline and the Target — each with its own unit, Qty or %.',
-  'Choose whether the Target is Monthly (each month is compared with it) or Yearly (the OK Qty so far is compared with it).',
-  'OK Qty is never typed: every month is the sum of those processes\' data entries. Achievement = OK Qty ÷ Target; On track from 100%, Near from 80%, Behind below.',
+  'Choose whether the Target is Monthly (each month is compared with it) or Yearly (the year so far is compared with it).',
+  'OK Qty is never typed: every month is the sum of those processes\' data entries. A Target in Qty is compared with the OK Qty; a Target in % with the month\'s Quality % = OK ÷ (OK + Rejected). On track from 100%, Near from 80%, Behind below.',
+  'Departments at a glance: one line per department — objectives, on track / near / behind, average achievement. Tap a line to see that department.',
   'Switch to Graph for a line per objective. Old sheets are loaded with Upload Excel on the website.',
 ];
 
@@ -204,6 +205,10 @@ class _KpiScreenState extends State<KpiScreen> {
             StatTile(label: 'Avg achievement', value: fmtPct(avg), icon: Icons.check_circle_outline, tone: AppColors.ok, hint: 'of the objectives with data'),
             StatTile(label: 'On track / Behind', value: '$onTrack / $behind', icon: Icons.show_chart, tone: AppColors.warn, hint: 'objectives this year'),
           ]),
+          if (page.byDepartment.length > 1) ...[
+            const SizedBox(height: 12),
+            _DepartmentsCard(page: page, year: _year, selected: _departmentId, onPick: (id) => setState(() => _departmentId = id)),
+          ],
           const SizedBox(height: 12),
           SegmentedButton<bool>(
             segments: const [
@@ -227,6 +232,72 @@ class _KpiScreenState extends State<KpiScreen> {
   }
 }
 
+/// One line per department: objectives, on track / near / behind, average achievement.
+class _DepartmentsCard extends StatelessWidget {
+  const _DepartmentsCard({required this.page, required this.year, required this.selected, required this.onPick});
+  final KpiPage page;
+  final int year;
+  final String selected;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Theme.of(context).colorScheme;
+    final pcts = page.objectives.map((o) => o.yearPct).whereType<double>().toList();
+    final all = DepartmentSummary(
+      id: '',
+      name: 'All departments',
+      objectives: page.objectives.length,
+      onTrack: page.byDepartment.fold(0, (a, d) => a + d.onTrack),
+      near: page.byDepartment.fold(0, (a, d) => a + d.near),
+      behind: page.byDepartment.fold(0, (a, d) => a + d.behind),
+      okQty: page.byDepartment.fold(0.0, (a, d) => a + d.okQty),
+      avgPct: pcts.isEmpty ? null : pcts.reduce((a, b) => a + b) / pcts.length,
+    );
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: s.outlineVariant)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          child: Row(children: [
+            Expanded(child: Text('Departments at a glance · $year', style: const TextStyle(fontWeight: FontWeight.w700))),
+            Text('tap a line', style: TextStyle(fontSize: 12, color: s.onSurfaceVariant)),
+          ]),
+        ),
+        for (final d in [all, ...page.byDepartment])
+          InkWell(
+            onTap: () => onPick(d.id),
+            child: Container(
+              color: d.id == selected ? AppColors.brand600.withValues(alpha: .08) : null,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text(d.name, style: TextStyle(fontWeight: d.id.isEmpty ? FontWeight.w800 : FontWeight.w600))),
+                  Text(fmtPct(d.avgPct), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 8),
+                  StatusPill(d.status),
+                ]),
+                const SizedBox(height: 4),
+                AchievementBar(pct: d.avgPct, status: d.status),
+                const SizedBox(height: 4),
+                Wrap(spacing: 10, children: [
+                  Text('${d.objectives} objective${d.objectives == 1 ? '' : 's'}', style: TextStyle(fontSize: 12, color: s.onSurfaceVariant)),
+                  Text('OK Qty ${fmtQty(d.okQty)}', style: TextStyle(fontSize: 12, color: s.onSurfaceVariant)),
+                  Text('${d.onTrack} on track', style: const TextStyle(fontSize: 12, color: AppColors.ok)),
+                  Text('${d.near} near', style: const TextStyle(fontSize: 12, color: AppColors.warn)),
+                  Text('${d.behind} behind', style: const TextStyle(fontSize: 12, color: AppColors.critical)),
+                ]),
+              ]),
+            ),
+          ),
+        const SizedBox(height: 4),
+      ]),
+    );
+  }
+}
+
 class _ObjectiveCard extends StatelessWidget {
   const _ObjectiveCard({required this.objective, required this.showDepartment, required this.canEdit, required this.canDelete, required this.onEdit, required this.onDelete});
   final KpiObjective objective;
@@ -242,6 +313,8 @@ class _ObjectiveCard extends StatelessWidget {
     final s = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 12, color: s.onSurfaceVariant);
     final yearly = o.yearly;
+    // A % target is measured on Quality %; show it unless the OK Qty column already does.
+    final qualityCol = o.pctTarget && o.okQtyUom != '%';
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -301,7 +374,8 @@ class _ObjectiveCard extends StatelessWidget {
                 const DataColumn(label: Text('Month')),
                 DataColumn(label: Text('Baseline (${o.baseline.uom})'), numeric: true),
                 DataColumn(label: Text('Target (${o.target.uom})'), numeric: true),
-                DataColumn(label: Text('OK Qty (${o.okQtyUom})'), numeric: true),
+                DataColumn(label: Text(o.okQtyUom == '%' ? 'Quality %' : 'OK Qty'), numeric: true, tooltip: o.okQtyUom == '%' ? 'OK ÷ (OK + Rejected), from the entries' : 'From the entries'),
+                if (qualityCol) const DataColumn(label: Text('Quality %'), numeric: true, tooltip: 'OK ÷ (OK + Rejected), from the entries'),
                 if (yearly) const DataColumn(label: Text('OK Qty so far'), numeric: true),
                 const DataColumn(label: Text('Achievement'), numeric: true),
                 const DataColumn(label: Text('Status')),
@@ -312,10 +386,14 @@ class _ObjectiveCard extends StatelessWidget {
                     DataCell(Text('${kpiMonths[m.month - 1]} ${o.year}')),
                     DataCell(Text(measureText(o.baseline))),
                     DataCell(Text(measureText(o.target))),
-                    DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(o.okQtyUom == '%' ? fmtPct(m.pctOfTarget) : fmtQty(m.okQty), style: const TextStyle(fontWeight: FontWeight.w600)),
-                      if (m.source == 'excel') Padding(padding: const EdgeInsets.only(left: 4), child: Text('Excel', style: TextStyle(fontSize: 10, color: s.onSurfaceVariant))),
-                    ])),
+                    DataCell(Tooltip(
+                      message: '${fmtQty(m.okQty)} OK · ${fmtQty(m.rejectedQty)} rejected',
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(o.okQtyUom == '%' ? fmtPct(m.qualityPct) : fmtQty(m.okQty), style: const TextStyle(fontWeight: FontWeight.w600)),
+                        if (m.source == 'excel') Padding(padding: const EdgeInsets.only(left: 4), child: Text('Excel', style: TextStyle(fontSize: 10, color: s.onSurfaceVariant))),
+                      ]),
+                    )),
+                    if (qualityCol) DataCell(Text(fmtPct(m.qualityPct))),
                     if (yearly) DataCell(Text(fmtQty(m.cumulative))),
                     DataCell(Text(fmtPct(m.pctOfTarget))),
                     DataCell(StatusPill(m.status)),
@@ -324,7 +402,8 @@ class _ObjectiveCard extends StatelessWidget {
                   const DataCell(Text('Year', style: TextStyle(fontWeight: FontWeight.w700))),
                   const DataCell(Text('')),
                   const DataCell(Text('')),
-                  DataCell(Text(fmtQty(o.yearOkQty), style: const TextStyle(fontWeight: FontWeight.w700))),
+                  DataCell(Text(o.okQtyUom == '%' ? fmtPct(o.yearQualityPct) : fmtQty(o.yearOkQty), style: const TextStyle(fontWeight: FontWeight.w700))),
+                  if (qualityCol) DataCell(Text(fmtPct(o.yearQualityPct), style: const TextStyle(fontWeight: FontWeight.w700))),
                   if (yearly) DataCell(Text(fmtQty(o.yearOkQty), style: const TextStyle(fontWeight: FontWeight.w700))),
                   DataCell(Text(fmtPct(o.yearPct), style: const TextStyle(fontWeight: FontWeight.w700))),
                   DataCell(StatusPill(o.yearStatus)),
@@ -332,8 +411,15 @@ class _ObjectiveCard extends StatelessWidget {
               ],
             ),
           ),
-          if (o.target.uom != 'Qty')
-            Padding(padding: const EdgeInsets.fromLTRB(12, 4, 12, 10), child: Text('Achievement and Status need a Target in Qty — set the Target unit to Qty to see them.', style: muted)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+            child: Text(
+              o.pctTarget
+                  ? 'Target in %: each month\'s Quality % — OK ÷ (OK + Rejected) from the entries — is compared with it${yearly ? ', on the year so far' : ''}. A month loaded from Excel has no rejected figure, so no Quality %.'
+                  : 'Target in Qty: each month\'s OK Qty is compared with it${yearly ? ', on the year so far' : ''}.',
+              style: muted,
+            ),
+          ),
         ],
       ),
     );
@@ -492,7 +578,6 @@ class _ObjectiveFormState extends State<_ObjectiveForm> {
 
   @override
   Widget build(BuildContext context) {
-    final years = {widget.year + 1, widget.year, widget.year - 1, widget.year - 2, _year}.toList()..sort();
     final s = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -516,7 +601,7 @@ class _ObjectiveFormState extends State<_ObjectiveForm> {
             ),
             const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const FieldCaption('Year'), YearStepper(years: years, value: _year, onChanged: (y) => setState(() => _year = y))])),
+              Expanded(child: YearDropdown(years: yearRange([_year]), value: _year, onChanged: (y) => setState(() => _year = y))),
               const SizedBox(width: 12),
               Expanded(child: TextField(controller: _owner, decoration: const InputDecoration(labelText: 'Owner', hintText: 'Who is responsible'))),
             ]),
@@ -533,14 +618,14 @@ class _ObjectiveFormState extends State<_ObjectiveForm> {
             const SizedBox(height: 12),
             MeasureField(label: 'Baseline', controller: _baseline, uom: _baselineUom, onUom: (u) => setState(() => _baselineUom = u), hint: 'Where you stand today — for reference on every row.'),
             const SizedBox(height: 12),
-            MeasureField(label: 'Target', controller: _target, uom: _targetUom, onUom: (u) => setState(() => _targetUom = u), required: true, hint: 'In Qty to get Achievement % and Status.'),
+            MeasureField(label: 'Target', controller: _target, uom: _targetUom, onUom: (u) => setState(() => _targetUom = u), required: true, hint: _targetUom == '%' ? 'In %: the month\'s Quality % — OK ÷ (OK + Rejected) — is compared with it.' : 'In Qty: the month\'s OK Qty is compared with it.'),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _period,
               decoration: const InputDecoration(labelText: 'Target is'),
               items: const [
                 DropdownMenuItem(value: 'Monthly', child: Text('Monthly — each month is compared with it')),
-                DropdownMenuItem(value: 'Yearly', child: Text('Yearly — the OK Qty so far is compared with it')),
+                DropdownMenuItem(value: 'Yearly', child: Text('Yearly — the year so far is compared with it')),
               ],
               onChanged: (v) => setState(() => _period = v ?? 'Monthly'),
             ),
@@ -548,7 +633,7 @@ class _ObjectiveFormState extends State<_ObjectiveForm> {
             DropdownButtonFormField<String>(
               initialValue: _okUom,
               decoration: const InputDecoration(labelText: 'OK Qty shown as'),
-              items: const [DropdownMenuItem(value: 'Qty', child: Text('Qty — the count')), DropdownMenuItem(value: '%', child: Text('% — of the Target'))],
+              items: const [DropdownMenuItem(value: 'Qty', child: Text('Qty — the count')), DropdownMenuItem(value: '%', child: Text('% — Quality %, OK ÷ (OK + Rejected)'))],
               onChanged: (v) => setState(() => _okUom = v ?? 'Qty'),
             ),
             const SizedBox(height: 12),

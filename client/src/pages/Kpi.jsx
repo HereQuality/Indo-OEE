@@ -6,14 +6,14 @@ import * as XLSX from "xlsx";
 import DeleteModal from "../Components/Common/DeleteModal";
 import KpiGraphPanel from "../Components/Kpi/KpiGraphPanel";
 import ExcelImportModal from "../Components/Kpi/ExcelImportModal";
-import { HowItWorks, MeasureInput, PeriodPicker, Progress, Stat, StatusBadge, YearChips } from "../Components/Kpi/kpiBits";
+import { HowItWorks, MeasureInput, PeriodPicker, Progress, Stat, StatusBadge, YearSelect } from "../Components/Kpi/kpiBits";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
 import { useProcesses } from "../hooks/useProcesses";
 import { createKpiObjective, deleteKpiObjective, getKpiObjectives, importKpiObjectives, updateKpiObjective } from "../api/kpi.api";
 import { createDepartment } from "../api/departments.api";
 import { useInvalidateDepartments } from "../hooks/useDepartments";
-import { MONTHS, blankMeasure, fmtPct, fmtQty, measureText, okQtyText, thisYear, yearOptions } from "../utils/kpi";
+import { MONTHS, blankMeasure, fmtPct, fmtQty, measureText, okQtyText, okRejectedText, thisYear, yearOptions, yearRange } from "../utils/kpi";
 
 /**
  * Data Entry › KPI — one department at a time (or all), its objectives for a
@@ -38,8 +38,9 @@ const emptyForm = (year, department) => ({
 const HELP = [
   "Pick a department. Each department's own people add its objectives; Super Admin and Full access users can add for any department.",
   "Add Objective: name it, tick the processes it covers, and type the Baseline (where you are today) and the Target. Each has its own unit — Qty or %.",
-  "Choose whether the Target is Monthly (each month is compared with it) or Yearly (the OK Qty so far is compared with it).",
-  "OK Qty is never typed: every month is the sum of those processes' data entries. Achievement = OK Qty ÷ Target; On track from 100%, Near from 80%, Behind below.",
+  "Choose whether the Target is Monthly (each month is compared with it) or Yearly (the year so far is compared with it).",
+  "OK Qty is never typed: every month is the sum of those processes' data entries. A Target in Qty is compared with the OK Qty; a Target in % with the month's Quality % = OK ÷ (OK + Rejected). On track from 100%, Near from 80%, Behind below.",
+  "Departments at a glance: one line per department — objectives, on track / near / behind, average achievement. Click a line to see that department.",
   "Switch to Graph for a line per objective, and download the table or the graph as Excel / PDF.",
   "Have old sheets? Upload Excel loads past months (one row per objective and month). A month that already has data entries keeps the entries; the rest take the uploaded figure, marked 'Excel'.",
 ];
@@ -68,7 +69,7 @@ const Kpi = () => {
   const [year, setYear] = useState(thisYear());
   const [departmentId, setDepartmentId] = useState("");
   const [view, setView] = useState("table");
-  const [data, setData] = useState({ objectives: [], departments: [], canAddAnyDepartment: false });
+  const [data, setData] = useState({ objectives: [], departments: [], byDepartment: [], canAddAnyDepartment: false });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -90,7 +91,7 @@ const Kpi = () => {
       const res = await getKpiObjectives({ year });
       const objectives = res?.data?.data || [];
       const departments = res?.data?.departments || [];
-      setData({ objectives, departments, canAddAnyDepartment: !!res?.data?.canAddAnyDepartment });
+      setData({ objectives, departments, byDepartment: res?.data?.byDepartment || [], canAddAnyDepartment: !!res?.data?.canAddAnyDepartment });
       if (!departmentId && departments.length === 1) setDepartmentId(String(departments[0]._id));
     } catch (ex) {
       toast.error(ex?.response?.data?.message || "Could not load KPI objectives");
@@ -219,15 +220,15 @@ const Kpi = () => {
         ["Target", o.target?.value ?? "", o.target?.uom || "", o.targetPeriod || "Monthly"],
         ["Remarks", o.remarks || ""],
         [],
-        ["Month", "Baseline", "Target", "OK Qty", ...(yearly ? ["OK Qty so far"] : []), "Achievement %", "Status"],
-        ...o.months.map((m) => [`${MONTHS[m.month - 1]} ${o.year}`, o.baseline?.value ?? "", o.target?.value ?? "", m.okQty, ...(yearly ? [m.cumulative] : []), m.pctOfTarget === null ? "" : Number(m.pctOfTarget.toFixed(1)), m.status || ""]),
-        ["Year", "", "", o.yearOkQty, ...(yearly ? [o.yearOkQty] : []), o.yearPct === null ? "" : Number(o.yearPct.toFixed(1)), o.yearStatus || ""],
+        ["Month", "Baseline", "Target", "OK Qty", "Rejected Qty", "Quality %", ...(yearly ? ["OK Qty so far"] : []), "Achievement %", "Status"],
+        ...o.months.map((m) => [`${MONTHS[m.month - 1]} ${o.year}`, o.baseline?.value ?? "", o.target?.value ?? "", m.okQty, m.rejectedQty || 0, m.qualityPct === null || m.qualityPct === undefined ? "" : Number(m.qualityPct.toFixed(1)), ...(yearly ? [m.cumulative] : []), m.pctOfTarget === null ? "" : Number(m.pctOfTarget.toFixed(1)), m.status || ""]),
+        ["Year", "", "", o.yearOkQty, o.yearRejectedQty || 0, o.yearQualityPct === null || o.yearQualityPct === undefined ? "" : Number(o.yearQualityPct.toFixed(1)), ...(yearly ? [o.yearOkQty] : []), o.yearPct === null ? "" : Number(o.yearPct.toFixed(1)), o.yearStatus || ""],
       ];
       let name = `${i + 1} ${o.objective}`.replace(/[\\/?*[\]:]/g, " ").slice(0, 31);
       while (used.has(name)) name = `${name.slice(0, 28)}_${i}`;
       used.add(name);
       const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws["!cols"] = [{ wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
+      ws["!cols"] = [{ wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 11 }, { wch: 16 }, { wch: 14 }, { wch: 10 }];
       XLSX.utils.book_append_sheet(wb, ws, name);
     });
     XLSX.writeFile(wb, `KPI-${year}${department ? `-${department.departmentName}` : ""}.xlsx`.replace(/\s+/g, "-"));
@@ -276,7 +277,7 @@ const Kpi = () => {
       <Card className="mb-3 border-0 shadow-sm">
         <CardBody className="py-2">
           <div className="kpi-period mb-2">
-            <PeriodPicker years={yearOptions(data.objectives.map((o) => o.year)).filter((y) => y <= thisYear() + 1)} year={year} onYear={setYear} />
+            <PeriodPicker years={yearOptions(data.objectives.map((o) => o.year))} year={year} onYear={setYear} />
             <div className="min-w-0" style={{ flex: "1 1 260px", maxWidth: 420 }}>
               <div className="kpi-period__label">Department</div>
               {data.departments.length === 0 ? (
@@ -315,6 +316,52 @@ const Kpi = () => {
         </Row>
       )}
 
+      {data.byDepartment.length > 1 && (
+        <Card className="mb-3 border-0 shadow-sm">
+          <CardHeader className="bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2 py-2"><h6 className="mb-0">Departments at a glance · {year}</h6><span className="text-muted small">click a line to see that department</span></CardHeader>
+          <CardBody className="p-0">
+            <div className="table-responsive">
+              <table className="table table-sm table-hover mb-0 align-middle" style={{ minWidth: 720 }}>
+                <thead className="table-light">
+                  <tr>
+                    <th scope="col">Department</th>
+                    <th scope="col" className="text-end">Objectives</th>
+                    <th scope="col" className="text-end">OK Qty</th>
+                    <th scope="col" className="text-end text-success">On track</th>
+                    <th scope="col" className="text-end text-warning-emphasis">Near</th>
+                    <th scope="col" className="text-end text-danger">Behind</th>
+                    <th scope="col" style={{ minWidth: 200 }}>Avg achievement</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[{ _id: "", departmentName: "All departments", objectives: data.objectives.length, okQty: data.byDepartment.reduce((a, d) => a + d.okQty, 0), onTrack: data.byDepartment.reduce((a, d) => a + d.onTrack, 0), near: data.byDepartment.reduce((a, d) => a + d.near, 0), behind: data.byDepartment.reduce((a, d) => a + d.behind, 0), avgPct: (() => { const p = data.objectives.map((o) => o.yearPct).filter((x) => x !== null && x !== undefined); return p.length ? p.reduce((a, b) => a + b, 0) / p.length : null; })() }, ...data.byDepartment].map((d) => {
+                    const status = d.avgPct === null ? null : d.avgPct >= 100 ? "On track" : d.avgPct >= 80 ? "Near" : "Behind";
+                    const active = String(d._id) === departmentId;
+                    return (
+                      <tr key={d._id || "all"} className={active ? "table-primary" : ""} onClick={() => setDepartmentId(String(d._id))} style={{ cursor: "pointer" }}>
+                        <td className={d._id ? "fw-semibold" : "fw-bold"}>{d.departmentName}</td>
+                        <td className="text-end">{d.objectives}</td>
+                        <td className="text-end">{fmtQty(d.okQty)}</td>
+                        <td className="text-end">{d.onTrack}</td>
+                        <td className="text-end">{d.near}</td>
+                        <td className="text-end">{d.behind}</td>
+                        <td>
+                          <div className="d-flex align-items-center gap-2">
+                            <span className="fw-semibold" style={{ minWidth: 52 }}>{fmtPct(d.avgPct)}</span>
+                            <div className="flex-grow-1"><Progress pct={d.avgPct} status={status} /></div>
+                            <StatusBadge status={status} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {view === "graph" && data.departments.length > 0 && (
         <KpiGraphPanel year={year} objectives={objectives} departmentName={department?.departmentName || ""} loading={loading} />
       )}
@@ -326,6 +373,9 @@ const Kpi = () => {
           )}
           {objectives.map((o) => {
             const yearly = o.targetPeriod === "Yearly";
+            const pctTarget = o.target?.uom === "%";
+            // A % target is measured on Quality %; show it unless the OK Qty column already does.
+            const qualityCol = pctTarget && o.okQtyUom !== "%";
             return (
               <Card key={o._id} className="mb-3 border-0 shadow-sm">
                 <CardHeader className="bg-transparent d-flex flex-wrap align-items-start justify-content-between gap-2">
@@ -357,13 +407,14 @@ const Kpi = () => {
                 </CardHeader>
                 <CardBody className="p-0">
                   <div className="table-responsive">
-                    <table className="table table-sm table-hover mb-0 align-middle" style={{ minWidth: yearly ? 760 : 640 }}>
+                    <table className="table table-sm table-hover mb-0 align-middle" style={{ minWidth: yearly || qualityCol ? 760 : 640 }}>
                       <thead className="table-light">
                         <tr>
                           <th scope="col">Month</th>
                           <th scope="col" className="text-end">Baseline ({o.baseline?.uom || "Qty"})</th>
                           <th scope="col" className="text-end">Target ({o.target?.uom || "Qty"})</th>
-                          <th scope="col" className="text-end">OK Qty ({o.okQtyUom})</th>
+                          <th scope="col" className="text-end" title={o.okQtyUom === "%" ? "OK ÷ (OK + Rejected), from the entries" : "From the entries"}>{o.okQtyUom === "%" ? "Quality %" : "OK Qty"}</th>
+                          {qualityCol && <th scope="col" className="text-end" title="OK ÷ (OK + Rejected), from the entries">Quality %</th>}
                           {yearly && <th scope="col" className="text-end">OK Qty so far</th>}
                           <th scope="col" className="text-end">Achievement</th>
                           <th scope="col">Status</th>
@@ -375,7 +426,8 @@ const Kpi = () => {
                             <td>{MONTHS[m.month - 1]} {o.year}</td>
                             <td className="text-end">{measureText(o.baseline)}</td>
                             <td className="text-end">{measureText(o.target)}</td>
-                            <td className="text-end fw-semibold">{okQtyText(m, o.okQtyUom)}{m.source === "excel" && <span className="badge bg-secondary-subtle text-secondary-emphasis ms-1" title="Loaded from Excel">Excel</span>}</td>
+                            <td className="text-end fw-semibold" title={okRejectedText(m)}>{okQtyText(m, o.okQtyUom)}{m.source === "excel" && <span className="badge bg-secondary-subtle text-secondary-emphasis ms-1" title="Loaded from Excel">Excel</span>}</td>
+                            {qualityCol && <td className="text-end" title={okRejectedText(m)}>{fmtPct(m.qualityPct)}</td>}
                             {yearly && <td className="text-end">{fmtQty(m.cumulative)}</td>}
                             <td className="text-end">{fmtPct(m.pctOfTarget)}</td>
                             <td><StatusBadge status={m.status} /></td>
@@ -387,7 +439,8 @@ const Kpi = () => {
                           <th scope="row">Year</th>
                           <td />
                           <td />
-                          <td className="text-end fw-semibold">{fmtQty(o.yearOkQty)}</td>
+                          <td className="text-end fw-semibold" title={`${fmtQty(o.yearOkQty)} OK · ${fmtQty(o.yearRejectedQty || 0)} rejected`}>{o.okQtyUom === "%" ? fmtPct(o.yearQualityPct) : fmtQty(o.yearOkQty)}</td>
+                          {qualityCol && <td className="text-end fw-semibold">{fmtPct(o.yearQualityPct)}</td>}
                           {yearly && <td className="text-end fw-semibold">{fmtQty(o.yearOkQty)}</td>}
                           <td className="text-end fw-semibold">{fmtPct(o.yearPct)}</td>
                           <td><StatusBadge status={o.yearStatus} /></td>
@@ -395,9 +448,11 @@ const Kpi = () => {
                       </tfoot>
                     </table>
                   </div>
-                  {o.target?.uom !== "Qty" && (
-                    <div className="text-muted small px-3 py-2">Achievement and Status need a Target in Qty — set the Target unit to Qty to see them.</div>
-                  )}
+                  <div className="text-muted small px-3 py-2">
+                    {pctTarget
+                      ? <>Target in %: each month's <strong>Quality %</strong> — OK ÷ (OK + Rejected) from the entries — is compared with it{yearly ? ", on the year so far" : ""}. A month loaded from Excel has no rejected figure, so no Quality %.</>
+                      : <>Target in Qty: each month's OK Qty is compared with it{yearly ? ", on the year so far" : ""}.</>}
+                  </div>
                 </CardBody>
               </Card>
             );
@@ -424,8 +479,8 @@ const Kpi = () => {
               )}
             </Col>
             <Col xs="12" sm="3" className="mb-3">
-              <Label className="mb-1 d-block">Year</Label>
-              <YearChips years={yearOptions([values.year]).filter((y) => y <= thisYear() + 1)} value={values.year} onChange={(y) => setValues({ ...values, year: y })} />
+              <Label htmlFor="kpi-year" className="mb-1">Year</Label>
+              <YearSelect id="kpi-year" years={yearRange([values.year])} value={values.year} onChange={(y) => setValues({ ...values, year: y })} />
             </Col>
             <Col xs="6" sm="4" className="mb-3">
               <Label htmlFor="kpi-owner" className="mb-1">Owner</Label>
@@ -450,7 +505,7 @@ const Kpi = () => {
               <MeasureInput id="kpi-baseline" label="Baseline" value={values.baseline} onChange={(baseline) => setValues({ ...values, baseline })} hint="Where you stand today — for reference on every row." />
             </Col>
             <Col xs="12" md="6">
-              <MeasureInput id="kpi-target" label="Target" value={values.target} onChange={(target) => setValues({ ...values, target })} required hint="In Qty to get Achievement % and Status." />
+              <MeasureInput id="kpi-target" label="Target" value={values.target} onChange={(target) => setValues({ ...values, target })} required hint={values.target.uom === "%" ? "In %: the month's Quality % — OK ÷ (OK + Rejected) — is compared with it." : "In Qty: the month's OK Qty is compared with it."} />
             </Col>
           </Row>
           <Row>
@@ -458,14 +513,14 @@ const Kpi = () => {
               <Label htmlFor="kpi-period" className="mb-1">Target is</Label>
               <Input id="kpi-period" type="select" value={values.targetPeriod} onChange={(e) => setValues({ ...values, targetPeriod: e.target.value })}>
                 <option value="Monthly">Monthly — each month is compared with it</option>
-                <option value="Yearly">Yearly — the OK Qty so far is compared with it</option>
+                <option value="Yearly">Yearly — the year so far is compared with it</option>
               </Input>
             </Col>
             <Col xs="12" md="6" className="mb-3">
               <Label htmlFor="kpi-ok-uom" className="mb-1">OK Qty shown as</Label>
               <Input id="kpi-ok-uom" type="select" value={values.okQtyUom} onChange={(e) => setValues({ ...values, okQtyUom: e.target.value })}>
                 <option value="Qty">Qty — the count</option>
-                <option value="%">% — of the Target</option>
+                <option value="%">% — Quality %, OK ÷ (OK + Rejected)</option>
               </Input>
             </Col>
           </Row>

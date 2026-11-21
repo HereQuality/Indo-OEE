@@ -17,8 +17,9 @@ Future<void> openRemarks(WidgetTester t, ProcCfg p) async {
   if (p.hasMachineOperator) return;
   final fold = find.byKey(const ValueKey<String>('line-toggle/Reason / Remarks for Rejection / Rework'));
   await ensureBuilt(t, fold);
-  if (boxField('remarks').evaluate().isEmpty)
+  if (boxField('remarks').evaluate().isEmpty) {
     await tapKey(t, 'line-toggle/Reason / Remarks for Rejection / Rework');
+  }
 }
 
 Future<void> fillWorking(
@@ -77,8 +78,9 @@ void main() {
       final row = rows.single;
       expect('${row['remarks']}', contains(tag));
       expect(_n(row['okQty']), _n(p.ok), reason: 'okQty');
-      if (p.rejected != null)
+      if (p.rejected != null) {
         expect(_n(row['rejectedQty']), _n(p.rejected), reason: 'rejectedQty');
+      }
       expect('${row['machineOnTime']}', p.on);
       expect('${row['machineOffTime']}', p.off);
       if (p.hasMachineOperator) {

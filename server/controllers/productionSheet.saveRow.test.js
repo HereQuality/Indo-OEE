@@ -279,7 +279,7 @@ const ENTRY = "64b0c0ffee0000000000eeee";
 const daysAgo = (n) => new Date(Date.now() - n * 86400000);
 
 test("a locked entry can't be edited or deleted, whatever slot the save names", async () => {
-  // Saved a month ago: well past the 2-working-day window.
+  // Saved a month ago: well past the 24-hour window.
   const old = { _id: ENTRY, slot: 1, operator: "Asha", machineOnTime: "08:00", machineOffTime: "12:00", createdAt: daysAgo(30) };
   await withDb([old], async (db) => {
     // slot "auto" with the entry's _id used to skip the lock check.
@@ -297,6 +297,23 @@ test("a locked entry can't be edited or deleted, whatever slot the save names", 
     const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1, remarks: "late fix" }) });
     assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
     assert.equal(db.saved[0].remarks, "late fix");
+  });
+  // A Super Admin is never locked — no unlock needed.
+  await withDb([old], async (db) => {
+    const asAdmin = { user: { _id: "u1", roleType: "SuperAdmin", constructor: { modelName: "User" } } };
+    const res = await call(saveRow, { ...asAdmin, body: body({ _id: ENTRY, slot: 1, remarks: "admin fix" }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].remarks, "admin fix");
+  });
+  // The window is 24 hours from the save, not working days: 25 hours ago is locked, 23 is not.
+  await withDb([{ ...old, createdAt: new Date(Date.now() - 25 * 3600000) }], async () => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1, remarks: "late" }) });
+    assert.equal(res.statusCode, 403);
+  });
+  await withDb([{ ...old, createdAt: new Date(Date.now() - 23 * 3600000) }], async (db) => {
+    const res = await call(saveRow, { body: body({ _id: ENTRY, slot: 1, remarks: "in time" }) });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.payload));
+    assert.equal(db.saved[0].remarks, "in time");
   });
 });
 

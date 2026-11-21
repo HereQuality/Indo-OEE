@@ -166,8 +166,9 @@ void main() {
         for (final b in tops.entries) {
           if (a.key.compareTo(b.key) < 0 &&
               (a.value[1] - b.value[1]).abs() < 4 &&
-              (a.value[0] - b.value[0]).abs() > 100)
+              (a.value[0] - b.value[0]).abs() > 100) {
             sideBySide++;
+          }
         }
       }
       // ignore: avoid_print

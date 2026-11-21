@@ -24,12 +24,23 @@ class DashboardControlBar extends StatelessWidget {
     required this.chips,
     required this.onRemoveChip,
     required this.onClearAll,
+    this.onReportPdf,
+    this.onReportEmail,
+    this.reporting,
     this.refreshing = false,
     this.leading,
   });
 
   /// Sits above the period row inside the same bar (the process chips).
   final Widget? leading;
+
+  /// The Efficiency Report (OEE) for what is on screen: download / share the
+  /// PDF, or mail it. Both null = no report menu.
+  final VoidCallback? onReportPdf;
+  final VoidCallback? onReportEmail;
+
+  /// 'pdf' or 'mail' while one is being made; null otherwise.
+  final String? reporting;
 
   final String periodLabel;
   final bool isDefaultRange;
@@ -64,18 +75,28 @@ class DashboardControlBar extends StatelessWidget {
               builder: (context, c) {
                 final period = PeriodChip(label: periodLabel, resettable: !isDefaultRange, onTap: onPickRange, onReset: onResetRange);
                 final filters = FiltersButton(count: filterCount, onPressed: onOpenFilters);
+                final report = onReportPdf == null && onReportEmail == null
+                    ? null
+                    : ReportMenuButton(onPdf: onReportPdf, onEmail: onReportEmail, busy: reporting != null);
                 final stacked = c.maxWidth < 400 && MediaQuery.textScalerOf(context).scale(14) >= 22;
+                // Filters and the report button wrap onto a second line rather
+                // than overflow when the text is very large.
+                final actions = Wrap(spacing: 6, runSpacing: 6, alignment: WrapAlignment.end, children: [filters, ?report]);
                 if (stacked) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [period, const SizedBox(height: 6), Align(alignment: Alignment.centerLeft, child: filters)],
+                    children: [
+                      period,
+                      const SizedBox(height: 6),
+                      Align(alignment: Alignment.centerLeft, child: actions),
+                    ],
                   );
                 }
                 return Row(
                   children: [
                     Expanded(child: period),
                     const SizedBox(width: 6),
-                    filters,
+                    Flexible(child: actions),
                   ],
                 );
               },
@@ -238,6 +259,83 @@ class FiltersButton extends StatelessWidget {
   }
 }
 
+/// The phone's report control: one round button that opens "Download PDF /
+/// Email report" (the web header's PDF and Email buttons). Shows a spinner
+/// while a report is being made.
+class ReportMenuButton extends StatelessWidget {
+  const ReportMenuButton({super.key, this.onPdf, this.onEmail, this.busy = false});
+
+  final VoidCallback? onPdf;
+  final VoidCallback? onEmail;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      shape: StadiumBorder(side: BorderSide(color: cs.outline)),
+      child: busy
+          ? const SizedBox(width: 44, height: 40, child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
+          : PopupMenuButton<String>(
+              tooltip: 'Efficiency Report (OEE)',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 220),
+              position: PopupMenuPosition.under,
+              onSelected: (v) {
+                HapticFeedback.selectionClick();
+                if (v == 'pdf') onPdf?.call();
+                if (v == 'mail') onEmail?.call();
+              },
+              itemBuilder: (_) => [
+                if (onPdf != null)
+                  const PopupMenuItem(value: 'pdf', child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.picture_as_pdf_outlined), title: Text('Download PDF report'), subtitle: Text('This period, process and machines'))),
+                if (onEmail != null)
+                  const PopupMenuItem(value: 'mail', child: ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(Icons.mail_outline_rounded), title: Text('Email report'), subtitle: Text('PDF attached'))),
+              ],
+              child: SizedBox(
+                width: 44,
+                height: 40,
+                child: Center(child: Icon(Icons.picture_as_pdf_outlined, size: 19, color: cs.onSurface)),
+              ),
+            ),
+    );
+  }
+}
+
+/// The tablet header's PDF and Email buttons (`.pd-field-btn` on the web).
+class ReportButtons extends StatelessWidget {
+  const ReportButtons({super.key, this.onPdf, this.onEmail, this.reporting});
+
+  final VoidCallback? onPdf;
+  final VoidCallback? onEmail;
+  final String? reporting;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget button(String key, IconData icon, String label, VoidCallback? onPressed, String tooltip) => Tooltip(
+          message: tooltip,
+          child: OutlinedButton.icon(
+            onPressed: reporting != null ? null : onPressed,
+            icon: reporting == key
+                ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(icon, size: 17),
+            label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(40, 40), shape: const StadiumBorder(), foregroundColor: cs.onSurface),
+          ),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (onPdf != null) button('pdf', Icons.picture_as_pdf_outlined, 'PDF', onPdf, 'Download the Efficiency Report (OEE) for this period, process and machines as a PDF'),
+        if (onPdf != null && onEmail != null) const SizedBox(width: 8),
+        if (onEmail != null) button('mail', Icons.mail_outline_rounded, 'Email', onEmail, 'Email the same report (PDF attached)'),
+      ],
+    );
+  }
+}
+
 /// An active filter: tap anywhere on it to remove it.
 class RemovableChip extends StatelessWidget {
   const RemovableChip({super.key, required this.label, required this.onRemove});
@@ -299,12 +397,18 @@ class TabletHeaderBar extends StatelessWidget {
     required this.filtersActive,
     required this.onClearAll,
     this.onCustomize,
+    this.onReportPdf,
+    this.onReportEmail,
+    this.reporting,
     required this.chips,
     required this.onRemoveChip,
     this.refreshing = false,
   });
 
   final Widget? selector;
+  final VoidCallback? onReportPdf;
+  final VoidCallback? onReportEmail;
+  final String? reporting;
   final String periodLabel;
   final bool isDefaultRange;
   final VoidCallback onPickRange;
@@ -340,6 +444,7 @@ class TabletHeaderBar extends StatelessWidget {
             foregroundColor: AppColors.readable(context, AppColors.critical),
           ),
         ),
+      if (onReportPdf != null || onReportEmail != null) ReportButtons(onPdf: onReportPdf, onEmail: onReportEmail, reporting: reporting),
       if (onCustomize != null)
         OutlinedButton.icon(
           onPressed: onCustomize,
@@ -366,11 +471,15 @@ class TabletHeaderBar extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
               child: LayoutBuilder(
                 builder: (context, box) {
-                  final oneRow = box.maxWidth >= 900 || selector == null;
+                  // One row only when everything surely fits beside the process
+                  // tabs: a landscape iPad at normal text. Otherwise the controls
+                  // get their own line and wrap (large text, a landscape phone).
+                  final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+                  final oneRow = selector != null && (box.maxWidth >= 940 && scale <= 1.3 || box.maxWidth >= 1300);
                   if (oneRow) {
                     return Row(
                       children: [
-                        if (selector != null) Expanded(child: Align(alignment: Alignment.centerLeft, child: selector)) else const Spacer(),
+                        Expanded(child: Align(alignment: Alignment.centerLeft, child: selector)),
                         const SizedBox(width: 12),
                         for (var i = 0; i < controls.length; i++) ...[
                           if (i > 0) const SizedBox(width: 8),
@@ -379,6 +488,7 @@ class TabletHeaderBar extends StatelessWidget {
                       ],
                     );
                   }
+                  if (selector == null) return Align(alignment: Alignment.centerRight, child: Wrap(spacing: 8, runSpacing: 6, alignment: WrapAlignment.end, crossAxisAlignment: WrapCrossAlignment.center, children: controls));
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

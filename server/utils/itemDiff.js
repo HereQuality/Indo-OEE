@@ -55,6 +55,7 @@ const LOGGED_FIELDS = [
   { key: "process", label: "Process" },
   { key: "drawingNo", label: "Drawing No." },
   { key: "setupNo", label: "Setup No." },
+  { key: "description", label: "Description" },
   { key: "programTimeMin", label: "Program Time (min)" },
   { key: "pcsPerProgram", label: "No. of Piece In One Program" },
   ...CYCLE_OP_FIELDS.map((f) => ({ key: f.key, label: f.key === "otherOp2Sec" ? "Other Operation 2 (sec)" : f.label })),

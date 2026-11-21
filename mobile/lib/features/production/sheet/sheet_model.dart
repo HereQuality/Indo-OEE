@@ -129,6 +129,16 @@ List<SheetDay> buildSheetDays({
   required int Function(String machineId) rankOf,
   List<String> searchKeys = const ['itemName', 'operator', 'drawingNo'],
   bool byMachineOn = false,
+  // The page's dates from the server (meta.dates): a date with nothing entered
+  // still gets a day, and on a machine sheet every machine in
+  // [placeholderMachines] without an entry on a date gets an empty card —
+  // "Not filled yet" (web utils/sheetPlaceholders.js). Both are left out
+  // while a search or an Operator / Part filter narrows the view.
+  List<String> dates = const [],
+  List<Map<String, dynamic>> placeholderMachines = const [],
+  // A worker sheet (its row key is a person): a date with nothing entered gets
+  // one empty card with machine "" instead (web utils/sheetPlaceholders.js).
+  bool dayPlaceholder = false,
 }) {
   String nameOf(String id) => machineName[id] ?? '—';
 
@@ -200,8 +210,48 @@ List<SheetDay> buildSheetDays({
     }
     card.entries.add(r);
   }
-  return days;
+
+  // Only once the server says which days the page covers (an older server
+  // doesn't, and then the sheet reads as before).
+  final narrowed = ops.isNotEmpty || items.isNotEmpty || q.isNotEmpty;
+  if (narrowed || dates.isEmpty) return days;
+
+  // Empty days, then the machines missing from each day.
+  final byDate = {for (final d in days) d.date: d};
+  for (final date in dates) {
+    byDate.putIfAbsent(date, () => SheetDay(date: date, machines: []));
+  }
+  for (final d in byDate.values) {
+    final have = d.machines.map((m) => m.machineId).toSet();
+    if (dayPlaceholder && placeholderMachines.isEmpty) {
+      if (d.machines.isEmpty) {
+        d.machines.add(SheetMachineDay(date: d.date, machineId: '', machineName: 'Whole day', rank: 0, entries: [], totalEntries: 0));
+      }
+      continue;
+    }
+    for (final m in placeholderMachines) {
+      final id = '${m['_id']}';
+      if (have.contains(id)) continue;
+      d.machines.add(SheetMachineDay(
+        date: d.date,
+        machineId: id,
+        machineName: '${m['machineName'] ?? nameOf(id)}',
+        rank: rankOf(id),
+        entries: [],
+        totalEntries: 0,
+      ));
+    }
+    d.machines.sort((a, b) {
+      final byRank = a.rank.compareTo(b.rank);
+      if (byRank != 0) return byRank;
+      return naturalCompare(a.machineName, b.machineName);
+    });
+  }
+  return byDate.values.toList()..sort((a, b) => b.date.compareTo(a.date));
 }
+
+/// Whether a card stands for a machine with nothing entered yet.
+bool isPlaceholderDay(SheetMachineDay m) => m.entries.isEmpty;
 
 /// JS `r.operator || ""` / `String(v || "")`.
 String _text(Object? v) => v == null ? '' : '$v';

@@ -1,6 +1,8 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, Clock, Eye, Lock, LockOpen, Pencil, Trash2, X } from "lucide-react";
+import { Ban, Check, ChevronLeft, ChevronRight, Clock, Eye, Lock, LockOpen, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
+import NotRunningModal from "./NotRunningModal";
+import { getDayStatuses, removeDayStatus } from "../../api/machineDayStatus.api";
 import ConfirmAlert from "../Common/ConfirmAlert";
 import BulkActionBar from "./BulkActionBar";
 import { applyEntryShift } from "../../api/oeeReview.api";
@@ -79,7 +81,11 @@ const HEAD_CH_CAP = 24;
 const ICON_CH = 3;
 const autoHeadStyle = (label, { hasFormula = false, hasExpand = false } = {}) => {
   const ch = Math.min(label.length, HEAD_CH_CAP) + (hasFormula ? ICON_CH : 0) + (hasExpand ? ICON_CH : 0);
-  return { width: `${ch}ch`, minWidth: `${ch}ch` };
+  // `ch` is the width of a regular "0"; the header is bold (about 10% wider) and
+  // the cell has 8px padding each side plus its border, so a label that should
+  // fit on one line (e.g. "Machine Working Status") wrapped its last word.
+  const w = `calc(${(ch * 1.1).toFixed(1)}ch + 20px)`;
+  return { width: w, minWidth: w };
 };
 
 // Columns are told apart by colour (a pastel wash + matching bold text per
@@ -103,6 +109,8 @@ const dayBoundary = "border-t-2 border-t-slate-400 dark:border-t-slate-500";
 // into view. Below `lg` (phones and tablets, where the sidebar also eats
 // width) only Date is frozen; Machine and Action scroll with the rest.
 const FROZEN = {
+  // The Status column (before Date): a row's state and its quick actions.
+  status: "w-[200px] min-w-[200px]",
   date: "sticky left-0 w-[84px] min-w-[84px] sm:w-[104px] sm:min-w-[104px] max-lg:shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
   machine:
     "w-[88px] min-w-[88px] max-sm:whitespace-normal sm:w-[96px] sm:min-w-[96px] lg:sticky lg:left-[104px] lg:shadow-[4px_0_10px_rgba(0,0,0,0.06)]",
@@ -646,6 +654,9 @@ const ProductionEntriesTable = ({
   calcRow = rowCalc,
   // Whether the Vendor Name column shows — only on a process that uses vendors.
   showVendor = false,
+  // (date, machineId) => opens the Add Entry form on that date and machine —
+  // the "Add entry" button of a "Not filled yet" row (utils/sheetPlaceholders.js).
+  onAddFor,
 }) => {
   // Both breakdowns start collapsed — the sheet opens showing just the two
   // totals, and either can be expanded on demand.
@@ -671,7 +682,7 @@ const ProductionEntriesTable = ({
   };
   // What each bulk action can do to a row — the rest of the selection is skipped.
   const canBulk = {
-    delete: (r) => !!bulk?.remove && canDelete && !lockInfo(r),
+    delete: (r) => !!bulk?.remove && canDelete && (isAdmin || !lockInfo(r)),
     unlock: (r) => !!bulk?.unlock && isAdmin && !!lockInfo(r),
     shift: (r) => !!bulk?.sheet && isAdmin && !lockInfo(r) && !!shiftChange(r) && !shiftChange(r).tooShort,
   };
@@ -681,7 +692,7 @@ const ProductionEntriesTable = ({
     lastTicked.current = null;
     setSelected((prev) => {
       if (!prev.size) return prev;
-      const ids = new Set(rows.map((r) => r._id));
+      const ids = new Set(rows.filter((r) => !r._placeholder).map((r) => r._id));
       const next = new Set([...prev].filter((id) => ids.has(id)));
       return next.size === prev.size ? prev : next;
     });
@@ -803,6 +814,52 @@ const ProductionEntriesTable = ({
 
   const ctx = useMemo(() => ({ machineName }), [machineName]);
 
+  // "Not running" marks (server models/MachineDayStatus.js) for the placeholder
+  // days on this page: a marked "Not filled yet" row shows its reason instead.
+  const sheetKey = bulk?.sheet || "";
+  const phDates = useMemo(() => rows.filter((r) => r._placeholder).map((r) => r.date).sort(), [rows]);
+  const phFrom = phDates[0] || "";
+  const phTo = phDates[phDates.length - 1] || "";
+  const [marks, setMarks] = useState({});
+  const [marksTick, setMarksTick] = useState(0);
+  const [notRunning, setNotRunning] = useState(null);
+  const [undoing, setUndoing] = useState("");
+  useEffect(() => {
+    if (!sheetKey || !phFrom) return undefined;
+    let live = true;
+    getDayStatuses({ sheet: sheetKey, from: phFrom, to: phTo })
+      .then((res) => {
+        if (!live) return;
+        const m = {};
+        for (const s of res?.data?.data || []) m[`${s.date}|${s.machine || ""}`] = s;
+        setMarks(m);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sheetKey, phFrom, phTo, marksTick]);
+  const markOf = (r) => marks[`${r.date}|${r.machine || ""}`];
+  const openNotRunning = (r, existing) => {
+    const others = existing
+      ? []
+      : rows
+          .filter((x) => x._placeholder && x.date === r.date && x._id !== r._id && !markOf(x))
+          .map((x) => ({ id: x.machine || "", label: machineName[x.machine] || "—" }));
+    setNotRunning({ sheet: sheetKey, date: r.date, machine: r.machine || "", machineLabel: r.machine ? machineName[r.machine] || "" : "", others, existing });
+  };
+  const undoNotRunning = async (r) => {
+    setUndoing(r._id);
+    try {
+      await removeDayStatus({ sheet: sheetKey, date: r.date, machine: r.machine || "" });
+      setMarksTick((t) => t + 1);
+    } catch {
+      /* the mark stays; the next load shows it */
+    } finally {
+      setUndoing("");
+    }
+  };
+
   // Rows arrive sorted by date, then machine, then entry no., so a repeated
   // Date or Machine is always a run of adjacent rows. Each run's first row
   // carries the rowSpan and the rest skip that cell.
@@ -858,7 +915,7 @@ const ProductionEntriesTable = ({
     }
     return out;
   }, [open, columns, showVendor]);
-  const totalCols = visible.length + 1; // + Actions
+  const totalCols = visible.length + 2; // + Status, Actions
 
   const Chevron = ({ expand }) => (
     <button
@@ -890,8 +947,8 @@ const ProductionEntriesTable = ({
           <thead>
             <tr>
               {visible.map((c) => (
+                <React.Fragment key={c.key}>
                 <th
-                  key={c.key}
                   data-col-key={c.key}
                   className={`${thBase} ${c.frozen ? `${FROZEN[c.frozen]} z-30` : ""} ${HEAD_BG} ${
                     HEAD_TEXT[c.tone] || HEAD_TEXT_DEFAULT
@@ -919,6 +976,8 @@ const ProductionEntriesTable = ({
                     {c.expand && <Chevron expand={c.expand} />}
                   </span>
                 </th>
+                {c.frozen === "machine" && <th className={`${thBase} ${HEAD_BG} ${HEAD_TEXT_DEFAULT} text-center ${FROZEN.status} `}>Status</th>}
+                </React.Fragment>
               ))}
               <th className={`${thBase} ${HEAD_BG} ${HEAD_TEXT_DEFAULT} text-center ${FROZEN.action} z-30`}>
                 Action
@@ -942,6 +1001,102 @@ const ProductionEntriesTable = ({
             )}
             {!loading &&
               rows.map((r, i) => {
+                // A "Not filled yet" row (utils/sheetPlaceholders.js): the day's
+                // Date / Machine cells as usual, then one muted cell across the
+                // rest, and an empty Actions cell so the frozen columns line up.
+                if (r._placeholder) {
+                  const span = layout[i];
+                  const tint = DAY_TINT[span.dayIndex % 2];
+                  const boundary = span.dateStart && span.dayIndex > 0 ? dayBoundary : "";
+                  const merged = visible.filter((c) => c.merge);
+                  // The Status column comes right after Machine.
+                  const statusCell = (
+                      <td className={`${td} ${tint} ${boundary} ${FROZEN.status} text-center`}>
+                        <div className="inline-flex items-center gap-1.5">
+                          {markOf(r) ? (
+                            <>
+                              <span className={`inline-flex items-center gap-1 px-2.5 h-7 rounded-full text-xs font-semibold ${markOf(r).kind === "planned" ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"}`} title={markOf(r).reasonLabel}>
+                                <Ban size={13} /> Not running
+                              </span>
+                              {onAddFor && sheetKey && markOf(r).locked && !isAdmin && (
+                                <span className="inline-flex items-center justify-center w-7 h-7 text-slate-400" title="Locked — it can only be changed on the day it was saved. Ask an Admin.">
+                                  <Lock size={13} />
+                                </span>
+                              )}
+                              {onAddFor && sheetKey && (!markOf(r).locked || isAdmin) && (
+                                <>
+                                  <button type="button" className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40" title="Edit the reason or remarks" aria-label="Edit not running" onClick={() => openNotRunning(r, markOf(r))}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button type="button" className="touch-hit inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="Undo — back to Not filled yet" aria-label="Undo not running" disabled={undoing === r._id} onClick={() => undoNotRunning(r)}>
+                                    <Undo2 size={13} />
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          ) : onAddFor ? (
+                            <>
+                              <button type="button" className="touch-hit inline-flex items-center gap-1 px-2.5 h-7 rounded-full bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold shadow-sm" title="The machine ran this day — fill its entry" onClick={() => onAddFor(r.date, r.machine || "")}>
+                                <Plus size={13} /> Add
+                              </button>
+                              {sheetKey && (
+                                <button type="button" className="touch-hit inline-flex items-center gap-1 px-2.5 h-7 rounded-full border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-500 hover:text-white hover:border-amber-500 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 text-xs font-semibold" title="The machine did NOT run this day (holiday, breakdown…) — give the reason" onClick={() => openNotRunning(r)}>
+                                  <Ban size={13} /> Not running
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs italic text-slate-400">Pending</span>
+                          )}
+                        </div>
+                      </td>
+                  );
+                  return (
+                    <tr key={r._id} className="group">
+                      {merged.map((c) => {
+                        if (c.merge === "date" && !span.dateStart) return null;
+                        if (c.merge === "machineDay" && !span.machineStart) return c.frozen === "machine" ? <React.Fragment key={c.key}>{statusCell}</React.Fragment> : null;
+                        const rowSpan = c.merge === "date" ? span.dateSpan : span.machineSpan;
+                        let content = "";
+                        try {
+                          content = c.get(r, {}, {}, ctx);
+                        } catch {
+                          content = "";
+                        }
+                        return (
+                          <React.Fragment key={c.key}>
+                          <td rowSpan={rowSpan > 1 ? rowSpan : undefined} className={`${td} ${tint} ${boundary} ${c.align || ""} ${c.frozen ? `${FROZEN[c.frozen]} z-10` : ""} align-middle text-slate-700 dark:text-slate-200`}>
+                            {content}
+                          </td>
+                          {c.frozen === "machine" && statusCell}
+                          </React.Fragment>
+                        );
+                      })}
+                      {visible
+                        .filter((c) => !c.merge)
+                        .map((c, k) => (
+                          <td key={c.key} className={`${td} ${tint} ${boundary} ${k === 0 ? "" : "text-center"} text-slate-400 dark:text-slate-500`}>
+                            {k > 0 ? (
+                              "—"
+                            ) : markOf(r) ? (
+                              <span className="inline-flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 h-6 rounded-full text-xs font-medium ${markOf(r).kind === "planned" ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"}`}>
+                                  <Ban size={12} /> {markOf(r).reasonLabel}
+                                </span>
+                                {markOf(r).remarks && markOf(r).remarks !== markOf(r).reasonLabel && (
+                                  <span className="text-slate-600 dark:text-slate-300 text-xs" title={markOf(r).remarks}>{markOf(r).remarks.length > 50 ? `${markOf(r).remarks.slice(0, 50)}…` : markOf(r).remarks}</span>
+                                )}
+                                {markOf(r).markedBy && <span className="text-xs">by {markOf(r).markedBy}</span>}
+                              </span>
+                            ) : (
+                              <span className="italic">Not filled yet</span>
+                            )}
+                          </td>
+                        ))}
+                      <td className={`${td} ${tint} ${boundary} ${FROZEN.action} z-10`} />
+                    </tr>
+                  );
+                }
                 const calc = calcRow(r);
                 const day = dayResultByKey[r._id] || {};
                 const span = layout[i];
@@ -951,13 +1106,20 @@ const ProductionEntriesTable = ({
                 // very first row) gets the heavier top border marking where
                 // one day's block ends and the next begins.
                 const boundary = span.dateStart && span.dayIndex > 0 ? dayBoundary : "";
+                const statusCell = (
+                    <td className={`${td} ${dayBg} ${boundary} ${FROZEN.status} text-center`}>
+                      <span className="inline-flex items-center gap-1 px-2.5 h-7 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs font-semibold" title="Entry saved">
+                        <Check size={13} /> Filled
+                      </span>
+                    </td>
+                );
 
                 return (
                   <tr key={r._id} className="group">
                     {visible.map((c) => {
                       // Merged cells are drawn once, on the run's first row.
                       if (c.merge === "date" && !span.dateStart) return null;
-                      if (c.merge === "machineDay" && !span.machineStart) return null;
+                      if (c.merge === "machineDay" && !span.machineStart) return c.frozen === "machine" ? <React.Fragment key={c.key}>{statusCell}</React.Fragment> : null;
                       const rowSpan =
                         c.merge === "date" ? span.dateSpan : c.merge === "machineDay" ? span.machineSpan : undefined;
                       // Every cell paints its own background: a frozen column
@@ -978,8 +1140,8 @@ const ProductionEntriesTable = ({
                               ? TONE[c.tone]
                               : `${cellBg} text-slate-700 dark:text-slate-200`;
                       return (
+                        <React.Fragment key={c.key}>
                         <td
-                          key={c.key}
                           rowSpan={rowSpan > 1 ? rowSpan : undefined}
                           className={`${td} ${bg} ${boundary} ${c.align || ""} ${
                             c.frozen ? `${FROZEN[c.frozen]} z-10` : ""
@@ -988,6 +1150,8 @@ const ProductionEntriesTable = ({
                         >
                           {c.get(r, calc, day, ctx)}
                         </td>
+                        {c.frozen === "machine" && statusCell}
+                        </React.Fragment>
                       );
                     })}
                     <td className={`${td} ${dayBg} ${boundary} ${FROZEN.action} z-10`}>
@@ -1008,25 +1172,9 @@ const ProductionEntriesTable = ({
                             />
                           </label>
                         ) : null;
-                        if (locked) {
-                          if (isAdmin) {
-                            const busy = unlockingId === r._id;
-                            return (
-                              <div className="flex items-center justify-center gap-2">
-                                {box}
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  className="touch-hit inline-flex items-center gap-1 px-2 h-7 rounded-full text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60 text-xs font-medium"
-                                  title={`${locked} — click to unlock for 24 hours`}
-                                  onClick={() => onUnlock?.(r)}
-                                >
-                                  <LockOpen size={13} />
-                                  {busy ? "Unlocking…" : "Unlock"}
-                                </button>
-                              </div>
-                            );
-                          }
+                        // A locked row: everyone else sees a lock; an admin (never locked
+                        // out) sees Unlock — for everyone else — beside their own edit / delete.
+                        if (locked && !isAdmin) {
                           return (
                             <div className="flex items-center justify-center gap-2" title={locked}>
                               {box}
@@ -1034,9 +1182,22 @@ const ProductionEntriesTable = ({
                             </div>
                           );
                         }
+                        const busy = unlockingId === r._id;
                         return (
                           <div className="flex items-center gap-1.5">
                             {box}
+                            {locked && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="touch-hit inline-flex items-center gap-1 px-2 h-7 rounded-full text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40 transition-colors disabled:opacity-60 text-xs font-medium"
+                                title={`${locked} — click to unlock for 24 hours`}
+                                onClick={() => onUnlock?.(r)}
+                              >
+                                <LockOpen size={13} />
+                                {busy ? "Unlocking…" : "Unlock"}
+                              </button>
+                            )}
                             {canEdit && (
                               <button
                                 type="button"
@@ -1092,6 +1253,7 @@ const ProductionEntriesTable = ({
         </table>
       </div>
 
+      <NotRunningModal target={notRunning} onClose={() => setNotRunning(null)} onSaved={() => setMarksTick((t) => t + 1)} />
       <ConfirmAlert
         isOpen={!!confirm}
         variant={confirm?.kind === "delete" ? "danger" : "warning"}

@@ -227,7 +227,7 @@ const CompanyHolidays = () => {
                         </div>
                         <div>
                             <h5 className="mb-0 fw-bold">Company Holidays</h5>
-                            <div className="text-muted small">Weekly Off + specific dates — production entries lock 2 working days after their own date, skipping these</div>
+                            <div className="text-muted small">Weekly Off + specific dates — used by the planned-shift and working-day sums (the entry lock is 24 hours from saving)</div>
                         </div>
                     </div>
                 </div>

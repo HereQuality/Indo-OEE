@@ -138,19 +138,17 @@ const CYCLE_SEC = {
   mfa: (e) => num(e.totalCycleSec),
 };
 
-// { availability, performance, quality } as fractions (1 = 100%), each null
-// when it can't be worked out from what the entry holds.
-const entryMetrics = (sheet, e) => {
-  const out = { availability: null, performance: null, quality: null };
+// The minutes and pieces behind one entry's Availability / Performance /
+// Quality (what the report adds up before taking each ratio once over the
+// totals): null when the entry has no usable Machine Shift.
+const entryParts = (sheet, e) => {
   const shiftMin = spanMinutes(e.machineOnTime, e.machineOffTime);
-  if (shiftMin === null) return out;
-
+  if (shiftMin === null) return null;
   const cycle = String(e.itemName || "").trim() ? CYCLE_SEC[sheet](e) : null;
   const ok = num(e.okQty);
   const rej = num(e.rejectedQty);
   const actual = num(e.actualQty);
   const totalQty = isNum(actual) ? actual : isNum(ok) || isNum(rej) ? (ok || 0) + (rej || 0) : null;
-
   const plannedMin = plannedMinOf(e);
   const plannedProdMin = (isNum(plannedMin) ? plannedMin : shiftMin) - sumOrZero(PLANNED_STOP_KEYS.map((k) => num(e[k])));
   // Time spent on other work (After Powder Coating's Other Activity) isn't
@@ -163,7 +161,18 @@ const entryMetrics = (sheet, e) => {
     sumOrZero([...STOPPAGE_KEYS, ...(EXTRA_STOPPAGE_KEYS[sheet] || [])].map((k) => num(e[k]))) -
     (num(e.otherActivityMin) || 0);
   const idealRunSec = isNum(cycle) && cycle > 0 && isNum(totalQty) ? cycle * totalQty : null;
+  // The pieces the operating time could have made at cycle time.
+  const idealQty = isNum(cycle) && cycle > 0 && operatingMin > 0 ? (operatingMin * 60) / cycle : null;
+  return { shiftMin, cycle, ok, totalQty, plannedProdMin, operatingMin, idealRunSec, idealQty };
+};
 
+// { availability, performance, quality } as fractions (1 = 100%), each null
+// when it can't be worked out from what the entry holds.
+const entryMetrics = (sheet, e) => {
+  const out = { availability: null, performance: null, quality: null };
+  const p = entryParts(sheet, e);
+  if (!p) return out;
+  const { ok, totalQty, plannedProdMin, operatingMin, idealRunSec } = p;
   out.availability = plannedProdMin > 0 ? operatingMin / plannedProdMin : null;
   out.performance = operatingMin > 0 && isNum(idealRunSec) ? idealRunSec / 60 / operatingMin : null;
   out.quality = isNum(totalQty) && totalQty > 0 && isNum(ok) ? ok / totalQty : null;
@@ -287,4 +296,4 @@ const dayOeeFor = (sheet, entry, siblings = []) => {
   return combinedFigures(sheet, day);
 };
 
-module.exports = { entryMetrics, metricsOver100, spanMinutes, METRICS, OEE_METRICS, METRIC_LABELS, CYCLE_SEC, EXTRA_STOPPAGE_KEYS, SHEET_DAY, ownerFieldOf, dayOeeFor };
+module.exports = { entryParts, entryMetrics, metricsOver100, spanMinutes, METRICS, OEE_METRICS, METRIC_LABELS, CYCLE_SEC, EXTRA_STOPPAGE_KEYS, SHEET_DAY, ownerFieldOf, dayOeeFor };

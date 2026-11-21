@@ -222,13 +222,15 @@ bool hasAnyEntryData(List<Map<String, dynamic>> list) {
     }
     if (jsTruthy(v['machineOnTime']) ||
         jsTruthy(v['machineOffTime']) ||
-        _filled(v['plannedOperatorShiftHours']))
+        _filled(v['plannedOperatorShiftHours'])) {
       return true;
+    }
     if (_filled(v['actualQty']) || _filled(v['okQty'])) return true;
     final split = v['rejectBreakdown'];
     if (split is Map &&
-        split.values.any((n) => _filled(n) && jsToNumber(n) != 0))
+        split.values.any((n) => _filled(n) && jsToNumber(n) != 0)) {
       return true;
+    }
     return [...stoppageKeys, ...cycleOpKeys].any((k) => _filled(v[k]));
   });
 }
@@ -241,8 +243,9 @@ Map<String, dynamic> applyItemSelection(
   String itemId,
   List<Map<String, dynamic>> items,
 ) {
-  if (itemId.isEmpty)
+  if (itemId.isEmpty) {
     return {...v, 'item': '', 'itemName': '', 'excludedOps': <dynamic>[]};
+  }
   Map<String, dynamic>? it;
   for (final candidate in items) {
     if ('${candidate['_id']}' == itemId) {

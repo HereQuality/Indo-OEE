@@ -1,20 +1,23 @@
 import React from 'react';
 
-const FormsFooter = ({ handleSubmit, handleSubmitCancel, isLoading, isSaveDisabled, isSaveBlocked }) => {
+const FormsFooter = ({ handleSubmit, handleSubmitCancel, isLoading, isSaveDisabled, isSaveBlocked, hideCancel }) => {
   // isSaveBlocked looks like isSaveDisabled but stays clickable, so a form can
   // answer the click by pointing at whatever is still missing instead of
-  // leaving the user to hunt for it.
+  // leaving the user to hunt for it. hideCancel: a footer that already has its
+  // own Cancel (a stepped form with Back/Next) shows just the Save button.
   const looksInactive = (isSaveDisabled || isSaveBlocked) && !isLoading;
   return (
     <div className="flex items-center justify-end gap-3">
-      <button
-        type="button"
-        onClick={handleSubmitCancel}
-        disabled={isLoading}
-        className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2.5 transition-colors disabled:opacity-60"
-      >
-        Cancel
-      </button>
+      {!hideCancel && (
+        <button
+          type="button"
+          onClick={handleSubmitCancel}
+          disabled={isLoading}
+          className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2.5 transition-colors disabled:opacity-60"
+        >
+          Cancel
+        </button>
+      )}
       <button
         type="submit"
         onClick={handleSubmit}

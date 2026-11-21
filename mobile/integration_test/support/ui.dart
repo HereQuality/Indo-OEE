@@ -1,6 +1,5 @@
 // UI helpers for the e2e tests: drive the REAL app like a person would.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:indo/features/production/data_entry_hub/data_entry_hub_card.dart';
@@ -222,7 +221,7 @@ List<String> formKeys({int block = 0}) => [
 ];
 
 /// Asks the runner (mobile/e2e/dev_run.sh / run_e2e.sh) to grab the emulator screen
-/// into mobile/e2e/shots/<name>.png (it reacts to the printed marker).
+/// into `mobile/e2e/shots/<name>.png` (it reacts to the printed marker).
 Future<void> shot(WidgetTester t, String name) async {
   await pumpFor(t, const Duration(milliseconds: 400));
   // ignore: avoid_print

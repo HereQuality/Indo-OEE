@@ -15,6 +15,7 @@ class KpiRepository {
           if (d is Map) KpiDepartment('${d['_id']}', '${d['departmentName'] ?? ''}'),
       ],
       canAddAnyDepartment: r['canAddAnyDepartment'] == true,
+      byDepartment: [for (final d in (r['byDepartment'] as List? ?? const [])) if (d is Map) DepartmentSummary.from(d)],
     );
   }
 
@@ -32,6 +33,10 @@ class KpiRepository {
       id == null ? Api.post(Endpoints.kpiCompany, body: body) : Api.put(Endpoints.kpiCompanyById(id), body: body);
 
   Future<void> deleteCompany(String id) => Api.delete(Endpoints.kpiCompanyById(id));
+
+  /// One month's business figures: values keyed like [companyMetrics] (blank clears).
+  Future<void> saveCompanyMonthly(int year, int month, Map<String, String> values) =>
+      Api.put(Endpoints.kpiCompanyMonthly, body: {'year': year, 'month': month, 'values': values});
 
   /// Makes a department (Operator Management › Department) and returns its id.
   Future<String?> addDepartment(String name, String remark) async {

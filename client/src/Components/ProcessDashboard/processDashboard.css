@@ -11,7 +11,7 @@
   --pd-track: #f0efec;
   --pd-s1: #2a78d6; --pd-s2: #eb6834; --pd-s3: #1baf7a; --pd-s4: #eda100;
 }
-.dark .pd-root, .dark .modal .pd-tabs, .dark .modal .pd-split, .dark .modal .pd-picker, .dark .modal .pd-table, .dark .pd-pop {
+.dark .pd-root, .dark .modal .pd-tabs, .dark .modal .pd-split, .dark .modal .pd-picker, .dark .modal .pd-table, .dark .pd-pop, .dark .pd-period-content {
   --pd-surface: #212121;
   --pd-border: rgba(255, 255, 255, 0.1);
   --pd-ink: #ffffff;
@@ -23,7 +23,7 @@
   --pd-s1: #3987e5; --pd-s2: #d95926; --pd-s3: #199e70; --pd-s4: #c98500;
 }
 /* Modals render outside .pd-root, so they carry the light tokens themselves. */
-.modal .pd-tabs, .modal .pd-split, .modal .pd-picker, .modal .pd-table, .pd-pop {
+.modal .pd-tabs, .modal .pd-split, .modal .pd-picker, .modal .pd-table, .pd-pop, .pd-period-content {
   --pd-surface: #ffffff; --pd-border: rgba(11, 11, 11, 0.1); --pd-ink: #0b0b0b; --pd-ink-2: #52514e;
   --pd-muted: #6b6a64; --pd-wash: rgba(37, 99, 235, 0.07); --pd-accent: #2563eb; --pd-track: #f0efec;
   --pd-s1: #2a78d6; --pd-s2: #eb6834; --pd-s3: #1baf7a; --pd-s4: #eda100;
@@ -370,3 +370,50 @@
 /* Same height everywhere, whatever a title or hint wraps to. */
 .pd-grid > .pd-card:not(.pd-card-table) { min-height: 452px; }
 @media (max-width: 575.98px) { .pd-grid > .pd-card:not(.pd-card-table) { min-height: 480px; } }
+
+/* ── Select period sheet (PeriodSheet.jsx / RangeCalendar.jsx) — the app's
+   date_range_sheet.dart on the web. Colours come from the .pd-root variables
+   above; the modal carries .pd-root so dark mode follows. ───────────────── */
+.pd-period-modal { max-width: 440px; }
+.pd-period-content { border-radius: 18px; border: 1px solid var(--pd-border); background: #ffffff; color: var(--pd-ink); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
+.dark .pd-period-content { background: #212121; }
+.pd-period-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 16px 16px 8px; }
+.pd-period-title { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
+.pd-period-sub { font-size: 0.78rem; color: var(--pd-muted); margin-top: 2px; }
+.pd-period-body { padding: 14px 16px 18px; max-height: min(70vh, 640px); }
+.pd-period-foot { display: flex; gap: 12px; padding: 12px 16px 16px; border-top: 1px solid var(--pd-border); }
+.pd-period-hint { display: flex; gap: 8px; align-items: flex-start; font-size: 0.78rem; line-height: 1.35; color: var(--pd-muted); margin-top: 10px; }
+.pd-period-hint svg { flex-shrink: 0; margin-top: 1px; }
+.pd-banner { background: rgba(220, 38, 38, 0.08); color: #b91c1c; border: 1px solid rgba(220, 38, 38, 0.25); border-radius: 10px; padding: 8px 12px; font-size: 0.8rem; margin-bottom: 14px; }
+.dark .pd-banner { color: #fca5a5; }
+.pd-period-modal .pd-icon-btn { border: 0; background: transparent; color: var(--pd-ink-2); border-radius: 8px; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.pd-period-modal .pd-icon-btn:hover:not(:disabled) { background: var(--pd-wash); color: var(--pd-ink); }
+.pd-period-modal .pd-icon-btn:disabled { opacity: 0.35; }
+.pd-period-modal .pd-card { padding: 6px 6px 8px; }
+.pd-year-step { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px !important; }
+.pd-year-step span { font-weight: 700; font-size: 1rem; }
+.pd-cal-head { display: flex; align-items: center; }
+.pd-cal-title { flex: 1; border: 0; background: transparent; color: var(--pd-ink); font-weight: 700; font-size: 0.92rem; min-height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.pd-cal-title:hover { background: var(--pd-wash); }
+.pd-cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); height: 28px; align-items: center; text-align: center; font-size: 0.74rem; font-weight: 700; color: var(--pd-muted); }
+.pd-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.pd-cal-cell { position: relative; height: 40px; display: flex; align-items: center; justify-content: center; }
+.pd-cal-cell::before, .pd-cal-cell::after { content: ""; position: absolute; top: 3px; bottom: 3px; width: 50%; background: transparent; }
+.pd-cal-cell::before { left: 0; }
+.pd-cal-cell::after { right: 0; }
+.pd-cal-cell.band-left::before, .pd-cal-cell.band-right::after { background: var(--pd-wash); }
+.pd-cal-cell.round-left.band-left::before { border-radius: 20px 0 0 20px; }
+.pd-cal-cell.round-right.band-right::after { border-radius: 0 20px 20px 0; }
+.pd-cal-day { position: relative; z-index: 1; width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent; color: var(--pd-ink); font-size: 0.9rem; font-weight: 500; }
+.pd-cal-day:hover:not(:disabled) { background: var(--pd-wash); }
+.pd-cal-day:disabled { color: var(--pd-muted); opacity: 0.45; }
+.pd-cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--pd-accent); font-weight: 700; }
+.pd-cal-day.is-picked { background: var(--pd-accent); color: #fff; font-weight: 700; box-shadow: none; }
+.dark .pd-cal-day.is-picked { color: #0b1220; }
+.pd-cal-jump-year { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0 8px; font-weight: 700; }
+.pd-cal-jump-year span { width: 88px; text-align: center; }
+@media (max-width: 575.98px) {
+  .pd-period-modal { margin: 0; max-width: 100%; position: fixed; bottom: 0; left: 0; right: 0; }
+  .pd-period-content { border-radius: 18px 18px 0 0; }
+  .pd-period-body { max-height: 62vh; }
+}

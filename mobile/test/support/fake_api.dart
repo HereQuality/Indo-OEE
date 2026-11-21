@@ -54,6 +54,12 @@ class FakeApi implements HttpClientAdapter {
     // completes under the tests' fake clock and would leave a screen loading
     // forever. On a device it works; here parse on the spot.
     dio.transformer = SyncTransformer();
+    // Every data entry screen asks this on open (Full access → never locked);
+    // a test registers its own answer to say yes.
+    f.on('GET', '/api/v1/oee-review/access', (_) => {'isOk': true, 'canReview': false});
+    // Data entry sheets ask for "Not running" marks of the days they show.
+    f.on('GET', '/api/v1/machine-day-status', (_) => {'isOk': true, 'data': []});
+    f.on('GET', '/api/v1/machine-day-status/reasons', (_) => {'isOk': true, 'data': []});
     return f;
   }
 
@@ -85,6 +91,12 @@ class FakeApi implements HttpClientAdapter {
     }
     try {
       final out = await h(req);
+      if (out is FakeBytes) {
+        return ResponseBody.fromBytes(out.bytes, out.status, headers: {
+          Headers.contentTypeHeader: [out.contentType],
+          if (out.filename != null) 'content-disposition': ['attachment; filename="${out.filename}"'],
+        });
+      }
       if (out is FakeResponse) return _json(out.body, out.status);
       return _json(out, 200);
     } catch (e) {
@@ -99,6 +111,15 @@ class FakeApi implements HttpClientAdapter {
           Headers.contentTypeHeader: ['application/json; charset=utf-8'],
         },
       );
+}
+
+/// Return from a handler to answer with a file (a PDF download, say).
+class FakeBytes {
+  FakeBytes(this.bytes, {this.status = 200, this.contentType = 'application/pdf', this.filename});
+  final List<int> bytes;
+  final int status;
+  final String contentType;
+  final String? filename;
 }
 
 /// Return from a handler to answer with a specific HTTP status.

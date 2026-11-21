@@ -56,7 +56,7 @@ Future<void> pumpUntilFound(
     if (finder.evaluate().isNotEmpty) return;
   }
   throw TestFailure(
-    'Timed out after ${timeout.inSeconds}s waiting for ${reason ?? finder.description}',
+    'Timed out after ${timeout.inSeconds}s waiting for ${reason ?? finder.describeMatch(Plurality.many)}',
   );
 }
 

@@ -1,46 +1,89 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { Building2, CalendarDays, FileSpreadsheet, Layers, Pencil, Plus, Target, Trash2, Upload } from "lucide-react";
-import { Card, CardBody, CardHeader, Col, Container, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row } from "reactstrap";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { AlertTriangle, Banknote, FileSpreadsheet, Layers, Pencil, Plus, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, Wallet, Zap } from "lucide-react";
+import { Card, CardBody, CardHeader, Col, Container, Input, InputGroup, InputGroupText, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row } from "reactstrap";
 import * as XLSX from "xlsx";
 import DeleteModal from "../Components/Common/DeleteModal";
 import ExcelImportModal from "../Components/Kpi/ExcelImportModal";
-import { HowItWorks, MeasureInput, PeriodPicker, Progress, Stat, StatusBadge, YearChips, deltaPct } from "../Components/Kpi/kpiBits";
+import { Gauge, InventoryBar, MonthBars, MonthLines, monthRows } from "../Components/Kpi/CompanyCharts";
+import { HowItWorks, MeasureInput, MonthSegments, PeriodPicker, Progress, StatusBadge, YearSelect, deltaPct } from "../Components/Kpi/kpiBits";
 import { useAlert } from "../context/AlertContext";
 import { MenuContext } from "../context/MenuContext";
-import { createCompanyObjective, deleteCompanyObjective, getCompanySummary, importCompanyHistory, updateCompanyObjective } from "../api/kpi.api";
-import { MONTHS, blankMeasure, fmtPct, fmtQty, measureText, thisMonth, thisYear, yearOptions } from "../utils/kpi";
+import { createCompanyObjective, deleteCompanyObjective, getCompanySummary, importCompanyHistory, saveCompanyMonthly, updateCompanyObjective } from "../api/kpi.api";
+import { MONTHS, blankMeasure, fmtPct, fmtQty, measureText, thisMonth, thisYear, yearOptions, yearRange } from "../utils/kpi";
+import { METRICS, METRIC_GROUPS, SERIES, fmtMetric, fmtMoneyFull, fmtMoneyShort, fmtRatio, unitLabel } from "../utils/companyMetrics";
 
 /**
- * Data Entry › Company Level Objective — the company's objectives for a year
- * (objective, Target (sales), Baseline, each with its own unit) over the
- * company-wide OK Qty: by month, the year, and all time, plus the average
- * achievement % of the year's department KPIs. Laid out for the CEO / MD:
- * headline figures first, then the objectives, then the breakdown.
+ * Data Entry › Company Level Objective — the company board for the CEO / MD,
+ * laid out like the Power BI one it replaces: headline tiles (Sales, Salary,
+ * Electricity, Sales vs Target, OK Qty) for the year or one month, the
+ * month-wise charts (sales & target, order booking, costs, labour
+ * productivity, inventory turnover, OK Qty), FG / RM / WIP, on-time delivery,
+ * complaints, then the objectives and the monthly figures behind it all.
+ *
+ * OK Qty is summed from the data entries; the business figures are typed per
+ * month (Monthly Figures) or loaded from an old sheet (Upload Excel).
  */
 const emptyForm = (year) => ({ objective: "", year, target: blankMeasure(), baseline: blankMeasure(), owner: "", remarks: "" });
 
 const HELP = [
-  "Add Objective: the company-level objective, its Target (sales) and Baseline, each with its own unit — Qty or %. Add an Owner and Remarks so everyone knows who drives it and how.",
-  "OK Qty here is the whole company: every process's data entries added up — for the chosen month, the year, and all time. Nobody types it.",
-  "Achieved % compares the year's OK Qty with a Target in Qty; On track from 100%, Near from 80%, Behind below.",
-  "Avg achievement % is the average of the department KPIs' own achievement for the year (KPI page).",
-  "Download the year's objectives and month-wise figures as Excel.",
-  "Have old sheets? Upload Excel loads past months' company-wide OK Qty (Year, Month, OK Qty). A month that already has data entries keeps the entries; the rest take the uploaded figure, marked 'Excel'.",
+  "Pick the Year, then Whole year or one month — every tile and chart follows. Tap a bar or a month row to jump to that month.",
+  "Monthly Figures: type the month's Sales, Target Sales, Order Booking, Salary, Electricity Bill, FG / RM / WIP value, Inventory Turnover, On Time Delivery % and Customer Complaints. Leave what you don't track blank.",
+  "OK Qty is the whole company: every process's data entries added up. Nobody types it. Labour Productivity is Sales ÷ Salary.",
+  "Money and counts add up over the year; percentages, ratios and stock values are averaged over the months that have a figure.",
+  "Add Objective: a company-level objective with its Target (sales) and Baseline. Achieved % compares the year's OK Qty with a Target in Qty; On track from 100%, Near from 80%, Behind below.",
+  "Upload Excel loads old years — one row per month with any of the figures; a month that already has data entries keeps the entries for OK Qty. Excel downloads everything shown for the year.",
 ];
 
 const IMPORT_COLUMNS = [
   { key: "year", label: "Year", required: true },
   { key: "month", label: "Month", required: true, hint: "Jan, January or 1" },
-  { key: "okQty", label: "OK Qty", required: true, hint: "the whole company's OK Qty for that month" },
+  { key: "okQty", label: "OK Qty", hint: "the whole company's OK Qty — only used for months with no data entries" },
+  ...METRICS.map((m) => ({ key: m.key, label: m.label, hint: m.unit === "₹" ? "in ₹" : m.unit === "%" ? "0–100" : m.unit === "ratio" ? "times a year" : "number", hideInPreview: !["sales", "targetSales", "salary", "electricityBill"].includes(m.key) })),
 ];
-const IMPORT_SAMPLE = { year: 2025, month: "Jan", okQty: 185000 };
+const IMPORT_SAMPLE = { year: 2025, month: "Jan", okQty: 185000, sales: 20500000, targetSales: 22000000, orderBooking: 21000000, salary: 1150000, electricityBill: 62000, fgValue: 27000000, rmValue: 24600000, wipValue: 23900000, inventoryTurnover: 6.4, onTimeDelivery: 87.5, customerComplaints: 16 };
+
+const TILE_ICON = { sales: Banknote, salary: Users, electricityBill: Zap, okQty: Layers };
+
+// A headline figure: label, big value, change vs the previous period, a line under.
+const Tile = ({ label, value, full, icon: Icon, tone = "primary", delta, deltaLabel, hint }) => {
+  const up = delta !== null && delta !== undefined && delta >= 0;
+  return (
+    <Col>
+      <Card className="co-tile mb-0">
+        <CardBody className="py-3 px-3">
+          <div className="d-flex align-items-start justify-content-between gap-2">
+            <div className="co-tile__label text-truncate">{label}</div>
+            {Icon && <span className={`rounded-circle bg-${tone}-subtle text-${tone} d-inline-flex align-items-center justify-content-center flex-shrink-0`} style={{ width: 30, height: 30 }} aria-hidden="true"><Icon size={16} /></span>}
+          </div>
+          <div className="co-tile__value mt-1 text-truncate" title={full || undefined}>{value}</div>
+          <div className="d-flex flex-wrap align-items-center gap-2 mt-1 co-tile__sub">
+            {delta !== null && delta !== undefined && (
+              <span className={`d-inline-flex align-items-center gap-1 fw-semibold ${up ? "text-success" : "text-danger"}`}>
+                {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}{up ? "+" : ""}{fmtPct(delta)}
+                {deltaLabel && <span className="text-muted fw-normal">{deltaLabel}</span>}
+              </span>
+            )}
+            {hint && <span className="text-truncate">{hint}</span>}
+          </div>
+        </CardBody>
+      </Card>
+    </Col>
+  );
+};
+
+const Panel = ({ title, aside, children, className = "" }) => (
+  <Card className={`mb-0 h-100 border-0 shadow-sm ${className}`}>
+    <CardHeader className="bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2 py-2"><h6 className="mb-0">{title}</h6>{aside && <span className="text-muted small">{aside}</span>}</CardHeader>
+    <CardBody className="pt-2 pb-2">{children}</CardBody>
+  </Card>
+);
 
 const CompanyObjective = () => {
   const toast = useAlert();
   const { currentPagePermissions = { view: true, create: true, edit: true, delete: true } } = useContext(MenuContext) || {};
+  const canWrite = currentPagePermissions.create || currentPagePermissions.edit;
   const [year, setYear] = useState(thisYear());
-  const [month, setMonth] = useState(thisMonth());
+  const [month, setMonth] = useState(thisMonth()); // 0 = whole year
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -50,6 +93,10 @@ const CompanyObjective = () => {
   const [removeId, setRemoveId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [figOpen, setFigOpen] = useState(false);
+  const [figMonth, setFigMonth] = useState(thisMonth());
+  const [figValues, setFigValues] = useState({});
+  const [figSaving, setFigSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -64,6 +111,7 @@ const CompanyObjective = () => {
   };
   useEffect(() => { load(); }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── objectives ──
   const openAdd = () => { setEditId(null); setValues(emptyForm(year)); setModal(true); };
   const openEdit = (o) => {
     setEditId(o._id);
@@ -101,16 +149,51 @@ const CompanyObjective = () => {
     }
   };
 
+  // ── monthly figures ──
+  const monthly = summary?.monthly || [];
+  const storedFor = (m) => monthly.find((r) => r.month === m)?.values || {};
+  const openFigures = (m = month || thisMonth()) => {
+    setFigMonth(m);
+    setFigValues(Object.fromEntries(METRICS.map((x) => [x.key, storedFor(m)[x.key] ?? ""])));
+    setFigOpen(true);
+  };
+  const pickFigMonth = (m) => { setFigMonth(m); setFigValues(Object.fromEntries(METRICS.map((x) => [x.key, storedFor(m)[x.key] ?? ""]))); };
+  const saveFigures = async () => {
+    setFigSaving(true);
+    try {
+      const res = await saveCompanyMonthly({ year, month: figMonth, values: figValues });
+      toast.success(res?.data?.message || "Monthly figures saved");
+      setFigOpen(false);
+      await load();
+    } catch (ex) {
+      toast.error(ex?.response?.data?.message || "Could not save the figures");
+    } finally {
+      setFigSaving(false);
+    }
+  };
+
+  // ── the figures in scope (whole year or one month) ──
+  const metrics = summary?.metrics || {};
   const byMonth = summary?.byMonth || [];
   const byYear = summary?.byYear || [];
   const objectives = summary?.objectives || [];
-  const monthOk = byMonth[month - 1]?.okQty ?? 0;
-  const prevMonthOk = month > 1 ? byMonth[month - 2]?.okQty ?? 0 : null;
-  const prevYearOk = byYear.find((y) => y.year === year - 1)?.okQty ?? null;
-  const years = useMemo(() => yearOptions(byYear.map((y) => y.year)).filter((y) => y <= thisYear() + 1), [byYear]);
-  const chart = byMonth.map((m) => ({ name: MONTHS[m.month - 1], okQty: m.okQty, month: m.month }));
-  const yearChart = byYear.map((y) => ({ name: String(y.year), okQty: y.okQty, year: y.year }));
-
+  const scopeLabel = month ? `${MONTHS[month - 1]} ${year}` : `${year}`;
+  const prevLabel = month ? (month > 1 ? `vs ${MONTHS[month - 2]}` : "") : `vs ${year - 1}`;
+  const val = (key) => (month ? metrics[key]?.months?.[month - 1] ?? null : metrics[key]?.year ?? null);
+  const prev = (key) => (month ? (month > 1 ? metrics[key]?.months?.[month - 2] ?? null : null) : metrics[key]?.prevYear ?? null);
+  const okInScope = month ? byMonth[month - 1]?.okQty ?? 0 : summary?.yearOkQty ?? 0;
+  const okPrev = month ? (month > 1 ? byMonth[month - 2]?.okQty ?? null : null) : byYear.find((y) => y.year === year - 1)?.okQty ?? null;
+  const sales = val("sales"), target = val("targetSales");
+  const salesPct = target > 0 && sales !== null ? (sales / target) * 100 : null;
+  const salesGap = target > 0 && sales !== null ? sales - target : null;
+  const monthsWithSales = metrics.sales?.monthsWithData || 0;
+  const avgMonthlySales = monthsWithSales ? metrics.sales.year / monthsWithSales : null;
+  const monthsWithComplaints = metrics.customerComplaints?.monthsWithData || 0;
+  const avgComplaints = monthsWithComplaints ? metrics.customerComplaints.year / monthsWithComplaints : null;
+  const years = useMemo(() => yearOptions(byYear.map((y) => y.year)), [byYear]);
+  const rows = useMemo(() => monthRows(year, metrics, byMonth), [year, metrics, byMonth]);
+  const hasFigures = (summary?.monthsWithFigures || []).map((f, i) => f || byMonth[i]?.okQty > 0);
+  const lp = metrics.labourProductivity;
 
   const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -121,11 +204,17 @@ const CompanyObjective = () => {
     const ws1 = XLSX.utils.aoa_to_sheet(obj);
     ws1["!cols"] = [{ wch: 36 }, { wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 14 }, { wch: 6 }, { wch: 14 }, { wch: 11 }, { wch: 10 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, ws1, `Objectives ${year}`);
-    const months = [["Month", "OK Qty", "Share of year %"], ...byMonth.map((m) => [`${MONTHS[m.month - 1]} ${year}`, m.okQty, summary?.yearOkQty ? Number(((m.okQty / summary.yearOkQty) * 100).toFixed(1)) : ""]), ["Year", summary?.yearOkQty ?? 0, 100]];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(months), `By month ${year}`);
+    const fig = [
+      ["Month", "OK Qty", ...METRICS.map((m) => `${m.label}${m.unit === "₹" ? " (₹)" : m.unit === "%" ? " (%)" : ""}`), "Labour Productivity (Sales ÷ Salary)"],
+      ...rows.map((r) => [`${r.name} ${year}`, r.okQty, ...METRICS.map((m) => r[m.key] ?? ""), lp?.months?.[r.month - 1] === null || lp?.months?.[r.month - 1] === undefined ? "" : Number(lp.months[r.month - 1].toFixed(2))]),
+      ["Year", summary?.yearOkQty ?? 0, ...METRICS.map((m) => (metrics[m.key]?.year ?? "") === "" ? "" : Number(metrics[m.key].year.toFixed(2))), lp?.year === null || lp?.year === undefined ? "" : Number(lp.year.toFixed(2))],
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(fig);
+    ws2["!cols"] = [{ wch: 12 }, { wch: 12 }, ...METRICS.map(() => ({ wch: 18 })), { wch: 22 }];
+    XLSX.utils.book_append_sheet(wb, ws2, `Monthly figures ${year}`);
     const yrs = [["Year", "OK Qty"], ...byYear.map((y) => [y.year, y.okQty]), ["All", summary?.totalOkQty ?? 0]];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(yrs), "By year");
-    XLSX.writeFile(wb, `Company-Objectives-${year}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(yrs), "OK Qty by year");
+    XLSX.writeFile(wb, `Company-Level-Objective-${year}.xlsx`);
   };
 
   return (
@@ -133,35 +222,102 @@ const CompanyObjective = () => {
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
         <div>
           <h4 className="mb-0">Company Level Objective</h4>
-          <div className="text-muted small">Company-wide OK Qty against the year's objectives</div>
+          <div className="text-muted small">Sales, costs, inventory, delivery and OK Qty against the year's objectives</div>
         </div>
         <div className="d-flex flex-wrap gap-2">
           <button type="button" className="btn btn-outline-success btn-sm d-inline-flex align-items-center gap-1" onClick={downloadExcel} disabled={!summary}><FileSpreadsheet size={16} /> Excel</button>
-          {currentPagePermissions.create && (
+          {canWrite && (
             <>
               <button type="button" className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" onClick={() => setImportOpen(true)}><Upload size={16} /> Upload Excel</button>
-              <button type="button" className="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" onClick={openAdd}><Plus size={16} /> Add Objective</button>
+              <button type="button" className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" onClick={() => openFigures()}><Pencil size={16} /> Monthly Figures</button>
             </>
           )}
+          {currentPagePermissions.create && <button type="button" className="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" onClick={openAdd}><Plus size={16} /> Add Objective</button>}
         </div>
       </div>
       <HowItWorks storageKey="company-objective-help" items={HELP} />
 
       <Card className="mb-3 border-0 shadow-sm">
         <CardBody className="py-2">
-          <PeriodPicker years={years} year={year} onYear={setYear} month={month} onMonth={setMonth} hasData={byMonth.map((m) => m.okQty > 0)} />
+          <PeriodPicker years={years} year={year} onYear={setYear} month={month} onMonth={setMonth} hasData={hasFigures} allLabel="Whole year" />
         </CardBody>
       </Card>
 
-      <Row>
-        <Stat label="Avg achievement" value={fmtPct(summary?.avgAchievementPct)} icon={Target} tone="success" hint={`${summary?.kpiObjectiveCount ?? 0} department KPI${summary?.kpiObjectiveCount === 1 ? "" : "s"} · ${summary?.kpiOnTrack ?? 0} on track · ${summary?.kpiBehind ?? 0} behind`} />
-        <Stat label={`OK Qty · ${MONTHS[month - 1]} ${year}`} value={fmtQty(monthOk)} icon={CalendarDays} tone="primary" delta={deltaPct(monthOk, prevMonthOk)} deltaLabel={month > 1 ? `vs ${MONTHS[month - 2]}` : ""} hint="all processes" />
-        <Stat label={`OK Qty · ${year}`} value={fmtQty(summary?.yearOkQty ?? 0)} icon={Building2} tone="info" delta={deltaPct(summary?.yearOkQty ?? 0, prevYearOk)} deltaLabel={`vs ${year - 1}`} hint="sum of the year" />
-        <Stat label="OK Qty · all time" value={fmtQty(summary?.totalOkQty ?? 0)} icon={Layers} tone="secondary" hint={`${byYear.length} year${byYear.length === 1 ? "" : "s"} of entries`} />
+      {/* Headline tiles */}
+      <Row className="row-cols-2 row-cols-md-3 row-cols-xl-5 g-2 mb-3">
+        <Tile label={`Total Sales · ${scopeLabel}`} value={fmtMoneyShort(sales)} full={fmtMoneyFull(sales)} icon={TILE_ICON.sales} tone="primary" delta={deltaPct(sales, prev("sales"))} deltaLabel={prevLabel} hint={sales === null ? "no figure yet" : ""} />
+        <Tile label={`Total Salary · ${scopeLabel}`} value={fmtMoneyShort(val("salary"))} full={fmtMoneyFull(val("salary"))} icon={TILE_ICON.salary} tone="secondary" delta={deltaPct(val("salary"), prev("salary"))} deltaLabel={prevLabel} hint={lp && val("labourProductivity") !== null ? `productivity ${fmtRatio(val("labourProductivity"))}×` : ""} />
+        <Tile label={`Electricity Bill · ${scopeLabel}`} value={fmtMoneyShort(val("electricityBill"))} full={fmtMoneyFull(val("electricityBill"))} icon={TILE_ICON.electricityBill} tone="warning" delta={deltaPct(val("electricityBill"), prev("electricityBill"))} deltaLabel={prevLabel} />
+        <Tile label="Sales vs Target" value={salesPct === null ? "—" : fmtPct(salesPct)} icon={Target} tone={salesPct === null ? "secondary" : salesPct >= 100 ? "success" : salesPct >= 80 ? "warning" : "danger"} hint={target > 0 ? `${salesGap >= 0 ? "+" : "−"}${fmtMoneyShort(Math.abs(salesGap))} vs target ${fmtMoneyShort(target)}` : "set Target Sales in Monthly Figures"} />
+        <Tile label={`OK Qty · ${scopeLabel}`} value={fmtQty(okInScope)} icon={TILE_ICON.okQty} tone="info" delta={deltaPct(okInScope, okPrev)} deltaLabel={prevLabel} hint="all processes, from entries" />
       </Row>
 
+      {/* Month-wise charts */}
+      <Row className="g-3 mb-3">
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`Sales & Target by month · ${year}`} aside="₹ · tap a bar">
+            <MonthBars data={rows} series={[{ key: "sales", label: "Sales", color: SERIES.sales, metricKey: "sales" }]} target={{ key: "targetSales", label: "Target Sales", color: SERIES.targetSales, metricKey: "targetSales", dashed: true }} selected={month} onPick={setMonth} />
+          </Panel>
+        </Col>
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`Order Booking vs Sales · ${year}`} aside="₹">
+            <MonthBars data={rows} series={[{ key: "orderBooking", label: "Order Booking", color: SERIES.orderBooking, metricKey: "orderBooking" }, { key: "sales", label: "Sales", color: SERIES.sales, metricKey: "sales" }]} selected={month} onPick={setMonth} />
+          </Panel>
+        </Col>
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`Salary & Electricity by month · ${year}`} aside="₹">
+            <MonthBars data={rows} series={[{ key: "salary", label: "Total Salary", color: SERIES.salary, metricKey: "salary" }, { key: "electricityBill", label: "Electricity Bill", color: SERIES.electricityBill, metricKey: "electricityBill" }]} selected={month} onPick={setMonth} />
+          </Panel>
+        </Col>
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`Labour Productivity · ${year}`} aside="Sales ÷ Salary">
+            <MonthLines data={rows} series={[{ key: "labourProductivity", label: "Labour Productivity", color: SERIES.line, fmtFull: (v) => `${fmtRatio(v)}×` }]} yFmt={fmtRatio} />
+          </Panel>
+        </Col>
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`Inventory Turnover · ${year}`} aside="times a year">
+            <MonthLines data={rows} series={[{ key: "inventoryTurnover", label: "Inventory Turnover", color: SERIES.line, metricKey: "inventoryTurnover" }]} yFmt={fmtRatio} />
+          </Panel>
+        </Col>
+        <Col xs="12" lg="6" xl="4">
+          <Panel title={`OK Qty by month · ${year}`} aside="from entries · tap a bar">
+            <MonthBars data={rows} series={[{ key: "okQty", label: "OK Qty", color: SERIES.okQty, fmtFull: fmtQty }]} yFmt={fmtMoneyShort} selected={month} onPick={setMonth} />
+          </Panel>
+        </Col>
+      </Row>
+
+      {/* Inventory, delivery, complaints, years */}
+      <Row className="g-3 mb-3">
+        <Col xs="12" lg="5">
+          <Panel title={`FG · RM · WIP · ${scopeLabel}`} aside={month ? "stock value" : "average stock value"}>
+            <InventoryBar parts={[{ key: "fgValue", label: "FG", color: SERIES.fgValue, value: val("fgValue") }, { key: "rmValue", label: "RM", color: SERIES.rmValue, value: val("rmValue") }, { key: "wipValue", label: "WIP", color: SERIES.wipValue, value: val("wipValue") }]} />
+          </Panel>
+        </Col>
+        <Col xs="12" sm="6" lg="3">
+          <Panel title="On Time Delivery" aside={scopeLabel}>
+            <Gauge value={val("onTimeDelivery")} label="On time delivery" />
+            <div className="text-center small text-muted mt-1">{prev("onTimeDelivery") !== null && val("onTimeDelivery") !== null ? `${prevLabel} ${fmtPct(prev("onTimeDelivery"))}` : month ? "" : `${metrics.onTimeDelivery?.monthsWithData || 0} month${metrics.onTimeDelivery?.monthsWithData === 1 ? "" : "s"} averaged`}</div>
+          </Panel>
+        </Col>
+        <Col xs="12" sm="6" lg="4">
+          <Row className="g-2 h-100">
+            <Col xs="12"><Card className="co-tile mb-0"><CardBody className="py-3">
+              <div className="d-flex justify-content-between"><div className="co-tile__label">Average Monthly Sales · {year}</div><Wallet size={16} className="text-primary" /></div>
+              <div className="co-tile__value mt-1" title={fmtMoneyFull(avgMonthlySales)}>{fmtMoneyShort(avgMonthlySales)}</div>
+              <div className="co-tile__sub">{monthsWithSales ? `over ${monthsWithSales} month${monthsWithSales === 1 ? "" : "s"} with sales` : "no sales figure yet"}</div>
+            </CardBody></Card></Col>
+            <Col xs="12"><Card className="co-tile mb-0"><CardBody className="py-3">
+              <div className="d-flex justify-content-between"><div className="co-tile__label">{month ? `Customer Complaints · ${scopeLabel}` : `Average Customer Complaints · ${year}`}</div><AlertTriangle size={16} className="text-danger" /></div>
+              <div className="co-tile__value mt-1">{month ? fmtQty(val("customerComplaints")) : avgComplaints === null ? "—" : fmtRatio(avgComplaints)}</div>
+              <div className="co-tile__sub">{month ? (prev("customerComplaints") !== null ? `${prevLabel} ${fmtQty(prev("customerComplaints"))}` : "") : monthsWithComplaints ? `${fmtQty(metrics.customerComplaints.year)} in ${monthsWithComplaints} month${monthsWithComplaints === 1 ? "" : "s"}` : "no figure yet"}</div>
+            </CardBody></Card></Col>
+          </Row>
+        </Col>
+      </Row>
+
+      {/* Objectives */}
       <Card className="mb-3 border-0 shadow-sm">
-        <CardHeader className="bg-transparent"><h6 className="mb-0">Objectives · {year}</h6></CardHeader>
+        <CardHeader className="bg-transparent py-2"><h6 className="mb-0">Objectives · {year}</h6></CardHeader>
         <CardBody className="p-0">
           {objectives.length === 0 ? (
             <div className="text-muted p-3">{loading ? "Loading…" : "No company objective for this year yet. Click Add Objective to set the first one."}</div>
@@ -211,96 +367,76 @@ const CompanyObjective = () => {
         </CardBody>
       </Card>
 
-      <Row>
-        <Col xs="12" lg="8" className="mb-3">
-          <Card className="h-100 mb-0 border-0 shadow-sm">
-            <CardHeader className="bg-transparent d-flex flex-wrap justify-content-between gap-2"><h6 className="mb-0">OK Qty by month · {year}</h6><span className="text-muted small">tap a row to pick the month</span></CardHeader>
+      {/* Monthly figures and years */}
+      <Row className="g-3 mb-3">
+        <Col xs="12" xl="9">
+          <Card className="mb-0 h-100 border-0 shadow-sm">
+            <CardHeader className="bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2 py-2"><h6 className="mb-0">Monthly figures · {year}</h6><span className="text-muted small">tap a row to pick the month{canWrite ? " · pencil to edit" : ""}</span></CardHeader>
             <CardBody className="p-0">
               <div className="table-responsive">
-                <table className="table table-sm table-hover mb-0 align-middle">
-                  <thead className="table-light"><tr><th scope="col">Month</th><th scope="col" className="text-end">OK Qty</th><th scope="col" className="text-end">vs previous</th><th scope="col" className="text-end">Share of year</th></tr></thead>
+                <table className="table table-sm table-hover mb-0 align-middle co-figures">
+                  <thead className="table-light">
+                    <tr>
+                      <th scope="col" className="position-sticky start-0 bg-light">Month</th>
+                      <th scope="col" className="text-end">OK Qty</th>
+                      {METRICS.map((m) => <th key={m.key} scope="col" className="text-end" title={m.label}>{m.label.replace(/ \(.*\)/, "")}{m.unit === "%" ? " %" : m.unit === "₹" ? " ₹" : ""}</th>)}
+                      <th scope="col" className="text-end" title="Sales ÷ Salary">Labour prod.</th>
+                      {canWrite && <th scope="col" />}
+                    </tr>
+                  </thead>
                   <tbody>
-                    {byMonth.map((m, i) => {
-                      const d = i > 0 ? deltaPct(m.okQty, byMonth[i - 1].okQty) : null;
-                      return (
-                        <tr key={m.month} className={m.month === month ? "table-primary" : ""} onClick={() => setMonth(m.month)} style={{ cursor: "pointer" }}>
-                          <td>{MONTHS[m.month - 1]} {year}</td>
-                          <td className="text-end fw-semibold">{fmtQty(m.okQty)}{m.source === "excel" && <span className="badge bg-secondary-subtle text-secondary-emphasis ms-1" title="Loaded from Excel">Excel</span>}</td>
-                          <td className={`text-end ${d === null ? "text-muted" : d >= 0 ? "text-success" : "text-danger"}`}>{d === null ? "—" : `${d >= 0 ? "+" : ""}${fmtPct(d)}`}</td>
-                          <td className="text-end">{summary?.yearOkQty ? fmtPct((m.okQty / summary.yearOkQty) * 100) : "—"}</td>
-                        </tr>
-                      );
-                    })}
+                    {rows.map((r) => (
+                      <tr key={r.month} className={r.month === month ? "table-primary" : ""} onClick={() => setMonth(r.month)} style={{ cursor: "pointer" }}>
+                        <td className={`fw-semibold position-sticky start-0 ${r.month === month ? "" : "bg-body"}`}>{r.name} {year}</td>
+                        <td className="text-end">{fmtQty(r.okQty)}{byMonth[r.month - 1]?.source === "excel" && <span className="badge bg-secondary-subtle text-secondary-emphasis ms-1" title="Loaded from Excel">Excel</span>}</td>
+                        {METRICS.map((m) => <td key={m.key} className={`text-end ${r[m.key] === null || r[m.key] === undefined ? "is-blank" : ""}`} title={m.unit === "₹" ? fmtMoneyFull(r[m.key]) : undefined}>{fmtMetric(m, r[m.key])}</td>)}
+                        <td className="text-end">{lp?.months?.[r.month - 1] === null || lp?.months?.[r.month - 1] === undefined ? <span className="is-blank text-muted">—</span> : `${fmtRatio(lp.months[r.month - 1])}×`}</td>
+                        {canWrite && <td className="text-end"><button type="button" className="btn btn-sm btn-light border" aria-label={`Edit ${r.name} ${year} figures`} onClick={(e) => { e.stopPropagation(); openFigures(r.month); }}><Pencil size={14} /></button></td>}
+                      </tr>
+                    ))}
                   </tbody>
-                  <tfoot className="table-light"><tr><th scope="row">Year</th><td className="text-end fw-bold">{fmtQty(summary?.yearOkQty ?? 0)}</td><td /><td className="text-end">100%</td></tr></tfoot>
+                  <tfoot className="table-light">
+                    <tr>
+                      <th scope="row" className="position-sticky start-0 bg-light">Year</th>
+                      <td className="text-end fw-bold">{fmtQty(summary?.yearOkQty ?? 0)}</td>
+                      {METRICS.map((m) => <td key={m.key} className="text-end fw-bold" title={`${m.agg === "avg" ? "Average" : "Total"}${m.unit === "₹" ? ` · ${fmtMoneyFull(metrics[m.key]?.year)}` : ""}`}>{fmtMetric(m, metrics[m.key]?.year)}</td>)}
+                      <td className="text-end fw-bold">{lp?.year === null || lp?.year === undefined ? "—" : `${fmtRatio(lp.year)}×`}</td>
+                      {canWrite && <td />}
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
+              <div className="text-muted small px-3 py-2">Year row: money and counts are totals; %, turnover and stock values are averages of the months with a figure.</div>
             </CardBody>
           </Card>
         </Col>
-        <Col xs="12" lg="4" className="mb-3 d-flex flex-column gap-3">
-          <Card className="mb-0 border-0 shadow-sm">
-            <CardHeader className="bg-transparent d-flex flex-wrap justify-content-between gap-2"><h6 className="mb-0">Month trend · {year}</h6><span className="text-muted small">tap a bar</span></CardHeader>
-            <CardBody className="pb-2">
-              <div style={{ width: "100%", height: 200 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onClick={(e) => e?.activePayload?.[0]?.payload?.month && setMonth(e.activePayload[0].payload.month)}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tickFormatter={(v) => fmtQty(v)} width={64} tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v) => [fmtQty(v), "OK Qty"]} />
-                    <Bar dataKey="okQty" radius={[4, 4, 0, 0]} isAnimationActive={false} cursor="pointer">
-                      {chart.map((c) => <Cell key={c.month} fill={c.month === month ? "#2563eb" : "#93c5fd"} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="mb-0 border-0 shadow-sm">
-            <CardHeader className="bg-transparent"><h6 className="mb-0">OK Qty by year · all time</h6></CardHeader>
-            <CardBody className="pb-2">
-              {yearChart.length > 1 && (
-                <div style={{ width: "100%", height: 36 + yearChart.length * 28 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={yearChart} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }} onClick={(e) => e?.activePayload?.[0]?.payload?.year && setYear(e.activePayload[0].payload.year)}>
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="name" width={44} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(v) => [fmtQty(v), "OK Qty"]} />
-                      <Bar dataKey="okQty" radius={[0, 4, 4, 0]} isAnimationActive={false} cursor="pointer">
-                        {yearChart.map((c) => <Cell key={c.year} fill={c.year === year ? "#2563eb" : "#93c5fd"} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-              <div className="table-responsive">
-                <table className="table table-sm table-hover mb-0 align-middle">
-                  <thead className="table-light"><tr><th scope="col">Year</th><th scope="col" className="text-end">OK Qty</th><th scope="col" className="text-end">vs previous</th></tr></thead>
-                  <tbody>
-                    {byYear.map((y, i) => {
-                      const d = i > 0 ? deltaPct(y.okQty, byYear[i - 1].okQty) : null;
-                      return (
-                        <tr key={y.year} className={y.year === year ? "table-primary" : ""} onClick={() => setYear(y.year)} style={{ cursor: "pointer" }}>
-                          <td className="fw-semibold">{y.year}</td>
-                          <td className="text-end">{fmtQty(y.okQty)}</td>
-                          <td className={`text-end ${d === null ? "text-muted" : d >= 0 ? "text-success" : "text-danger"}`}>{d === null ? <span title="No earlier year to compare">—</span> : `${d >= 0 ? "+" : ""}${fmtPct(d)}`}</td>
-                        </tr>
-                      );
-                    })}
-                    {!byYear.length && <tr><td colSpan="3" className="text-muted">No entries yet.</td></tr>}
-                  </tbody>
-                  <tfoot className="table-light"><tr><th scope="row">All</th><td className="text-end fw-bold">{fmtQty(summary?.totalOkQty ?? 0)}</td><td /></tr></tfoot>
-                </table>
-              </div>
-              {byYear.length === 1 && <div className="text-muted small mt-2">One year of entries so far — upload old years with Upload Excel to compare year on year.</div>}
-            </CardBody>
-          </Card>
-
+        <Col xs="12" xl="3">
+          <Panel title="OK Qty by year" aside="all time">
+            <div className="table-responsive">
+              <table className="table table-sm table-hover mb-0 align-middle">
+                <thead className="table-light"><tr><th scope="col">Year</th><th scope="col" className="text-end">OK Qty</th><th scope="col" className="text-end">vs prev.</th></tr></thead>
+                <tbody>
+                  {byYear.map((y, i) => {
+                    const d = i > 0 ? deltaPct(y.okQty, byYear[i - 1].okQty) : null;
+                    return (
+                      <tr key={y.year} className={y.year === year ? "table-primary" : ""} onClick={() => setYear(y.year)} style={{ cursor: "pointer" }}>
+                        <td className="fw-semibold">{y.year}</td>
+                        <td className="text-end">{fmtQty(y.okQty)}</td>
+                        <td className={`text-end ${d === null ? "text-muted" : d >= 0 ? "text-success" : "text-danger"}`}>{d === null ? "—" : `${d >= 0 ? "+" : ""}${fmtPct(d)}`}</td>
+                      </tr>
+                    );
+                  })}
+                  {!byYear.length && <tr><td colSpan="3" className="text-muted">No entries yet.</td></tr>}
+                </tbody>
+                <tfoot className="table-light"><tr><th scope="row">All</th><td className="text-end fw-bold">{fmtQty(summary?.totalOkQty ?? 0)}</td><td /></tr></tfoot>
+              </table>
+            </div>
+            {byYear.length === 1 && <div className="text-muted small mt-2">One year of entries so far — upload old years with Upload Excel to compare year on year.</div>}
+          </Panel>
         </Col>
       </Row>
 
+      {/* Objective form */}
       <Modal isOpen={modal} toggle={() => setModal(false)} centered scrollable size="lg">
         <ModalHeader toggle={() => setModal(false)}>{editId ? "Update Objective" : "Add Objective"}</ModalHeader>
         <ModalBody>
@@ -310,8 +446,8 @@ const CompanyObjective = () => {
           </div>
           <Row>
             <Col xs="12" sm="4" className="mb-3">
-              <Label className="mb-1 d-block">Year</Label>
-              <YearChips years={yearOptions([values.year]).filter((y) => y <= thisYear() + 1)} value={values.year} onChange={(y) => setValues({ ...values, year: y })} />
+              <Label htmlFor="co-year" className="mb-1">Year</Label>
+              <YearSelect id="co-year" years={yearRange([values.year])} value={values.year} onChange={(y) => setValues({ ...values, year: y })} />
             </Col>
             <Col xs="12" sm="8" className="mb-3">
               <Label htmlFor="co-owner" className="mb-1">Owner</Label>
@@ -333,15 +469,49 @@ const CompanyObjective = () => {
         </ModalFooter>
       </Modal>
 
+      {/* Monthly figures form */}
+      <Modal isOpen={figOpen} toggle={() => setFigOpen(false)} centered scrollable size="lg">
+        <ModalHeader toggle={() => setFigOpen(false)}>Monthly Figures · {year}</ModalHeader>
+        <ModalBody>
+          <div className="mb-3">
+            <MonthSegments value={figMonth} onChange={pickFigMonth} hasData={summary?.monthsWithFigures || []} />
+            <div className="text-muted small mt-1">Figures for <strong>{MONTHS[figMonth - 1]} {year}</strong>. Leave blank what you don't track; a blank clears the stored figure.{monthly.find((r) => r.month === figMonth)?.updatedByName && <> Last saved by {monthly.find((r) => r.month === figMonth).updatedByName}.</>}</div>
+          </div>
+          {METRIC_GROUPS.map((g) => (
+            <div key={g} className="mb-2">
+              <div className="kpi-period__label">{g}</div>
+              <Row className="g-2">
+                {METRICS.filter((m) => m.group === g).map((m) => (
+                  <Col key={m.key} xs="12" sm="6" md="4">
+                    <Label htmlFor={`fig-${m.key}`} className="mb-1 small">{m.label}</Label>
+                    <InputGroup size="sm">
+                      {m.unit === "₹" && <InputGroupText>₹</InputGroupText>}
+                      <Input id={`fig-${m.key}`} type="number" inputMode="decimal" min="0" max={m.unit === "%" ? 100 : undefined} step="any" value={figValues[m.key] ?? ""} onWheel={(e) => e.currentTarget.blur()} onChange={(e) => setFigValues({ ...figValues, [m.key]: e.target.value })} placeholder={m.unit === "₹" ? "0" : m.unit === "%" ? "0–100" : ""} />
+                      {m.unit !== "₹" && unitLabel(m.unit) && <InputGroupText>{unitLabel(m.unit)}</InputGroupText>}
+                    </InputGroup>
+                    {m.unit === "₹" && figValues[m.key] !== "" && Number.isFinite(Number(figValues[m.key])) && <div className="text-muted" style={{ fontSize: ".72rem" }}>{fmtMoneyFull(figValues[m.key])} · {fmtMoneyShort(figValues[m.key])}</div>}
+                  </Col>
+                ))}
+              </Row>
+            </div>
+          ))}
+          <div className="text-muted small mt-2">Labour Productivity (Sales ÷ Salary) and OK Qty are worked out — nothing to type.</div>
+        </ModalBody>
+        <ModalFooter>
+          <button type="button" className="btn btn-light" onClick={() => setFigOpen(false)} disabled={figSaving}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={saveFigures} disabled={figSaving}>{figSaving ? "Saving…" : `Save ${MONTHS[figMonth - 1]} ${year}`}</button>
+        </ModalFooter>
+      </Modal>
+
       <DeleteModal show={!!removeId} handleDelete={remove} toggle={() => setRemoveId(null)} disabled={deleting} />
       <ExcelImportModal
         isOpen={importOpen}
         toggle={() => { setImportOpen(false); load(); }}
-        title="Upload old company data from Excel"
-        intro="Load past months' company-wide OK Qty from your existing sheets — one row per month."
+        title="Upload old company figures from Excel"
+        intro="Load past months from your existing sheets — one row per month with any of the figures: OK Qty, Sales, Target Sales, Order Booking, Salary, Electricity Bill, FG / RM / WIP, Inventory Turnover, On Time Delivery %, Customer Complaints. Blank cells leave a stored figure as it is."
         columns={IMPORT_COLUMNS}
         sample={IMPORT_SAMPLE}
-        templateName="Company-OK-Qty-upload-template"
+        templateName="Company-figures-upload-template"
         onImport={async (rows) => {
           try {
             const res = await importCompanyHistory(rows);

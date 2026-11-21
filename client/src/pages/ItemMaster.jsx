@@ -90,6 +90,8 @@ const initialState = {
   // Process, Unloading and Cleaning, Other Operations), all set once here.
   process: "",
   drawingNo: "",
+  // Optional free note about the part.
+  description: "",
   totalCycleSec: "",
   programTimeMin: "",
   pcsPerProgram: "",
@@ -105,6 +107,230 @@ const initialState = {
   ...emptyRivetOps(),
   isActive: true,
 };
+
+// The boxes every part has, whatever its process — the rest are one process's
+// own details (operation times, a program, a Process/Operation choice…).
+const COMMON_KEYS = ["itemName", "process", "drawingNo", "description", "isActive"];
+const DETAIL_KEYS = Object.keys(initialState).filter((k) => !COMMON_KEYS.includes(k));
+const emptyDetails = () => Object.fromEntries(DETAIL_KEYS.map((k) => [k, initialState[k]]));
+const detailsOf = (v) => Object.fromEntries(DETAIL_KEYS.map((k) => [k, v[k] ?? initialState[k]]));
+
+// Which kind of detail boxes a process's parts carry. A VMC part has a program;
+// a CNC or SPM part has operation times (CNC's eight, SPM's own four); TROBE,
+// SPRING FOR PINS, AFTER POWDER COATING, RUBBER… work like Contact: one typed
+// cycle time; anything else (not in a process yet) carries none.
+const kindOf = (process) => ({
+  isVmc: isVmcProcess(process),
+  isCnc: isCncProcess(process),
+  isSpm: isSpmProcess(process),
+  isRivet: isRivetProcess(process),
+  isPress: isPressProcess(process),
+  // MODULAR FRAME DRILLING: Process, No. of Holes, Stroke Required and a typed Total Cycle Time.
+  isMfd: isMfdProcess(process),
+  isContact:
+    isContactProcess(process) ||
+    isTrobeProcess(process) ||
+    isSpringProcess(process) ||
+    isInjectionProcess(process) ||
+    isEmbossingProcess(process) ||
+    isPowderCoatingProcess(process) ||
+    isBpcProcess(process) ||
+    isFinalAssemblyProcess(process) ||
+    isPrintingProcess(process) ||
+    isRawCastingProcess(process) ||
+    isMfaProcess(process) ||
+    isRubberProcess(process),
+});
+
+// The process-specific errors of one part's form (the common boxes are checked
+// in validateCommon). `k` is kindOf(process).
+const validateDetails = (v, k, process) => {
+  const errors = {};
+  // Only a CNC part's form shows the Operation Times boxes — nothing else
+  // to validate for a VMC part or one in no process / another process type.
+  if (k.isCnc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
+    errors.cycleOps = "Cycle times must be 0 or more";
+  }
+  // A VMC part's program drives its Product Cycle Time everywhere this part
+  // is used (every VMC Data Entry row), so it has to be set here, not left
+  // to be typed — or guessed — on the entry form.
+  if (k.isVmc) {
+    const program = v.programTimeMin === "" ? NaN : Number(v.programTimeMin);
+    if (v.programTimeMin === "") errors.programTimeMin = "Program Time is required";
+    else if (!Number.isFinite(program) || program <= 0) errors.programTimeMin = "Must be more than 0";
+    const pieces = v.pcsPerProgram === "" ? NaN : Number(v.pcsPerProgram);
+    if (v.pcsPerProgram === "") errors.pcsPerProgram = "No. of Piece In One Program is required";
+    else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerProgram = "Must be a whole number, 1 or more";
+  }
+  // An SPM part's four operations drive its Total Cycle Time everywhere
+  // this part is used, so all four have to be set here, same reasoning as
+  // VMC's program above.
+  if (k.isSpm) {
+    for (const f of SPM_OP_FIELDS) {
+      if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
+      else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+    }
+    for (const f of SPM_REFERENCE_FIELDS) {
+      if (v[f.key] === "") errors[f.key] = `${f.label} is required`;
+      else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+    }
+    // The sheet divides by it, so a cycle has to make at least one piece.
+    if (!errors.piecesPerCycle && Number(v.piecesPerCycle) < 1) errors.piecesPerCycle = "Must be 1 or more";
+  }
+  // A RIVET part's four operations drive its Total Cycle Time everywhere
+  // this part is used, same reasoning as SPM's above.
+  if (k.isRivet) {
+    for (const f of RIVET_OP_FIELDS) {
+      if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
+      else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
+    }
+    if (!v.rivetProcessType) errors.rivetProcessType = "Process is required";
+  }
+  // A PRESS part's standard time drives its Product Cycle Time everywhere
+  // this part is used, same reasoning as VMC's program above.
+  if (k.isPress) {
+    const standard = v.standardTimeMin === "" ? NaN : Number(v.standardTimeMin);
+    if (v.standardTimeMin === "") errors.standardTimeMin = "Standard Time Taken is required";
+    else if (!Number.isFinite(standard) || standard <= 0) errors.standardTimeMin = "Must be more than 0";
+    const pieces = v.pcsPerStandardTime === "" ? NaN : Number(v.pcsPerStandardTime);
+    if (v.pcsPerStandardTime === "") errors.pcsPerStandardTime = "No. Piece in Standard Time is required";
+    else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerStandardTime = "Must be a whole number, 1 or more";
+    if (!v.pressOperation) errors.pressOperation = "Operation is required";
+  }
+  // A MODULAR FRAME DRILLING part's Process, No. of Holes and Stroke Required
+  // are shown on every entry it's picked on, and its Total Cycle Time fills
+  // in each entry's own (still changeable there for the day).
+  if (k.isMfd) {
+    if (!v.mfdOperation) errors.mfdOperation = "Process is required";
+    for (const [key, label] of [
+      ["noOfHoles", "No. of Holes in One Piece"],
+      ["strokeRequired", "Stroke Required for One Piece"],
+    ]) {
+      if (v[key] === "" || v[key] === null || v[key] === undefined) errors[key] = `${label} is required`;
+      else if (!Number.isInteger(Number(v[key])) || Number(v[key]) < 0) errors[key] = "Must be a whole number, 0 or more";
+    }
+    const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
+    if (v.totalCycleSec === "") errors.totalCycleSec = "Total Cycle Time is required";
+    else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
+  }
+  // A Contact part has no operation breakdown — its Total Cycle Time is
+  // typed straight in here and drives every Contact Data Entry row.
+  if (k.isContact) {
+    const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
+    // FINAL ASSEMBLY: optional — PACKING has none.
+    if (v.totalCycleSec === "") {
+      if (!isFinalAssemblyProcess(process)) errors.totalCycleSec = `${cycleTimeName(process)} is required`;
+    } else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
+  }
+  return errors;
+};
+
+const validateCommon = (v) => {
+  const errors = {};
+  if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
+  if (!v.drawingNo.trim()) errors.drawingNo = "Drawing No. is required!";
+  return errors;
+};
+
+// The process-specific fields as they're sent to the server. Only the fields
+// the form showed are kept: a part moved off CNC drops its operation times,
+// one moved off VMC drops its program, and one moved off SPM drops its own
+// four operations — so a part never carries another kind's leftovers.
+// `unknownProcess`: a process this page couldn't look up showed none of the
+// boxes, so none are sent at all (undefined is left out of the request) and
+// the server keeps whatever the part already has, instead of clearing it.
+const detailFieldsFor = (k, values, unknownProcess) => {
+  const num = (x) => (x === "" ? null : Number(x));
+  const noProgram = { programTimeMin: null, pcsPerProgram: null };
+  const noPress = { standardTimeMin: null, pcsPerStandardTime: null };
+  const noCycleOps = Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null]));
+  const noSpmOps = Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, null]));
+  const noSpmReference = Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, null]));
+  const noRivetOps = Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, null]));
+  const noRivetProcessType = { rivetProcessType: null };
+  const noPressOperation = { pressOperation: null };
+  const noneOfThem = {
+    ...noProgram,
+    ...noPress,
+    totalCycleSec: null,
+    ...noCycleOps,
+    ...noSpmOps,
+    ...noSpmReference,
+    ...noRivetOps,
+    ...noRivetProcessType,
+    ...noPressOperation,
+  };
+  const leaveAsTheyAre = Object.fromEntries(Object.keys(noneOfThem).map((key) => [key, undefined]));
+  const cycleFields = k.isCnc
+    ? {
+        ...noneOfThem,
+        totalCycleSec: num(values.totalCycleSec),
+        ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+      }
+    : k.isVmc
+      ? {
+          ...noneOfThem,
+          programTimeMin: num(values.programTimeMin),
+          pcsPerProgram: num(values.pcsPerProgram),
+          // Kept in step so the Parts list's own Total Cycle (sec) column
+          // (and anything else reading it directly) shows the same figure
+          // the VMC Data Entry sheet computes from this program.
+          totalCycleSec: (Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram),
+        }
+      : k.isSpm
+        ? {
+            ...noneOfThem,
+            totalCycleSec: num(values.totalCycleSec),
+            ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+            ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, num(values[f.key])])),
+          }
+        : k.isRivet
+          ? {
+              ...noneOfThem,
+              totalCycleSec: num(values.totalCycleSec),
+              ...Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
+              rivetProcessType: values.rivetProcessType,
+            }
+          : k.isPress
+            ? {
+                ...noneOfThem,
+                standardTimeMin: num(values.standardTimeMin),
+                pcsPerStandardTime: num(values.pcsPerStandardTime),
+                // Kept in step so the Parts list's own Total Cycle (sec)
+                // column shows the same figure the PRESS Data Entry sheet
+                // computes from this standard time.
+                totalCycleSec: (Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime),
+                pressOperation: values.pressOperation,
+              }
+            : k.isMfd
+              ? {
+                  ...noneOfThem,
+                  totalCycleSec: num(values.totalCycleSec),
+                  // No. of Holes / Stroke Required are SPM's own reference fields, reused.
+                  noOfHoles: num(values.noOfHoles),
+                  strokeRequired: num(values.strokeRequired),
+                }
+              : k.isContact
+                ? { ...noneOfThem, totalCycleSec: num(values.totalCycleSec) }
+                : unknownProcess
+                  ? leaveAsTheyAre
+                  : noneOfThem;
+  return {
+    ...cycleFields,
+    // MODULAR FRAME DRILLING's Process belongs to its parts only (kept as is
+    // for a process this page couldn't look up, like the boxes above).
+    mfdOperation: k.isMfd ? values.mfdOperation : unknownProcess ? undefined : null,
+  };
+};
+
+// One part as the server takes it: the common boxes plus its process's details.
+const payloadFor = (values, k, unknownProcess) => ({
+  ...values,
+  itemName: values.itemName.trim(),
+  drawingNo: values.drawingNo.trim(),
+  description: values.description.trim(),
+  ...detailFieldsFor(k, values, unknownProcess),
+});
 
 const ItemMaster = () => {
   const toast = useAlert();
@@ -149,32 +375,8 @@ const ItemMaster = () => {
   // eight, SPM's own four); anything else (not in a process yet, or another
   // process type) carries neither.
   const selectedProcess = useMemo(() => processes.find((p) => p._id === values.process), [processes, values.process]);
-  const isVmc = useMemo(() => isVmcProcess(selectedProcess), [selectedProcess]);
-  const isCnc = useMemo(() => isCncProcess(selectedProcess), [selectedProcess]);
-  const isSpm = useMemo(() => isSpmProcess(selectedProcess), [selectedProcess]);
-  const isRivet = useMemo(() => isRivetProcess(selectedProcess), [selectedProcess]);
-  const isPress = useMemo(() => isPressProcess(selectedProcess), [selectedProcess]);
-  // MODULAR FRAME DRILLING: Process, No. of Holes, Stroke Required and a typed Total Cycle Time.
-  const isMfd = useMemo(() => isMfdProcess(selectedProcess), [selectedProcess]);
-  // TROBE, SPRING FOR PINS, AFTER POWDER COATING and RUBBER parts work the same way as
-  // Contact ones: one Total Cycle Time (for After Powder Coating, its Standard
-  // Inspection Time per Piece), typed straight in.
-  const isContact = useMemo(
-    () =>
-      isContactProcess(selectedProcess) ||
-      isTrobeProcess(selectedProcess) ||
-      isSpringProcess(selectedProcess) ||
-      isInjectionProcess(selectedProcess) ||
-      isEmbossingProcess(selectedProcess) ||
-      isPowderCoatingProcess(selectedProcess) ||
-      isBpcProcess(selectedProcess) ||
-      isFinalAssemblyProcess(selectedProcess) ||
-      isPrintingProcess(selectedProcess) ||
-      isRawCastingProcess(selectedProcess) ||
-      isMfaProcess(selectedProcess) ||
-      isRubberProcess(selectedProcess),
-    [selectedProcess],
-  );
+  const kind = useMemo(() => kindOf(selectedProcess), [selectedProcess]);
+  const { isVmc, isCnc, isSpm, isRivet, isPress, isMfd, isContact } = kind;
   // The form's Process picker: active processes, plus the one this part
   // already has if that one is inactive, so editing it never drops it.
   const processOptions = processes.filter((p) => p.isActive !== false || p._id === values.process);
@@ -187,6 +389,17 @@ const ItemMaster = () => {
 
   // null = closed, "add" or "edit"
   const [modalMode, setModalMode] = useState(null);
+  // Adding goes step by step: the common boxes first, then one step per
+  // process ticked, each asking that process's own details — Save only comes
+  // at the last step. One part record is made per process (a part belongs to
+  // exactly one process, so the same name and drawing in two processes are two
+  // parts, as they are when added one at a time). Editing stays one part.
+  const [selectedProcesses, setSelectedProcesses] = useState([]);
+  const [step, setStep] = useState(0); // 0 = common boxes; k = selectedProcesses[k-1]'s details
+  const [perProcess, setPerProcess] = useState({}); // process id → its details, as typed so far
+  const wizard = modalMode === "add";
+  const lastStep = selectedProcesses.length;
+  const stepProcessId = step > 0 ? selectedProcesses[step - 1] : "";
   const [modal_delete, setmodal_delete] = useState(false);
   // The edit history: one part's, or (historyItem null) every part's.
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -197,20 +410,70 @@ const ItemMaster = () => {
   const [pageNo, setPageNo] = useState(1);
   const [column, setcolumn] = useState();
   const [sortDirection, setsortDirection] = useState();
-  const perPage = 100;
+  // Paged the same way as the data entry sheets: Page x of y, Prev / Next,
+  // Go to, plus how many parts a page holds (25 to start).
+  const [perPage, setPerPage] = useState(25);
+  const [goTo, setGoTo] = useState("");
+  const totalPages = Math.max(1, Math.ceil(totalRows / perPage));
+
+  // A page that isn't there (0, or past the last) goes to the nearest one
+  // that is, and says so, instead of quietly doing nothing.
+  const goToPage = () => {
+    if (goTo === "") return;
+    const n = Number(goTo);
+    if (!Number.isInteger(n)) {
+      toast.warning(`Enter a page number from 1 to ${totalPages}.`);
+    } else if (n < 1 || n > totalPages) {
+      const nearest = Math.min(Math.max(n, 1), totalPages);
+      toast.warning(`There's no page ${n} — showing page ${nearest} of ${totalPages}.`);
+      setPageNo(nearest);
+    } else {
+      setPageNo(n);
+    }
+    setGoTo("");
+  };
 
   const closeModal = () => {
     setModalMode(null);
     setValues(initialState);
     setIsSubmit(false);
     setFormErrors({});
+    setSelectedProcesses([]);
+    setStep(0);
+    setPerProcess({});
   };
 
   const openAdd = () => {
     setValues(initialState);
     setIsSubmit(false);
     setFormErrors({});
+    setSelectedProcesses([]);
+    setStep(0);
+    setPerProcess({});
     setModalMode("add");
+  };
+
+  const toggleProcess = (id) =>
+    setSelectedProcesses((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...processes.filter((p) => ids.includes(p._id) || p._id === id).map((p) => p._id)]));
+
+  // Moves to another step of the Add wizard: what's typed for the current
+  // process is kept, and the next process's boxes are loaded (empty if new).
+  const goToStep = (next) => {
+    const stash = step > 0 ? { ...perProcess, [stepProcessId]: detailsOf(values) } : perProcess;
+    setPerProcess(stash);
+    const nextId = next > 0 ? selectedProcesses[next - 1] : "";
+    setValues((v) => ({ ...v, process: nextId, ...(stash[nextId] || emptyDetails()) }));
+    setIsSubmit(false);
+    setFormErrors({});
+    setStep(next);
+  };
+
+  const goNext = () => {
+    const errors = validate(values);
+    setFormErrors(errors);
+    setIsSubmit(true);
+    if (Object.keys(errors).length) return;
+    goToStep(step + 1);
   };
 
   const openEdit = (id) => {
@@ -226,6 +489,7 @@ const ItemMaster = () => {
           itemName: it.itemName,
           process: it.process || "",
           drawingNo: it.drawingNo || "",
+          description: it.description || "",
           totalCycleSec: it.totalCycleSec ?? "",
           programTimeMin: it.programTimeMin ?? "",
           pcsPerProgram: it.pcsPerProgram ?? "",
@@ -268,88 +532,12 @@ const ItemMaster = () => {
     });
   };
 
+  // The current form's errors: in the Add wizard, step 0 checks the common
+  // boxes and each later step its own process's details; editing checks both.
   const validate = (v) => {
-    const errors = {};
-    if (!v.itemName.trim()) errors.itemName = "Part Name is required!";
-    if (!v.drawingNo.trim()) errors.drawingNo = "Drawing No. is required!";
-    // Only a CNC part's form shows the Operation Times boxes — nothing else
-    // to validate for a VMC part or one in no process / another process type.
-    if (isCnc && CYCLE_OP_FIELDS.some((f) => v[f.key] !== "" && (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0))) {
-      errors.cycleOps = "Cycle times must be 0 or more";
-    }
-    // A VMC part's program drives its Product Cycle Time everywhere this part
-    // is used (every VMC Data Entry row), so it has to be set here, not left
-    // to be typed — or guessed — on the entry form.
-    if (isVmc) {
-      const program = v.programTimeMin === "" ? NaN : Number(v.programTimeMin);
-      if (v.programTimeMin === "") errors.programTimeMin = "Program Time is required";
-      else if (!Number.isFinite(program) || program <= 0) errors.programTimeMin = "Must be more than 0";
-      const pieces = v.pcsPerProgram === "" ? NaN : Number(v.pcsPerProgram);
-      if (v.pcsPerProgram === "") errors.pcsPerProgram = "No. of Piece In One Program is required";
-      else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerProgram = "Must be a whole number, 1 or more";
-    }
-    // An SPM part's four operations drive its Total Cycle Time everywhere
-    // this part is used, so all four have to be set here, same reasoning as
-    // VMC's program above.
-    if (isSpm) {
-      for (const f of SPM_OP_FIELDS) {
-        if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
-        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
-      }
-      for (const f of SPM_REFERENCE_FIELDS) {
-        if (v[f.key] === "") errors[f.key] = `${f.label} is required`;
-        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
-      }
-      // The sheet divides by it, so a cycle has to make at least one piece.
-      if (!errors.piecesPerCycle && Number(v.piecesPerCycle) < 1) errors.piecesPerCycle = "Must be 1 or more";
-    }
-    // A RIVET part's four operations drive its Total Cycle Time everywhere
-    // this part is used, same reasoning as SPM's above.
-    if (isRivet) {
-      for (const f of RIVET_OP_FIELDS) {
-        if (v[f.key] === "") errors[f.key] = `${f.label.replace(" (sec)", "")} is required`;
-        else if (!Number.isFinite(Number(v[f.key])) || Number(v[f.key]) < 0) errors[f.key] = "Must be 0 or more";
-      }
-      if (!v.rivetProcessType) errors.rivetProcessType = "Process is required";
-    }
-    // A PRESS part's standard time drives its Product Cycle Time everywhere
-    // this part is used, same reasoning as VMC's program above.
-    if (isPress) {
-      const standard = v.standardTimeMin === "" ? NaN : Number(v.standardTimeMin);
-      if (v.standardTimeMin === "") errors.standardTimeMin = "Standard Time Taken is required";
-      else if (!Number.isFinite(standard) || standard <= 0) errors.standardTimeMin = "Must be more than 0";
-      const pieces = v.pcsPerStandardTime === "" ? NaN : Number(v.pcsPerStandardTime);
-      if (v.pcsPerStandardTime === "") errors.pcsPerStandardTime = "No. Piece in Standard Time is required";
-      else if (!Number.isInteger(pieces) || pieces < 1) errors.pcsPerStandardTime = "Must be a whole number, 1 or more";
-      if (!v.pressOperation) errors.pressOperation = "Operation is required";
-    }
-    // A MODULAR FRAME DRILLING part's Process, No. of Holes and Stroke Required
-    // are shown on every entry it's picked on, and its Total Cycle Time fills
-    // in each entry's own (still changeable there for the day).
-    if (isMfd) {
-      if (!v.mfdOperation) errors.mfdOperation = "Process is required";
-      for (const [key, label] of [
-        ["noOfHoles", "No. of Holes in One Piece"],
-        ["strokeRequired", "Stroke Required for One Piece"],
-      ]) {
-        if (v[key] === "" || v[key] === null || v[key] === undefined) errors[key] = `${label} is required`;
-        else if (!Number.isInteger(Number(v[key])) || Number(v[key]) < 0) errors[key] = "Must be a whole number, 0 or more";
-      }
-      const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
-      if (v.totalCycleSec === "") errors.totalCycleSec = "Total Cycle Time is required";
-      else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
-    }
-    // A Contact part has no operation breakdown — its Total Cycle Time is
-    // typed straight in here and drives every Contact Data Entry row.
-    if (isContact) {
-      const cycle = v.totalCycleSec === "" ? NaN : Number(v.totalCycleSec);
-      // FINAL ASSEMBLY: optional — PACKING has none.
-      if (v.totalCycleSec === "") {
-        if (!isFinalAssemblyProcess(selectedProcess)) errors.totalCycleSec = `${cycleTimeName(selectedProcess)} is required`;
-      }
-      else if (!Number.isFinite(cycle) || cycle <= 0) errors.totalCycleSec = "Must be more than 0";
-    }
-    return errors;
+    if (wizard && step === 0) return validateCommon(v);
+    if (wizard) return validateDetails(v, kind, selectedProcess);
+    return { ...validateCommon(v), ...validateDetails(v, kind, selectedProcess) };
   };
 
   // Once Save has been pressed, the messages follow the form as it is fixed.
@@ -357,160 +545,54 @@ const ItemMaster = () => {
     if (isSubmit) setFormErrors(validate(values));
   }, [values, isSubmit]);
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const errors = validate(values);
     setFormErrors(errors);
     setIsSubmit(true);
     if (Object.keys(errors).length) return;
 
-    const num = (x) => (x === "" ? null : Number(x));
-    // Only the fields the form showed are kept: a part moved off CNC drops its
-    // operation times, one moved off VMC drops its program, and one moved off
-    // SPM drops its own four operations — so a part never carries another
-    // kind's leftovers.
-    const noProgram = { programTimeMin: null, pcsPerProgram: null };
-    const noPress = { standardTimeMin: null, pcsPerStandardTime: null };
-    const noCycleOps = Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, null]));
-    const noSpmOps = Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, null]));
-    const noSpmReference = Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, null]));
-    const noRivetOps = Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, null]));
-    const noRivetProcessType = { rivetProcessType: null };
-    const noPressOperation = { pressOperation: null };
-    const noneOfThem = {
-      ...noProgram,
-      ...noPress,
-      totalCycleSec: null,
-      ...noCycleOps,
-      ...noSpmOps,
-      ...noSpmReference,
-      ...noRivetOps,
-      ...noRivetProcessType,
-      ...noPressOperation,
-    };
-    // A process this page couldn't look up showed none of the boxes, so none
-    // are sent at all (undefined is left out of the request) and the server
-    // keeps whatever the part already has, instead of clearing it.
-    const leaveAsTheyAre = Object.fromEntries(Object.keys(noneOfThem).map((k) => [k, undefined]));
-    const cycleFields = isCnc
-      ? {
-          ...noProgram,
-          ...noPress,
-          totalCycleSec: num(values.totalCycleSec),
-          ...Object.fromEntries(CYCLE_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
-          ...noSpmOps,
-          ...noSpmReference,
-          ...noRivetOps,
-          ...noRivetProcessType,
-          ...noPressOperation,
-        }
-      : isVmc
-        ? {
-            programTimeMin: num(values.programTimeMin),
-            pcsPerProgram: num(values.pcsPerProgram),
-            // Kept in step so the Parts list's own Total Cycle (sec) column
-            // (and anything else reading it directly) shows the same figure
-            // the VMC Data Entry sheet computes from this program.
-            totalCycleSec: (Number(values.programTimeMin) * 60) / Number(values.pcsPerProgram),
-            ...noPress,
-            ...noCycleOps,
-            ...noSpmOps,
-            ...noSpmReference,
-            ...noRivetOps,
-            ...noRivetProcessType,
-            ...noPressOperation,
-          }
-        : isSpm
-          ? {
-              ...noProgram,
-              ...noPress,
-              totalCycleSec: num(values.totalCycleSec),
-              ...noCycleOps,
-              ...Object.fromEntries(SPM_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
-              ...Object.fromEntries(SPM_REFERENCE_FIELDS.map((f) => [f.key, num(values[f.key])])),
-              ...noRivetOps,
-              ...noRivetProcessType,
-              ...noPressOperation,
-            }
-          : isRivet
-            ? {
-                ...noProgram,
-                ...noPress,
-                totalCycleSec: num(values.totalCycleSec),
-                ...noCycleOps,
-                ...noSpmOps,
-                ...noSpmReference,
-                ...Object.fromEntries(RIVET_OP_FIELDS.map((f) => [f.key, num(values[f.key])])),
-                rivetProcessType: values.rivetProcessType,
-                ...noPressOperation,
-              }
-            : isPress
-              ? {
-                  ...noProgram,
-                  standardTimeMin: num(values.standardTimeMin),
-                  pcsPerStandardTime: num(values.pcsPerStandardTime),
-                  // Kept in step so the Parts list's own Total Cycle (sec)
-                  // column shows the same figure the PRESS Data Entry sheet
-                  // computes from this standard time.
-                  totalCycleSec: (Number(values.standardTimeMin) * 60) / Number(values.pcsPerStandardTime),
-                  ...noCycleOps,
-                  ...noSpmOps,
-                  ...noSpmReference,
-                  ...noRivetOps,
-                  ...noRivetProcessType,
-                  pressOperation: values.pressOperation,
-                }
-              : isMfd
-                ? {
-                    ...noProgram,
-                    ...noPress,
-                    totalCycleSec: num(values.totalCycleSec),
-                    ...noCycleOps,
-                    ...noSpmOps,
-                    // No. of Holes / Stroke Required are SPM's own reference fields, reused.
-                    ...noSpmReference,
-                    noOfHoles: num(values.noOfHoles),
-                    strokeRequired: num(values.strokeRequired),
-                    ...noRivetOps,
-                    ...noRivetProcessType,
-                    ...noPressOperation,
-                  }
-              : isContact
-                ? {
-                    ...noProgram,
-                    ...noPress,
-                    totalCycleSec: num(values.totalCycleSec),
-                    ...noCycleOps,
-                    ...noSpmOps,
-                    ...noSpmReference,
-                    ...noRivetOps,
-                    ...noRivetProcessType,
-                    ...noPressOperation,
-                  }
-              : unknownProcess
-                ? leaveAsTheyAre
-                : noneOfThem;
-    const data = {
-      ...values,
-      itemName: values.itemName.trim(),
-      drawingNo: values.drawingNo.trim(),
-      ...cycleFields,
-      // MODULAR FRAME DRILLING's Process belongs to its parts only (kept as is
-      // for a process this page couldn't look up, like the boxes above).
-      mfdOperation: isMfd ? values.mfdOperation : unknownProcess ? undefined : null,
-    };
-
     setIsLoading(true);
-    const request = modalMode === "add" ? createItem(data) : updateItem(_id, data);
-    request
-      .then(() => {
-        toast.success(modalMode === "add" ? "Part Added Successfully!" : "Part Updated Successfully!");
-        closeModal();
-        fetchItems();
-        invalidateItems();
-      })
-      .catch((err) => toast.error(err?.response?.data?.message || "Failed to save part. Please try again."))
-      .finally(() => setIsLoading(false));
+    try {
+      if (!wizard) {
+        await updateItem(_id, payloadFor(values, kind, unknownProcess));
+        toast.success("Part Updated Successfully!");
+      } else if (!selectedProcesses.length) {
+        // No process ticked: one part, not in any process yet.
+        await createItem(payloadFor({ ...values, process: "" }, kindOf(undefined), false));
+        toast.success("Part Added Successfully!");
+      } else {
+        // One part per process ticked, each with the details typed at its step
+        // (the current step's are still in `values`). Saved one after another so
+        // a failure says which process stopped it and what was already added.
+        const details = { ...perProcess, [stepProcessId]: detailsOf(values) };
+        let saved = 0;
+        for (const id of selectedProcesses) {
+          const proc = processes.find((p) => p._id === id);
+          const v = { ...values, process: id, ...(details[id] || emptyDetails()) };
+          try {
+            await createItem(payloadFor(v, kindOf(proc), false));
+            saved += 1;
+          } catch (err) {
+            const name = processName[id] || "a process";
+            toast.error(`${err?.response?.data?.message || "Failed to save part"} (${name}). ${saved ? `${saved} of ${selectedProcesses.length} parts were added.` : "Nothing was added."}`);
+            if (saved) {
+              fetchItems();
+              invalidateItems();
+            }
+            return;
+          }
+        }
+        toast.success(saved === 1 ? "Part Added Successfully!" : `${saved} parts added, one per process.`);
+      }
+      closeModal();
+      fetchItems();
+      invalidateItems();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to save part. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDelete = (e) => {
@@ -533,7 +615,7 @@ const ItemMaster = () => {
   useEffect(() => {
     const timeout = setTimeout(() => fetchItems(), 500);
     return () => clearTimeout(timeout);
-  }, [pageNo, column, sortDirection, query, filter, processFilter]);
+  }, [pageNo, perPage, column, sortDirection, query, filter, processFilter]);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -572,8 +654,19 @@ const ItemMaster = () => {
     { name: "Sr No", selector: (row, index) => (pageNo - 1) * perPage + index + 1, maxWidth: "20px" },
     { name: "Part Name", selector: (row) => row.itemName, sortable: true, sortField: "itemName", minWidth: "220px", wrap: true },
     // A part's process stays named even after that process is deactivated.
-    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "110px", wrap: true },
+    { name: "Process", selector: (row) => processName[row.process] || (row.process && processes.length ? "Inactive process" : "—"), minWidth: "200px", grow: 1.2, wrap: true },
     { name: "Drawing No.", selector: (row) => row.drawingNo || "", sortable: true, sortField: "drawingNo", minWidth: "120px", wrap: true },
+    {
+      name: "Description",
+      selector: (row) => row.description || "",
+      cell: (row) => (
+        <span className="text-truncate d-inline-block" style={{ maxWidth: "240px" }} title={row.description || ""}>
+          {row.description || "—"}
+        </span>
+      ),
+      minWidth: "150px",
+      grow: 1.5,
+    },
     { name: cycleColumn, selector: (row) => showSec(row.totalCycleSec), sortable: true, sortField: "totalCycleSec", minWidth: "130px" },
     { name: "Status", selector: (row) => (row.isActive ? "Active" : "Inactive"), minWidth: "100px" },
     {
@@ -651,6 +744,67 @@ const ItemMaster = () => {
                     }
                   />
                 </CardHeader>
+                <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-2 border-bottom">
+                  <span className="small text-muted">
+                    Page {pageNo} of {totalPages}
+                    {totalRows > 0 && (
+                      <span className="ms-2">
+                        · {(pageNo - 1) * perPage + 1}–{Math.min(pageNo * perPage, totalRows)} of {totalRows} parts
+                      </span>
+                    )}
+                  </span>
+                  <div className="d-flex flex-wrap align-items-center gap-2">
+                    <select
+                      value={perPage}
+                      onChange={(e) => {
+                        setPerPage(Number(e.target.value));
+                        setPageNo(1);
+                      }}
+                      title="Parts per page"
+                      className="form-select form-select-sm"
+                      style={{ width: "auto" }}
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>
+                          {n} per page
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      style={{ minWidth: "84px" }}
+                      disabled={pageNo <= 1}
+                      onClick={() => setPageNo((p) => Math.max(1, p - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      style={{ minWidth: "84px" }}
+                      disabled={pageNo >= totalPages}
+                      onClick={() => setPageNo((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </button>
+                    <span className="small text-muted ms-2">Go to</span>
+                    <NumberInput
+                      name="goTo"
+                      decimals={false}
+                      maxLength={4}
+                      max={totalPages}
+                      placeholder={String(pageNo)}
+                      value={goTo}
+                      onChange={(e) => setGoTo(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && goToPage()}
+                      style={{ width: "64px" }}
+                    />
+                    <button type="button" className="btn btn-sm btn-primary" onClick={goToPage}>
+                      Go
+                    </button>
+                  </div>
+                </div>
                 <CardBody>
                   <div className="table-responsive table-card mt-1 mb-1 text-right">
                     <DataTable
@@ -662,12 +816,6 @@ const ItemMaster = () => {
                         setcolumn(c.sortField);
                         setsortDirection(dir);
                       }}
-                      pagination
-                      paginationServer
-                      paginationComponentOptions={{ noRowsPerPage: true }}
-                      paginationTotalRows={totalRows}
-                      paginationPerPage={perPage}
-                      onChangePage={setPageNo}
                     />
                   </div>
                 </CardBody>
@@ -679,36 +827,115 @@ const ItemMaster = () => {
 
       <Modal isOpen={modalMode !== null} toggle={closeModal} centered backdrop="static" size="lg" scrollable>
         <ModalHeader className="p-3 border-bottom" toggle={closeModal}>
-          {modalMode === "edit" ? "Update Part" : "Add Part"}
+          {modalMode === "edit" ? "Update Part" : lastStep ? `Add Part · step ${step + 1} of ${lastStep + 1}` : "Add Part"}
         </ModalHeader>
-        <form noValidate onSubmit={handleSave}>
+        <form
+          noValidate
+          onSubmit={(e) => {
+            // Enter on a wizard step moves on; Save is only the last step's button.
+            if (wizard && step < lastStep) {
+              e.preventDefault();
+              goNext();
+            } else handleSave(e);
+          }}
+        >
           <ModalBody>
-            <div className="form-floating mb-3">
-              <Input type="text" name="itemName" value={values.itemName} onChange={handleChange} placeholder=" " maxLength={120} />
-              <Label>
-                Part Name <span className="text-danger">*</span>
-              </Label>
-              {isSubmit && <p className="text-danger">{formErrors.itemName}</p>}
-            </div>
-            <div className="form-floating mb-3">
-              <Input type="select" name="process" value={values.process} onChange={handleChange}>
-                <option value="">Not in any process</option>
-                {processOptions.map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {processName[p._id]}
-                  </option>
-                ))}
-                {unknownProcess && <option value={values.process}>Current process (inactive)</option>}
-              </Input>
-              <Label>Process (the data entry page that offers this part)</Label>
-            </div>
-            <div className="form-floating mb-3">
-              <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
-              <Label>
-                Drawing No. <span className="text-danger">*</span>
-              </Label>
-              {isSubmit && formErrors.drawingNo && <p className="text-danger">{formErrors.drawingNo}</p>}
-            </div>
+            {(!wizard || step === 0) && (
+              <>
+                <div className="form-floating mb-3">
+                  <Input type="text" name="itemName" value={values.itemName} onChange={handleChange} placeholder=" " maxLength={120} />
+                  <Label>
+                    Part Name <span className="text-danger">*</span>
+                  </Label>
+                  {isSubmit && <p className="text-danger">{formErrors.itemName}</p>}
+                </div>
+                {wizard ? (
+                  // Tick every process this part is run in — a step per process
+                  // follows, asking that process's own details.
+                  <div className="mb-3">
+                    <Label className="mb-1 d-block">Processes (the data entry pages that offer this part)</Label>
+                    <div className="border rounded-3 p-2" style={{ maxHeight: "220px", overflowY: "auto" }}>
+                      <Row className="g-1">
+                        {processOptions.map((p) => (
+                          <Col key={p._id} xs={12} sm={6}>
+                            <div className="form-check">
+                              <Input
+                                type="checkbox"
+                                className="form-check-input"
+                                id={`part-process-${p._id}`}
+                                checked={selectedProcesses.includes(p._id)}
+                                onChange={() => toggleProcess(p._id)}
+                              />
+                              <Label className="form-check-label" htmlFor={`part-process-${p._id}`}>
+                                {processName[p._id]}
+                              </Label>
+                            </div>
+                          </Col>
+                        ))}
+                      </Row>
+                    </div>
+                    <p className="text-muted mb-0 small mt-1">
+                      {selectedProcesses.length === 0
+                        ? "None ticked: the part is saved as not in any process."
+                        : selectedProcesses.length === 1
+                          ? `Next asks for its ${processName[selectedProcesses[0]]} details.`
+                          : `${selectedProcesses.length} ticked: one part is made per process, each with its own details — Next asks for them one by one.`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="form-floating mb-3">
+                    <Input type="select" name="process" value={values.process} onChange={handleChange}>
+                      <option value="">Not in any process</option>
+                      {processOptions.map((p) => (
+                        <option key={p._id} value={p._id}>
+                          {processName[p._id]}
+                        </option>
+                      ))}
+                      {unknownProcess && <option value={values.process}>Current process (inactive)</option>}
+                    </Input>
+                    <Label>Process (the data entry page that offers this part)</Label>
+                  </div>
+                )}
+                <div className="form-floating mb-3">
+                  <Input type="text" name="drawingNo" value={values.drawingNo} onChange={handleChange} placeholder=" " maxLength={40} />
+                  <Label>
+                    Drawing No. <span className="text-danger">*</span>
+                  </Label>
+                  {isSubmit && formErrors.drawingNo && <p className="text-danger">{formErrors.drawingNo}</p>}
+                </div>
+                <div className="form-floating mb-3">
+                  <Input
+                    type="textarea"
+                    name="description"
+                    value={values.description}
+                    onChange={handleChange}
+                    placeholder=" "
+                    maxLength={500}
+                    style={{ minHeight: "88px" }}
+                  />
+                  <Label>Description (optional)</Label>
+                  <p className="text-muted mb-0 small mt-1">Material, finish, where it's used — anything worth noting about this part.</p>
+                </div>
+              </>
+            )}
+            {wizard && step > 0 && (
+              <div className="mb-3">
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                  <span className="badge bg-primary-subtle text-primary fs-12">
+                    {step} / {lastStep}
+                  </span>
+                  <span className="fw-semibold">{processName[stepProcessId] || "Process"} details</span>
+                  <span className="text-muted small">for {values.itemName.trim()} · {values.drawingNo.trim()}</span>
+                </div>
+                <div className="d-flex flex-wrap gap-1 mt-2">
+                  {selectedProcesses.map((id, i) => (
+                    <span key={id} className={`badge ${i + 1 === step ? "bg-primary" : i + 1 < step ? "bg-success-subtle text-success" : "bg-light text-muted"}`}>
+                      {processName[id]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {isVmc ? (
               // A VMC part's program drives its Product Cycle Time everywhere
               // it's used — set once here, copied onto every VMC Data Entry
@@ -1004,22 +1231,56 @@ const ItemMaster = () => {
                 )}
               </div>
             ) : null}
-            <div className="mt-3">
-              <Input
-                type="checkbox"
-                className="form-check-input"
-                name="isActive"
-                checked={values.isActive}
-                onChange={(e) => setValues({ ...values, isActive: e.target.checked })}
-              />
-              <Label className="form-check-label ms-1">Is Active</Label>
-            </div>
+            {(!wizard || step === 0) && (
+              <div className="mt-3">
+                <Input
+                  type="checkbox"
+                  className="form-check-input"
+                  name="isActive"
+                  checked={values.isActive}
+                  onChange={(e) => setValues({ ...values, isActive: e.target.checked })}
+                />
+                <Label className="form-check-label ms-1">Is Active</Label>
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
             {modalMode === "edit" ? (
               <FormUpdateFooter handleUpdate={handleSave} handleUpdateCancel={closeModal} isLoading={isLoading} />
             ) : (
-              <FormsFooter handleSubmit={handleSave} handleSubmitCancel={closeModal} isLoading={isLoading} />
+              // Back / Next through the steps; Save appears only on the last one.
+              <div className="d-flex flex-wrap align-items-center justify-content-end gap-2 w-100">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  disabled={isLoading}
+                  className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2.5 transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                {step > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => goToStep(step - 1)}
+                    disabled={isLoading}
+                    className="rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium px-4 py-2.5 transition-colors disabled:opacity-60"
+                  >
+                    Back
+                  </button>
+                )}
+                {step < lastStep ? (
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    disabled={isLoading}
+                    className="rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors disabled:opacity-70"
+                  >
+                    Next: {processName[selectedProcesses[step]]}
+                  </button>
+                ) : (
+                  <FormsFooter handleSubmit={handleSave} handleSubmitCancel={closeModal} isLoading={isLoading} hideCancel />
+                )}
+              </div>
             )}
           </ModalFooter>
         </form>
