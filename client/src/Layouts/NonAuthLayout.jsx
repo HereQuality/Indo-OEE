@@ -7,7 +7,7 @@ import { getRoleSlug } from '../utils/roleUrl';
 // Privacy Policy have to show while logged in — No Access is exactly where a
 // logged-in user lands when a page is refused, and bouncing it home made the
 // refusal silent.
-const SIGN_IN_PATHS = ['/', '/login', '/landing'];
+const SIGN_IN_PATHS = ['/', '/login'];
 
 const NonAuthLayout = ({ children }) => {
     const { adminData, isSessionVerified } = useContext(AuthContext);

@@ -35,7 +35,6 @@ function lazyWithRetry(importer) {
   });
 }
 
-const Landing = lazyWithRetry(() => import("../pages/Landing"));
 const PrivacyPolicy = lazyWithRetry(() => import("../pages/PrivacyPolicy"));
 const Login = lazyWithRetry(() => import("../pages/Login"));
 const Blocked = lazyWithRetry(() => import("../pages/Authentication/Blocked"));
@@ -179,7 +178,6 @@ const protectedRoutes = [
 
 const publicRoutes = [
   { path: "/", component: <Login /> },
-  { path: "/landing", component: <Landing /> },
   { path: "/login", component: <Login /> },
   { path: "/blocked", component: <Blocked /> },
   { path: "/no-access", component: <NoAccess /> },

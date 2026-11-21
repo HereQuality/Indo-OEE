@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAlert } from '../context/AlertContext'
 import { login as loginRequest, setCookie } from '../api/auth.api'
 import { useCompany } from '../hooks/useCompany'
+import AppStoreBadges from '../Components/Common/AppStoreBadges'
 
 // ─── Brand mark (text-based — swap for <img src={logo} /> once the client logo is supplied) ──
 function BrandMark({ theme = 'dark', className = '' }) {
@@ -326,11 +327,12 @@ export default function Login() {
             </button>
           </form>
 
+          {/* Mobile app — Android / iOS store badges */}
+          <AppStoreBadges className="mt-7" />
+
           {/* Footer note */}
           <p className="mt-8 text-center text-[11px] text-slate-400">
-            Protected by end-to-end encryption. &nbsp;
-            {/* "/" is this login page itself — home here is the public landing page. */}
-            <Link to="/landing" className="font-medium text-slate-500 hover:text-brand-600">Back to home</Link>
+            Protected by end-to-end encryption.
           </p>
         </div>
       </div>

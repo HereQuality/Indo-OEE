@@ -32,6 +32,9 @@ class Endpoints {
   static const announcementStatus = '$v1/announcement/status';
   static const announcement = '$v1/announcement';
 
+  // Mobile app force / soft update (public status, read before login)
+  static const appUpdateStatus = '$v1/app-update/status';
+
   // Departments
   static const departments = '$v1/departments';
   static String departmentById(String id) => '$v1/departments/$id';

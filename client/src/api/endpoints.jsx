@@ -53,6 +53,12 @@ export const ENDPOINTS = {
         BASE: `${V1}/announcement`,
     },
 
+    // Mobile app force / soft update (configured on the Company page)
+    APP_UPDATE: {
+        STATUS: `${V1}/app-update/status`,
+        BASE: `${V1}/app-update`,
+    },
+
     // Department endpoints
     DEPARTMENTS: {
         BASE: `${V1}/departments`,

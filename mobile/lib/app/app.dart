@@ -7,10 +7,13 @@ import '../core/utils/alerts.dart';
 import '../core/widgets/keyboard_done_bar.dart';
 import '../core/widgets/tap_to_dismiss.dart';
 import '../core/api/api_client.dart';
+import '../features/app_update/soft_update_overlay.dart';
+import '../features/app_update/update_required_screen.dart';
 import '../features/auth/blocked_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/maintenance/maintenance_gate.dart';
 import '../features/production/sheet/editor/entry_draft_store.dart';
+import '../providers/app_update_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/company_provider.dart';
 import '../providers/menu_provider.dart';
@@ -25,6 +28,8 @@ class IndoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // Force / soft update — independent of the session (checked before login).
+        ChangeNotifierProvider(create: (_) => AppUpdateProvider()..bootstrap()),
         ChangeNotifierProvider(create: (_) => AuthProvider(onSessionEnd: clearEntryDrafts)..bootstrap()),
         ChangeNotifierProvider(create: (_) => CompanyProvider()..load()),
         ChangeNotifierProxyProvider<AuthProvider, ThemeProvider>(
@@ -70,8 +75,13 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Back from the background: the Super Admin may have changed the logo or
-    // company name on the web meanwhile.
-    if (state == AppLifecycleState.resumed) context.read<CompanyProvider>().load();
+    // company name on the web meanwhile — or switched on a force update, or the
+    // person just installed the update from the store. (Before login there is
+    // no socket to push that.)
+    if (state == AppLifecycleState.resumed) {
+      context.read<CompanyProvider>().load();
+      context.read<AppUpdateProvider>().refreshNow();
+    }
   }
 
   @override
@@ -100,6 +110,17 @@ class _AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = context.select<AuthProvider, AuthStatus>((a) => a.status);
 
+    // Hard update — before everything, login included, and with no role
+    // bypass (see AppUpdateProvider).
+    final updateRequired = context.select<AppUpdateProvider, bool>((u) => u.isForceUpdateRequired);
+    if (updateRequired) {
+      // May fire while several pages deep: drop them so nothing sits on top.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        rootNavigatorKey.currentState?.popUntil((r) => r.isFirst);
+      });
+      return const UpdateRequiredScreen();
+    }
+
     if (status != AuthStatus.authenticated) {
       // Signed out (or session expired) while deep in the app: drop every page
       // pushed above this gate so the login screen is what the person sees.
@@ -112,11 +133,11 @@ class _AuthGate extends StatelessWidget {
       case AuthStatus.unknown:
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       case AuthStatus.unauthenticated:
-        return const LoginScreen();
+        return const SoftUpdateOverlay(child: LoginScreen());
       case AuthStatus.blocked:
         return const BlockedScreen();
       case AuthStatus.authenticated:
-        return const MaintenanceGate(child: MainShell());
+        return const SoftUpdateOverlay(child: MaintenanceGate(child: MainShell()));
     }
   }
 }

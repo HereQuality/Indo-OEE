@@ -42,6 +42,11 @@ const { getOrCreateMaintenance } = require("../models/MaintenanceMode");
 const ALWAYS_ALLOWED = [
   { method: "GET", path: /^\/maintenance\/status$/ },
   { method: "GET", path: /^\/announcement\/status$/ },
+  // The mobile app's force-update check runs before login and must keep
+  // working during maintenance (an outdated build should still be told to
+  // update). report-version is a build script, guarded by its own secret.
+  { method: "GET", path: /^\/app-update\/status$/ },
+  { method: "POST", path: /^\/app-update\/report-version$/ },
   { method: null, path: /^\/auth(\/|$)/ },
   { method: "GET", path: /^\/companies\/?(getCompanyDetails)?$/ },
 ];

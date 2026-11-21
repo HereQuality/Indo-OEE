@@ -45,7 +45,7 @@ api.interceptors.request.use(
 
 // Pages a signed-out visitor can be on — a 401 there (a stale cookie checked
 // on load) just clears it, with no trip to /login.
-const PUBLIC_PATHS = ["/", "/login", "/landing", "/privacy-policy", "/blocked"];
+const PUBLIC_PATHS = ["/", "/login", "/privacy-policy", "/blocked"];
 
 // Set once a 401 has started the trip to /login: every other request that
 // fails with it in the same moment must not start another one.

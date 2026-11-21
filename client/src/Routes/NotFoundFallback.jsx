@@ -14,6 +14,6 @@ export default function NotFoundFallback() {
     return <Navigate to={adminData?.redirectUrl || `/${slug}/home`} replace />;
   }
 
-  // If not logged in, redirect them to landing
+  // If not logged in, send them to the login page
   return <Navigate to="/" replace />;
 }
