@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { MenuContext } from '../context/MenuContext';
 import { getCompanyDetails, updateCompany } from '../api/companies.api';
 import { useAlert } from '../context/AlertContext';
 import { Card, CardBody, CardHeader, Col, Container, Row, Input, Label, Form, Button, Spinner } from 'reactstrap';
@@ -10,6 +11,8 @@ import AnnouncementModeCard from '../Components/Common/AnnouncementModeCard';
 import SummaryMailCard from '../Components/Common/SummaryMailCard';
 
 export default function CompanyManagement() {
+  // The summary email is for Super Admin / Full access only.
+  const { isAdmin } = useContext(MenuContext) || {};
   const queryClient = useQueryClient();
   const toast = useAlert();
   const [loading, setLoading] = useState(true);
@@ -280,9 +283,11 @@ export default function CompanyManagement() {
                 <AnnouncementModeCard />
               </div>
 
-              <div className="mt-4">
-                <SummaryMailCard />
-              </div>
+              {isAdmin && (
+                <div className="mt-4">
+                  <SummaryMailCard />
+                </div>
+              )}
             </Col>
           </Row>
         </Container>

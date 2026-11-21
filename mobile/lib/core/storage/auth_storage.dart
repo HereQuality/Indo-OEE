@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -10,8 +11,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// [token] serves that copy. [save] / [clear] update memory immediately and
 /// await the durable write.
 ///
-/// "Remember me" off keeps the token in memory only, i.e. it is dropped when
-/// the app is closed (same as the web/tablet behaviour).
+/// The app stays signed in like Instagram: the token (and the last known
+/// profile, so the app still opens signed in when offline) is always kept
+/// until sign-out or the server ends the session.
 class AuthStorage {
   AuthStorage._() : _store = const FlutterSecureStorage();
 
@@ -22,11 +24,13 @@ class AuthStorage {
 
   static const _tokenKey = 'token';
   static const _roleKey = 'role';
+  static const _userKey = 'user';
 
   final FlutterSecureStorage _store;
 
   String? _token;
   String? _role;
+  Map<String, dynamic>? _user;
 
   /// [save] / [clear] ran: a slow [init] that finishes afterwards must not put
   /// an older stored token over the one just set.
@@ -34,6 +38,9 @@ class AuthStorage {
 
   String? get token => _token;
   String? get role => _role;
+
+  /// The profile from the last /auth/me, for opening signed in while offline.
+  Map<String, dynamic>? get cachedUser => _user;
 
   /// Runs before the first frame, so it must never block it: the Keychain can
   /// be slow or unavailable (fresh boot, locked device, restored backup), and a
@@ -46,9 +53,16 @@ class AuthStorage {
       await Future<void>(() async {
         final token = await _store.read(key: _tokenKey);
         final role = await _store.read(key: _roleKey);
+        final user = await _store.read(key: _userKey);
         if (abandoned || _written) return;
         _token = token;
         _role = role;
+        try {
+          final u = user == null ? null : jsonDecode(user);
+          _user = u is Map ? Map<String, dynamic>.from(u) : null;
+        } catch (_) {
+          _user = null;
+        }
       }).timeout(timeout);
     } on TimeoutException {
       abandoned = true;
@@ -59,29 +73,32 @@ class AuthStorage {
     }
   }
 
-  Future<void> save({required String token, String role = '', bool remember = false}) async {
+  Future<void> save({required String token, String? role}) async {
     _written = true;
     _token = token;
-    _role = role;
+    if (role != null) _role = role;
     try {
-      if (remember) {
-        await _store.write(key: _tokenKey, value: token);
-        await _store.write(key: _roleKey, value: role);
-      } else {
-        // Session-only: make sure no earlier "remembered" token outlives this one.
-        await _store.delete(key: _tokenKey);
-        await _store.delete(key: _roleKey);
-      }
+      await _store.write(key: _tokenKey, value: token);
+      if (role != null) await _store.write(key: _roleKey, value: role);
     } catch (_) {/* memory copy still works for this session */}
+  }
+
+  Future<void> saveUser(Map<String, dynamic> user) async {
+    _user = user;
+    try {
+      await _store.write(key: _userKey, value: jsonEncode(user));
+    } catch (_) {/* not JSON-safe or keychain busy: offline launch falls back to sign-in */}
   }
 
   Future<void> clear() async {
     _written = true;
     _token = null;
     _role = null;
+    _user = null;
     try {
       await _store.delete(key: _tokenKey);
       await _store.delete(key: _roleKey);
+      await _store.delete(key: _userKey);
     } catch (_) {}
   }
 }

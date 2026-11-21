@@ -2,13 +2,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/form_widgets.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/company_provider.dart';
 
-/// Sign in (mirrors pages/Login.jsx): username + password, "Remember me",
+/// Sign in (mirrors pages/Login.jsx): username + password (the app then stays signed in),
 /// server error messages (locked / blocked / attempts left).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,7 +23,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _userFocus = FocusNode();
   final _passFocus = FocusNode();
   bool _show = false;
-  bool _remember = false;
   bool _submitting = false;
   String? _error;
 
@@ -64,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _submitting = true;
       _error = null;
     });
-    final result = await context.read<AuthProvider>().login(_username.text, _password.text, remember: _remember);
+    final result = await context.read<AuthProvider>().login(_username.text, _password.text);
     if (!mounted) return;
     // On success the auth gate swaps this screen out; only failures land here.
     setState(() {
@@ -141,19 +139,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => setState(() => _remember = !_remember),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Checkbox(value: _remember, onChanged: (v) => setState(() => _remember = v ?? false)),
-                          const Flexible(child: Text('Remember me')),
-                        ],
+                  if (_error == null && context.watch<AuthProvider>().sessionExpired) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      key: const ValueKey('session-ended'),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.brand600.withValues(alpha: isDark ? 0.18 : 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.brand600.withValues(alpha: 0.3)),
                       ),
+                      child: const Text('Your session has ended. Please sign in again.'),
                     ),
-                  ),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 6),
                     Container(
@@ -184,13 +182,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon: Icons.arrow_forward_rounded,
                     loading: _submitting,
                     onPressed: _submit,
-                  ),
-                  const SizedBox(height: 26),
-                  Center(
-                    child: Text(
-                      AppConfig.apiHost,
-                      style: TextStyle(fontSize: 11, color: s.onSurfaceVariant),
-                    ),
                   ),
                 ],
               ),

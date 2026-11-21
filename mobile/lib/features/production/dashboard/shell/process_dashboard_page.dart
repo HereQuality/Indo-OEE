@@ -241,7 +241,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
                   onClearAll: _ctl.clearAll,
                   onCustomize: isAdmin ? _customize : null,
                   onReportPdf: _downloadReport,
-                  onReportEmail: _emailReport,
+                  onReportEmail: isAdmin ? _emailReport : null,
                   reporting: _reporting,
                   chips: _ctl.activeFilters,
                   onRemoveChip: (c) => _toggle(c.dim, c.value),
@@ -260,7 +260,7 @@ class _ProcessDashboardPageState extends State<ProcessDashboardPage> {
                 onRemoveChip: (c) => _toggle(c.dim, c.value),
                 onClearAll: _ctl.clearAll,
                 onReportPdf: _downloadReport,
-                onReportEmail: _emailReport,
+                onReportEmail: isAdmin ? _emailReport : null,
                 reporting: _reporting,
                 refreshing: _ctl.loading && _ctl.rows.isNotEmpty,
               );

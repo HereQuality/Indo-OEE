@@ -275,9 +275,11 @@ const ProcessDashboard = ({ process, machines, onBack }) => {
           <Button size="sm" color="light" className="pd-field-btn" disabled={!!reporting} onClick={downloadReport} title="Download the Efficiency Report (OEE) for this period, process and machines as a PDF">
             {reporting === "pdf" ? <Spinner size="sm" /> : <FileDown size={15} />} PDF
           </Button>
-          <Button size="sm" color="light" className="pd-field-btn" disabled={!!reporting} onClick={emailReport} title="Email the same report (PDF attached)">
-            {reporting === "mail" ? <Spinner size="sm" /> : <Mail size={15} />} Email
-          </Button>
+          {isAdmin && (
+            <Button size="sm" color="light" className="pd-field-btn" disabled={!!reporting} onClick={emailReport} title="Email the same report (PDF attached)">
+              {reporting === "mail" ? <Spinner size="sm" /> : <Mail size={15} />} Email
+            </Button>
+          )}
           {isAdmin && (
             <Button size="sm" color="light" className="pd-field-btn" onClick={() => setCustomizing({ stats: stats.map((s) => s.key), charts: charts.map((w) => w.key) })}>
               <LayoutDashboard size={15} /> Customize

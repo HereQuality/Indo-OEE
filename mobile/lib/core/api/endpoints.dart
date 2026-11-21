@@ -11,6 +11,7 @@ class Endpoints {
   static const updatePreferences = '$v1/auth/me/preferences';
   static const changePassword = '$v1/auth/me/password';
   static const logout = '$v1/auth/logout';
+  static const refreshSession = '$v1/auth/refresh-session';
   static const otpSend = '$v1/auth/send-otp';
   static const otpVerify = '$v1/auth/verify-otp';
   static const passwordReset = '$v1/auth/reset-password';

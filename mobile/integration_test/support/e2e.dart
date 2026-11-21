@@ -142,7 +142,6 @@ Future<void> launchAndSignIn(
   await AuthStorage.instance.save(
     token: '${minted['token']}',
     role: '${minted['roleType']}',
-    remember: true,
   );
   await relaunchApp(tester);
   await pumpUntilFound(

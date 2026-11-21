@@ -12,6 +12,7 @@ import '../../core/api/endpoints.dart';
 import '../../core/utils/alerts.dart';
 import '../../core/widgets/form_widgets.dart';
 import '../../providers/company_provider.dart';
+import '../../providers/menu_provider.dart';
 import 'summary_mail_card.dart';
 
 /// Replaceable in tests (image_picker has no platform there).
@@ -164,8 +165,11 @@ class _CompanyManagementScreenState extends State<CompanyManagementScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                     children: [
                       _settingsCard(context),
-                      const SizedBox(height: 16),
-                      const SummaryMailCard(),
+                      // The summary email is for Super Admin / Full access only.
+                      if (context.select<MenuProvider, bool>((m) => m.isAdmin)) ...[
+                        const SizedBox(height: 16),
+                        const SummaryMailCard(),
+                      ],
                     ],
                   ),
                 ),

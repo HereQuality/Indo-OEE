@@ -1,5 +1,7 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../core/api/api_client.dart';
 import '../core/api/endpoints.dart';
@@ -17,10 +19,62 @@ class LoginResult {
 }
 
 /// Session state: who is signed in (mirrors client/src/context/AuthContext.jsx).
-class AuthProvider extends ChangeNotifier {
+///
+/// Stays signed in like Instagram / Facebook: no "Remember me"; the session is
+/// kept on the device and renewed with the server whenever the app is opened
+/// or comes back to the foreground (at most every few hours), so a person who
+/// uses the app is never signed out. It ends on Sign out, when an admin blocks
+/// or removes the account, or after about two months without opening the app
+/// — then the sign-in screen says the session ended.
+class AuthProvider extends ChangeNotifier with WidgetsBindingObserver {
   AuthProvider({this.onSessionEnd}) {
-    ApiClient.instance.onUnauthorized = () => _endSession(AuthStatus.unauthenticated);
+    ApiClient.instance.onUnauthorized = () {
+      if (status == AuthStatus.authenticated) sessionExpired = true;
+      _endSession(AuthStatus.unauthenticated);
+    };
     ApiClient.instance.onBlocked = () => _endSession(AuthStatus.blocked);
+    WidgetsFlutterBinding.ensureInitialized().addObserver(this);
+  }
+
+  /// The server ended the session (not a sign-out): the sign-in screen says so.
+  bool sessionExpired = false;
+
+  /// How often an open session is renewed at most.
+  static const renewEvery = Duration(hours: 6);
+  DateTime? _renewedAt;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && isAuthenticated) renewSession();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Swaps the token for a fresh one so a session in use never runs out.
+  /// Quiet on failure (offline): the current token keeps working.
+  Future<void> renewSession({bool force = false}) async {
+    final last = _renewedAt;
+    if (!force && last != null && DateTime.now().difference(last) < renewEvery) return;
+    _renewedAt = DateTime.now();
+    try {
+      final res = await Api.post(Endpoints.refreshSession);
+      final token = res['token'];
+      if (token is String && token.isNotEmpty && isAuthenticated) {
+        await AuthStorage.instance.save(token: token);
+      }
+    } catch (_) {
+      _renewedAt = last; // try again next time
+    }
+  }
+
+  /// Sets the user; the offline copy is saved in the background (never waited on).
+  Future<void> _setUser(Map<String, dynamic> raw) async {
+    user = AppUser(raw);
+    unawaited(AuthStorage.instance.saveUser(raw));
   }
 
   /// Runs whenever a session ends (logout, 401, blocked) so per-user local data
@@ -43,9 +97,10 @@ class AuthProvider extends ChangeNotifier {
     }
     try {
       final res = await Api.get(Endpoints.me);
-      user = AppUser(asMap(res));
+      await _setUser(asMap(res));
       status = AuthStatus.authenticated;
       SocketService.instance.connect(token);
+      renewSession(force: true);
     } on ApiException catch (e) {
       // 403 = blocked or inactive; 401 already handled by the interceptor.
       if (e.statusCode == 403) {
@@ -57,20 +112,32 @@ class AuthProvider extends ChangeNotifier {
         await _runSessionEnd();
         status = AuthStatus.unauthenticated;
       } else {
-        // Offline at launch: keep the token, show login so the person can retry.
-        status = AuthStatus.unauthenticated;
+        _openOffline(token);
       }
     } catch (_) {
-      status = AuthStatus.unauthenticated;
+      _openOffline(token);
     }
     notifyListeners();
   }
 
-  Future<LoginResult> login(String username, String password, {bool remember = false}) async {
+  /// No connection at launch: open signed in with the last known profile (the
+  /// screens show their own offline states and retry); without one, sign in.
+  void _openOffline(String token) {
+    final cached = AuthStorage.instance.cachedUser;
+    if (cached != null && cached.isNotEmpty) {
+      user = AppUser(cached);
+      status = AuthStatus.authenticated;
+      SocketService.instance.connect(token);
+    } else {
+      status = AuthStatus.unauthenticated;
+    }
+  }
+
+  Future<LoginResult> login(String username, String password) async {
     try {
       final res = await ApiClient.instance.dio.post(
         Endpoints.login,
-        data: {'username': username.trim(), 'password': password, 'remember': remember},
+        data: {'username': username.trim(), 'password': password, 'remember': true, 'client': 'app'},
         options: Options(validateStatus: (s) => s != null && s >= 200 && s < 500),
       );
       final data = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
@@ -95,11 +162,13 @@ class AuthProvider extends ChangeNotifier {
       if (code == 200 && data['token'] != null) {
         final u = (data['data'] is Map ? (data['data'] as Map)['user'] : null);
         final roleType = u is Map ? (u['roleType'] ?? '').toString() : '';
-        await AuthStorage.instance.save(token: data['token'].toString(), role: roleType, remember: remember);
+        await AuthStorage.instance.save(token: data['token'].toString(), role: roleType);
         // /auth/me is the canonical user shape (login's is partly populated).
         final me = await Api.get(Endpoints.me);
-        user = AppUser(asMap(me));
+        await _setUser(asMap(me));
         status = AuthStatus.authenticated;
+        sessionExpired = false;
+        _renewedAt = DateTime.now();
         SocketService.instance.connect(data['token'].toString());
         notifyListeners();
         return const LoginResult.ok();
@@ -118,6 +187,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       await Api.post(Endpoints.logout);
     } catch (_) {/* best effort */}
+    sessionExpired = false;
     await _endSession(AuthStatus.unauthenticated);
   }
 
@@ -132,6 +202,7 @@ class AuthProvider extends ChangeNotifier {
     await _runSessionEnd();
     SocketService.instance.disconnect();
     user = null;
+    _renewedAt = null;
     status = next;
     notifyListeners();
   }
@@ -140,7 +211,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> refreshUser() async {
     try {
       final res = await Api.get(Endpoints.me);
-      user = AppUser(asMap(res));
+      await _setUser(asMap(res));
       notifyListeners();
     } catch (_) {}
   }

@@ -10,10 +10,24 @@ const MenuMaster = require('../models/MenuMaster');
 const MAX_LOGIN_ATTEMPTS = 3;
 const LOCK_TIME = 2 * 60 * 1000; // 2 minutes
 
-const signToken = (id, roleType, remember) => {
+// Web: 10 days, or 30 with "Remember me" (client/src/pages/Login.jsx sets the
+// cookies to match). The phone / tablet app stays signed in like Instagram: a 60-day token that
+// the app renews (POST /auth/refresh-session) whenever it's opened, so only
+// two months unused, signing out, or a blocked account end the session.
+const APP_SESSION = '60d';
+const signToken = (id, roleType, remember, client) => {
   return jwt.sign({ id, roleType }, process.env.JWT_SECRET, {
-    expiresIn: remember ? '30d' : '1d'
+    expiresIn: client === 'app' ? APP_SESSION : remember ? '30d' : '10d'
   });
+};
+exports.signToken = signToken;
+
+// POST /auth/refresh-session (signed in): a fresh app token, so a session in
+// use never runs out. A blocked / inactive / deleted account is refused by
+// `protect` before this runs.
+exports.refreshSession = (req, res) => {
+  const token = signToken(req.user._id, req.user.roleType, true, 'app');
+  res.json({ status: 'success', token });
 };
 
 // Works out where this account should land after login, based on role.
@@ -33,8 +47,8 @@ const getDefaultRedirectUrl = async (roleType, roleSlug, roleId) => {
   return `/${slug}/home`;
 };
 
-const sendToken = async (user, roleType, statusCode, res, remember) => {
-  const token = signToken(user._id, roleType, remember);
+const sendToken = async (user, roleType, statusCode, res, remember, client) => {
+  const token = signToken(user._id, roleType, remember, client);
 
   // Remove password from output
   user.password = undefined;
@@ -76,7 +90,7 @@ exports.getDefaultRedirectUrl = getDefaultRedirectUrl;
 
 exports.login = async (req, res) => {
   try {
-    const { username, email, password, remember } = req.body;
+    const { username, email, password, remember, client } = req.body;
     const loginId = username || email; // accept either for migration
 
     // 1. Check if identifier and password exist (and are text — an object or array here
@@ -167,7 +181,7 @@ exports.login = async (req, res) => {
     account.lastLogin = Date.now();
     await account.save({ validateBeforeSave: false });
 
-    await sendToken(account, roleType, 200, res, remember);
+    await sendToken(account, roleType, 200, res, remember, client);
 
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../core/widgets/states.dart';
 import '../features/auth/no_access_screen.dart';
 import '../models/app_user.dart';
 import '../providers/auth_provider.dart';
@@ -75,9 +74,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final user = context.select<AuthProvider, AppUser?>((a) => a.user);
     final menu = context.watch<MenuProvider>();
-    if (menu.loading && menu.groups.isEmpty && !menu.isAdmin) {
-      return const Scaffold(body: LoadingView(label: 'Loading your workspace…'));
-    }
+    if (!menu.isAdmin && !menu.ready) return const WorkspaceLoading();
     final visible = [
       for (final t in _allTabs)
         if (PageAccess.canOpen(user, menu, t.path)) t,

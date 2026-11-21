@@ -110,8 +110,8 @@ export default function Login() {
         setError(res.data?.message || 'Authentication failed')
       } else if (res.status === 200 || res.data?.status === 'success') {
         toast.success('Logged in successfully!')
-        setCookie('token', res.data.token, remember ? 30 : 1)
-        setCookie('role', res.data.data?.user?.roleType || '', remember ? 30 : 1)
+        setCookie('token', res.data.token, remember ? 30 : 10)
+        setCookie('role', res.data.data?.user?.roleType || '', remember ? 30 : 10)
         window.location.href = res.data.redirectUrl || '/home'
       } else {
         setError(res.data?.message || 'Authentication failed')

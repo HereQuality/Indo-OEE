@@ -14,6 +14,11 @@ class MenuProvider extends ChangeNotifier {
   List<MenuGroup> groups = const [];
   bool loading = false;
   String? error;
+
+  /// The signed-in person's menus and permissions have loaded at least once.
+  /// Until then the app shows "Loading your workspace…", never "No access" —
+  /// an empty menu before the first answer only means "not loaded yet".
+  bool ready = false;
   bool _isAdmin = false;
   String? _loadedFor;
   List<Map<String, dynamic>> _roles = const [];
@@ -27,6 +32,7 @@ class MenuProvider extends ChangeNotifier {
     this.groups = groups;
     _roles = roles;
     loading = false;
+    ready = true;
     notifyListeners();
   }
 
@@ -41,6 +47,7 @@ class MenuProvider extends ChangeNotifier {
         _isAdmin = false;
         error = null;
         loading = false;
+        ready = false;
         notifyListeners();
       }
       return;
@@ -49,6 +56,11 @@ class MenuProvider extends ChangeNotifier {
     if (_loadedFor == key) return;
     _loadedFor = key;
     _isAdmin = u.isSuperAdmin;
+    // Loading from this moment (set without notifying: attach runs during a
+    // build), so no frame shows an empty menu as "No access".
+    ready = false;
+    loading = true;
+    error = null;
     // Defer so we never notify during a build.
     Future.microtask(() => refresh(roleId: u.roleId));
   }
@@ -58,19 +70,22 @@ class MenuProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      // Both answers are applied together, so the menus never show for a
+      // moment without the permissions that go with them.
       final res = await Api.get(Endpoints.menusByGroups);
-      groups = asList(res).map(MenuGroup.fromJson).toList();
-
+      final nextGroups = asList(res).map(MenuGroup.fromJson).toList();
+      var nextRoles = const <Map<String, dynamic>>[];
       if (!_isAdmin && roleId != null && roleId.isNotEmpty) {
         final r = await Api.get(Endpoints.operatorRolesById(roleId));
         final data = r['data'];
         final first = data is List && data.isNotEmpty ? data.first : (data is Map ? data : null);
-        _roles = (first is Map && first['roles'] is List)
+        nextRoles = (first is Map && first['roles'] is List)
             ? (first['roles'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
             : const [];
-      } else {
-        _roles = const [];
       }
+      groups = nextGroups;
+      _roles = nextRoles;
+      ready = true;
     } on ApiException catch (e) {
       error = e.message;
     } catch (_) {

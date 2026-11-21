@@ -9,6 +9,26 @@ import '../providers/auth_provider.dart';
 import '../providers/menu_provider.dart';
 import 'routes.dart';
 
+/// Shown until the menus and permissions have loaded: a spinner, or Retry if
+/// loading failed (never "No access" for a menu that simply isn't loaded).
+class WorkspaceLoading extends StatelessWidget {
+  const WorkspaceLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final menu = context.watch<MenuProvider>();
+    if (!menu.loading && menu.error != null) {
+      return Scaffold(
+        body: ErrorView(
+          message: "Couldn't load your workspace. Check the connection and try again.",
+          onRetry: menu.reload,
+        ),
+      );
+    }
+    return const Scaffold(body: LoadingView(label: 'Loading your workspace…'));
+  }
+}
+
 /// Per-page gate (mirrors PageGuard in client/src/Routes/RoleRoute.jsx):
 ///  * role lock-down (`route.roles`),
 ///  * Manage Role "view" permission on the menu that owns this page,
@@ -34,9 +54,7 @@ class PageGuard extends StatelessWidget {
       return PagePermissions(perms: PagePerms.all, child: Builder(builder: route.builder));
     }
 
-    if (menu.loading && menu.groups.isEmpty) {
-      return const Scaffold(body: LoadingView(label: 'Loading your workspace…'));
-    }
+    if (!menu.ready) return const WorkspaceLoading();
     final fronts = route.menuAccess;
     if (fronts != null) {
       return fronts(user, menu)

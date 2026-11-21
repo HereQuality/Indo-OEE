@@ -25,5 +25,6 @@ router.put('/me/preferences', protect, profileController.updateOwnPreferences);
 router.put('/me/password', protect, profileController.changeOwnPassword);
 router.post('/logout', operatorController.logoutUser);
 router.get('/verify-session', protect, operatorController.verifySession);
+router.post('/refresh-session', protect, authController.refreshSession);
 
 module.exports = router;
