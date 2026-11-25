@@ -1,6 +1,20 @@
 const User = require("../models/user.model");
 const Operator = require("../models/Operator");
 const { addProfileTask } = require('../queues/profileQueue');
+const { recordAudit, plain } = require("../utils/auditTrail");
+
+// What of a profile the audit trail shows — never the password or anything
+// about sign-in attempts; the picture only as set / not set.
+const PROFILE_FIELDS = { name: "Name", firstName: "First name", lastName: "Last name", employeeName: "Employee name", username: "Username", emailOffice: "Office email", mobileNumber: "Mobile", address: "Address", city: "City", state: "State", country: "Country", profilePic: "Profile picture" };
+const profileView = (u) => {
+  if (!u) return {};
+  const d = plain(u);
+  const out = {};
+  for (const k of Object.keys(PROFILE_FIELDS)) if (d[k] !== undefined) out[k] = d[k];
+  if (out.profilePic !== undefined) out.profilePic = out.profilePic ? "Uploaded" : null;
+  return out;
+};
+const myLabel = (u) => u?.employeeName || u?.name || u?.username || "";
 
 // Both User (SuperAdmin) and Operator documents are handled here, keyed off
 // req.user.roleType — there's only one "Edit Profile" page on the client,
@@ -83,6 +97,7 @@ exports.updateOwnProfile = async (req, res) => {
     if (!updated) {
       return res.status(404).json({ isOk: false, message: "Account not found" });
     }
+    await recordAudit({ req, entityType: "profile", entity: req.user._id, label: myLabel(updated), action: "update", before: profileView(existingUser), after: profileView(updated), fields: PROFILE_FIELDS });
 
     let updatedData = updated;
     if (req.user.roleType === "Operator") {
@@ -143,6 +158,7 @@ exports.changeOwnPassword = async (req, res) => {
 
     account.password = newPassword; // pre-save hook re-hashes this
     await account.save();
+    await recordAudit({ req, entityType: "profile", entity: req.user._id, label: myLabel(account), action: "passwordChange", remark: "Own password changed" });
 
     res.status(200).json({ isOk: true, message: "Password changed successfully" });
   } catch (error) {

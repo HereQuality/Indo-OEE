@@ -13,6 +13,17 @@ const { compareBySequence, sortMachines } = require("../utils/machineOrder");
 const { sendError, pageParams } = require("../utils/httpErrors");
 const Process = require("../models/Process");
 const mongoose = require("mongoose");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a machine: its process by name, not id.
+const MACHINE_FIELDS = { machineName: "Machine", description: "Description", color: "Colour", process: "Process", sequence: "Sequence", isActive: "Active" };
+const machineView = async (m) => {
+  if (!m) return {};
+  const names = await nameMap(Process, [m.process], "processName");
+  return { ...m, process: m.process ? names[String(m.process)] || String(m.process) : null };
+};
+const auditMachine = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "machine", entity: (after || before)?._id, label: (after || before)?.machineName || "", action, before: await machineView(before), after: await machineView(after), fields: MACHINE_FIELDS, remark });
 
 // `process` is only touched when the request actually sends it, so a form
 // that doesn't know about processes can't clear the link by accident.
@@ -117,6 +128,7 @@ exports.createMachine = async (req, res) => {
     // sheet, not at the top the way a bare sequence of 0 would sort.
     await placeMachine(created._id, position ?? Infinity);
     const machine = await Machine.findById(created._id).lean();
+    await auditMachine(req, "create", null, machine);
     res.status(201).json({ isOk: true, data: present(req, machine), message: "Machine created successfully" });
   } catch (error) {
     console.error("Error creating machine:", error);
@@ -133,12 +145,14 @@ exports.updateMachine = async (req, res) => {
     if (data.machineName !== undefined && (await isDuplicateName(data.machineName, machineId))) {
       return res.status(409).json({ isOk: false, message: `Machine "${data.machineName}" already exists` });
     }
+    const before = plain(await Machine.findOne({ _id: machineId, ...NOT_DELETED }));
     const updated = await Machine.findOneAndUpdate({ _id: machineId, ...NOT_DELETED }, data, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ isOk: false, message: "Machine not found" });
     // A position from Super Admin moves it; a machine that was never given a
     // number (sequence 0) is settled at the end whoever saves it.
     if (position !== null || !(updated.sequence > 0)) await placeMachine(updated._id, position ?? Infinity);
     const machine = await Machine.findById(machineId).lean();
+    await auditMachine(req, "update", before, machine);
     res.status(200).json({ isOk: true, data: present(req, machine), message: "Machine updated successfully" });
   } catch (error) {
     console.error("Error updating machine:", error);
@@ -157,9 +171,11 @@ exports.deleteMachine = async (req, res) => {
     const machine = await Machine.findOne({ _id: machineId, ...NOT_DELETED });
     if (!machine) return res.status(404).json({ isOk: false, message: "Machine not found" });
 
+    const before = plain(machine);
     if (machine.isActive) {
       machine.isActive = false;
       await machine.save();
+      await auditMachine(req, "delete", before, plain(machine), "Deactivated — the machine is kept; a second delete removes it");
       return res.status(200).json({ isOk: true, message: "Machine deactivated successfully" });
     }
 
@@ -169,6 +185,7 @@ exports.deleteMachine = async (req, res) => {
     machine.sequence = 0;
     await machine.save();
     await placeMachine(null);
+    await auditMachine(req, "delete", before, null, "Removed from Machine Master (its data entries are kept)");
 
     const counts = await Promise.all([
       ...MACHINE_ENTRY_MODELS.map((Model) => Model.countDocuments({ machine: machineId })),

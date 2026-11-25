@@ -3,6 +3,11 @@ const OperatorRoles = require("../models/OperatorRoles");
 const Operator = require("../models/Operator");
 const { slugify, RESERVED_SLUGS } = require("../utils/slugify");
 const { sendError, pageParams } = require("../utils/httpErrors");
+const { recordAudit, plain } = require("../utils/auditTrail");
+
+const ROLE_FIELDS = { roleName: "Role", roleCode: "Code", roleSlug: "URL slug", isActive: "Active", remark: "Remark" };
+const auditRole = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "role", entity: (after || before)?._id, label: (after || before)?.roleName || "", action, before, after, fields: ROLE_FIELDS, remark });
 
 // Create Role
 exports.createRole = async (req, res) => {
@@ -40,6 +45,7 @@ exports.createRole = async (req, res) => {
       remark,
     });
 
+    await auditRole(req, "create", null, newRole);
     res.status(201).json({
       isOk: true,
       data: newRole,
@@ -86,6 +92,7 @@ exports.updateRole = async (req, res) => {
       req.body.roleSlug = roleSlug;
     }
 
+    const before = await RoleMaster.findById(roleId).lean();
     const role = await RoleMaster.findOneAndUpdate(
       { _id: roleId },
       req.body,
@@ -95,6 +102,7 @@ exports.updateRole = async (req, res) => {
     if (!role) {
       return res.status(404).json({ isOk: false, message: "Role not found" });
     }
+    await auditRole(req, "update", before, role);
 
     res.status(200).json({
       isOk: true,
@@ -119,10 +127,12 @@ exports.deleteRole = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Role not found" });
     }
 
+    const before = plain(role);
     if (role.isActive) {
       // Soft Delete
       role.isActive = false;
       await role.save();
+      await auditRole(req, "delete", before, role, "Deactivated — the role is kept; a second delete removes it");
       return res.status(200).json({
         isOk: true,
         message: "Role deactivated successfully",
@@ -144,6 +154,7 @@ exports.deleteRole = async (req, res) => {
       await RoleMaster.findByIdAndDelete(roleId);
       // Also delete associated permissions
       await OperatorRoles.findOneAndDelete({ roleId });
+      await auditRole(req, "delete", before, null, "Removed, with its Manage Role permissions");
       return res.status(200).json({
         isOk: true,
         message: "Role deleted successfully",

@@ -73,6 +73,8 @@ const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const WorkOrderMaster = lazyWithRetry(() => import("../pages/WorkOrderMaster"));
 const OeeReviewPage = lazyWithRetry(() => import("../pages/OeeReviewPage"));
+// Audit Trail — every change in the software, who made it and when (menu URL /hqepl/production/audit-trail).
+const AuditTrail = lazyWithRetry(() => import("../pages/AuditTrail"));
 const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
 const VendorMaster = lazyWithRetry(() => import("../pages/VendorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
@@ -140,6 +142,8 @@ const protectedRoutes = [
   { path: "/production/work-orders", component: <WorkOrderMaster /> },
   // Admin review of entries whose OEE figures went over 100%, plus the audit log.
   { path: "/production/oee-review", component: <OeeReviewPage /> },
+  // The full audit trail; ?entity=… or ?sheet&date&machine narrows it to one record's history.
+  { path: "/production/audit-trail", component: <AuditTrail /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },

@@ -22,6 +22,26 @@ const { UOMS, TARGET_PERIODS } = require("../models/KpiObjective");
 const { isAdminUser } = require("../utils/adminAccess");
 const { sendError } = require("../utils/httpErrors");
 const { okQtyByProcessMonth, monthsFor, okQtyAllByYearMonth } = require("../utils/kpiOkQty");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of an objective: department and processes by name,
+// Baseline / Target as "value unit".
+const measureText = (m) => (m && m.value !== null && m.value !== undefined ? `${m.value} ${m.uom || ""}`.trim() : null);
+const OBJECTIVE_FIELDS = { objective: "Objective", department: "Department", year: "Year", processes: "Processes", baseline: "Baseline", target: "Target", targetPeriod: "Target period", okQtyUom: "OK Qty unit", owner: "Owner", remarks: "Remarks", isActive: "Active" };
+const objectiveView = async (o) => {
+  if (!o) return {};
+  const d = plain(o);
+  const idOf = (v) => String(v?._id || v);
+  const [depts, procs] = await Promise.all([nameMap(Department, [d.department], "departmentName"), nameMap(Process, [d.processes], "processName")]);
+  return { ...d, department: d.department ? depts[idOf(d.department)] || idOf(d.department) : null, processes: (d.processes || []).map((p) => procs[idOf(p)] || idOf(p)), baseline: measureText(d.baseline), target: measureText(d.target) };
+};
+const auditObjective = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "kpiObjective", entity: (after || before)?._id, label: (after || before)?.objective || "", action, before: await objectiveView(before), after: await objectiveView(after), fields: OBJECTIVE_FIELDS, remark });
+const COMPANY_OBJECTIVE_FIELDS = { objective: "Objective", year: "Year", baseline: "Baseline", target: "Target", owner: "Owner", remarks: "Remarks", isActive: "Active" };
+const companyObjectiveView = (o) => (o ? { ...plain(o), baseline: measureText(o.baseline), target: measureText(o.target) } : {});
+const auditCompanyObjective = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "companyObjective", entity: (after || before)?._id, label: (after || before)?.objective || "", action, before: companyObjectiveView(before), after: companyObjectiveView(after), fields: COMPANY_OBJECTIVE_FIELDS, remark });
+const MONTH_LABELS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const thisYear = () => new Date().getFullYear();
 
@@ -185,6 +205,7 @@ exports.createObjective = async (req, res) => {
     const { data, error, status } = await pickObjective(req.body || {}, scope);
     if (error) return res.status(status || 400).json({ isOk: false, message: error });
     const created = await KpiObjective.create({ ...data, createdByName: nameOf(req) });
+    await auditObjective(req, "create", null, created);
     res.status(201).json({ isOk: true, data: created, message: "Objective added" });
   } catch (error) {
     console.error("Error creating KPI objective:", error);
@@ -207,9 +228,11 @@ exports.updateObjective = async (req, res) => {
     const body = { ...existing.toObject(), ...(req.body || {}) };
     const { data, error, status } = await pickObjective(body, scope, { allowNoProcesses: (existing.uploadedMonths || []).length > 0 });
     if (error) return res.status(status || 400).json({ isOk: false, message: error });
+    const before = existing.toObject();
     Object.assign(existing, data);
     if (req.body?.isActive !== undefined) existing.isActive = req.body.isActive !== false && req.body.isActive !== "false";
     await existing.save();
+    await auditObjective(req, "update", before, existing);
     res.status(200).json({ isOk: true, data: existing, message: "Objective updated" });
   } catch (error) {
     console.error("Error updating KPI objective:", error);
@@ -222,6 +245,7 @@ exports.deleteObjective = async (req, res) => {
     const existing = await findMine(req, req.params.id);
     if (!existing) return res.status(404).json({ isOk: false, message: "Objective not found" });
     await existing.deleteOne();
+    await auditObjective(req, "delete", existing, null);
     res.status(200).json({ isOk: true, message: "Objective deleted" });
   } catch (error) {
     console.error("Error deleting KPI objective:", error);
@@ -295,6 +319,7 @@ exports.importObjectives = async (req, res) => {
       imported += 1;
     }
     await Promise.all([...cache.values()].map((d) => d.save()));
+    if (imported) await recordAudit({ req, entityType: "kpiObjective", label: "KPI Excel upload", action: "import", remark: `${imported} rows (${created} new objective${created === 1 ? "" : "s"}, ${cache.size} touched${errors.length ? `, ${errors.length} rows skipped` : ""})` });
     res.status(200).json({ isOk: true, data: { imported, created, objectives: cache.size, errors }, message: `${imported} month figure${imported === 1 ? "" : "s"} loaded` });
   } catch (error) {
     console.error("Error importing KPI objectives:", error);
@@ -344,6 +369,7 @@ exports.importCompanyHistory = async (req, res) => {
       if (Object.keys(set).length) await CompanyMonthly.findOneAndUpdate({ year, month }, { $set: { ...set, updatedByName: nameOf(req), source: "excel" } }, { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true });
       imported += 1;
     }
+    if (imported) await recordAudit({ req, entityType: "companyObjective", label: "Company Level Objective Excel upload", action: "import", remark: `${imported} rows${errors.length ? ` (${errors.length} skipped)` : ""}` });
     res.status(200).json({ isOk: true, data: { imported, errors }, message: `${imported} month${imported === 1 ? "" : "s"} loaded` });
   } catch (error) {
     console.error("Error importing company history:", error);
@@ -363,11 +389,22 @@ exports.saveCompanyMonthly = async (req, res) => {
     const raw = req.body?.values || {};
     const picked = pickMetricValues(Object.fromEntries(METRIC_KEYS.map((k) => [k, raw[k] ?? ""])));
     if (picked.error) return res.status(400).json({ isOk: false, message: picked.error });
+    const before = await CompanyMonthly.findOne({ year, month }).lean();
     const doc = await CompanyMonthly.findOneAndUpdate(
       { year, month },
       { $set: { values: picked.values, updatedByName: nameOf(req), source: "entry" } },
       { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
     );
+    await recordAudit({
+      req,
+      entityType: "companyMonthly",
+      entity: doc?._id,
+      label: `${MONTH_LABELS[month]} ${year}`,
+      action: "update",
+      before: before?.values || {},
+      after: plain(doc)?.values || {},
+      fields: Object.fromEntries(METRICS.map((m) => [m.key, m.unit === "%" ? `${m.label} (%)` : m.label])),
+    });
     res.status(200).json({ isOk: true, data: doc, message: "Monthly figures saved" });
   } catch (error) {
     console.error("Error saving company monthly figures:", error);
@@ -457,6 +494,7 @@ exports.createCompanyObjective = async (req, res) => {
     const { data, error } = pickCompany(req.body || {});
     if (error) return res.status(400).json({ isOk: false, message: error });
     const created = await CompanyObjective.create({ ...data, createdByName: nameOf(req) });
+    await auditCompanyObjective(req, "create", null, created);
     res.status(201).json({ isOk: true, data: created, message: "Objective added" });
   } catch (error) {
     console.error("Error creating company objective:", error);
@@ -470,8 +508,10 @@ exports.updateCompanyObjective = async (req, res) => {
     if (!existing) return res.status(404).json({ isOk: false, message: "Objective not found" });
     const { data, error } = pickCompany({ ...existing.toObject(), ...(req.body || {}) });
     if (error) return res.status(400).json({ isOk: false, message: error });
+    const before = existing.toObject();
     Object.assign(existing, data);
     await existing.save();
+    await auditCompanyObjective(req, "update", before, existing);
     res.status(200).json({ isOk: true, data: existing, message: "Objective updated" });
   } catch (error) {
     console.error("Error updating company objective:", error);
@@ -484,6 +524,7 @@ exports.deleteCompanyObjective = async (req, res) => {
     const existing = mongoose.isValidObjectId(req.params.id) ? await CompanyObjective.findById(req.params.id) : null;
     if (!existing) return res.status(404).json({ isOk: false, message: "Objective not found" });
     await existing.deleteOne();
+    await auditCompanyObjective(req, "delete", existing, null);
     res.status(200).json({ isOk: true, message: "Objective deleted" });
   } catch (error) {
     console.error("Error deleting company objective:", error);

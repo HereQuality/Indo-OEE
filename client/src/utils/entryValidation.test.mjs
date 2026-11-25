@@ -148,18 +148,21 @@ test("Stoppage is capped by the Machine Shift (08:00–16:00 → 480 min), and l
 
 import { dayCalc } from "./productionSheet";
 
-test("Unreported Time = Planned − Machine Shift − Stoppage in whole minutes (good-part run time plays no part)", () => {
+test("Unreported Time = Planned − Effective Run Time − Stoppage, to the decimal minute (confirmed correct 2026-11-25)", () => {
+  const close = (got, want) => assert.ok(Math.abs(got - want) < 1e-9, `${got} ≠ ${want}`);
   const row = (o = {}) => ({
     machine: "m1", date: "2026-09-28", itemName: "Part 1", totalCycleSec: 57,
     machineOnTime: "08:00", machineOffTime: "20:00", actualQty: 757, okQty: 753,
     plannedOperatorShiftHours: 14, lunchMin: 30, setupMin: 30, ...o,
   });
-  assert.equal(dayCalc([row()])[0].unreportedMin, 60); // 840 − 720 − 60, not 64.65
-  assert.equal(dayCalc([row({ plannedOperatorShiftHours: 13 })])[0].unreportedMin, 0); // was −55.35
-  assert.equal(dayCalc([row({ okQty: 100 })])[0].unreportedMin, 60);
-  // two entries on one date add up
-  const both = dayCalc([row(), row({ machineOnTime: "20:00", machineOffTime: "22:00", plannedOperatorShiftHours: 2.5, lunchMin: 0, setupMin: 10 })]);
-  assert.equal(both[0].unreportedMin, 60 + (30 - 10));
+  // Effective Run Time = OK Qty × cycle = 753 × 57 s = 715.35 min; Planned 840 − 715.35 − 60 stoppage.
+  close(dayCalc([row()])[0].unreportedMin, 64.65);
+  close(dayCalc([row({ plannedOperatorShiftHours: 13 })])[0].unreportedMin, 4.65);
+  close(dayCalc([row({ okQty: 100 })])[0].unreportedMin, 840 - 95 - 60);
+  // two entries on one date add up: 64.65 + (150 − 95 − 10)
+  const both = dayCalc([row(), row({ machineOnTime: "20:00", machineOffTime: "22:00", plannedOperatorShiftHours: 2.5, okQty: 100, lunchMin: 0, setupMin: 10 })]);
+  close(both[0].unreportedMin, 64.65 + 45);
+  assert.equal(both[0].unreportedMin, both[1].unreportedMin);
 });
 
 import { isTimeRuleMessage, operatorOverlapErrors } from "./entryValidation";

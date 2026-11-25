@@ -1,7 +1,8 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Ban, Check, ChevronLeft, ChevronRight, Clock, Eye, Lock, LockOpen, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
+import { Ban, Check, ChevronLeft, ChevronRight, Clock, Eye, History, Lock, LockOpen, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import NotRunningModal from "./NotRunningModal";
+import RecordHistoryModal from "../AuditTrail/RecordHistoryModal";
 import { getDayStatuses, removeDayStatus } from "../../api/machineDayStatus.api";
 import ConfirmAlert from "../Common/ConfirmAlert";
 import BulkActionBar from "./BulkActionBar";
@@ -824,6 +825,10 @@ const ProductionEntriesTable = ({
   const [marksTick, setMarksTick] = useState(0);
   const [notRunning, setNotRunning] = useState(null);
   const [undoing, setUndoing] = useState("");
+  // A saved row's "History" button (Actions cell): every change made to that
+  // entry, from the audit trail — { id, title } while the modal is open.
+  const [history, setHistory] = useState(null);
+  const openHistory = (r) => setHistory({ id: r._id, title: [displayDay(r.date), machineName[r.machine] || r.operator || "", r.slot ? `Entry ${r.slot}` : ""].filter(Boolean).join(" · ") });
   useEffect(() => {
     if (!sheetKey || !phFrom) return undefined;
     let live = true;
@@ -1172,19 +1177,34 @@ const ProductionEntriesTable = ({
                             />
                           </label>
                         ) : null;
+                        // Every saved row offers its History (read-only, so a lock doesn't hide it).
+                        const historyBtn = (
+                          <button
+                            type="button"
+                            className="touch-hit inline-flex items-center gap-1 px-2 h-7 rounded-full text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors text-xs font-medium"
+                            title="Who created or changed this entry, and when"
+                            onClick={() => openHistory(r)}
+                          >
+                            <History size={13} />
+                            History
+                          </button>
+                        );
                         // A locked row: everyone else sees a lock; an admin (never locked
                         // out) sees Unlock — for everyone else — beside their own edit / delete.
                         if (locked && !isAdmin) {
                           return (
-                            <div className="flex items-center justify-center gap-2" title={locked}>
+                            <div className="flex flex-wrap items-center justify-center gap-1.5" title={locked}>
                               {box}
                               <Lock size={14} className="text-slate-400 dark:text-slate-500" />
+                              {historyBtn}
                             </div>
                           );
                         }
                         const busy = unlockingId === r._id;
+                        // flex-wrap: the Actions column keeps its width — when Unlock and
+                        // History don't both fit beside Edit / Delete, one wraps below.
                         return (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {box}
                             {locked && (
                               <button
@@ -1242,6 +1262,7 @@ const ProductionEntriesTable = ({
                                 <Trash2 size={14} />
                               </button>
                             )}
+                            {historyBtn}
                           </div>
                         );
                       })()}
@@ -1254,6 +1275,7 @@ const ProductionEntriesTable = ({
       </div>
 
       <NotRunningModal target={notRunning} onClose={() => setNotRunning(null)} onSaved={() => setMarksTick((t) => t + 1)} />
+      <RecordHistoryModal isOpen={!!history} onClose={() => setHistory(null)} title={history?.title} query={history ? { entity: history.id } : null} />
       <ConfirmAlert
         isOpen={!!confirm}
         variant={confirm?.kind === "delete" ? "danger" : "warning"}

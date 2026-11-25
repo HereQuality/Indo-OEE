@@ -1,5 +1,7 @@
 const MachineDayStatus = require("../models/MachineDayStatus");
 const { isAdminUser } = require("../utils/adminAccess");
+const { recordAudit, diffChanges } = require("../utils/auditTrail");
+const { machineNamesFor } = require("../utils/machineNames");
 const { REASONS, SHEETS } = MachineDayStatus;
 
 /**
@@ -18,6 +20,10 @@ const { REASONS, SHEETS } = MachineDayStatus;
  * Lock: a mark can be edited or undone only on the day (IST) it was saved.
  * From the next day it is locked for everyone but Admin / Super Admin
  * (Full access), who can still change it.
+ *
+ * Every mark goes to the audit trail (utils/auditTrail.js): "marked" for a
+ * new one, "update" when an existing mark's reasons or remarks change, and
+ * "unmarked" when one is undone — each with the reasons and remarks old → new.
  */
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const istDay = (d = new Date()) => new Date(new Date(d).getTime() + 330 * 60000).toISOString().slice(0, 10);
@@ -32,6 +38,39 @@ const serialize = (s) => ({
   remarks: s.remarks, markedBy: s.markedBy, createdAt: s.createdAt, updatedAt: s.updatedAt,
   locked: isLocked(s),
 });
+// The audit trail's view of a mark: its reasons by label, and its remarks.
+const MARK_FIELDS = { reasons: "Reasons", remarks: "Remarks" };
+const markView = (s) => (s ? { reasons: reasonsOf(s).map((r) => REASONS[r]?.label || r).join(", "), remarks: s.remarks || "" } : {});
+const dmy = (iso) => String(iso || "").split("-").reverse().join("/");
+// One audit row per machine marked / changed / undone. Never fails the save.
+const auditMarks = async (req, { sheet, date, before, after, action }) => {
+  try {
+    const marks = after.length ? after : before;
+    const names = await machineNamesFor(marks.map((m) => String(m.machine)).filter(Boolean));
+    for (const mark of marks) {
+      const was = before.find((b) => String(b.machine) === String(mark.machine));
+      const machineName = names[String(mark.machine)] || "";
+      // "marked" lists what was set (like a create), "unmarked" what was undone
+      // (like a delete); a changed mark only its differences.
+      const what = action === "unmarked" ? "unmarked" : was ? "update" : "marked";
+      const diffAs = { marked: "create", unmarked: "delete", update: "update" }[what];
+      await recordAudit({
+        req,
+        entityType: "notRunning",
+        entity: mark._id,
+        sheet,
+        date,
+        machine: mark.machine || null,
+        machineName,
+        label: `${machineName || "Machine"} · ${dmy(date)}`,
+        action: what,
+        changes: diffChanges(markView(was || mark), what === "unmarked" ? {} : markView(mark), MARK_FIELDS, diffAs),
+      });
+    }
+  } catch (e) {
+    console.error("Error logging Not running marks:", e);
+  }
+};
 const whoIs = (req) => req.user?.employeeName || [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") || req.user?.name || req.user?.userName || req.user?.username || req.user?.email || "";
 
 exports.reasons = (_req, res) =>
@@ -72,7 +111,7 @@ exports.upsert = async (req, res, next) => {
     const machines = Array.isArray(req.body.machines) ? req.body.machines.map(String) : [String(req.body.machine ?? "")];
     if (!machines.length) return bad(res, "Pick a machine");
     const markedBy = whoIs(req);
-    const existing = await MachineDayStatus.find({ sheet, date, machine: { $in: machines } }).select("createdAt").lean();
+    const existing = await MachineDayStatus.find({ sheet, date, machine: { $in: machines } }).lean();
     if (existing.some((e) => isLocked(e, today)) && !(await isAdminUser(req)))
       return res.status(403).json({ success: false, message: "Already marked and locked — only an Admin can change it after the day it was saved" });
     const saved = await Promise.all(
@@ -84,6 +123,7 @@ exports.upsert = async (req, res, next) => {
         ),
       ),
     );
+    await auditMarks(req, { sheet, date, before: existing, after: saved.map((d) => d.toObject()) });
     res.json({ success: true, message: saved.length === 1 ? "Marked as not running" : `${saved.length} marked as not running`, data: saved.map(serialize) });
   } catch (e) {
     next(e);
@@ -95,10 +135,11 @@ exports.remove = async (req, res, next) => {
     const { sheet, date } = { ...req.query, ...(req.body || {}) };
     const machine = String((req.body?.machine ?? req.query.machine) || "");
     if (!SHEETS.includes(sheet) || !ISO.test(date || "")) return bad(res, "Unknown mark");
-    const mark = await MachineDayStatus.findOne({ sheet, date, machine }).select("createdAt").lean();
+    const mark = await MachineDayStatus.findOne({ sheet, date, machine }).lean();
     if (mark && isLocked(mark) && !(await isAdminUser(req)))
       return res.status(403).json({ success: false, message: "Locked — only an Admin can undo it after the day it was saved" });
     await MachineDayStatus.deleteOne({ sheet, date, machine });
+    if (mark) await auditMarks(req, { sheet, date, before: [mark], after: [], action: "unmarked" });
     res.json({ success: true, message: "Mark removed" });
   } catch (e) {
     next(e);
@@ -106,4 +147,5 @@ exports.remove = async (req, res, next) => {
 };
 
 exports._serialize = serialize;
+exports._auditMarks = auditMarks;
 exports._isLocked = isLocked;

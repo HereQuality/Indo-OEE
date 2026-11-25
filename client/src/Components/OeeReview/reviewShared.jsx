@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useState } from "react";
 import dayjs from "dayjs";
 import { displayDay, fmtPct } from "../../utils/productionSheet";
+import { actionLabel, badgeClass, badgeStyle } from "../../utils/auditTrail";
 
 /**
  * Components/OeeReview/reviewShared.jsx
@@ -72,19 +73,11 @@ export const REVIEW_STYLE = {
   rejected: { label: "Rejected", badge: "bg-danger-subtle text-danger-emphasis" },
 };
 
-// Every kind of audit row, in the order the filter offers them.
-export const AUDIT_ACTIONS = [
-  { key: "create", label: "Created", badge: "bg-success-subtle text-success-emphasis" },
-  { key: "update", label: "Updated", badge: "bg-primary-subtle text-primary-emphasis" },
-  { key: "delete", label: "Deleted", badge: "bg-danger-subtle text-danger-emphasis" },
-  { key: "flagged", label: "Flagged", badge: "bg-warning-subtle text-warning-emphasis" },
-  { key: "cleared", label: "Cleared", badge: "bg-info-subtle text-info-emphasis" },
-  { key: "approved", label: "Approved", badge: "bg-success-subtle text-success-emphasis" },
-  { key: "rejected", label: "Rejected", badge: "bg-danger-subtle text-danger-emphasis" },
-  { key: "unlocked", label: "Unlocked", badge: "bg-secondary-subtle text-secondary-emphasis" },
-  { key: "setting", label: "Setting changed", badge: "bg-dark-subtle text-body-emphasis" },
-];
-const ACTION_BY_KEY = Object.fromEntries(AUDIT_ACTIONS.map((a) => [a.key, a]));
+// The kinds of audit row the OEE Review tab filters by, in the order the filter
+// offers them. Labels and colours come from utils/auditTrail.js, the one
+// vocabulary the Audit Trail page and every History modal share.
+const OEE_AUDIT_KEYS = ["create", "update", "delete", "flagged", "cleared", "approved", "rejected", "unlocked", "setting"];
+export const AUDIT_ACTIONS = OEE_AUDIT_KEYS.map((key) => ({ key, label: actionLabel(key) }));
 
 export const isOver = (v) => Number.isFinite(v) && v > 1 + 1e-9;
 const hasValue = (v) => v !== null && v !== undefined && Number.isFinite(v);
@@ -114,10 +107,11 @@ export const StatusBadge = ({ status }) => {
   return <span className={`badge rounded-pill ${style.badge}`}>{style.label}</span>;
 };
 
-export const ActionBadge = ({ action }) => {
-  const style = ACTION_BY_KEY[action] || { label: action || "—", badge: "bg-secondary-subtle text-secondary-emphasis" };
-  return <span className={`badge rounded-pill ${style.badge}`}>{style.label}</span>;
-};
+export const ActionBadge = ({ action }) => (
+  <span className={`badge rounded-pill ${badgeClass(action)}`} style={badgeStyle(action)}>
+    {actionLabel(action)}
+  </span>
+);
 
 // "Availability 86.96% · Performance 102.10% · Quality 100.00%", or null when
 // a row carries no figures at all (a process setting change, say).

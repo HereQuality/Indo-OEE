@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
-import { Col, Input, Row, Spinner } from "reactstrap";
+import { ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
+import { Input, Spinner } from "reactstrap";
 import { getAuditLogs } from "../../api/oeeReview.api";
-import { fmtNum } from "../../utils/productionSheet";
-import { AUDIT_ACTIONS, ActionBadge, MetricsLine, flaggedText, fmtDateTime } from "./reviewShared";
+import { LogRow } from "../AuditTrail/AuditLogList";
+import { AUDIT_ACTIONS } from "./reviewShared";
 
 /**
  * Components/OeeReview/AuditLogTab.jsx
@@ -13,113 +13,11 @@ import { AUDIT_ACTIONS, ActionBadge, MetricsLine, flaggedText, fmtDateTime } fro
  * new value, every time an entry went over 100% (or came back under), every
  * review decision, every unlock and every process setting change. Filtered
  * by kind of action on the server and by label / user on the page shown.
+ * Rows are drawn by Components/AuditTrail/AuditLogList.jsx — the same
+ * component the Audit Trail page and the per-record History modal use.
  */
 
 const PAGE = 50;
-
-const show = (v) => (v === null || v === undefined || v === "" ? "—" : typeof v === "number" ? fmtNum(v) : String(v));
-
-// How many changed fields a row shows before folding the rest behind
-// "Show all" — a create or delete lists every field of the entry.
-const FOLD_AT = 8;
-
-const ChangeList = ({ changes, whole }) => {
-  const [open, setOpen] = useState(false);
-  const list = open || changes.length <= FOLD_AT ? changes : changes.slice(0, FOLD_AT);
-  return (
-    <>
-      {/* A label / value grid: the label takes ~40% on a phone and a quarter
-          on a desktop, so values line up without drifting far from their labels. */}
-      <Row className="g-0 row-gap-1 mt-2 small">
-        {list.map((c, i) => (
-          <React.Fragment key={`${c.field || c.label}-${i}`}>
-            <Col xs={5} sm={4} lg={3} className="text-muted pe-2">
-              {c.label || c.field}
-            </Col>
-            <Col xs={7} sm={8} lg={9} className="text-break">
-              {whole ? (
-                show(c[whole])
-              ) : (
-                // A flex row: the icon is a block element under the app's base styles,
-                // so it would otherwise put the old and new values on separate lines.
-                <div className="d-flex align-items-center flex-wrap gap-2">
-                  <span className="text-muted">{show(c.from)}</span>
-                  <ArrowRight size={14} className="text-muted flex-shrink-0" />
-                  <span className="fw-semibold">{show(c.to)}</span>
-                </div>
-              )}
-            </Col>
-          </React.Fragment>
-        ))}
-      </Row>
-      {changes.length > FOLD_AT && (
-        <button type="button" className="btn btn-link btn-sm p-0 small" onClick={() => setOpen((o) => !o)}>
-          {open ? "Show fewer" : `Show all ${changes.length} fields`}
-        </button>
-      )}
-    </>
-  );
-};
-
-// What each kind of row has to say below its header line.
-const Detail = ({ log }) => {
-  const changes = log.changes || [];
-  switch (log.action) {
-    case "create":
-    case "update":
-    case "delete":
-    case "setting": {
-      // A create / delete lists the whole record, so there is no "before" or "after" to arrow between.
-      const whole = log.action === "create" ? "to" : log.action === "delete" ? "from" : null;
-      return (
-        <>
-          {changes.length > 0 ? <ChangeList changes={changes} whole={whole} /> : null}
-          {log.action === "setting" && log.remark && <div className="small mt-1 text-break">{log.remark}</div>}
-        </>
-      );
-    }
-    case "flagged":
-    case "approved":
-    case "rejected": {
-      const over = flaggedText(log.flagged);
-      // A flagged row's remark is the same "Over 100%: …" text — no point showing it twice.
-      const remark = log.remark && log.remark !== `Over 100%: ${over}` ? log.remark : "";
-      return (
-        <div className="small mt-2">
-          {over && (
-            <div>
-              <span className="text-muted">Over 100%:</span> <span className="text-danger fw-semibold">{over}</span>
-            </div>
-          )}
-          {remark && (
-            <div className="text-break">
-              <span className="text-muted">Remark:</span> {remark}
-            </div>
-          )}
-        </div>
-      );
-    }
-    default:
-      // cleared / unlocked — the reason, in the server's own words.
-      return log.remark ? <div className="small mt-2 text-break">{log.remark}</div> : null;
-  }
-};
-
-const LogRow = ({ log }) => (
-  <div className="border rounded-3 p-3 mb-2">
-    <div className="d-flex flex-wrap align-items-center gap-2">
-      <ActionBadge action={log.action} />
-      <span className="fw-semibold text-break">{log.label || "—"}</span>
-      <span className="ms-auto text-muted small text-nowrap">{fmtDateTime(log.createdAt)}</span>
-    </div>
-    <div className="text-muted small mt-1">
-      by {log.actor?.name || "unknown user"}
-      {log.actor?.role ? ` · ${log.actor.role}` : ""}
-    </div>
-    <Detail log={log} />
-    <MetricsLine metrics={log.metrics} className="mt-2" />
-  </div>
-);
 
 const AuditLogTab = () => {
   const [action, setAction] = useState("");
@@ -237,7 +135,7 @@ const AuditLogTab = () => {
               : "Nothing recorded yet. Changes made from now on are listed here."}
         </div>
       ) : !error ? (
-        filtered.map((log) => <LogRow key={log._id} log={log} />)
+        filtered.map((log) => <LogRow key={log._id} log={log} showModule={false} />)
       ) : null}
 
       {!loading && !error && total > PAGE && (

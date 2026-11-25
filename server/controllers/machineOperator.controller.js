@@ -15,6 +15,17 @@ const MachineOperator = require("../models/MachineOperator");
 const Process = require("../models/Process");
 const { sendError, pageParams } = require("../utils/httpErrors");
 const { viewableProcessIds } = require("../utils/processAccess");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a shop-floor operator: their processes by name.
+const OPERATOR_FIELDS = { name: "Operator", processes: "Processes", isActive: "Active" };
+const operatorView = async (o) => {
+  if (!o) return {};
+  const names = await nameMap(Process, [o.processes], "processName");
+  return { ...o, processes: (o.processes || []).map((p) => names[String(p?._id || p)] || String(p)) };
+};
+const auditOperator = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "machineOperator", entity: (after || before)?._id, label: (after || before)?.name || "", action, before: await operatorView(before), after: await operatorView(after), fields: OPERATOR_FIELDS, remark });
 
 // The processes this person's role can see (utils/processAccess.js) as a Set of
 // id strings, or null when there is no limit (Super Admin, or a role that sees
@@ -62,6 +73,7 @@ exports.createMachineOperator = async (req, res) => {
       isActive: isActive !== undefined ? isActive : true,
     });
 
+    await auditOperator(req, "create", null, plain(created));
     res.status(201).json({ isOk: true, data: created, message: "Operator created successfully" });
   } catch (error) {
     console.error("Error creating machine operator:", error);
@@ -100,10 +112,12 @@ exports.updateMachineOperator = async (req, res) => {
       const existing = await MachineOperator.findById(operatorId).select("processes").lean();
       if (existing && !inScope(existing, allowed)) return res.status(404).json({ isOk: false, message: "Operator not found" });
     }
+    const before = await MachineOperator.findById(operatorId).lean();
     const operator = await MachineOperator.findOneAndUpdate({ _id: operatorId }, update, { new: true });
     if (!operator) {
       return res.status(404).json({ isOk: false, message: "Operator not found" });
     }
+    await auditOperator(req, "update", before, plain(operator));
 
     res.status(200).json({ isOk: true, data: operator, message: "Operator updated successfully" });
   } catch (error) {
@@ -121,13 +135,16 @@ exports.deleteMachineOperator = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Operator not found" });
     }
 
+    const before = plain(operator);
     if (operator.isActive) {
       operator.isActive = false;
       await operator.save();
+      await auditOperator(req, "delete", before, plain(operator), "Deactivated — the operator is kept; a second delete removes it");
       return res.status(200).json({ isOk: true, message: "Operator deactivated successfully" });
     }
 
     await MachineOperator.findByIdAndDelete(operatorId);
+    await auditOperator(req, "delete", before, null, "Removed");
     return res.status(200).json({ isOk: true, message: "Operator deleted successfully" });
   } catch (error) {
     console.error("Error deleting machine operator:", error);

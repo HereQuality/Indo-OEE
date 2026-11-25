@@ -30,8 +30,14 @@ const RoleMaster = require("../models/RoleMaster");
 const { settingOf } = require("../utils/plannedShift");
 const { viewableProcessIds } = require("../utils/processAccess");
 const { CYCLE_SEC } = require("../utils/oeeMetrics");
-const AuditLog = require("../models/AuditLog");
+const { recordAudit, plain } = require("../utils/auditTrail");
 const { sendError, pageParams } = require("../utils/httpErrors");
+
+// The audit trail's view of a process (its Operator Planned Shift has its own
+// "setting" row, logShiftChange, so it is left out here).
+const PROCESS_FIELDS = { processName: "Process", description: "Description", dataEntryMenuLabel: "Data Entry sheet", isActive: "Active" };
+const auditProcess = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "process", entity: (after || before)?._id, label: `Process · ${(after || before)?.processName || ""}`, action, before: plain(before), after: plain(after), fields: PROCESS_FIELDS, remark });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Columns the Process Master table may sort by.
@@ -90,20 +96,15 @@ const shiftChangeError = async (req, current, next) => {
   return { changed, before, after };
 };
 
-const logShiftChange = async (req, process, before, after) => {
-  try {
-    await AuditLog.create({
-      entityType: "process",
-      entity: process._id,
-      label: `Process · ${process.processName}`,
-      action: "setting",
-      changes: [{ field: "plannedShift", label: "Operator Planned Shift", from: shiftText(before), to: shiftText(after) }],
-      actor: await actorOf(req),
-    });
-  } catch (error) {
-    console.error("Error logging planned shift change:", error);
-  }
-};
+const logShiftChange = (req, process, before, after) =>
+  recordAudit({
+    req,
+    entityType: "process",
+    entity: process._id,
+    label: `Process · ${process.processName}`,
+    action: "setting",
+    changes: [{ field: "plannedShift", label: "Operator Planned Shift", from: shiftText(before), to: shiftText(after) }],
+  });
 
 const isDuplicateName = async (processName, excludeId) => {
   const escaped = String(processName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -169,6 +170,7 @@ exports.createProcess = async (req, res) => {
     if (shift.status) return res.status(shift.status).json({ isOk: false, message: shift.message });
     const process = await Process.create({ ...data, ...setting });
     if (machineIds) await syncMachines(process._id, machineIds);
+    await auditProcess(req, "create", null, process);
     if (shift.changed) await logShiftChange(req, process, shift.before, shift.after);
     res.status(201).json({ isOk: true, data: process, message: "Process created successfully" });
   } catch (error) {
@@ -197,6 +199,7 @@ exports.updateProcess = async (req, res) => {
     const process = await Process.findByIdAndUpdate(processId, { ...data, ...setting }, { new: true, runValidators: true });
     if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
     if (machineIds) await syncMachines(process._id, machineIds);
+    await auditProcess(req, "update", current, process);
     if (shift.changed) await logShiftChange(req, process, shift.before, shift.after);
     res.status(200).json({ isOk: true, data: process, message: "Process updated successfully" });
   } catch (error) {
@@ -213,15 +216,18 @@ exports.deleteProcess = async (req, res) => {
     const process = await Process.findById(req.params.processId);
     if (!process) return res.status(404).json({ isOk: false, message: "Process not found" });
 
+    const before = plain(process);
     if (process.isActive) {
       process.isActive = false;
       await process.save();
+      await auditProcess(req, "delete", before, process, "Deactivated — the process is kept; a second delete removes it");
       return res.status(200).json({ isOk: true, message: "Process deactivated successfully" });
     }
 
     await Machine.updateMany({ process: process._id }, { $set: { process: null } });
     await Item.updateMany({ process: process._id }, { $set: { process: null } });
     await Process.findByIdAndDelete(process._id);
+    await auditProcess(req, "delete", before, null, "Removed; its machines and parts were released");
     res.status(200).json({ isOk: true, message: "Process deleted successfully" });
   } catch (error) {
     console.error("Error deleting process:", error);
@@ -490,6 +496,32 @@ exports.getShiftAccess = async (req, res) => {
   }
 };
 
+// Who may lock / unlock the Planned Shift, by name, old → new.
+const auditShiftAccess = async (req, before, after) => {
+  try {
+    const view = async (doc) => {
+      if (!doc) return { operators: [], roles: [] };
+      const [ops, rls] = await Promise.all([
+        Operator.find({ _id: { $in: doc.operators || [] } }).select("employeeName").lean(),
+        RoleMaster.find({ _id: { $in: doc.roles || [] } }).select("roleName").lean(),
+      ]);
+      return { operators: ops.map((o) => o.employeeName).sort(), roles: rls.map((r) => r.roleName).sort() };
+    };
+    await recordAudit({
+      req,
+      entityType: "shiftAccess",
+      entity: after?._id,
+      label: "Planned Shift lock access",
+      action: "setting",
+      before: await view(before),
+      after: await view(plain(after)),
+      fields: { operators: "Employees allowed", roles: "Roles allowed" },
+    });
+  } catch (error) {
+    console.error("Error logging shift access:", error);
+  }
+};
+
 // PUT /processes/shift-access { operatorIds } — Super Admin only.
 exports.setShiftAccess = async (req, res) => {
   try {
@@ -499,7 +531,9 @@ exports.setShiftAccess = async (req, res) => {
     if (!validOperatorIds(roleIds)) return res.status(400).json({ isOk: false, message: "Invalid role list" });
     const operators = [...new Set(operatorIds.map(String))];
     const roles = [...new Set(roleIds.map(String))];
-    await ShiftLockAccess.findOneAndUpdate({}, { operators, roles }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const before = await ShiftLockAccess.findOne({}).lean();
+    const saved = await ShiftLockAccess.findOneAndUpdate({}, { operators, roles }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    await auditShiftAccess(req, before, saved);
     res.status(200).json({ isOk: true, data: { selected: operators, selectedRoles: roles }, message: "Access saved" });
   } catch (error) {
     console.error("Error saving shift access:", error);

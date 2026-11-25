@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { History } from "lucide-react";
 import { Alert, Button, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Spinner } from "reactstrap";
 import { getDayStatusReasons, saveDayStatus } from "../../api/machineDayStatus.api";
+import RecordHistoryModal from "../AuditTrail/RecordHistoryModal";
 
 /**
  * Components/Production/NotRunningModal.jsx
@@ -11,6 +13,9 @@ import { getDayStatusReasons, saveDayStatus } from "../../api/machineDayStatus.a
  * machines still unfilled that day to mark the same way.
  *
  * target = { sheet, date, machine, machineLabel, others: [{ id, label }], existing? }
+ *
+ * Editing an existing mark also offers "History" (footer, left): who marked
+ * or changed it and when, from the audit trail (RecordHistoryModal).
  */
 const FALLBACK_REASONS = [
   { value: "holiday", label: "Holiday / plant off", kind: "planned" },
@@ -32,6 +37,7 @@ export default function NotRunningModal({ target, onClose, onSaved }) {
   const [alsoMachines, setAlsoMachines] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (cachedReasons) return;
@@ -46,6 +52,7 @@ export default function NotRunningModal({ target, onClose, onSaved }) {
     setRemarks(target?.existing?.remarks || "");
     setAlsoMachines([]);
     setError("");
+    setHistoryOpen(false);
   }, [target]);
 
   const others = target?.existing ? [] : target?.others || [];
@@ -140,11 +147,24 @@ export default function NotRunningModal({ target, onClose, onSaved }) {
         {error && <Alert color="danger" className="mb-0 mt-2 py-2">{error}</Alert>}
       </ModalBody>
       <ModalFooter className="flex-wrap gap-2">
+        {target?.existing && (
+          <Button type="button" color="link" className="me-auto px-0 d-inline-flex align-items-center gap-1 text-decoration-none" onClick={() => setHistoryOpen(true)} disabled={saving} title="Who marked or changed this and when">
+            <History size={14} /> History
+          </Button>
+        )}
         <Button color="light" onClick={onClose} disabled={saving}>Cancel</Button>
         <Button color="primary" onClick={save} disabled={saving || (!picked.length && !remarks.trim())}>
           {saving ? <Spinner size="sm" /> : alsoMachines.length ? `Save ${alsoMachines.length + 1} machines` : "Save"}
         </Button>
       </ModalFooter>
+      {target?.existing && (
+        <RecordHistoryModal
+          isOpen={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          title={`Not running · ${[target.machineLabel, dmy(target.date)].filter(Boolean).join(" · ")}`}
+          query={{ sheet: target.sheet, date: target.date, machine: target.machine || "" }}
+        />
+      )}
     </Modal>
   );
 }

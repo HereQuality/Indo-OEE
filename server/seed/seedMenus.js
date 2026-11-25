@@ -24,7 +24,7 @@ const Operator = require("../models/Operator");
 //   2. Dashboard                  (link — the process dashboards)
 //   3. Administration             (group: Menu Group, Menu Master, Company)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Processes, Machines, Parts, Operators, Vendors, Work Orders, OEE Review)
+//   5. Production                 (group: Processes, Machines, Parts, Operators, Vendors, Work Orders, OEE Review, Audit Trail)
 //   6. Data Entry                 (group: CNC, VMC, SPM — one entry per sheet)
 //   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
@@ -66,6 +66,11 @@ const PRODUCTION_MENUS = [
   // (server/utils/adminAccess.js); this row just puts it in the sidebar —
   // tick it in Manage Role for the Admin role.
   { menuName: "OEE Review", menuUrl: "/hqepl/production/oee-review", sequence: 7, icon: "ShieldAlert" },
+  // The whole audit log (who created / edited / deleted / unlocked / marked
+  // what, in every module), with filters and a CSV export
+  // (routes/auditTrail.routes.js). Full access roles see it without a tick;
+  // any other role needs its view box ticked in Manage Role.
+  { menuName: "Audit Trail", menuUrl: "/hqepl/production/audit-trail", sequence: 8, icon: "History" },
   // Dashboard and Data Entry are NOT listed here any more (they are
   // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
   // re-activate its retired row on every run.

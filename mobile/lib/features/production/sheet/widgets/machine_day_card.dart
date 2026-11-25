@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../audit_trail/record_history_sheet.dart' show showMarkHistory;
 import '../../shared/production_sheet_calc.dart';
 import '../sheet_controller.dart';
 import '../sheet_model.dart';
@@ -200,7 +202,9 @@ extension on MachineDayCard {
                     )
                   else
                     NotRunningSummary(mark: mark, keyId: group.key),
-                  if (canAct)
+                  // A mark's History (who marked / edited / undid it) shows
+                  // to everyone who can see the mark; the rest needs edit rights.
+                  if (canAct || mark != null)
                     Align(
                       alignment: Alignment.centerRight,
                       child: Wrap(
@@ -215,9 +219,10 @@ extension on MachineDayCard {
                                 ),
                                 AddEntryPill(key: ValueKey('add-${group.key}'), onPressed: onAdd!),
                               ]
-                            : !controller.canChangeMark(mark)
+                            : !canAct || !controller.canChangeMark(mark)
                             ? [
-                                Tooltip(
+                                _HistoryButton(key: ValueKey('nr-history-${group.key}'), controller: controller, group: group),
+                                if (canAct) Tooltip(
                                   message: 'Locked — it can only be changed on the day it was saved. Ask an Admin.',
                                   child: Row(
                                     key: ValueKey('nr-locked-${group.key}'),
@@ -231,6 +236,7 @@ extension on MachineDayCard {
                                 ),
                               ]
                             : [
+                                _HistoryButton(key: ValueKey('nr-history-${group.key}'), controller: controller, group: group),
                                 TextButton.icon(
                                   key: ValueKey('nr-edit-${group.key}'),
                                   onPressed: () => showNotRunningDialog(context, controller: controller, date: group.date, machineId: group.machineId, machineName: group.machineName, existing: mark),
@@ -254,6 +260,27 @@ extension on MachineDayCard {
       ),
     );
   }
+}
+
+/// "History": who marked / edited / undid this Not running mark, from the
+/// Audit Trail.
+class _HistoryButton extends StatelessWidget {
+  const _HistoryButton({super.key, required this.controller, required this.group});
+  final SheetController controller;
+  final SheetMachineDay group;
+
+  @override
+  Widget build(BuildContext context) => TextButton.icon(
+        onPressed: () => showMarkHistory(
+          context,
+          sheet: controller.dayStatus.sheet,
+          date: group.date,
+          machine: group.machineId,
+          title: 'Not running · ${group.machineName}',
+        ),
+        icon: const Icon(LucideIcons.history, size: 18),
+        label: const Text('History'),
+      );
 }
 
 /// "Not running · reason" + a planned / unplanned chip, the remarks and who

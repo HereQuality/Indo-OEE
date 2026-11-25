@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Item = require("../models/Item");
 const ItemLog = require("../models/ItemLog");
+const { recordAudit } = require("../utils/auditTrail");
 const Process = require("../models/Process");
 const {
   MAX_CYCLE_OPS,
@@ -170,6 +171,17 @@ const recordItemLog = async (req, action, before, after) => {
     }
     const part = after?._id ? after : before;
     await ItemLog.create({ item: part._id, ...partLabel(part), action, changes, actor: actorOf(req.user) });
+    // The same row in the app-wide audit trail (utils/auditTrail.js); a
+    // deactivate / restore is an update there, said so in the remark.
+    await recordAudit({
+      req,
+      entityType: "item",
+      entity: part._id,
+      label: [part.itemName, part.drawingNo].filter(Boolean).join(" · "),
+      action: action === "deactivate" || action === "restore" ? "update" : action,
+      changes,
+      remark: action === "deactivate" ? "Deactivated" : action === "restore" ? "Restored" : "",
+    });
   } catch (error) {
     console.error("Error recording item history:", error);
   }

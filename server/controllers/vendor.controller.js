@@ -14,6 +14,17 @@ const mongoose = require("mongoose");
 const Vendor = require("../models/Vendor");
 const Process = require("../models/Process");
 const { sendError, pageParams } = require("../utils/httpErrors");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a vendor: its processes by name.
+const VENDOR_FIELDS = { name: "Vendor", processes: "Processes", isActive: "Active" };
+const vendorView = async (v) => {
+  if (!v) return {};
+  const names = await nameMap(Process, [v.processes], "processName");
+  return { ...v, processes: (v.processes || []).map((p) => names[String(p)] || String(p)) };
+};
+const auditVendor = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "vendor", entity: (after || before)?._id, label: (after || before)?.name || "", action, before: await vendorView(before), after: await vendorView(after), fields: VENDOR_FIELDS, remark });
 
 // The request's processes as a de-duplicated id list, or { error }. Every id
 // must be a real process. Required (at least one) when `required` is set.
@@ -47,6 +58,7 @@ exports.createVendor = async (req, res) => {
       isActive: isActive !== undefined ? isActive : true,
     });
 
+    await auditVendor(req, "create", null, plain(created));
     res.status(201).json({ isOk: true, data: created, message: "Vendor created successfully" });
   } catch (error) {
     console.error("Error creating vendor:", error);
@@ -76,10 +88,12 @@ exports.updateVendor = async (req, res) => {
       update.processes = ids;
     }
 
+    const before = await Vendor.findById(vendorId).lean();
     const vendor = await Vendor.findOneAndUpdate({ _id: vendorId }, update, { new: true });
     if (!vendor) {
       return res.status(404).json({ isOk: false, message: "Vendor not found" });
     }
+    await auditVendor(req, "update", before, plain(vendor));
 
     res.status(200).json({ isOk: true, data: vendor, message: "Vendor updated successfully" });
   } catch (error) {
@@ -97,13 +111,16 @@ exports.deleteVendor = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Vendor not found" });
     }
 
+    const before = plain(vendor);
     if (vendor.isActive) {
       vendor.isActive = false;
       await vendor.save();
+      await auditVendor(req, "delete", before, plain(vendor), "Deactivated — the vendor is kept; a second delete removes it");
       return res.status(200).json({ isOk: true, message: "Vendor deactivated successfully" });
     }
 
     await Vendor.findByIdAndDelete(vendorId);
+    await auditVendor(req, "delete", before, null, "Removed");
     return res.status(200).json({ isOk: true, message: "Vendor deleted successfully" });
   } catch (error) {
     console.error("Error deleting vendor:", error);

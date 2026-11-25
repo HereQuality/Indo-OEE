@@ -52,12 +52,13 @@ test("a complete entry has no errors", () => {
 });
 
 test("required fields", () => {
-  const errors = validateVmcEntry(
-    entry({ operator: "", itemName: "", programTimeMin: "", pcsPerProgram: "", actualQty: "", okQty: "", plannedOperatorShiftHours: "" }),
-  );
-  for (const key of ["operator", "itemName", "programTimeMin", "pcsPerProgram", "actualQty", "okQty", "plannedOperatorShiftHours"]) {
+  const errors = validateVmcEntry(entry({ operator: "", itemName: "", actualQty: "", okQty: "", plannedOperatorShiftHours: "" }));
+  for (const key of ["operator", "itemName", "actualQty", "okQty", "plannedOperatorShiftHours"]) {
     assert.ok(errors[key], `${key} should be required`);
   }
+  // Program Time / No. of Piece In One Program live on the Part (Production › Parts):
+  // an entry whose Part lacks them can't be saved until the Part is fixed.
+  assert.match(validateVmcEntry(entry({ programTimeMin: "", pcsPerProgram: "" })).itemName, /no Program Time/);
 });
 
 test("Actual Quantity can't be more than Ideal Quantity", () => {
@@ -85,10 +86,11 @@ test('"Other" in the split needs a remark', () => {
   assert.equal(validateVmcEntry(entry({ ...other, rejectOtherRemark: "scratched" })).rejectOtherRemark, undefined);
 });
 
-test("pieces per program is a whole number, program time more than 0", () => {
-  assert.ok(validateVmcEntry(entry({ pcsPerProgram: "2.5" })).pcsPerProgram);
-  assert.ok(validateVmcEntry(entry({ pcsPerProgram: "0" })).pcsPerProgram);
-  assert.ok(validateVmcEntry(entry({ programTimeMin: "0" })).programTimeMin);
+test("a Part with 0 pieces gives no cycle time, so the entry points at the Part", () => {
+  // (Program Time > 0 and at least 1 piece are enforced where they are typed: Production › Parts.)
+  assert.match(validateVmcEntry(entry({ pcsPerProgram: "0" })).itemName, /no Program Time/);
+  // Whole-number pieces are enforced in Parts; a fractional value still yields a usable cycle here.
+  assert.equal(programCycleSec(entry({ pcsPerProgram: "2.5" })), 144);
 });
 
 test("stoppage has to fit the Machine Shift, and Others needs a remark", () => {
@@ -140,14 +142,16 @@ test("the full VMC formula set on a worked two-entry day (one overnight)", () =>
   assert.equal(vmcRowCalc(b).shiftHours, 4);
 
   const [da, db] = vmcDayCalc([b, a]); // order given doesn't matter
-  close(da.unutilized, (12 - (4 - 15 / 60)) / 11); // this entry's own figure …
-  close(db.unutilized, (12 - 4) / 11); // … not blended with the other
+  // Unutilized is the machine's whole day: Shift 4 + 4 = 8 h, Lunch 15 min — the same on both entries.
+  close(da.unutilized, (12 - (8 - 15 / 60)) / 11);
+  close(db.unutilized, da.unutilized);
   // Day: available 4.75 + 4, effective 3.5 + 3, stoppage 30, lunch 15, setup 10
-  assert.equal(da.unreportedMin, 15); // a: max(285, 240) − 240 − 30; b: 0
+  // Unreported = Planned − Effective − Stoppage per entry, summed: a 285 − 210 − 30 = 45; b 240 − 180 = 60.
+  close(da.unreportedMin, 105);
   close(da.oeeLosses, 6.5 / (8.75 - 30 / 60));
   close(da.oeeLunch, 6.5 / (8.75 - 15 / 60));
   close(da.oeeLunchCot, 6.5 / (8.75 - 15 / 60 - 10 / 60));
-  for (const k of ["unreportedMin", "oeeLosses", "oeeLunch", "oeeLunchCot"]) assert.equal(da[k], db[k]);
+  for (const k of ["unreportedMin", "oeeLosses", "oeeLunch", "oeeLunchCot", "unutilized"]) assert.equal(da[k], db[k]);
 });
 
 test("a process is VMC when linked to the VMC page — or, while unlinked, when it is named VMC", () => {

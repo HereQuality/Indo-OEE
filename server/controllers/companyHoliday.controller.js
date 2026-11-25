@@ -1,5 +1,14 @@
 const CompanyHoliday = require("../models/CompanyHoliday");
 const WeeklyOffSetting = require("../models/WeeklyOffSetting");
+const { recordAudit, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a holiday: its date as a day.
+const HOLIDAY_FIELDS = { name: "Holiday", date: "Date", isRecurringYearly: "Every year", isActive: "Active" };
+const holidayView = (h) => (h ? { ...plain(h), date: h.date ? new Date(h.date).toISOString().slice(0, 10) : null } : {});
+const auditHoliday = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "holiday", entity: (after || before)?._id, label: (after || before)?.name || "", action, before: holidayView(before), after: holidayView(after), fields: HOLIDAY_FIELDS, remark });
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const dayNames = (days = []) => days.map((d) => DAY_NAMES[d] || d).join(", ");
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -24,6 +33,7 @@ exports.createHoliday = async (req, res) => {
       date: new Date(`${date}T00:00:00.000Z`),
       isRecurringYearly: !!isRecurringYearly,
     });
+    await auditHoliday(req, "create", null, holiday);
     res.status(201).json({ isOk: true, data: holiday, message: "Holiday added" });
   } catch (error) {
     console.error("Error creating company holiday:", error);
@@ -46,8 +56,10 @@ exports.updateHoliday = async (req, res) => {
     }
     if (isRecurringYearly !== undefined) data.isRecurringYearly = !!isRecurringYearly;
 
+    const before = await CompanyHoliday.findById(holidayId).lean();
     const holiday = await CompanyHoliday.findByIdAndUpdate(holidayId, data, { new: true, runValidators: true });
     if (!holiday) return res.status(404).json({ isOk: false, message: "Holiday not found" });
+    await auditHoliday(req, "update", before, holiday);
     res.status(200).json({ isOk: true, data: holiday, message: "Holiday updated" });
   } catch (error) {
     console.error("Error updating company holiday:", error);
@@ -59,6 +71,7 @@ exports.deleteHoliday = async (req, res) => {
   try {
     const holiday = await CompanyHoliday.findByIdAndDelete(req.params.holidayId);
     if (!holiday) return res.status(404).json({ isOk: false, message: "Holiday not found" });
+    await auditHoliday(req, "delete", holiday, null);
     res.status(200).json({ isOk: true, message: "Holiday deleted" });
   } catch (error) {
     console.error("Error deleting company holiday:", error);
@@ -96,8 +109,10 @@ exports.updateWeeklyOff = async (req, res) => {
       return res.status(400).json({ isOk: false, message: "At least one day of the week must stay a working day — all 7 can't be Weekly Off" });
     }
     const doc = await getOrCreateWeeklyOff();
+    const before = [...(doc.weeklyOffDays || [])];
     doc.weeklyOffDays = [...new Set(weeklyOffDays)].sort();
     await doc.save();
+    await recordAudit({ req, entityType: "weeklyOff", entity: doc._id, label: "Weekly Off", action: "setting", changes: [{ field: "weeklyOffDays", label: "Weekly Off days", from: dayNames(before) || null, to: dayNames(doc.weeklyOffDays) || null }].filter((c) => c.from !== c.to) });
     res.status(200).json({ isOk: true, data: { weeklyOffDays: doc.weeklyOffDays }, message: "Weekly Off updated" });
   } catch (error) {
     console.error("Error updating weekly off:", error);

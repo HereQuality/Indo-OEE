@@ -1,4 +1,9 @@
 const MenuGroupMaster = require("../models/MenuGroupMaster");
+const { recordAudit } = require("../utils/auditTrail");
+
+const GROUP_FIELDS = { menuGroupName: "Menu Group", sequence: "Sequence", isActive: "Active", isLink: "Is a link", menuUrl: "URL", icon: "Icon", portal: "Portal" };
+const auditGroup = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "menuGroup", entity: (after || before)?._id, label: (after || before)?.menuGroupName || "", action, before, after, fields: GROUP_FIELDS, remark });
 
 // A message when the name is blank (spaces only count as blank) or the
 // sequence isn't a number of 0 or more; null when both are fine. Without it a
@@ -29,6 +34,7 @@ exports.createMenuGroup = async (req, res) => {
       portal: portal || "Both",
     });
 
+    await auditGroup(req, "create", null, menuGroup);
     res.status(201).json({
       isOk: true,
       message: "Menu Group created successfully",
@@ -92,6 +98,7 @@ exports.updateMenuGroup = async (req, res) => {
     const invalid = menuGroupError(req.body);
     if (invalid) return res.status(400).json({ isOk: false, message: invalid });
 
+    const before = await MenuGroupMaster.findById(menuGroupId).lean();
     const menuGroup = await MenuGroupMaster.findByIdAndUpdate(
       menuGroupId,
       {
@@ -105,6 +112,7 @@ exports.updateMenuGroup = async (req, res) => {
       },
       { new: true }
     );
+    if (menuGroup) await auditGroup(req, "update", before, menuGroup);
 
     res.status(200).json({
       isOk: true,
@@ -130,10 +138,12 @@ exports.deleteMenuGroup = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Menu Group not found" });
     }
 
+    const before = menuGroup.toObject();
     if (menuGroup.isActive) {
       // Soft Delete
       menuGroup.isActive = false;
       await menuGroup.save();
+      await auditGroup(req, "delete", before, menuGroup, "Deactivated — the group is kept; a second delete removes it");
       return res.status(200).json({
         isOk: true,
         message: "Menu Group deactivated successfully",
@@ -142,6 +152,7 @@ exports.deleteMenuGroup = async (req, res) => {
     } else {
       // Hard Delete
       await MenuGroupMaster.findByIdAndDelete(menuGroupId);
+      await auditGroup(req, "delete", before, null, "Removed");
       return res.status(200).json({
         isOk: true,
         message: "Menu Group deleted successfully",

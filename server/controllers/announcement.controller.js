@@ -2,6 +2,7 @@
 
 const { getOrCreateAnnouncement } = require("../models/AnnouncementMode");
 const { getSocketIo } = require("../socket");
+const { recordAudit } = require("../utils/auditTrail");
 
 // End-of-day for `endDate` so the announcement stays visible through the
 // whole day an admin picked, not just up to midnight.
@@ -70,6 +71,7 @@ exports.updateAnnouncement = async (req, res) => {
     }
 
     const doc = await getOrCreateAnnouncement();
+    const before = serialize(doc);
 
     const effectiveStart = parsedStart !== undefined ? parsedStart : doc.startDate;
     const effectiveEnd = parsedEnd !== undefined ? parsedEnd : doc.endDate;
@@ -88,6 +90,7 @@ exports.updateAnnouncement = async (req, res) => {
     await doc.save();
 
     const payload = serialize(doc);
+    await recordAudit({ req, entityType: "announcement", entity: doc._id, label: "Announcement", action: "setting", before, after: payload, fields: { isActive: "On", message: "Message", startDate: "From", endDate: "To" } });
 
     const io = getSocketIo();
     if (io) io.emit("announcement:update", payload);

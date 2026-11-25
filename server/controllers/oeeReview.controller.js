@@ -217,7 +217,7 @@ exports.decide = async (req, res) => {
       flagged: entry.review.flagged,
       remark,
       actor,
-    });
+    }, req);
 
     if (decision === "rejected") await logEntryUnlock({ sheet, req, entry: updated, remark: FIX_REMARK });
 

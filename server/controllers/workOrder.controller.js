@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const WorkOrder = require("../models/WorkOrder");
 const Item = require("../models/Item");
 const VmcEntry = require("../models/VmcEntry");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
 
 /**
  * controllers/workOrder.controller.js
@@ -60,6 +61,16 @@ const withProgress = async (list) => {
 
 const text = (v) => (v === undefined || v === null ? "" : String(v).trim());
 
+// The audit trail's view of a work order: its part by name, its dispatch date as a day.
+const WO_FIELDS = { workOrderNo: "Work Order No.", item: "Part", partDescription: "Part Description", customerName: "Customer", orderQty: "Quantity", dispatchDate: "Dispatch Date", remarks: "Remarks", isActive: "Active" };
+const workOrderView = async (w) => {
+  if (!w) return {};
+  const names = await nameMap(Item, [w.item], "itemName");
+  return { ...w, item: w.item ? names[String(w.item)] || String(w.item) : null, dispatchDate: w.dispatchDate ? new Date(w.dispatchDate).toISOString().slice(0, 10) : null };
+};
+const auditWorkOrder = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "workOrder", entity: (after || before)?._id, label: (after || before)?.workOrderNo || "", action, before: await workOrderView(before), after: await workOrderView(after), fields: WO_FIELDS, remark });
+
 // The part a request names has to exist; returns a message when it doesn't.
 const itemError = async (item) => {
   if (!item || !mongoose.isValidObjectId(item) || !(await Item.exists({ _id: item }))) return "Part not found";
@@ -116,6 +127,7 @@ exports.createWorkOrder = async (req, res) => {
     const { error, data } = await buildWorkOrder(req.body);
     if (error) return res.status(400).json({ isOk: false, message: error });
     const workOrder = await WorkOrder.create(data);
+    await auditWorkOrder(req, "create", null, plain(workOrder));
     res.status(201).json({ isOk: true, data: workOrder, message: "Work order created successfully" });
   } catch (error) {
     console.error("Error creating work order:", error);
@@ -127,11 +139,13 @@ exports.updateWorkOrder = async (req, res) => {
   try {
     const { error, data } = await buildWorkOrder(req.body);
     if (error) return res.status(400).json({ isOk: false, message: error });
+    const before = mongoose.isValidObjectId(req.params.workOrderId) ? await WorkOrder.findById(req.params.workOrderId).lean() : null;
     const workOrder = await WorkOrder.findByIdAndUpdate(req.params.workOrderId, data, {
       new: true,
       runValidators: true,
     });
     if (!workOrder) return res.status(404).json({ isOk: false, message: "Work order not found" });
+    await auditWorkOrder(req, "update", before, plain(workOrder));
     res.status(200).json({ isOk: true, data: workOrder, message: "Work order updated successfully" });
   } catch (error) {
     console.error("Error updating work order:", error);
@@ -145,12 +159,15 @@ exports.deleteWorkOrder = async (req, res) => {
     const workOrder = await WorkOrder.findById(req.params.workOrderId);
     if (!workOrder) return res.status(404).json({ isOk: false, message: "Work order not found" });
 
+    const before = plain(workOrder);
     if (workOrder.isActive) {
       workOrder.isActive = false;
       await workOrder.save();
+      await auditWorkOrder(req, "delete", before, plain(workOrder), "Deactivated — the work order is kept; a second delete removes it");
       return res.status(200).json({ isOk: true, message: "Work order deactivated successfully" });
     }
     await WorkOrder.findByIdAndDelete(workOrder._id);
+    await auditWorkOrder(req, "delete", before, null, "Removed");
     res.status(200).json({ isOk: true, message: "Work order deleted successfully" });
   } catch (error) {
     console.error("Error deleting work order:", error);

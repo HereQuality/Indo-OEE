@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../features/audit_trail/record_history_sheet.dart' show showEntryHistory;
 import '../../../../core/utils/alerts.dart';
 import '../../../../core/widgets/states.dart';
 import '../../entry_form/entry_form_toast.dart';
@@ -88,6 +90,9 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
   static const _saveTimeout = Duration(seconds: 25);
 
   bool get _isEdit => widget.row != null;
+
+  /// The saved record's id ("" when adding): what the History button looks up.
+  String get _savedId => _isEdit ? '${widget.row!['_id'] ?? ''}' : '';
 
   // One map per machine block (immutable updates: a change replaces the block's map).
   late List<Map<String, dynamic>> _entries;
@@ -741,6 +746,14 @@ class _EntryEditorScreenState extends State<EntryEditorScreen> {
           ),
           title: Text(_isEdit ? widget.spec.editTitle : widget.spec.addTitle),
           actions: [
+            // Who changed this saved entry and when (the Audit Trail of this record).
+            if (_savedId.isNotEmpty)
+              TextButton.icon(
+                key: const ValueKey('entry-history'),
+                onPressed: () => showEntryHistory(context, entityId: _savedId),
+                icon: const Icon(LucideIcons.history, size: 18),
+                label: const Text('History'),
+              ),
             if (showClear)
               IconButton(
                 tooltip: 'Clear form',

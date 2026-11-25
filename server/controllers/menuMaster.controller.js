@@ -1,6 +1,18 @@
 const MenuMaster = require("../models/MenuMaster");
 const MenuGroupMaster = require("../models/MenuGroupMaster");
 const OperatorRoles = require("../models/OperatorRoles");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a menu: its group and parent by name.
+const MENU_FIELDS = { menuName: "Menu", menuGroup: "Menu Group", menuUrl: "URL", sequence: "Sequence", isActive: "Active", isParent: "Is a parent", parentMenu: "Parent menu", icon: "Icon" };
+const menuView = async (m) => {
+  if (!m) return {};
+  const o = plain(m);
+  const [groups, parents] = await Promise.all([nameMap(MenuGroupMaster, [o.menuGroup], "menuGroupName"), nameMap(MenuMaster, [o.parentMenu], "menuName")]);
+  return { ...o, menuGroup: o.menuGroup ? groups[String(o.menuGroup)] || String(o.menuGroup) : null, parentMenu: o.parentMenu ? parents[String(o.parentMenu)] || String(o.parentMenu) : null };
+};
+const auditMenu = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "menu", entity: (after || before)?._id, label: (after || before)?.menuName || "", action, before: await menuView(before), after: await menuView(after), fields: MENU_FIELDS, remark });
 
 exports.createMenuMaster = async (req, res) => {
   try {
@@ -18,6 +30,7 @@ exports.createMenuMaster = async (req, res) => {
       icon: icon || "",
     });
 
+    await auditMenu(req, "create", null, menuMaster);
     res.status(201).json({
       isOk: true,
       message: "Menu master created successfully",
@@ -57,6 +70,7 @@ exports.updateMenuMaster = async (req, res) => {
     const { menuName, menuGroup, menuUrl, sequence, isActive, isParent, parentMenu, icon } = req.body;
     console.log("Received updateMenuMaster data:", req.body);
 
+    const before = await MenuMaster.findById(menuMasterId).lean();
     const menuMaster = await MenuMaster.findByIdAndUpdate(
       menuMasterId,
       {
@@ -71,6 +85,7 @@ exports.updateMenuMaster = async (req, res) => {
       },
       { new: true }
     );
+    if (menuMaster) await auditMenu(req, "update", before, menuMaster);
 
     res.status(200).json({
       isOk: true,
@@ -97,10 +112,12 @@ exports.deleteMenuMaster = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Menu master not found" });
     }
 
+    const before = menuMaster.toObject();
     if (menuMaster.isActive) {
       // Soft Delete
       menuMaster.isActive = false;
       await menuMaster.save();
+      await auditMenu(req, "delete", before, menuMaster, "Deactivated — the menu is kept; a second delete removes it");
       return res.status(200).json({
         isOk: true,
         message: "Menu master deactivated successfully",
@@ -109,6 +126,7 @@ exports.deleteMenuMaster = async (req, res) => {
     } else {
       // Hard Delete
       await MenuMaster.findByIdAndDelete(menuMasterId);
+      await auditMenu(req, "delete", before, null, "Removed");
       return res.status(200).json({
         isOk: true,
         message: "Menu master deleted successfully",

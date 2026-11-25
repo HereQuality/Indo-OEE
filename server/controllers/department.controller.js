@@ -1,4 +1,9 @@
 const Department = require("../models/Department");
+const { recordAudit, plain } = require("../utils/auditTrail");
+
+const DEPT_FIELDS = { departmentName: "Department", departmentCode: "Code", isActive: "Active", remark: "Remark" };
+const auditDepartment = (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "department", entity: (after || before)?._id, label: (after || before)?.departmentName || "", action, before, after, fields: DEPT_FIELDS, remark });
 
 // Create Department
 exports.createDepartment = async (req, res) => {
@@ -17,6 +22,7 @@ exports.createDepartment = async (req, res) => {
       remark,
     });
 
+    await auditDepartment(req, "create", null, newDepartment);
     res.status(201).json({
       isOk: true,
       data: newDepartment,
@@ -39,6 +45,7 @@ exports.updateDepartment = async (req, res) => {
       return res.status(400).json({ isOk: false, message: "Department name is required" });
     }
 
+    const before = await Department.findById(departmentId).lean();
     const department = await Department.findOneAndUpdate(
       { _id: departmentId },
       req.body,
@@ -48,6 +55,7 @@ exports.updateDepartment = async (req, res) => {
     if (!department) {
       return res.status(404).json({ isOk: false, message: "Department not found" });
     }
+    await auditDepartment(req, "update", before, department);
 
     res.status(200).json({
       isOk: true,
@@ -69,10 +77,12 @@ exports.deleteDepartment = async (req, res) => {
       return res.status(404).json({ isOk: false, message: "Department not found" });
     }
 
+    const before = plain(department);
     if (department.isActive) {
       // Soft Delete
       department.isActive = false;
       await department.save();
+      await auditDepartment(req, "delete", before, department, "Deactivated — the department is kept; a second delete removes it");
       return res.status(200).json({
         isOk: true,
         message: "Department deactivated successfully",
@@ -80,6 +90,7 @@ exports.deleteDepartment = async (req, res) => {
     } else {
       // Hard Delete
       await Department.findByIdAndDelete(departmentId);
+      await auditDepartment(req, "delete", before, null, "Removed");
       return res.status(200).json({
         isOk: true,
         message: "Department deleted successfully",

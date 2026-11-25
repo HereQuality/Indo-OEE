@@ -2,6 +2,7 @@
 
 const { getOrCreateMaintenance } = require("../models/MaintenanceMode");
 const { getSocketIo } = require("../socket");
+const { recordAudit } = require("../utils/auditTrail");
 
 const serialize = (doc) => ({
   isActive: !!doc.isActive,
@@ -38,6 +39,7 @@ exports.updateMaintenance = async (req, res) => {
     }
 
     const doc = await getOrCreateMaintenance();
+    const before = serialize(doc);
 
     if (isActive !== undefined) doc.isActive = !!isActive;
     if (message !== undefined) doc.message = String(message || "").slice(0, 500);
@@ -49,6 +51,7 @@ exports.updateMaintenance = async (req, res) => {
     await doc.save();
 
     const payload = serialize(doc);
+    await recordAudit({ req, entityType: "maintenance", entity: doc._id, label: "Maintenance Mode", action: "setting", before, after: payload, fields: { isActive: "On", message: "Message", scheduledAt: "Scheduled for" } });
 
     const io = getSocketIo();
     if (io) io.emit("maintenance:update", payload);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../features/admin/company_management_screen.dart';
+import '../features/audit_trail/audit_trail_screen.dart';
+import '../features/audit_trail/record_history_sheet.dart' show auditTrailPath;
 import '../features/admin/menu_group_screen.dart';
 import '../features/admin/menu_master_screen.dart';
 import '../features/employee_management/company_holidays_screen.dart';
@@ -120,6 +122,9 @@ class AppRoutes {
     // KPI (with its graph) and Company Level Objective — the last Data Entry pages.
     AppRoute(path: '/production/kpi', title: 'KPI', builder: (_) => const KpiScreen()),
     AppRoute(path: '/production/company-objective', title: 'Company Level Objective', builder: (_) => const CompanyObjectiveScreen()),
+    // Audit Trail — who created / edited / deleted / unlocked / marked what, and
+    // when. Open to whoever Manage Role ticks it for (no role lock-down).
+    AppRoute(path: auditTrailPath, title: 'Audit Trail', builder: (_) => const AuditTrailScreen()),
 
     // Other.
     AppRoute(path: '/teams', title: 'Teams', builder: (_) => const TeamsBoardScreen()),

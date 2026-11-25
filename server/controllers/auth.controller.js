@@ -5,6 +5,41 @@ const crypto = require('crypto');
 const OperatorRoles = require('../models/OperatorRoles');
 const MenuGroupMaster = require('../models/MenuGroupMaster');
 const MenuMaster = require('../models/MenuMaster');
+const { recordAudit } = require('../utils/auditTrail');
+
+// ── Audit trail ───────────────────────────────────────────────────────
+// Every sign-in, and every refused one, goes to the audit trail (utils/
+// auditTrail.js). A refused one says why in one word — never how many
+// attempts are left, and never the password typed. refresh-session is not
+// logged: the app renews its token on every open.
+const actorFor = (account, roleType) => ({
+  id: account._id,
+  model: roleType === 'Operator' ? 'Operator' : 'User',
+  name: account.employeeName || account.name || account.username || '',
+  role: roleType === 'Operator' ? account.roleId?.roleName || '' : 'Super Admin',
+});
+const logLogin = (req, account, roleType, { remember, client }) =>
+  recordAudit({
+    req,
+    entityType: 'auth',
+    entity: account._id,
+    label: account.username || account.email || account.emailOffice || '',
+    action: 'login',
+    actor: actorFor(account, roleType),
+    remark: [client === 'app' ? 'App' : 'Web', remember ? 'Remember me' : ''].filter(Boolean).join(' · '),
+  });
+const logLoginFailed = (req, loginId, account, roleType, reason) =>
+  recordAudit({
+    req,
+    entityType: 'auth',
+    entity: account?._id || null,
+    label: String(loginId || ''),
+    action: 'loginFailed',
+    actor: account ? actorFor(account, roleType) : { name: String(loginId || '') },
+    remark: reason,
+  });
+exports._logLoginFailed = logLoginFailed;
+exports._logLogin = logLogin;
 
 // Helpers
 const MAX_LOGIN_ATTEMPTS = 3;
@@ -119,11 +154,13 @@ exports.login = async (req, res) => {
     }
 
     if (!account) {
+      await logLoginFailed(req, loginId, null, null, 'Unknown username');
       return res.status(401).json({ status: 'fail', message: 'Incorrect username or password' });
     }
 
     // 3. Check if account is blocked
     if (account.isBlocked) {
+      await logLoginFailed(req, loginId, account, roleType, 'Blocked');
       return res.status(403).json({
         status: 'fail',
         message: 'Your account has been blocked.'
@@ -133,6 +170,7 @@ exports.login = async (req, res) => {
     // Deleting an employee only deactivates them (isActive false), so the
     // record — and its password — is still here and has to be refused.
     if (account.isActive === false) {
+      await logLoginFailed(req, loginId, account, roleType, 'Inactive');
       return res.status(403).json({
         status: 'fail',
         message: 'Your account is inactive. Please contact your administrator.'
@@ -141,6 +179,7 @@ exports.login = async (req, res) => {
 
     // 4. Check if account is locked
     if (account.isLocked) {
+      await logLoginFailed(req, loginId, account, roleType, 'Account locked');
       const remainingMs = account.lockUntil - Date.now();
       const remainingTime = Math.ceil(remainingMs / 60000);
       return res.status(423).json({ 
@@ -166,6 +205,7 @@ exports.login = async (req, res) => {
       }
 
       await account.save({ validateBeforeSave: false });
+      await logLoginFailed(req, loginId, account, roleType, account.lockUntil && account.lockUntil > Date.now() ? 'Wrong password — account locked' : 'Wrong password');
 
       // Same status and body as an unknown username: no "attempts left" count,
       // which only an existing account could return (the attempts are still counted above).
@@ -180,6 +220,7 @@ exports.login = async (req, res) => {
     account.lockUntil = undefined;
     account.lastLogin = Date.now();
     await account.save({ validateBeforeSave: false });
+    await logLogin(req, account, roleType, { remember, client });
 
     await sendToken(account, roleType, 200, res, remember, client);
 
@@ -271,6 +312,7 @@ exports.resetPassword = async (req, res) => {
     user.loginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
+    await recordAudit({ req, entityType: 'auth', entity: user._id, label: user.username || user.email || '', action: 'passwordReset', actor: actorFor(user, user.roleType), remark: 'By email OTP' });
 
     res.status(200).json({ status: 'success', message: 'Password reset successfully.' });
   } catch (err) {

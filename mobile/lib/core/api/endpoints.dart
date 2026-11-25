@@ -74,6 +74,11 @@ class Endpoints {
   // Admin review of entries over 100% (GET /access → { canReview }).
   static const oeeReviewAccess = '$v1/oee-review/access';
 
+  // Audit Trail — who created / edited / deleted / unlocked / marked what, and when.
+  static const auditTrail = '$v1/audit-trail';
+  static const auditTrailFilters = '$v1/audit-trail/filters';
+  static const auditTrailExportCsv = '$v1/audit-trail/export.csv';
+
   // KPI (department objectives with their months) and Company Level Objective.
   static const kpiObjectives = '$v1/kpi/objectives';
   static String kpiObjectiveById(String id) => '$v1/kpi/objectives/$id';

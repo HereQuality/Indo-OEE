@@ -183,6 +183,14 @@ export const ENDPOINTS = {
         REOPEN: (sheet, id) => `${V1}/oee-review/${sheet}/${id}/reopen`,
         SHIFT: (sheet, id) => `${V1}/oee-review/${sheet}/${id}/shift`,
     },
+    // Audit Trail — every change in the software, who made it and when
+    // (routes/auditTrail.routes.js). FILTERS lists the modules / actions /
+    // users to filter by; EXPORT streams the filtered rows as a CSV file.
+    AUDIT_TRAIL: {
+        BASE: `${V1}/audit-trail`,
+        FILTERS: `${V1}/audit-trail/filters`,
+        EXPORT: `${V1}/audit-trail/export.csv`,
+    },
     POWDER_SHEET: {
         BASE: `${V1}/powder-coating-sheet`,
         ROW: `${V1}/powder-coating-sheet/row`,

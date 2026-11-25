@@ -3,6 +3,11 @@
 const { getOrCreateSummaryMail, EMAIL_RE } = require("../models/SummaryMailSetting");
 const { isConfigured } = require("../services/mailer");
 const { sendSummary, dailyPeriod, weeklyPeriod, istNow } = require("../jobs/summaryMail");
+const { recordAudit } = require("../utils/auditTrail");
+
+const MAIL_FIELDS = { recipients: "Recipients", dailyEnabled: "Daily summary", weeklyEnabled: "Weekly summary", dailySendAt: "Daily send time", weeklySendAt: "Weekly send time", weeklyDay: "Weekly day" };
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const mailView = (doc) => ({ recipients: [...(doc.recipients || [])], dailyEnabled: doc.dailyEnabled, weeklyEnabled: doc.weeklyEnabled, dailySendAt: doc.dailySendAt, weeklySendAt: doc.weeklySendAt, weeklyDay: DAY_NAMES[doc.weeklyDay] ?? doc.weeklyDay });
 
 /**
  * controllers/summaryMail.controller.js
@@ -51,6 +56,7 @@ exports.updateSummaryMail = async (req, res) => {
   try {
     const { recipients, dailyEnabled, weeklyEnabled, dailySendAt, weeklySendAt, weeklyDay } = req.body;
     const doc = await getOrCreateSummaryMail();
+    const before = mailView(doc);
     if (recipients !== undefined) {
       const parsed = parseRecipients(recipients);
       if (parsed.error) return res.status(400).json({ isOk: false, message: parsed.error });
@@ -63,6 +69,7 @@ exports.updateSummaryMail = async (req, res) => {
     if (weeklyDay !== undefined) doc.weeklyDay = Number(weeklyDay);
     doc.updatedByName = actorName(req.user);
     await doc.save();
+    await recordAudit({ req, entityType: "summaryMail", entity: doc._id, label: "Summary email", action: "setting", before, after: mailView(doc), fields: MAIL_FIELDS });
     res.status(200).json({ isOk: true, data: serialize(doc), message: "Summary email settings saved" });
   } catch (error) {
     res.status(400).json({ isOk: false, message: error.message });
@@ -87,6 +94,7 @@ exports.sendSummaryNow = async (req, res) => {
     if (!recipients.length) return res.status(400).json({ isOk: false, message: "Add at least one recipient first" });
     const today = istNow().date;
     const result = await sendSummary(kind, kind === "weekly" ? weeklyPeriod(today) : dailyPeriod(today), recipients);
+    await recordAudit({ req, entityType: "summaryMail", entity: doc._id, label: "Summary email", action: "sent", remark: `${kind} to ${recipients.join(", ")}` });
     res.status(200).json({ isOk: true, data: result, message: `${kind === "weekly" ? "Weekly" : "Daily"} summary sent to ${recipients.join(", ")}` });
   } catch (error) {
     res.status(400).json({ isOk: false, message: error.message });

@@ -7,6 +7,7 @@ const { STOPPAGE_KEYS } = require("../models/ProductionEntry");
 const { CYCLE_OP_FIELDS, SPM_OP_FIELDS, RIVET_OP_FIELDS, SPM_REFERENCE_FIELDS } = require("../models/Item");
 const { entryMetrics, metricsOver100, dayOeeFor, ownerFieldOf, METRIC_LABELS } = require("./oeeMetrics");
 const { actorOf, adminRecipients } = require("./adminAccess");
+const { requestMeta, searchText, MODULE_LABELS } = require("./auditTrail");
 const { createNotificationForMany } = require("../services/notification.service");
 
 /**
@@ -419,8 +420,13 @@ const withAuthors = async (sheet, rows) => {
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 const overText = (over) => over.map((f) => `${METRIC_LABELS[f.metric]} ${pct(f.value)}`).join(", ");
 
-const write = (row) =>
-  AuditLog.create(row).catch((error) => console.error("Error writing audit log:", error));
+// Writes one row, stamped with its module, which client sent the request
+// (web / app) and its address, and the text a person may search it by.
+const write = (row, req) => {
+  const full = { module: MODULE_LABELS[row.entityType] || "", ...requestMeta(req), ...row };
+  full.search = searchText(full);
+  return AuditLog.create(full).catch((error) => console.error("Error writing audit log:", error));
+};
 
 const notifyFlagged = async (req, label, over, sheet, entryId, date) => {
   try {
@@ -455,12 +461,12 @@ const logEntrySave = async ({ sheet, req, before, after, fields, review }) => {
       actor: await actorOf(req),
     };
     const changes = diff(sheet, ["date", "machine", ...fields], before, after, names);
-    if (!before || changes.length) await write({ ...base, action: before ? "update" : "create", changes, metrics: review?.oee || {} });
+    if (!before || changes.length) await write({ ...base, action: before ? "update" : "create", changes, metrics: review?.oee || {} }, req);
     if (review?.transition === "flagged") {
-      await write({ ...base, action: "flagged", metrics: review.oee, flagged: review.over, remark: `Over 100%: ${overText(review.over)}` });
+      await write({ ...base, action: "flagged", metrics: review.oee, flagged: review.over, remark: `Over 100%: ${overText(review.over)}` }, req);
       notifyFlagged(req, base.label, review.over, sheet, after._id, base.date);
     } else if (review?.transition === "cleared") {
-      await write({ ...base, action: "cleared", metrics: review.oee, remark: "Back at or under 100% after an edit — review no longer needed" });
+      await write({ ...base, action: "cleared", metrics: review.oee, remark: "Back at or under 100% after an edit — review no longer needed" }, req);
     }
   } catch (error) {
     console.error("Error logging entry save:", error);
@@ -483,7 +489,7 @@ const logEntryDelete = async ({ sheet, req, before, fields }) => {
       changes: diff(sheet, ["date", "machine", ...fields], before, {}, names),
       metrics: before.oee || {},
       actor: await actorOf(req),
-    });
+    }, req);
   } catch (error) {
     console.error("Error logging entry delete:", error);
   }
@@ -504,7 +510,7 @@ const logEntryUnlock = async ({ sheet, req, entry, remark = "Unlocked for 24 hou
       action: "unlocked",
       remark,
       actor: await actorOf(req),
-    });
+    }, req);
   } catch (error) {
     console.error("Error logging entry unlock:", error);
   }

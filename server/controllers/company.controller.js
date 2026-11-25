@@ -1,6 +1,11 @@
 const Company = require("../models/Company");
 const mongoose = require("mongoose");
 const { deleteLocalFile } = require("../utils/fileUrl");
+const { recordAudit, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of the company: the logo / favicon as "set" or blank, not a path.
+const COMPANY_FIELDS = { name: "Company name", logo: "Logo", favicon: "Favicon" };
+const companyView = (c) => (c ? { name: c.name, logo: c.logo ? "Uploaded" : null, favicon: c.favicon ? "Uploaded" : null } : {});
 
 // Get the single global company configuration
 exports.getCompanyDetails = async (req, res) => {
@@ -46,12 +51,16 @@ exports.updateCompany = async (req, res) => {
       updateData.favicon = '';
     }
 
+    const before = plain(company);
     if (!company) {
       company = new Company(updateData);
       await company.save();
     } else {
       company = await Company.findByIdAndUpdate(company._id, updateData, { new: true });
     }
+    // A re-uploaded logo keeps reading "Uploaded", so say so in the remark.
+    const uploaded = [req.files?.logo?.[0] && "logo", req.files?.favicon?.[0] && "favicon"].filter(Boolean);
+    await recordAudit({ req, entityType: "company", entity: company?._id, label: company?.name || "Company", action: "update", before: companyView(before), after: companyView(plain(company)), fields: COMPANY_FIELDS, remark: uploaded.length ? `New ${uploaded.join(" and ")} uploaded` : "" });
 
     res.status(200).json({
       status: 'success',

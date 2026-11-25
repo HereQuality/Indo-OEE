@@ -111,6 +111,8 @@ router.use("/announcement", announcementRoutes);
 router.use("/app-update", appUpdateRoutes);
 router.use("/summary-mail", summaryMailRoutes);
 router.use("/machine-day-status", require("./machineDayStatus.routes"));
+// The whole audit log — every module — with filters and a CSV export.
+router.use("/audit-trail", require("./auditTrail.routes"));
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

@@ -4,6 +4,18 @@ const Team = require("../models/Team");
 const Operator = require("../models/Operator");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
+const { recordAudit, nameMap, plain } = require("../utils/auditTrail");
+
+// The audit trail's view of a team: its lead and members by name.
+const TEAM_FIELDS = { teamName: "Team", description: "Description", teamLeadId: "Team Lead", memberIds: "Members", isActive: "Active", remark: "Remark" };
+const teamView = async (t) => {
+  if (!t) return {};
+  const idOf = (v) => String(v?._id || v);
+  const names = await nameMap(Operator, [t.teamLeadId, t.memberIds], "employeeName");
+  return { ...t, teamLeadId: t.teamLeadId ? names[idOf(t.teamLeadId)] || idOf(t.teamLeadId) : null, memberIds: (t.memberIds || []).map((m) => names[idOf(m)] || idOf(m)) };
+};
+const auditTeam = async (req, action, before, after, remark) =>
+  recordAudit({ req, entityType: "team", entity: (after || before)?._id, label: (after || before)?.teamName || "", action, before: await teamView(before), after: await teamView(after), fields: TEAM_FIELDS, remark });
 
 // A team name or search text as plain text inside a pattern, so a "(" in it
 // can't break the query.
@@ -28,6 +40,7 @@ exports.createTeam = asyncHandler(async (req, res, next) => {
     { $addToSet: { teamIds: team._id } }
   );
 
+  await auditTeam(req, "create", null, plain(team));
   res.status(201).json({ isOk: true, data: team, message: "Team created successfully" });
 });
 
@@ -78,6 +91,7 @@ exports.updateTeam = asyncHandler(async (req, res, next) => {
   }
 
   const oldEmployeesInTeam = [team.teamLeadId, ...(team.memberIds || [])].filter(Boolean);
+  const before = plain(team);
 
   if (teamName !== undefined) team.teamName = teamName;
   if (description !== undefined) team.description = description;
@@ -103,6 +117,8 @@ exports.updateTeam = asyncHandler(async (req, res, next) => {
     { $addToSet: { teamIds: team._id } }
   );
 
+  await auditTeam(req, "update", before, plain(team));
+
   await team.populate("teamLeadId", "employeeName profilePic");
   await team.populate("memberIds", "employeeName profilePic");
 
@@ -115,12 +131,15 @@ exports.deleteTeam = asyncHandler(async (req, res, next) => {
   const team = await Team.findById(req.params.id);
   if (!team) return next(new AppError("Team not found", 404));
 
+  const before = plain(team);
   if (team.isActive) {
     team.isActive = false;
     await team.save();
+    await auditTeam(req, "delete", before, plain(team), "Deactivated — the team is kept; a second delete removes it");
     return res.status(200).json({ isOk: true, message: "Team deactivated successfully" });
   } else {
     await team.deleteOne();
+    await auditTeam(req, "delete", before, null, "Removed");
     return res.status(200).json({ isOk: true, message: "Team deleted successfully" });
   }
 });

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../audit_trail/record_history_sheet.dart' show showMarkHistory;
 import '../../../../core/widgets/form_widgets.dart';
 import '../machine_day_status.dart';
 import '../sheet_controller.dart';
@@ -233,6 +235,22 @@ class _NotRunningDialogState extends State<NotRunningDialog> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  // Editing a saved mark: who marked / changed it before (Audit Trail).
+                  if (widget.existing != null)
+                    TextButton.icon(
+                      key: const ValueKey('nr-dialog-history'),
+                      onPressed: _saving
+                          ? null
+                          : () => showMarkHistory(
+                                context,
+                                sheet: widget.controller.dayStatus.sheet,
+                                date: widget.date,
+                                machine: widget.machineId,
+                                title: 'Not running · ${widget.machineName}',
+                              ),
+                      icon: const Icon(LucideIcons.history, size: 18),
+                      label: const Text('History'),
+                    ),
                   TextButton(
                     key: const ValueKey('nr-cancel'),
                     onPressed: _saving ? null : () => Navigator.of(context).pop(false),
