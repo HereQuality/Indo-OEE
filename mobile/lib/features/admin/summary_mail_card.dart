@@ -8,10 +8,11 @@ import '../../core/widgets/form_widgets.dart';
 
 /// The Company page's "Summary Email — OEE & OK Qty" card (web
 /// client/src/Components/Common/SummaryMailCard.jsx): who gets the Efficiency
-/// Report (OEE) by email and when — the daily one at its send time (6:00 PM
-/// by default) for that same day's entries, the weekly one on the chosen
-/// weekday at its send time (Monday 8:00 AM) for the previous Monday to
-/// Sunday. "Send now" mails one straight away to check the setup.
+/// Report (OEE) by email and when — the daily one on the ticked weekdays
+/// (Monday to Saturday) at its send time (9:00 AM by default) for the
+/// previous day in full (Monday's covers Saturday and Sunday), the weekly one
+/// on the chosen weekday at its send time (Monday 9:30 AM) for the previous
+/// Monday to Sunday. "Send now" mails one straight away to check the setup.
 class SummaryMailCard extends StatefulWidget {
   const SummaryMailCard({super.key});
 
@@ -20,14 +21,32 @@ class SummaryMailCard extends StatefulWidget {
 }
 
 const _weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// Day chips in week order, Monday first.
+const _dayChips = [1, 2, 3, 4, 5, 6, 0];
+const _defaultDailyDays = [1, 2, 3, 4, 5, 6];
+
+/// "Mon to Sat", "every day", "Mon, Wed, Fri".
+String daysLabel(Iterable<int> days) {
+  final d = days.where((x) => x >= 0 && x <= 6).toSet();
+  if (d.length == 7) return 'every day';
+  final inOrder = _dayChips.where(d.contains).toList();
+  if (inOrder.isEmpty) return 'no day';
+  String short(int x) => _weekdays[x].substring(0, 3);
+  var run = true;
+  for (var i = 1; i < inOrder.length; i++) {
+    if (_dayChips.indexOf(inOrder[i]) != _dayChips.indexOf(inOrder[i - 1]) + 1) run = false;
+  }
+  return run && inOrder.length > 2 ? '${short(inOrder.first)} to ${short(inOrder.last)}' : inOrder.map(short).join(', ');
+}
 
 class _SummaryMailSettings {
   _SummaryMailSettings({
     this.recipients = const [],
     this.dailyEnabled = true,
     this.weeklyEnabled = true,
-    this.dailySendAt = '18:00',
-    this.weeklySendAt = '08:00',
+    this.dailySendAt = '09:00',
+    this.dailyDays = _defaultDailyDays,
+    this.weeklySendAt = '09:30',
     this.weeklyDay = 1,
     this.lastDailyFor = '',
     this.lastWeeklyFor = '',
@@ -38,8 +57,9 @@ class _SummaryMailSettings {
         recipients: [for (final e in (d['recipients'] as List? ?? const [])) e.toString()],
         dailyEnabled: d['dailyEnabled'] != false,
         weeklyEnabled: d['weeklyEnabled'] != false,
-        dailySendAt: (d['dailySendAt'] ?? '18:00').toString(),
-        weeklySendAt: (d['weeklySendAt'] ?? '08:00').toString(),
+        dailySendAt: (d['dailySendAt'] ?? '09:00').toString(),
+        dailyDays: (d['dailyDays'] as List?)?.map((e) => (e as num).toInt()).toList() ?? _defaultDailyDays,
+        weeklySendAt: (d['weeklySendAt'] ?? '09:30').toString(),
         weeklyDay: (d['weeklyDay'] as num?)?.toInt() ?? 1,
         lastDailyFor: (d['lastDailyFor'] ?? '').toString(),
         lastWeeklyFor: (d['lastWeeklyFor'] ?? '').toString(),
@@ -50,6 +70,7 @@ class _SummaryMailSettings {
   final bool dailyEnabled;
   final bool weeklyEnabled;
   final String dailySendAt;
+  final List<int> dailyDays;
   final String weeklySendAt;
   final int weeklyDay;
   final String lastDailyFor;
@@ -73,8 +94,9 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
   final _testTo = TextEditingController();
   bool _daily = true;
   bool _weekly = true;
-  String _dailyAt = '18:00';
-  String _weeklyAt = '08:00';
+  String _dailyAt = '09:00';
+  Set<int> _dailyDays = _defaultDailyDays.toSet();
+  String _weeklyAt = '09:30';
   int _weeklyDay = 1;
 
   @override
@@ -107,9 +129,12 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
         _daily = s.dailyEnabled;
         _weekly = s.weeklyEnabled;
         _dailyAt = s.dailySendAt;
+        _dailyDays = s.dailyDays.toSet();
         _weeklyAt = s.weeklySendAt;
         _weeklyDay = s.weeklyDay;
       });
+
+  List<int> get _dailyDaysSorted => _dailyDays.toList()..sort();
 
   bool get _dirty {
     final s = _saved;
@@ -118,6 +143,7 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
         _daily != s.dailyEnabled ||
         _weekly != s.weeklyEnabled ||
         _dailyAt != s.dailySendAt ||
+        _dailyDaysSorted.join(',') != (s.dailyDays.toList()..sort()).join(',') ||
         _weeklyAt != s.weeklySendAt ||
         _weeklyDay != s.weeklyDay;
   }
@@ -131,6 +157,7 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
         'dailyEnabled': _daily,
         'weeklyEnabled': _weekly,
         'dailySendAt': _dailyAt,
+        'dailyDays': _dailyDaysSorted,
         'weeklySendAt': _weeklyAt,
         'weeklyDay': _weeklyDay,
       });
@@ -206,7 +233,7 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
           ),
         ),
       Text(
-        'The Efficiency Report (OEE) for every process and machine, as a PDF with the OEE and OK Qty summary in the mail: the daily one goes out at ${Fmt.hm12(_dailyAt)} with that day\'s entries from 12:00 AM up to then; the weekly one on ${_weekdays[_weeklyDay]} at ${Fmt.hm12(_weeklyAt)} with the previous Monday to Sunday. Times are Indian Standard Time.',
+        'The Efficiency Report (OEE) for every process and machine, as a PDF with the OEE and OK Qty summary in the mail: the daily one goes out ${daysLabel(_dailyDays)} at ${Fmt.hm12(_dailyAt)} with the previous day\'s entries in full (after a skipped day it covers every day since the last mail, so Saturday and Sunday both arrive on Monday); the weekly one on ${_weekdays[_weeklyDay]} at ${Fmt.hm12(_weeklyAt)} with the previous Monday to Sunday. Times are Indian Standard Time.',
         style: small,
       ),
       const SizedBox(height: 14),
@@ -235,11 +262,36 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Daily report', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Same day, 12:00 AM to the send time'),
+              subtitle: const Text('Previous day, in full'),
             ),
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: AppTimeField(key: ValueKey('daily:$_dailyAt'), label: 'Daily send time', value: _dailyAt, enabled: _daily, onChanged: (v) => setState(() => _dailyAt = v ?? _dailyAt)),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const FieldLabel('Daily send days'),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final d in _dayChips)
+                      FilterChip(
+                        label: Text(_weekdays[d].substring(0, 3)),
+                        selected: _dailyDays.contains(d),
+                        onSelected: _daily ? (on) => setState(() => on ? _dailyDays.add(d) : _dailyDays.remove(d)) : null,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+                if (_dailyDays.isEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('Pick at least one day.', style: TextStyle(fontSize: 12, color: cs.error)),
+                ],
+              ]),
             ),
             const SizedBox(height: 10),
             SwitchListTile.adaptive(
@@ -306,7 +358,7 @@ class _SummaryMailCardState extends State<SummaryMailCard> {
         ],
       ),
       const SizedBox(height: 14),
-      PrimaryButton(label: 'Save Settings', loading: _saving, onPressed: _dirty ? _save : null),
+      PrimaryButton(label: 'Save Settings', loading: _saving, onPressed: _dirty && _dailyDays.isNotEmpty ? _save : null),
     ];
   }
 }

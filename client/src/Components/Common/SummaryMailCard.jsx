@@ -10,17 +10,35 @@ import { useAlert } from "../../context/AlertContext";
  * On the Company page: who gets the Production Dashboard's OEE and OK Qty
  * summary by email, and when (server jobs/summaryMail.js):
  *
- *   Daily    every day at its send time (6:00 PM by default), for that same
- *            day — the entries saved from 12:00 AM up to then
- *   Weekly   on the chosen weekday at its send time (Monday 8:00 AM by
+ *   Daily    on the ticked weekdays (Monday to Saturday by default) at its
+ *            send time (9:00 AM by default), for the previous day in full —
+ *            on the first send day after a skipped one (Monday) it covers
+ *            every day since the last send day, so Saturday and Sunday both
+ *            arrive on Monday
+ *   Weekly   on the chosen weekday at its send time (Monday 9:30 AM by
  *            default), for the previous Monday to Sunday
  *
  * "Send now" mails the summary straight away to check the setup. The server
  * needs SMTP details in its .env; the card says so when they're missing.
  */
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+// Day chips in week order, Monday first.
+const DAY_CHIPS = [1, 2, 3, 4, 5, 6, 0];
+const DEFAULT_DAILY_DAYS = [1, 2, 3, 4, 5, 6];
 
-const blank = { recipients: [], dailyEnabled: true, weeklyEnabled: true, dailySendAt: "18:00", weeklySendAt: "08:00", weeklyDay: 1 };
+const blank = { recipients: [], dailyEnabled: true, weeklyEnabled: true, dailySendAt: "09:00", dailyDays: DEFAULT_DAILY_DAYS, weeklySendAt: "09:30", weeklyDay: 1 };
+
+// "Mon to Sat", "every day", "Mon, Wed, Fri"
+const daysLabel = (days) => {
+  const d = [...new Set((days || []).map(Number))].filter((x) => x >= 0 && x <= 6);
+  if (d.length === 7) return "every day";
+  const inOrder = DAY_CHIPS.filter((x) => d.includes(x));
+  if (!inOrder.length) return "no day";
+  const short = (x) => WEEKDAYS[x].slice(0, 3);
+  const run = inOrder.every((x, i) => i === 0 || DAY_CHIPS.indexOf(x) === DAY_CHIPS.indexOf(inOrder[i - 1]) + 1);
+  return run && inOrder.length > 2 ? `${short(inOrder[0])} to ${short(inOrder[inOrder.length - 1])}` : inOrder.map(short).join(", ");
+};
+const sameDays = (a, b) => daysLabel(a) === daysLabel(b);
 
 // "18:00" → "6:00 PM"
 const to12h = (hhmm) => {
@@ -57,6 +75,7 @@ export default function SummaryMailCard() {
     form.dailyEnabled !== saved.dailyEnabled ||
     form.weeklyEnabled !== saved.weeklyEnabled ||
     form.dailySendAt !== saved.dailySendAt ||
+    !sameDays(form.dailyDays, saved.dailyDays) ||
     form.weeklySendAt !== saved.weeklySendAt ||
     Number(form.weeklyDay) !== Number(saved.weeklyDay);
 
@@ -89,6 +108,12 @@ export default function SummaryMailCard() {
   };
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleDay = (d) =>
+    setForm((f) => {
+      const days = (f.dailyDays || []).map(Number);
+      return { ...f, dailyDays: days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort((a, b) => a - b) };
+    });
+  const dailyDays = (form.dailyDays || []).map(Number);
 
   return (
     <Card>
@@ -109,7 +134,7 @@ export default function SummaryMailCard() {
               </Alert>
             )}
             <p className="text-muted small mb-3">
-              The Efficiency Report (OEE) for every process and machine, as a PDF with the OEE and OK Qty summary in the mail: the <b>daily</b> one goes out at {to12h(form.dailySendAt)} with that day's entries from 12:00 AM up to then; the <b>weekly</b> one on {WEEKDAYS[form.weeklyDay]} at {to12h(form.weeklySendAt)} with the previous Monday to Sunday. Times are Indian Standard Time.
+              The Efficiency Report (OEE) for every process and machine, as a PDF with the OEE and OK Qty summary in the mail: the <b>daily</b> one goes out {daysLabel(dailyDays)} at {to12h(form.dailySendAt)} with the previous day's entries in full (after a skipped day it covers every day since the last mail, so Saturday and Sunday both arrive on Monday); the <b>weekly</b> one on {WEEKDAYS[form.weeklyDay]} at {to12h(form.weeklySendAt)} with the previous Monday to Sunday. Times are Indian Standard Time.
             </p>
             <Row className="g-3">
               <Col xs="12" md="6">
@@ -121,12 +146,23 @@ export default function SummaryMailCard() {
                 <div className="border rounded p-3 mb-3" style={{ background: "var(--vz-secondary-bg)" }}>
                   <div className="form-check form-switch mb-2">
                     <Input id="sm-daily" type="checkbox" className="form-check-input" role="switch" checked={form.dailyEnabled} onChange={(e) => set("dailyEnabled", e.target.checked)} />
-                    <Label htmlFor="sm-daily" className="form-check-label">Daily report (same day, 12:00 AM to send time)</Label>
+                    <Label htmlFor="sm-daily" className="form-check-label">Daily report (previous day, in full)</Label>
                   </div>
                   <Row className="g-2 mb-3 ps-4">
                     <Col xs="12" sm="6">
                       <Label htmlFor="sm-daily-time" className="mb-1 small">Daily send time</Label>
-                      <Input id="sm-daily-time" type="time" bsSize="sm" value={form.dailySendAt} onChange={(e) => set("dailySendAt", e.target.value || "18:00")} disabled={!form.dailyEnabled} />
+                      <Input id="sm-daily-time" type="time" bsSize="sm" value={form.dailySendAt} onChange={(e) => set("dailySendAt", e.target.value || "09:00")} disabled={!form.dailyEnabled} />
+                    </Col>
+                    <Col xs="12">
+                      <div className="small mb-1">Daily send days</div>
+                      <div className="d-flex flex-wrap gap-1" role="group" aria-label="Daily send days">
+                        {DAY_CHIPS.map((d) => (
+                          <Button key={d} type="button" size="sm" color={dailyDays.includes(d) ? "primary" : "light"} outline={!dailyDays.includes(d)} disabled={!form.dailyEnabled} onClick={() => toggleDay(d)} aria-pressed={dailyDays.includes(d)} style={{ minWidth: 44 }}>
+                            {WEEKDAYS[d].slice(0, 3)}
+                          </Button>
+                        ))}
+                      </div>
+                      {!dailyDays.length && <div className="form-text text-danger">Pick at least one day.</div>}
                     </Col>
                   </Row>
                   <div className="form-check form-switch mb-2">
@@ -142,7 +178,7 @@ export default function SummaryMailCard() {
                     </Col>
                     <Col xs="12" sm="6">
                       <Label htmlFor="sm-weekly-time" className="mb-1 small">Weekly send time</Label>
-                      <Input id="sm-weekly-time" type="time" bsSize="sm" value={form.weeklySendAt} onChange={(e) => set("weeklySendAt", e.target.value || "08:00")} disabled={!form.weeklyEnabled} />
+                      <Input id="sm-weekly-time" type="time" bsSize="sm" value={form.weeklySendAt} onChange={(e) => set("weeklySendAt", e.target.value || "09:30")} disabled={!form.weeklyEnabled} />
                     </Col>
                   </Row>
                 </div>
@@ -158,14 +194,14 @@ export default function SummaryMailCard() {
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
               <div className="d-flex flex-wrap align-items-center gap-2">
                 <Input type="email" bsSize="sm" style={{ maxWidth: 260 }} value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="Send now to… (blank = saved recipients)" aria-label="Send now to" />
-                <Button size="sm" color="light" outline={false} disabled={!!sending || !saved.mailConfigured} onClick={() => sendNow("daily")} title="Mail today's report (entries so far) right now">
+                <Button size="sm" color="light" outline={false} disabled={!!sending || !saved.mailConfigured} onClick={() => sendNow("daily")} title="Mail the previous day's report right now">
                   {sending === "daily" ? <Spinner size="sm" /> : <Send size={14} />} <span className="ms-1">Send daily now</span>
                 </Button>
                 <Button size="sm" color="light" disabled={!!sending || !saved.mailConfigured} onClick={() => sendNow("weekly")} title="Mail last week's summary right now">
                   {sending === "weekly" ? <Spinner size="sm" /> : <Send size={14} />} <span className="ms-1">Send weekly now</span>
                 </Button>
               </div>
-              <Button color="primary" className="px-4" disabled={saving || !isDirty} style={{ opacity: !isDirty && !saving ? 0.6 : 1 }} onClick={handleSave}>
+              <Button color="primary" className="px-4" disabled={saving || !isDirty || !dailyDays.length} style={{ opacity: !isDirty && !saving ? 0.6 : 1 }} onClick={handleSave}>
                 {saving ? <><Spinner size="sm" className="me-1" /> Saving...</> : "Save Settings"}
               </Button>
             </div>

@@ -63,8 +63,17 @@ test("the message names the period and lists every process", () => {
   assert.match(w.html, /No entries were saved/);
 });
 
-test("a daily mail covers the same day; a weekly one the previous Monday to Sunday", () => {
-  assert.deepEqual(dailyPeriod("2026-11-19"), { from: "2026-11-19", to: "2026-11-19" });
+test("a daily mail covers the previous day — Monday's covers Saturday and Sunday; a weekly one the previous Monday to Sunday", () => {
+  // 2026-11-19 is a Thursday: sent Monday–Saturday, Thursday's mail is Wednesday in full.
+  assert.deepEqual(dailyPeriod("2026-11-19"), { from: "2026-11-18", to: "2026-11-18" });
+  // Monday 16th: nothing went out on Sunday, so it covers Saturday 14th and Sunday 15th.
+  assert.deepEqual(dailyPeriod("2026-11-16"), { from: "2026-11-14", to: "2026-11-15" });
+  // Tuesday 17th is back to one day.
+  assert.deepEqual(dailyPeriod("2026-11-17"), { from: "2026-11-16", to: "2026-11-16" });
+  // Sent every day, Monday's covers Sunday only.
+  assert.deepEqual(dailyPeriod("2026-11-16", [0, 1, 2, 3, 4, 5, 6]), { from: "2026-11-15", to: "2026-11-15" });
+  // Sent on Mondays only, it covers the whole previous week.
+  assert.deepEqual(dailyPeriod("2026-11-16", [1]), { from: "2026-11-09", to: "2026-11-15" });
   // 2026-11-19 is a Thursday: the previous full week is Mon 9 – Sun 15.
   assert.deepEqual(weeklyPeriod("2026-11-19"), { from: "2026-11-09", to: "2026-11-15" });
   // Sent on a Monday it covers the week that has just ended.
@@ -75,8 +84,11 @@ test("a daily mail covers the same day; a weekly one the previous Monday to Sund
   assert.equal(to12h("00:05"), "12:05 AM");
 });
 
-test("the daily message says it covers entries from 12:00 AM to the send time", () => {
+test("the daily message says it covers the whole day (or each day, on Monday)", () => {
   const s = summarizeRows([cnc({ _id: "a" })], { from: "2026-11-18", to: "2026-11-18" });
-  assert.match(buildMessage("daily", s, { sentAt: "6:00 PM" }).html, /from 12:00 AM to 6:00 PM/);
+  assert.match(buildMessage("daily", s).html, /the whole day, all shifts/);
+  const two = summarizeRows([cnc({ _id: "a" })], { from: "2026-11-14", to: "2026-11-15" });
+  assert.equal(buildMessage("daily", two).subject, "Daily production summary — 14/11/2026 to 15/11/2026");
+  assert.match(buildMessage("daily", two).html, /each day in full, all shifts/);
   assert.match(buildMessage("weekly", s).html, /Monday to Sunday/);
 });

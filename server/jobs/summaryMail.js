@@ -10,9 +10,11 @@ const { buildOeeReportPdf } = require("../utils/oeeReportPdf");
  * Mails the dashboard's OEE and OK Qty summary (utils/dashboardSummary.js)
  * to the addresses on the Company page (models/SummaryMailSetting.js):
  *
- *   daily   at `dailySendAt` IST every day (6:00 PM by default), for that same
- *           day — whatever was entered from 12:00 AM up to the send time
- *   weekly  at `weeklySendAt` IST on `weeklyDay` (Monday 8:00 AM by default),
+ *   daily   at `dailySendAt` IST on each of `dailyDays` (Monday to Saturday,
+ *           9:00 AM by default), for the previous day in full; on the first
+ *           send day after a skipped one (Monday) it covers every day since
+ *           the last send day, so Saturday and Sunday both arrive on Monday
+ *   weekly  at `weeklySendAt` IST on `weeklyDay` (Monday 9:30 AM by default),
  *           for the previous Monday to Sunday, Sunday's entries included
  *
  * `start()` checks once a minute whether either is due (clock in Indian
@@ -41,7 +43,23 @@ const shiftDay = (iso, days) => new Date(new Date(`${iso}T00:00:00.000Z`).getTim
 const weekdayOf = (iso) => new Date(`${iso}T00:00:00.000Z`).getUTCDay();
 
 // The periods a summary sent on `today` covers.
-const dailyPeriod = (today) => ({ from: today, to: today });
+const DEFAULT_DAILY_DAYS = [1, 2, 3, 4, 5, 6];
+// Yesterday — or, when the daily mail skips some weekdays, every day since
+// the last send day: with Monday–Saturday sending, Monday's mail covers
+// Saturday and Sunday. Starts from the most recent send day before today
+// (searching back a week), since that day's mail stopped at its own yesterday.
+const dailyPeriod = (today, dailyDays = DEFAULT_DAILY_DAYS) => {
+  const days = Array.isArray(dailyDays) && dailyDays.length ? dailyDays : DEFAULT_DAILY_DAYS;
+  let from = shiftDay(today, -1);
+  for (let back = 1; back <= 7; back++) {
+    const d = shiftDay(today, -back);
+    if (days.includes(weekdayOf(d))) {
+      from = d;
+      break;
+    }
+  }
+  return { from, to: shiftDay(today, -1) };
+};
 const weeklyPeriod = (today) => {
   // The Monday–Sunday week that ended before today.
   const back = ((weekdayOf(today) + 6) % 7) + 7; // days back to the previous week's Monday
@@ -63,10 +81,10 @@ const to12h = (hhmm) => {
   return `${h % 12 || 12}:${pad(m)} ${h < 12 ? "AM" : "PM"}`;
 };
 
-const buildMessage = (kind, summary, { sentAt = "" } = {}) => {
+const buildMessage = (kind, summary) => {
   const label = periodLabel(summary);
   const title = `${kind === "weekly" ? "Weekly" : "Daily"} production summary — ${label}`;
-  const covers = kind === "weekly" ? "Monday to Sunday" : `entries saved from 12:00 AM${sentAt ? ` to ${sentAt}` : ""}`;
+  const covers = kind === "weekly" ? "Monday to Sunday" : summary.from === summary.to ? "the whole day, all shifts" : "each day in full, all shifts";
   const rows = summary.processes;
   const cell = (v, right = true) => `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:${right ? "right" : "left"};white-space:nowrap">${v}</td>`;
   const head = (v, right = true) => `<th style="padding:8px 12px;border-bottom:2px solid #d1d5db;text-align:${right ? "right" : "left"};font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">${v}</th>`;
@@ -110,8 +128,7 @@ const buildMessage = (kind, summary, { sentAt = "" } = {}) => {
 const sendSummary = async (kind, period, recipients) => {
   if (!recipients?.length) throw new Error("No recipients are set");
   const summary = await summarizeRange(period.from, period.to);
-  const clock = istNow();
-  const message = buildMessage(kind, summary, { sentAt: clock.date === period.to ? to12h(clock.hhmm) : "" });
+  const message = buildMessage(kind, summary);
   const pdf = await buildOeeReportPdf(summary, { title: `${kind === "weekly" ? "Weekly" : "Daily"} Efficiency Report (OEE)` });
   const filename = `OEE-report-${period.from}${period.to !== period.from ? `_to_${period.to}` : ""}.pdf`;
   await sendMail({ to: recipients.join(", "), ...message, attachments: [{ filename, content: pdf, contentType: "application/pdf" }] });
@@ -125,12 +142,14 @@ const tick = async (now = new Date()) => {
   const setting = await getOrCreateSummaryMail();
   if (!setting.recipients.length) return;
   const clock = istNow(now);
-  if (setting.dailyEnabled && clock.hhmm >= setting.dailySendAt && setting.lastDailyFor !== clock.date) {
+  const dailyDays = setting.dailyDays?.length ? setting.dailyDays : DEFAULT_DAILY_DAYS;
+  if (setting.dailyEnabled && dailyDays.includes(clock.weekday) && clock.hhmm >= setting.dailySendAt && setting.lastDailyFor !== clock.date) {
     try {
-      await sendSummary("daily", dailyPeriod(clock.date), setting.recipients);
+      const period = dailyPeriod(clock.date, dailyDays);
+      await sendSummary("daily", period, setting.recipients);
       setting.lastDailyFor = clock.date;
       await setting.save();
-      logger.info(`Daily summary mailed for ${dailyPeriod(clock.date).from} to ${setting.recipients.length} recipient(s)`);
+      logger.info(`Daily summary mailed for ${period.from}${period.to !== period.from ? `–${period.to}` : ""} to ${setting.recipients.length} recipient(s)`);
     } catch (error) {
       logger.error(`Daily summary mail failed: ${error.message}`);
     }
@@ -160,4 +179,4 @@ const start = () => {
   logger.info("Summary mail: checking every minute (IST)");
 };
 
-module.exports = { start, tick, sendSummary, buildMessage, dailyPeriod, weeklyPeriod, istNow, to12h };
+module.exports = { start, tick, sendSummary, buildMessage, dailyPeriod, weeklyPeriod, istNow, to12h, DEFAULT_DAILY_DAYS };

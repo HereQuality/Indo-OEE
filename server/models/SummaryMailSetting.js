@@ -8,9 +8,12 @@ const mongoose = require("mongoose");
  * Company page (client Components/Common/SummaryMailCard.jsx) and acted on
  * by jobs/summaryMail.js:
  *
- *   daily   every day at `dailySendAt` (IST, 6:00 PM by default), covering
- *           that same day — the entries saved from 12:00 AM up to then
- *   weekly  every `weeklyDay` (Monday) at `weeklySendAt` (8:00 AM), covering
+ *   daily   on each of `dailyDays` (Monday to Saturday by default) at
+ *           `dailySendAt` (IST, 9:00 AM by default), covering the previous
+ *           day in full — and on the first send day after a gap (Monday,
+ *           when Sunday is skipped) every day since the last send day, so
+ *           Saturday and Sunday both arrive on Monday
+ *   weekly  every `weeklyDay` (Monday) at `weeklySendAt` (9:30 AM), covering
  *           the previous Monday to Sunday (Sunday's entries, if any, included)
  *
  * `lastDailyFor` / `lastWeeklyFor` remember the last period mailed, so a
@@ -32,8 +35,17 @@ const SummaryMailSettingSchema = new mongoose.Schema(
     dailyEnabled: { type: Boolean, default: true },
     weeklyEnabled: { type: Boolean, default: true },
     // "HH:mm", 24-hour, Indian Standard Time.
-    dailySendAt: { type: String, default: "18:00", match: [/^([01]\d|2[0-3]):[0-5]\d$/, "Daily send time must be HH:mm"] },
-    weeklySendAt: { type: String, default: "08:00", match: [/^([01]\d|2[0-3]):[0-5]\d$/, "Weekly send time must be HH:mm"] },
+    dailySendAt: { type: String, default: "09:00", match: [/^([01]\d|2[0-3]):[0-5]\d$/, "Daily send time must be HH:mm"] },
+    // Weekdays the daily mail goes out on (0 = Sunday … 6 = Saturday); Monday to Saturday by default.
+    dailyDays: {
+      type: [Number],
+      default: () => [1, 2, 3, 4, 5, 6],
+      validate: {
+        validator: (arr) => arr.length >= 1 && arr.every((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+        message: "Pick at least one day for the daily mail",
+      },
+    },
+    weeklySendAt: { type: String, default: "09:30", match: [/^([01]\d|2[0-3]):[0-5]\d$/, "Weekly send time must be HH:mm"] },
     // 0 = Sunday … 6 = Saturday, like Date#getDay(); Monday by default.
     weeklyDay: { type: Number, default: 1, min: 0, max: 6 },
     lastDailyFor: { type: String, default: "" },

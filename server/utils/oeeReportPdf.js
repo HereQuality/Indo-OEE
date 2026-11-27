@@ -100,9 +100,14 @@ const buildOeeReportPdf = (summary, scope = {}) =>
         headRow();
       }
     };
-    const table = (title, nameLabel) => {
+    // Height of a process block (band + `rows` lines), capped at what a fresh
+    // page can hold under a (continued) header — a taller block has to split.
+    const blockHeight = (rows) => Math.min(rowH + 1 + rowH * rows, bottom() - doc.page.margins.top - rowH * 3);
+    // `firstRows`: how many lines open the table (a process's machines + total),
+    // so the title and header never end up alone at the foot of a page.
+    const table = (title, nameLabel, firstRows = 2) => {
       head = null;
-      need(rowH * 5);
+      need(rowH * 3 + blockHeight(firstRows));
       doc.moveDown(0.8);
       doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text(title, left, doc.y);
       doc.moveDown(0.35);
@@ -113,9 +118,12 @@ const buildOeeReportPdf = (summary, scope = {}) =>
     const endTable = () => {
       head = null;
     };
-    // A process's name band inside the machine-wise table.
-    const band = (name, note) => {
-      room(rowH * 3);
+    // A process's name band inside the machine-wise table. `rows` is how many
+    // lines follow it (machines + total): the whole block moves to the next
+    // page rather than splitting a process across two — unless it's taller
+    // than a page on its own, in which case it continues like any long table.
+    const band = (name, note, rows = 2) => {
+      room(blockHeight(rows));
       const by = doc.y;
       doc.rect(left, by, width, rowH + 1).fillColor("#e0e7ff").fill();
       doc.rect(left, by, 3, rowH + 1).fillColor(ACCENT).fill();
@@ -271,9 +279,9 @@ const buildOeeReportPdf = (summary, scope = {}) =>
     // ── 5. machine-wise: one table, each process a band with its machines and
     //       its total (already at the top for a one-process report) ──
     if (!single && summary.processes.length) {
-      table("Machine-wise performance", "Machine / worker");
+      table("Machine-wise performance", "Machine / worker", summary.processes[0].machines.length + 1);
       summary.processes.forEach((p) => {
-        band(p.processName, machineCount(p));
+        band(p.processName, machineCount(p), p.machines.length + 1);
         for (const m of p.machines) line(m.ownerName, m, { indent: 8 });
         line("Total", p, { total: true });
       });

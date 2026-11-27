@@ -26,6 +26,7 @@ void main() {
       'dailyEnabled': true,
       'weeklyEnabled': true,
       'dailySendAt': '18:00',
+      'dailyDays': [1, 2, 3, 4, 5, 6],
       'weeklySendAt': '08:00',
       'weeklyDay': 1,
       'lastDailyFor': '',
@@ -44,12 +45,20 @@ void main() {
     expect(parseRecipients('A@x.com, b@x.com\nc@x.com  d@x.com;'), ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com']);
   });
 
+  test('the daily send days read as a range, a list or every day', () {
+    expect(daysLabel([1, 2, 3, 4, 5, 6]), 'Mon to Sat');
+    expect(daysLabel([0, 1, 2, 3, 4, 5, 6]), 'every day');
+    expect(daysLabel([1, 3, 5]), 'Mon, Wed, Fri');
+    expect(daysLabel([6, 0]), 'Sat, Sun');
+    expect(daysLabel([]), 'no day');
+  });
+
   testWidgets('shows the company name and the schedule in words', (tester) async {
     await pumpScreen(tester, const CompanyManagementScreen());
     expect(find.text('Company Settings'), findsOneWidget);
     expect(find.widgetWithText(TextField, 'Acme Works'), findsOneWidget);
     expect(find.byType(SummaryMailCard), findsOneWidget);
-    expect(find.textContaining('daily one goes out at 06:00 PM'), findsOneWidget);
+    expect(find.textContaining('daily one goes out Mon to Sat at 06:00 PM'), findsOneWidget);
     expect(find.textContaining('weekly one on Monday at 08:00 AM'), findsOneWidget);
     await scrollTo(tester, find.text('1 recipient'));
     expect(find.text('1 recipient'), findsOneWidget);
@@ -57,13 +66,18 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('saving sends the recipients, both switches and both send times', (tester) async {
+  testWidgets('saving sends the recipients, both switches, the daily days and both send times', (tester) async {
     await pumpScreen(tester, const CompanyManagementScreen());
     final saveSettings = find.widgetWithText(FilledButton, 'Save Settings').last;
     expect(tester.widget<FilledButton>(saveSettings).onPressed, isNull, reason: 'nothing changed yet');
 
     await tester.enterText(find.widgetWithText(TextField, 'owner@acme.com'), 'owner@acme.com\nplant@acme.com');
     await tester.pump();
+    // Untick Saturday.
+    await scrollTo(tester, find.widgetWithText(FilterChip, 'Sat'));
+    await tester.tap(find.widgetWithText(FilterChip, 'Sat'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('daily one goes out Mon to Fri at 06:00 PM'), findsOneWidget);
     await scrollTo(tester, saveSettings);
     await tester.tap(saveSettings);
     await tester.pumpAndSettle();
@@ -73,9 +87,21 @@ void main() {
     expect(body['dailyEnabled'], isTrue);
     expect(body['weeklyEnabled'], isTrue);
     expect(body['dailySendAt'], '18:00');
+    expect(body['dailyDays'], [1, 2, 3, 4, 5]);
     expect(body['weeklySendAt'], '08:00');
     expect(body['weeklyDay'], 1);
     expect(find.text('2 recipients'), findsOneWidget);
+  });
+
+  testWidgets('with no daily day ticked, Save is off and the card says so', (tester) async {
+    setting['dailyDays'] = [1];
+    await pumpScreen(tester, const CompanyManagementScreen());
+    await scrollTo(tester, find.widgetWithText(FilterChip, 'Mon'));
+    await tester.tap(find.widgetWithText(FilterChip, 'Mon'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pick at least one day.'), findsOneWidget);
+    final saveSettings = find.widgetWithText(FilledButton, 'Save Settings').last;
+    expect(tester.widget<FilledButton>(saveSettings).onPressed, isNull);
   });
 
   testWidgets('Send daily now posts kind=daily', (tester) async {
