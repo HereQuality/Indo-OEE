@@ -472,6 +472,11 @@ export default function SummaryMailCard() {
               <div className="text-muted" style={sectionTitle}>
                 Test it
               </div>
+              {!configured && (
+                <div className="small rounded px-2 py-1" style={{ background: "rgba(217,119,6,0.12)", color: "#d97706" }}>
+                  The test buttons work once email is set up on this server (<code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code> in its <code>.env</code>, then restart).
+                </div>
+              )}
               <Row className="g-2">
                 <Col xs="12" sm="7">
                   <Input type="email" bsSize="sm" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="To (blank = saved recipients)" aria-label="Send the test to" />

@@ -97,46 +97,92 @@ const to12h = (hhmm) => {
   return `${h % 12 || 12}:${pad(m)} ${h < 12 ? "AM" : "PM"}`;
 };
 
-const buildMessage = (kind, summary) => {
-  const label = periodLabel(summary);
+// "Fri 30/10/2026" — the weekday makes "which day is this?" obvious at a glance.
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayLabel = (iso) => `${WEEKDAY_SHORT[weekdayOf(iso)]} ${dmy(iso)}`;
+const periodDays = ({ from, to }) => (from === to ? dayLabel(from) : `${dayLabel(from)} to ${dayLabel(to)}`);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// OEE as on the PDF and the dashboard: two decimals, coloured by band.
+const fmtOee = (r) => (Number.isFinite(r) ? `${(r * 100).toFixed(2)}%` : "—");
+const oeeColor = (r) => (!Number.isFinite(r) ? "#6b7280" : r > 1 ? "#7c3aed" : r >= 0.85 ? "#047857" : r >= 0.6 ? "#b45309" : "#b91c1c");
+
+/**
+ * The mail itself: { subject, html, text }. `company` names the sender in
+ * the heading and footer (the Company page's name). The body has the four
+ * headline figures, the process-wise table and, when the period is longer
+ * than a day, a day-by-day table; the attached PDF has every machine.
+ */
+const buildMessage = (kind, summary, { company = "" } = {}) => {
+  const label = periodDays(summary);
   const empty = !summary.processes.length;
   const title = `${kind === "weekly" ? "Weekly" : "Daily"} production summary — ${label}${empty ? " (no entries)" : ""}`;
   const covers = kind === "weekly" ? "Monday to Sunday" : summary.from === summary.to ? "the whole day, all shifts" : "each day in full, all shifts";
+  const sender = company || process.env.APP_NAME || "the OEE app";
   const rows = summary.processes;
-  const cell = (v, right = true) => `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:${right ? "right" : "left"};white-space:nowrap">${v}</td>`;
-  const head = (v, right = true) => `<th style="padding:8px 12px;border-bottom:2px solid #d1d5db;text-align:${right ? "right" : "left"};font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">${v}</th>`;
-  const tile = (name, value, hint) =>
-    `<td style="padding:0 8px 0 0"><div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;min-width:140px"><div style="font-size:12px;color:#6b7280">${name}</div><div style="font-size:24px;font-weight:700;color:#111827">${value}</div>${hint ? `<div style="font-size:12px;color:#6b7280">${hint}</div>` : ""}</div></td>`;
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f8fafc;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
-  <div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px">
-    <h2 style="margin:0 0 4px;font-size:18px">${title}</h2>
-    <div style="color:#6b7280;font-size:13px;margin-bottom:18px">OEE and OK Qty from the production data entries, all processes (${covers}). The full Efficiency Report — every process and each of its machines — is attached as a PDF.</div>
-    <table cellspacing="0" cellpadding="0" style="margin-bottom:20px"><tr>
-      ${tile("OEE", fmtPct(summary.oee), `${summary.machineDays} machine-day${summary.machineDays === 1 ? "" : "s"}`)}
+  const cell = (v, { right = true, color = "", bold = false } = {}) =>
+    `<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:${right ? "right" : "left"};white-space:nowrap;${color ? `color:${color};` : ""}${bold ? "font-weight:700;" : ""}">${v}</td>`;
+  const head = (v, right = true) =>
+    `<th style="padding:8px 10px;border-bottom:2px solid #d1d5db;text-align:${right ? "right" : "left"};font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${v}</th>`;
+  const tile = (name, value, hint, color = "#111827") =>
+    `<td width="25%" valign="top" style="padding:0 4px"><div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px">` +
+    `<div style="font-size:12px;color:#6b7280">${name}</div><div style="font-size:22px;font-weight:700;color:${color};line-height:1.3">${value}</div>` +
+    `<div style="font-size:12px;color:#6b7280">${hint || "&nbsp;"}</div></div></td>`;
+  const table = (first, list, total) =>
+    `<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:14px;margin-bottom:18px">
+      <thead><tr>${head(first, false)}${head("Entries")}${head("OK Qty")}${head("Total Qty")}${head("Rejected")}${head("OEE")}</tr></thead>
+      <tbody>${list
+        .map((r) => `<tr>${cell(esc(r.name), { right: false })}${cell(fmtQty(r.entries))}${cell(fmtQty(r.okQty))}${cell(fmtQty(r.totalQty))}${cell(fmtQty(r.rejectedQty))}${cell(fmtOee(r.oee), { color: oeeColor(r.oee), bold: true })}</tr>`)
+        .join("")}
+      <tr style="background:#f8fafc;font-weight:700">${cell(total.name, { right: false, bold: true })}${cell(fmtQty(total.entries), { bold: true })}${cell(fmtQty(total.okQty), { bold: true })}${cell(fmtQty(total.totalQty), { bold: true })}${cell(fmtQty(total.rejectedQty), { bold: true })}${cell(fmtOee(total.oee), { color: oeeColor(total.oee), bold: true })}</tr></tbody>
+    </table>`;
+  const machines = rows.reduce((n, p) => n + (p.machines?.length || 0), 0);
+  const days = summary.from === summary.to ? [] : summary.byDate || [];
+  const all = { name: "All processes", ...summary };
+  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
+  <div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px">
+    ${company ? `<div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#2563eb;margin-bottom:4px">${esc(company)}</div>` : ""}
+    <h2 style="margin:0 0 4px;font-size:19px">${title}</h2>
+    <div style="color:#6b7280;font-size:13px;margin-bottom:18px">OEE and OK Qty from the production data entries, all processes (${covers}). The full Efficiency Report, with every machine, is attached as a PDF.</div>
+    <table width="100%" cellspacing="0" cellpadding="0" style="margin:0 -4px 20px;table-layout:fixed"><tr>
+      ${tile("OEE", fmtOee(summary.oee), `${summary.machineDays || 0} machine-day${summary.machineDays === 1 ? "" : "s"}`, oeeColor(summary.oee))}
       ${tile("OK Qty", fmtQty(summary.okQty), `of ${fmtQty(summary.totalQty)} total`)}
-      ${tile("Rejected", fmtQty(summary.rejectedQty), summary.totalQty ? `${(summary.rejectedQty / summary.totalQty * 100).toFixed(1)}% of total` : "")}
-      ${tile("Entries", fmtQty(summary.entries), "")}
+      ${tile("Rejected", fmtQty(summary.rejectedQty), summary.totalQty ? `${((summary.rejectedQty / summary.totalQty) * 100).toFixed(1)}% of total` : "")}
+      ${tile("Entries", fmtQty(summary.entries), rows.length ? `${rows.length} process${rows.length === 1 ? "" : "es"} · ${machines} machine${machines === 1 ? "" : "s"}` : "")}
     </tr></table>
     ${
       rows.length
-        ? `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;font-size:14px">
-      <thead><tr>${head("Process", false)}${head("Entries")}${head("OK Qty")}${head("Total Qty")}${head("Rejected")}${head("OEE")}</tr></thead>
-      <tbody>${rows
-        .map((p) => `<tr>${cell(p.processName, false)}${cell(fmtQty(p.entries))}${cell(fmtQty(p.okQty))}${cell(fmtQty(p.totalQty))}${cell(fmtQty(p.rejectedQty))}${cell(fmtPct(p.oee))}</tr>`)
-        .join("")}
-      <tr style="font-weight:700">${cell("All processes", false)}${cell(fmtQty(summary.entries))}${cell(fmtQty(summary.okQty))}${cell(fmtQty(summary.totalQty))}${cell(fmtQty(summary.rejectedQty))}${cell(fmtPct(summary.oee))}</tr></tbody>
-    </table>`
-        : `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:10px;color:#6b7280"><b style="color:#111827">No production entries were saved for ${label}.</b><br>No machine or process has data for this period, so the figures above are empty. If production ran, the entries are still to be filled in.</div>`
+        ? `<div style="font-size:14px;font-weight:700;margin:0 0 6px">By process</div>${table("Process", rows.map((p) => ({ name: p.processName, ...p })), all)}${
+            days.length > 1 ? `<div style="font-size:14px;font-weight:700;margin:0 0 6px">Day by day</div>${table("Date", days.map((d) => ({ name: dayLabel(d.date), ...d })), { name: "Total", ...summary })}` : ""
+          }`
+        : `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:10px;color:#6b7280;margin-bottom:18px"><b style="color:#111827">No production entries were saved for ${label}.</b><br>No machine or process has data for this period, so the figures above are empty. If production ran, the entries are still to be filled in.</div>`
     }
-    <div style="color:#9ca3af;font-size:12px;margin-top:18px">OEE is each sheet's own OEE considering losses (Productivity on a worker sheet), averaged over machine-days, as on the Production Dashboard. Sent automatically by ${process.env.APP_NAME || "the OEE app"}.</div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:6px">OEE colours: <span style="color:#047857;font-weight:700">85–100%</span> world class · <span style="color:#b45309;font-weight:700">60–85%</span> · <span style="color:#b91c1c;font-weight:700">below 60%</span> needs attention · <span style="color:#7c3aed;font-weight:700">over 100%</span> check the entries</div>
+    <div style="color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;padding-top:10px">OEE is each sheet's own OEE considering losses (Productivity on a worker sheet), averaged over machine-days, as on the Production Dashboard. Sent automatically by ${esc(sender)}. To change who gets this email or when, open Company › Email reports.</div>
   </div></body></html>`;
   const text = [
+    company ? company.toUpperCase() : "",
     title,
-    `OEE ${fmtPct(summary.oee)} · OK Qty ${fmtQty(summary.okQty)} of ${fmtQty(summary.totalQty)} · Rejected ${fmtQty(summary.rejectedQty)} · Entries ${fmtQty(summary.entries)}`,
+    `OEE ${fmtOee(summary.oee)} · OK Qty ${fmtQty(summary.okQty)} of ${fmtQty(summary.totalQty)} · Rejected ${fmtQty(summary.rejectedQty)} · Entries ${fmtQty(summary.entries)}`,
     "",
-    ...rows.map((p) => `${p.processName}: OK ${fmtQty(p.okQty)} / ${fmtQty(p.totalQty)}, rejected ${fmtQty(p.rejectedQty)}, OEE ${fmtPct(p.oee)} (${p.entries} entries)`),
-  ].join("\n");
+    ...rows.map((p) => `${p.processName}: OK ${fmtQty(p.okQty)} / ${fmtQty(p.totalQty)}, rejected ${fmtQty(p.rejectedQty)}, OEE ${fmtOee(p.oee)} (${p.entries} entries)`),
+    ...(days.length > 1 ? ["", "Day by day:", ...days.map((d) => `${dayLabel(d.date)}: OK ${fmtQty(d.okQty)} / ${fmtQty(d.totalQty)}, OEE ${fmtOee(d.oee)} (${d.entries} entries)`)] : []),
+    "",
+    `Sent automatically by ${sender}. The full report is attached as a PDF.`,
+  ]
+    .filter((l, i) => l !== "" || i > 1)
+    .join("\n");
   return { subject: title, html, text };
+};
+
+// The company's name from the Company page, for the mail's heading.
+const companyName = async () => {
+  try {
+    const Company = require("../models/Company");
+    const c = await Company.findOne().select("name").lean();
+    return c?.name || "";
+  } catch {
+    return "";
+  }
 };
 
 // Builds and sends one summary: the figures in the mail body, and the full
@@ -144,9 +190,9 @@ const buildMessage = (kind, summary) => {
 // Returns { sent, recipients, period, subject }.
 const sendSummary = async (kind, period, recipients) => {
   if (!recipients?.length) throw new Error("No recipients are set");
-  const summary = await summarizeRange(period.from, period.to);
-  const message = buildMessage(kind, summary);
-  const pdf = await buildOeeReportPdf(summary, { title: `${kind === "weekly" ? "Weekly" : "Daily"} Efficiency Report (OEE)` });
+  const [summary, company] = await Promise.all([summarizeRange(period.from, period.to), companyName()]);
+  const message = buildMessage(kind, summary, { company });
+  const pdf = await buildOeeReportPdf(summary, { title: `${kind === "weekly" ? "Weekly" : "Daily"} Efficiency Report (OEE)`, company });
   const filename = `OEE-report-${period.from}${period.to !== period.from ? `_to_${period.to}` : ""}.pdf`;
   // Bcc, so no recipient sees who else gets the report.
   await sendMail({ bcc: recipients.join(", "), ...message, attachments: [{ filename, content: pdf, contentType: "application/pdf" }] });

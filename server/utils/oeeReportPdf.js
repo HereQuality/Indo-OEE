@@ -28,11 +28,11 @@ const periodLabel = ({ from, to }) => (from === to ? dmy(from) : `${dmy(from)} t
 
 /**
  * @param {object} summary   summarizeRange's result
- * @param {object} scope     { title, processLabel, machineLabel, generatedBy }
+ * @param {object} scope     { title, company, processLabel, machineLabel, generatedBy }
  */
 const buildOeeReportPdf = (summary, scope = {}) =>
   new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 36, info: { Title: scope.title || "Efficiency Report (OEE)" } });
+    const doc = new PDFDocument({ size: "A4", margin: 36, bufferPages: true, info: { Title: scope.title || "Efficiency Report (OEE)" } });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -46,6 +46,12 @@ const buildOeeReportPdf = (summary, scope = {}) =>
     };
 
     // ── header ──
+    // The company's name sits at the right of the title line (no extra height).
+    if (scope.company) {
+      const ty = doc.y;
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(ACCENT).text(String(scope.company).toUpperCase(), left, ty + 4, { width, align: "right", characterSpacing: 0.5, lineBreak: false });
+      doc.y = ty;
+    }
     doc.font("Helvetica-Bold").fontSize(16).fillColor(INK).text(scope.title || "Efficiency Report (OEE)", left, doc.y);
     doc.moveDown(0.2);
     doc.font("Helvetica").fontSize(10).fillColor(MUTED);
@@ -235,6 +241,11 @@ const buildOeeReportPdf = (summary, scope = {}) =>
     doc.moveDown(0.4);
     drawTiles();
 
+    // How the ratios above are worked out, right under them.
+    const note =
+      `Availability = Operating Time ÷ Planned Production Time · Performance = Cycle Time × pieces ÷ Operating Time · Quality = OK ÷ Total, each over the period's totals${single ? ` for ${single.processName}` : ""}. OEE is each sheet's own OEE considering losses (Productivity on a worker sheet), averaged over ${single ? `${single.processName}'s ` : ""}machine-days, as on the Production Dashboard.`;
+    doc.font("Helvetica").fontSize(7.5).fillColor(MUTED).text(note, left, doc.y + 2, { width });
+
     // ── 4. daily OEE trend ──
     const drawChart = () => {
     // ── daily OEE chart ──
@@ -289,13 +300,20 @@ const buildOeeReportPdf = (summary, scope = {}) =>
       legend();
     }
 
-    doc.moveDown(1);
-    doc.font("Helvetica").fontSize(7.5).fillColor(MUTED).text(
-      `Availability = Operating Time ÷ Planned Production Time · Performance = Cycle Time × pieces ÷ Operating Time · Quality = OK ÷ Total, each over the period's totals${single ? ` for ${single.processName}` : ""}. OEE is each sheet's own OEE considering losses (Productivity on a worker sheet), averaged over ${single ? `${single.processName}'s ` : ""}machine-days, as on the Production Dashboard.`,
-      left,
-      doc.y,
-      { width },
-    );
+    // ── page footer on every page: what the report is, and "Page n of N" ──
+    const pages = doc.bufferedPageRange();
+    const footLeft = [scope.company, scope.title || "Efficiency Report (OEE)", periodLabel(summary)].filter(Boolean).join("  ·  ");
+    for (let i = pages.start; i < pages.start + pages.count; i += 1) {
+      doc.switchToPage(i);
+      const keep = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+      const fy = doc.page.height - 24;
+      doc.moveTo(left, fy - 6).lineTo(left + width, fy - 6).strokeColor(LINE).lineWidth(0.5).stroke();
+      doc.font("Helvetica").fontSize(7.5).fillColor(MUTED);
+      doc.text(footLeft, left, fy, { width: width - 80, lineBreak: false });
+      doc.text(`Page ${i - pages.start + 1} of ${pages.count}`, left + width - 80, fy, { width: 80, align: "right", lineBreak: false });
+      doc.page.margins.bottom = keep;
+    }
     doc.end();
   });
 

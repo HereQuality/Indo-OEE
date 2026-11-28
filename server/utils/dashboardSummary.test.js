@@ -55,13 +55,13 @@ test("the PDF report builds", async () => {
 test("the message names the period and lists every process", () => {
   const s = summarizeRows([cnc({ _id: "a" })], { from: "2026-11-18", to: "2026-11-18" });
   const m = buildMessage("daily", s);
-  assert.equal(m.subject, "Daily production summary — 18/11/2026");
+  assert.equal(m.subject, "Daily production summary — Wed 18/11/2026");
   assert.match(m.html, /CNC/);
   assert.match(m.text, /OK 400/);
   const w = buildMessage("weekly", summarizeRows([], { from: "2026-11-09", to: "2026-11-15" }));
   // An empty period still goes out, and says so in the subject and the body.
-  assert.equal(w.subject, "Weekly production summary — 09/11/2026 to 15/11/2026 (no entries)");
-  assert.match(w.html, /No production entries were saved for 09\/11\/2026 to 15\/11\/2026/);
+  assert.equal(w.subject, "Weekly production summary — Mon 09/11/2026 to Sun 15/11/2026 (no entries)");
+  assert.match(w.html, /No production entries were saved for Mon 09\/11\/2026 to Sun 15\/11\/2026/);
 });
 
 test("a daily mail covers the previous day — Saturday's goes on Sunday; with Sunday off, Monday's covers Sat + Sun; a weekly one the previous Monday to Sunday", () => {
@@ -91,7 +91,20 @@ test("the daily message says it covers the whole day (or each day, on Monday)", 
   const s = summarizeRows([cnc({ _id: "a" })], { from: "2026-11-18", to: "2026-11-18" });
   assert.match(buildMessage("daily", s).html, /the whole day, all shifts/);
   const two = summarizeRows([cnc({ _id: "a" })], { from: "2026-11-14", to: "2026-11-15" });
-  assert.equal(buildMessage("daily", two).subject, "Daily production summary — 14/11/2026 to 15/11/2026");
+  assert.equal(buildMessage("daily", two).subject, "Daily production summary — Sat 14/11/2026 to Sun 15/11/2026");
   assert.match(buildMessage("daily", two).html, /each day in full, all shifts/);
   assert.match(buildMessage("weekly", s).html, /Monday to Sunday/);
+});
+
+test("the message: OEE to two decimals and coloured, the company named, a day-by-day table for a longer period", () => {
+  const s = summarizeRows([cnc({ _id: "a" }), cnc({ _id: "b", date: "2026-11-17", machine: "m2" })], { from: "2026-11-16", to: "2026-11-22" });
+  const m = buildMessage("weekly", s, { company: "Indo <Electricals>" });
+  assert.match(m.html, /INDO|Indo &lt;Electricals&gt;/);
+  assert.doesNotMatch(m.html, /<Electricals>/); // escaped
+  assert.match(m.html, new RegExp(`${(s.oee * 100).toFixed(2).replace(".", "\\.")}%`));
+  assert.match(m.html, /Day by day/);
+  assert.match(m.html, /Tue 17\/11\/2026/);
+  assert.match(m.text, /Day by day:/);
+  // A single day has no day-by-day table.
+  assert.doesNotMatch(buildMessage("daily", summarizeRows([cnc({ _id: "a" })], { from: "2026-11-18", to: "2026-11-18" })).html, /Day by day/);
 });
