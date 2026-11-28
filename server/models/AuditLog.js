@@ -44,6 +44,7 @@ const MODULE_LABELS = {
   companyObjective: "Company Level Objective",
   companyMonthly: "Company Level Objective (monthly)",
   summaryMail: "Summary Email",
+  backup: "Database backup",
   shiftAccess: "Shift Access",
   auth: "Sign in / Sign out",
   maintenance: "Maintenance Mode",

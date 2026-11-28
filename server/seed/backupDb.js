@@ -1,0 +1,73 @@
+"use strict";
+/**
+ * seed/backupDb.js — take or restore a full database backup by hand.
+ *
+ *   node seed/backupDb.js                       back up the database in .env (MONGO_URI)
+ *                                               into server/backups/ (or BACKUP_DIR)
+ *       --out <dir>                             write it somewhere else
+ *       --mail                                  also mail it (SMTP in .env; to BACKUP_MAIL_TO / SMTP_USER)
+ *       --uri <mongodb uri>                     back up another database (read only)
+ *   node seed/backupDb.js --list                the backup files in the folder
+ *   node seed/backupDb.js --restore <file>      put a backup into the database in .env
+ *       --uri <mongodb uri>                     ...or into another one
+ *       --drop                                  replace a database that already has data
+ *       --live                                  required to restore into anything but a
+ *                                               local (127.0.0.1 / localhost) database
+ *
+ * A backup by hand never writes an audit-trail row (it may be pointed at a
+ * database that must not be touched); the server's own daily backup
+ * (jobs/dbBackup.js) does.
+ */
+const path = require("node:path");
+const fs = require("node:fs");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+const mongoose = require("mongoose");
+const { parseBackup, restoreDatabase, summarize } = require("../utils/dbBackup");
+
+const args = process.argv.slice(2);
+const flag = (name) => args.includes(`--${name}`);
+const value = (name) => {
+  const i = args.indexOf(`--${name}`);
+  return i !== -1 ? args[i + 1] : undefined;
+};
+if (value("out")) process.env.BACKUP_DIR = value("out");
+const { runBackup, settings, listFiles } = require("../jobs/dbBackup");
+
+const isLocal = (uri) => /^mongodb:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(uri);
+const uri = value("uri") || process.env.MONGO_URI;
+
+(async () => {
+  if (!uri) throw new Error("No database: set MONGO_URI in .env or pass --uri");
+  const { dir } = settings();
+
+  if (flag("list")) {
+    await mongoose.connect(uri);
+    const files = listFiles(dir, mongoose.connection.db.databaseName);
+    console.log(files.length ? files.map((f) => `${f}  ${Math.round(fs.statSync(path.join(dir, f)).size / 1024)} KB`).join("\n") : `No backups in ${dir}`);
+    return;
+  }
+
+  if (flag("restore")) {
+    const file = value("restore");
+    if (!file) throw new Error("--restore needs the backup file");
+    const full = fs.existsSync(file) ? file : path.join(dir, file);
+    const backup = parseBackup(fs.readFileSync(full));
+    const s = summarize(backup);
+    if (!isLocal(uri) && !flag("live")) throw new Error("Refusing to restore into a non-local database — pass --live if you really mean it");
+    await mongoose.connect(uri);
+    const db = mongoose.connection.db;
+    console.log(`Restoring ${path.basename(full)} (${s.documents} records, ${s.collections} collections, taken ${s.takenAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST) into "${db.databaseName}" on ${isLocal(uri) ? "localhost" : "a remote server"}${flag("drop") ? ", dropping what's there first" : ""}…`);
+    await restoreDatabase(db, backup, { drop: flag("drop") });
+    console.log("Restored.");
+    return;
+  }
+
+  await mongoose.connect(uri);
+  const r = await runBackup({ reason: "manual", audit: false, mail: flag("mail") });
+  console.log(`${r.file}\n${r.documents} records in ${r.collections} collections, ${Math.round(r.bytes / 1024)} KB${r.mailed ? ` — mailed to ${settings().mailTo}` : r.mailError ? ` — mail failed: ${r.mailError}` : ""}${r.removed.length ? `\nremoved ${r.removed.length} old file(s)` : ""}`);
+})()
+  .catch((e) => {
+    console.error(e.message);
+    process.exitCode = 1;
+  })
+  .finally(() => mongoose.disconnect().catch(() => {}));

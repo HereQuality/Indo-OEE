@@ -59,8 +59,9 @@ test("the message names the period and lists every process", () => {
   assert.match(m.html, /CNC/);
   assert.match(m.text, /OK 400/);
   const w = buildMessage("weekly", summarizeRows([], { from: "2026-11-09", to: "2026-11-15" }));
-  assert.equal(w.subject, "Weekly production summary — 09/11/2026 to 15/11/2026");
-  assert.match(w.html, /No entries were saved/);
+  // An empty period still goes out, and says so in the subject and the body.
+  assert.equal(w.subject, "Weekly production summary — 09/11/2026 to 15/11/2026 (no entries)");
+  assert.match(w.html, /No production entries were saved for 09\/11\/2026 to 15\/11\/2026/);
 });
 
 test("a daily mail covers the previous day — Monday's covers Saturday and Sunday; a weekly one the previous Monday to Sunday", () => {

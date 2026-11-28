@@ -34,11 +34,13 @@ const getTransport = () => {
 
 // Sends one message; resolves to nodemailer's info, throws when SMTP isn't set
 // up or refuses the message.
-const sendMail = async ({ to, subject, html, text, attachments }) => {
+// `bcc` recipients don't see each other's addresses: the message is addressed
+// to the sending mailbox itself and every real recipient goes in Bcc.
+const sendMail = async ({ to, bcc, subject, html, text, attachments }) => {
   const t = getTransport();
   if (!t) throw new Error("Email isn't set up on the server (SMTP_HOST, SMTP_USER, SMTP_PASS in .env)");
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-  return t.sendMail({ from, to, subject, html, text, attachments });
+  return t.sendMail({ from, to: to || from, bcc, subject, html, text, attachments });
 };
 
 module.exports = { isConfigured, sendMail };

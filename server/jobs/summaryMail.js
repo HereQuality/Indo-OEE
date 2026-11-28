@@ -3,6 +3,19 @@ const { getOrCreateSummaryMail } = require("../models/SummaryMailSetting");
 const { summarizeRange } = require("../utils/dashboardSummary");
 const { isConfigured, sendMail } = require("../services/mailer");
 const { buildOeeReportPdf } = require("../utils/oeeReportPdf");
+const { recordAudit } = require("../utils/auditTrail");
+
+// Who the audit trail names for a scheduled send (nobody is signed in).
+const SCHEDULER = { name: "Scheduler", role: "System" };
+const auditSend = (setting, kind, period, recipients, error) =>
+  recordAudit({
+    entityType: "summaryMail",
+    entity: setting._id,
+    label: "Summary email",
+    action: "sent",
+    actor: SCHEDULER,
+    remark: `${kind} (scheduled) for ${periodLabel(period)}${error ? ` — NOT sent: ${error.message}` : ` to ${recipients.join(", ")}`}`,
+  });
 
 /**
  * jobs/summaryMail.js
@@ -83,7 +96,8 @@ const to12h = (hhmm) => {
 
 const buildMessage = (kind, summary) => {
   const label = periodLabel(summary);
-  const title = `${kind === "weekly" ? "Weekly" : "Daily"} production summary — ${label}`;
+  const empty = !summary.processes.length;
+  const title = `${kind === "weekly" ? "Weekly" : "Daily"} production summary — ${label}${empty ? " (no entries)" : ""}`;
   const covers = kind === "weekly" ? "Monday to Sunday" : summary.from === summary.to ? "the whole day, all shifts" : "each day in full, all shifts";
   const rows = summary.processes;
   const cell = (v, right = true) => `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:${right ? "right" : "left"};white-space:nowrap">${v}</td>`;
@@ -109,7 +123,7 @@ const buildMessage = (kind, summary) => {
         .join("")}
       <tr style="font-weight:700">${cell("All processes", false)}${cell(fmtQty(summary.entries))}${cell(fmtQty(summary.okQty))}${cell(fmtQty(summary.totalQty))}${cell(fmtQty(summary.rejectedQty))}${cell(fmtPct(summary.oee))}</tr></tbody>
     </table>`
-        : `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:10px;color:#6b7280">No entries were saved for ${label}.</div>`
+        : `<div style="padding:16px;border:1px dashed #d1d5db;border-radius:10px;color:#6b7280"><b style="color:#111827">No production entries were saved for ${label}.</b><br>No machine or process has data for this period, so the figures above are empty. If production ran, the entries are still to be filled in.</div>`
     }
     <div style="color:#9ca3af;font-size:12px;margin-top:18px">OEE is each sheet's own OEE considering losses (Productivity on a worker sheet), averaged over machine-days, as on the Production Dashboard. Sent automatically by ${process.env.APP_NAME || "the OEE app"}.</div>
   </div></body></html>`;
@@ -131,7 +145,8 @@ const sendSummary = async (kind, period, recipients) => {
   const message = buildMessage(kind, summary);
   const pdf = await buildOeeReportPdf(summary, { title: `${kind === "weekly" ? "Weekly" : "Daily"} Efficiency Report (OEE)` });
   const filename = `OEE-report-${period.from}${period.to !== period.from ? `_to_${period.to}` : ""}.pdf`;
-  await sendMail({ to: recipients.join(", "), ...message, attachments: [{ filename, content: pdf, contentType: "application/pdf" }] });
+  // Bcc, so no recipient sees who else gets the report.
+  await sendMail({ bcc: recipients.join(", "), ...message, attachments: [{ filename, content: pdf, contentType: "application/pdf" }] });
   return { sent: true, recipients, period, subject: message.subject };
 };
 
@@ -144,25 +159,29 @@ const tick = async (now = new Date()) => {
   const clock = istNow(now);
   const dailyDays = setting.dailyDays?.length ? setting.dailyDays : DEFAULT_DAILY_DAYS;
   if (setting.dailyEnabled && dailyDays.includes(clock.weekday) && clock.hhmm >= setting.dailySendAt && setting.lastDailyFor !== clock.date) {
+    const period = dailyPeriod(clock.date, dailyDays);
     try {
-      const period = dailyPeriod(clock.date, dailyDays);
       await sendSummary("daily", period, setting.recipients);
       setting.lastDailyFor = clock.date;
       await setting.save();
       logger.info(`Daily summary mailed for ${period.from}${period.to !== period.from ? `–${period.to}` : ""} to ${setting.recipients.length} recipient(s)`);
+      await auditSend(setting, "daily", period, setting.recipients);
     } catch (error) {
       logger.error(`Daily summary mail failed: ${error.message}`);
+      await auditSend(setting, "daily", period, setting.recipients, error);
     }
   }
   if (setting.weeklyEnabled && clock.weekday === setting.weeklyDay && clock.hhmm >= setting.weeklySendAt && setting.lastWeeklyFor !== clock.date) {
+    const period = weeklyPeriod(clock.date);
     try {
-      const period = weeklyPeriod(clock.date);
       await sendSummary("weekly", period, setting.recipients);
       setting.lastWeeklyFor = clock.date;
       await setting.save();
       logger.info(`Weekly summary mailed for ${period.from}–${period.to} to ${setting.recipients.length} recipient(s)`);
+      await auditSend(setting, "weekly", period, setting.recipients);
     } catch (error) {
       logger.error(`Weekly summary mail failed: ${error.message}`);
+      await auditSend(setting, "weekly", period, setting.recipients, error);
     }
   }
 };

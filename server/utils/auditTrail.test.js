@@ -23,8 +23,8 @@ const withLog = async (fn, create) => {
 };
 
 test("the model exports one module and action list, each with a label", () => {
-  assert.equal(ENTITY_TYPES.length, 27);
-  assert.ok(ENTITY_TYPES.includes("entry") && ENTITY_TYPES.includes("notRunning") && ENTITY_TYPES.includes("auth"));
+  assert.equal(ENTITY_TYPES.length, 28);
+  assert.ok(ENTITY_TYPES.includes("entry") && ENTITY_TYPES.includes("notRunning") && ENTITY_TYPES.includes("auth") && ENTITY_TYPES.includes("backup"));
   for (const k of ENTITY_TYPES) assert.ok(MODULE_LABELS[k]);
   for (const k of ACTIONS) assert.ok(ACTION_LABELS[k]);
   assert.equal(ACTION_LABELS.marked, "Marked Not running");
