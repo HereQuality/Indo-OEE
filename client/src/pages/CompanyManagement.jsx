@@ -4,7 +4,8 @@ import { getCompanyDetails, updateCompany } from '../api/companies.api';
 import { useAlert } from '../context/AlertContext';
 import { Card, CardBody, CardHeader, Col, Container, Row, Input, Label, Form, Button, Spinner } from 'reactstrap';
 import { useQueryClient } from '@tanstack/react-query';
-import { ImagePlus, Trash2, Building2, Globe } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { ImagePlus, Trash2, Building2, Globe, Mail } from 'lucide-react';
 import defaultFavicon from '../assets/Fevicon_hqepl.png';
 import MaintenanceModeCard from '../Components/Common/MaintenanceModeCard';
 import AnnouncementModeCard from '../Components/Common/AnnouncementModeCard';
@@ -14,6 +15,20 @@ import SummaryMailCard from '../Components/Common/SummaryMailCard';
 export default function CompanyManagement() {
   // The summary email is for Super Admin / Full access only.
   const { isAdmin } = useContext(MenuContext) || {};
+  // Two tabs: the company itself, and (admins only) the email reports. The
+  // tab is in the address (?tab=email), so a link or a refresh keeps it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = isAdmin && searchParams.get('tab') === 'email' ? 'email' : 'company';
+  const setTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === 'company') next.delete('tab');
+    else next.set('tab', key);
+    setSearchParams(next, { replace: true });
+  };
+  const TABS = [
+    { key: 'company', label: 'Company', Icon: Building2 },
+    ...(isAdmin ? [{ key: 'email', label: 'Email reports', Icon: Mail }] : []),
+  ];
   const queryClient = useQueryClient();
   const toast = useAlert();
   const [loading, setLoading] = useState(true);
@@ -145,7 +160,33 @@ export default function CompanyManagement() {
       <div className="page-content">
         <Container fluid>
           <Row>
-            <Col lg={8} className="mx-auto">
+            <Col xs={12}>
+              {TABS.length > 1 && (
+                <ul className="nav nav-pills gap-1 mb-3" role="tablist">
+                  {TABS.map(({ key, label, Icon }) => (
+                    <li className="nav-item" role="presentation" key={key}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === key}
+                        className={`nav-link d-inline-flex align-items-center gap-2 ${tab === key ? 'active' : ''}`}
+                        onClick={() => setTab(key)}
+                      >
+                        <Icon size={16} /> {label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {tab === 'email' ? (
+                <SummaryMailCard />
+              ) : (
+              // The company tab: two columns on wide screens (one on smaller ones) —
+              // company details, maintenance and announcement on the left, the
+              // long App Update card on the right.
+              <Row className="g-3 company-grid">
+              <style>{`.company-grid .card { margin-bottom: 0; }`}</style>
+              <Col xs={12} xl={6} className="d-flex flex-column gap-3">
               <Card>
                 <CardHeader>
                   <div className="d-flex align-items-center gap-2">
@@ -276,22 +317,13 @@ export default function CompanyManagement() {
                 </CardBody>
               </Card>
 
-              <div className="mt-4">
                 <MaintenanceModeCard />
-              </div>
-
-              <div className="mt-4">
                 <AnnouncementModeCard />
-              </div>
-
-              <div className="mt-4">
+              </Col>
+              <Col xs={12} xl={6}>
                 <AppUpdateModeCard />
-              </div>
-
-              {isAdmin && (
-                <div className="mt-4">
-                  <SummaryMailCard />
-                </div>
+              </Col>
+              </Row>
               )}
             </Col>
           </Row>

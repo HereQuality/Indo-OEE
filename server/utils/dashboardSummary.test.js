@@ -64,15 +64,17 @@ test("the message names the period and lists every process", () => {
   assert.match(w.html, /No production entries were saved for 09\/11\/2026 to 15\/11\/2026/);
 });
 
-test("a daily mail covers the previous day — Monday's covers Saturday and Sunday; a weekly one the previous Monday to Sunday", () => {
+test("a daily mail covers the previous day — Saturday's goes on Sunday; with Sunday off, Monday's covers Sat + Sun; a weekly one the previous Monday to Sunday", () => {
+  // By default it goes every day: Sunday 15th's mail is Saturday 14th, Monday 16th's is Sunday 15th.
+  assert.deepEqual(dailyPeriod("2026-11-15"), { from: "2026-11-14", to: "2026-11-14" });
+  assert.deepEqual(dailyPeriod("2026-11-16"), { from: "2026-11-15", to: "2026-11-15" });
+  const MON_SAT = [1, 2, 3, 4, 5, 6];
   // 2026-11-19 is a Thursday: sent Monday–Saturday, Thursday's mail is Wednesday in full.
-  assert.deepEqual(dailyPeriod("2026-11-19"), { from: "2026-11-18", to: "2026-11-18" });
+  assert.deepEqual(dailyPeriod("2026-11-19", MON_SAT), { from: "2026-11-18", to: "2026-11-18" });
   // Monday 16th: nothing went out on Sunday, so it covers Saturday 14th and Sunday 15th.
-  assert.deepEqual(dailyPeriod("2026-11-16"), { from: "2026-11-14", to: "2026-11-15" });
+  assert.deepEqual(dailyPeriod("2026-11-16", MON_SAT), { from: "2026-11-14", to: "2026-11-15" });
   // Tuesday 17th is back to one day.
-  assert.deepEqual(dailyPeriod("2026-11-17"), { from: "2026-11-16", to: "2026-11-16" });
-  // Sent every day, Monday's covers Sunday only.
-  assert.deepEqual(dailyPeriod("2026-11-16", [0, 1, 2, 3, 4, 5, 6]), { from: "2026-11-15", to: "2026-11-15" });
+  assert.deepEqual(dailyPeriod("2026-11-17", MON_SAT), { from: "2026-11-16", to: "2026-11-16" });
   // Sent on Mondays only, it covers the whole previous week.
   assert.deepEqual(dailyPeriod("2026-11-16", [1]), { from: "2026-11-09", to: "2026-11-15" });
   // 2026-11-19 is a Thursday: the previous full week is Mon 9 – Sun 15.

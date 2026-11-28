@@ -4,9 +4,8 @@ const path = require("node:path");
 const mongoose = require("mongoose");
 const { MongoClient } = require("mongodb");
 const logger = require("../config/logger");
-const { isConfigured, sendMail } = require("../services/mailer");
 const { recordAudit } = require("../utils/auditTrail");
-const { dumpDatabase, serializeBackup, parseBackup, restoreDatabase, summarize, backupFileName, dateOfFile, filesToDelete } = require("../utils/dbBackup");
+const { dumpDatabase, packBackup, readBackup, restoreDatabase, summarize, backupFileName, dateOfFile, filesToDelete } = require("../utils/dbBackup");
 const { istNow } = require("./summaryMail");
 
 /**
@@ -18,13 +17,14 @@ const { istNow } = require("./summaryMail");
  *     checked once a minute like the summary mail; a day missed while the
  *     server was down is taken as soon as it is back
  *   - written to BACKUP_DIR (server/backups/, git-ignored) as
- *     INDO-YYYY-MM-DD_HHmm.json.gz — see utils/dbBackup.js for the format and
- *     seed/backupDb.js for taking one by hand or restoring one
+ *     INDO-YYYY-MM-DD_HHmm.zip — the data (exact, for a restore), the same
+ *     data as Excel sheets, every uploaded file and a README; see
+ *     utils/dbBackup.js for the layout and seed/backupDb.js for taking one by
+ *     hand or restoring one (older .json.gz backups still restore)
  *   - kept for BACKUP_KEEP_DAYS days (30), and the first one of every month
  *     for ever
- *   - mailed to BACKUP_MAIL_TO (the sending mailbox itself when unset, so
- *     Gmail keeps an off-site copy of every day; "off" to disable) when SMTP
- *     is set up — the file is a few hundred kilobytes
+ *   - never mailed: download one from Administration › Backups to keep a copy
+ *     off the server
  *   - loaded into the standby database BACKUP_MIRROR_URI when one is set (a
  *     second database, e.g. ".../INDO_backup" on the same cluster): dropped
  *     and refilled from the backup each day, so a ready-to-use copy always
@@ -40,13 +40,10 @@ const { istNow } = require("./summaryMail");
  */
 const SCHEDULER = { name: "Scheduler", role: "System" };
 const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
-// Gmail refuses attachments over 25 MB; leave room for the base64 overhead.
-const MAIL_MAX_BYTES = 18 * 1024 * 1024;
 
 const settings = () => ({
   at: /^([01]\d|2[0-3]):[0-5]\d$/.test(process.env.BACKUP_AT || "") ? process.env.BACKUP_AT : "02:30",
   dir: process.env.BACKUP_DIR ? path.resolve(process.env.BACKUP_DIR) : path.resolve(__dirname, "../backups"),
-  mailTo: process.env.BACKUP_MAIL_TO === "off" ? "" : process.env.BACKUP_MAIL_TO || process.env.SMTP_USER || "",
   keepDays: Number(process.env.BACKUP_KEEP_DAYS) > 0 ? Number(process.env.BACKUP_KEEP_DAYS) : 30,
   mirrorUri: (process.env.BACKUP_MIRROR_URI || "").trim(),
 });
@@ -123,7 +120,7 @@ const writeStatus = (patch) => {
 let running = null;
 const isRunning = () => !!running;
 
-// Takes one backup now: file on disk, old files pruned, mailed when possible.
+// Takes one backup now: file on disk, old files pruned.
 // `audit: false` skips the audit-trail row (the CLI, which may be pointed at a
 // database it must not write to).
 // `req` (a signed-in request) makes the audit row name the person who asked.
@@ -136,7 +133,7 @@ const runBackup = async (opts = {}) => {
   running = takeBackup(opts);
   try {
     const result = await running;
-    writeStatus({ lastSuccess: { name: result.name, bytes: result.bytes, documents: result.documents, collections: result.collections, files: result.files, at: new Date().toISOString(), reason: opts.reason || "manual", mailed: result.mailed, mailError: result.mailError || "" }, lastError: null, lastErrorAt: null });
+    writeStatus({ lastSuccess: { name: result.name, bytes: result.bytes, documents: result.documents, collections: result.collections, files: result.files, at: new Date().toISOString(), reason: opts.reason || "manual" }, lastError: null, lastErrorAt: null });
     return result;
   } catch (error) {
     writeStatus({ lastError: error.message, lastErrorAt: new Date().toISOString() });
@@ -146,21 +143,29 @@ const runBackup = async (opts = {}) => {
   }
 };
 
-const takeBackup = async ({ reason = "manual", actor, req, audit = true, mail = true, mirror = true, uploads = true } = {}) => {
-  const { dir, mailTo, keepDays, mirrorUri } = settings();
+const takeBackup = async ({ reason = "manual", actor, req, audit = true, mirror = true, uploads = true } = {}) => {
+  const { dir, keepDays, mirrorUri } = settings();
   const db = mongoose.connection.db;
   if (!db) throw new Error("Not connected to the database");
   const backup = await dumpDatabase(db, { uploadsDir: uploads ? UPLOADS_DIR : null });
-  const buffer = serializeBackup(backup);
+  const buffer = packBackup(backup);
   const name = backupFileName(db.databaseName, backup.takenAt);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, name);
   // Written to a .part file and renamed, so a crash mid-write never leaves a
-  // broken file that looks like a backup; then read back to prove it opens.
+  // broken file that looks like a backup; then read back from disk — every
+  // file's checksum and every collection's record count — to prove it opens.
   const part = `${file}.part`;
   fs.writeFileSync(part, buffer);
-  const check = summarize(parseBackup(fs.readFileSync(part)));
-  if (check.documents !== summarize(backup).documents) {
+  let check;
+  try {
+    check = summarize(readBackup(fs.readFileSync(part)));
+  } catch (e) {
+    fs.rmSync(part, { force: true });
+    throw new Error(`The backup file didn't read back (${e.message}) — not saved`);
+  }
+  const want = summarize(backup);
+  if (check.documents !== want.documents || check.collections !== want.collections || check.files !== want.files) {
     fs.rmSync(part, { force: true });
     throw new Error("The backup file didn't read back the same — not saved");
   }
@@ -171,23 +176,6 @@ const takeBackup = async ({ reason = "manual", actor, req, audit = true, mail = 
   const s = summarize(backup);
   const kb = Math.round(buffer.length / 1024);
   const label = `${s.documents} records in ${s.collections} collections${s.files ? `, ${s.files} uploaded file${s.files === 1 ? "" : "s"}` : ""}, ${kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`}`;
-  let mailed = false;
-  let mailError = "";
-  if (mail && mailTo && isConfigured() && buffer.length > MAIL_MAX_BYTES) {
-    mailError = `file too big to mail (${Math.round(buffer.length / 1048576)} MB) — download it from Administration › Backups`;
-  } else if (mail && mailTo && isConfigured()) {
-    try {
-      await sendMail({
-        to: mailTo,
-        subject: `INDO database backup — ${name}`,
-        text: `Full backup of the "${db.databaseName}" database taken ${s.takenAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST: ${label}.\n\nKeep this mail: the attachment restores the whole database with\n  node seed/backupDb.js --restore ${name}\n\nSent automatically by ${process.env.APP_NAME || "the OEE app"}.`,
-        attachments: [{ filename: name, content: buffer, contentType: "application/gzip" }],
-      });
-      mailed = true;
-    } catch (e) {
-      mailError = e.message;
-    }
-  }
   let mirrored = "";
   let mirrorError = "";
   if (mirror && mirrorUri) {
@@ -197,12 +185,12 @@ const takeBackup = async ({ reason = "manual", actor, req, audit = true, mail = 
       mirrorError = e.message;
     }
   }
-  const outcome = `${mailed ? `, mailed to ${mailTo}` : mailError ? `, mail FAILED: ${mailError}` : ""}${mirrored ? `, standby "${mirrored}" refreshed` : mirrorError ? `, standby FAILED: ${mirrorError}` : ""}${removed.length ? `; removed ${removed.length} old file(s)` : ""}`;
-  logger[mailError || mirrorError ? "warn" : "info"](`Database backup (${reason}): ${name} — ${label}${outcome}`);
+  const outcome = `${mirrored ? `, standby "${mirrored}" refreshed` : mirrorError ? `, standby FAILED: ${mirrorError}` : ""}${removed.length ? `; removed ${removed.length} old file(s)` : ""}`;
+  logger[mirrorError ? "warn" : "info"](`Database backup (${reason}): ${name} — ${label}${outcome}`);
   if (audit) {
     await recordAudit({ req, entityType: "backup", label: name, action: "create", actor: actor || SCHEDULER, remark: `${reason}: ${label}${outcome}` });
   }
-  return { file, name, bytes: buffer.length, ...s, mailed, mailError, mirrored, mirrorError, removed };
+  return { file, name, bytes: buffer.length, ...s, mirrored, mirrorError, removed };
 };
 
 let lastFor = "";
@@ -232,7 +220,7 @@ const tick = async (now = new Date()) => {
 let timer = null;
 const start = () => {
   if (timer) return;
-  const { at, dir, mailTo, mirrorUri } = settings();
+  const { at, dir, mirrorUri } = settings();
   timer = setInterval(() => tick().catch((e) => logger.error(`Database backup check failed: ${e.message}`)), 60 * 1000);
   timer.unref?.();
   let standby = "";
@@ -243,7 +231,7 @@ const start = () => {
       logger.warn(`Database backup: ${e.message} — no standby copy will be kept`);
     }
   }
-  logger.info(`Database backup: daily at ${at} IST into ${dir}${mailTo && isConfigured() ? `, mailed to ${mailTo}` : ""}${standby}`);
+  logger.info(`Database backup: daily at ${at} IST into ${dir}${standby}`);
 };
 
 module.exports = { start, tick, runBackup, isRunning, readStatus, listBackups, backupPath, settings, listFiles, parseTarget, sameDatabase, UPLOADS_DIR };

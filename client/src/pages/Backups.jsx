@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { Container } from "reactstrap";
-import { AlertTriangle, Archive, CheckCircle2, Clock, Download, FolderOpen, HardDrive, History, Mail, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, Clock, Download, FolderOpen, HardDrive, History, RefreshCw, ShieldCheck } from "lucide-react";
 import { useAlert } from "../context/AlertContext";
 import ConfirmAlert from "../Components/Common/ConfirmAlert";
 import { apiOrigin, createBackup, getBackupLink, getBackups } from "../api/backups.api";
@@ -109,7 +109,6 @@ const Backups = () => {
       const res = await createBackup();
       const r = res?.data?.data || {};
       toast.success(`Backup saved: ${r.name} (${sizeText(r.size)}, ${r.documents} records${r.files ? `, ${r.files} files` : ""})`);
-      if (r.mailError) toast.error(`Saved, but not mailed: ${r.mailError}`);
     } catch (err) {
       toast.error(err?.response?.data?.message || "The backup failed. Try again.");
     } finally {
@@ -272,37 +271,45 @@ const Backups = () => {
           <div className="col-lg-4">
             <div style={card} className="p-3">
               <div className="d-flex align-items-center gap-2 mb-2" style={{ ...text, fontWeight: 700 }}>
-                <FolderOpen size={16} /> What is in a backup
+                <FolderOpen size={16} /> How to open a backup
               </div>
-              <ol className="ps-3 mb-3" style={{ ...muted, fontSize: "0.82rem", lineHeight: 1.55, listStyle: "decimal" }}>
+              <ol className="ps-3 mb-2" style={{ ...muted, fontSize: "0.82rem", lineHeight: 1.55, listStyle: "decimal" }}>
                 <li>
-                  One file, e.g. <code>INDO-2026-11-28_0230.json.gz</code>, named by its India date and time.
+                  Click <b>Download</b>. You get one <b>.zip</b> file, e.g. <code>INDO-2026-11-28_0230.zip</code>, named by its India date and time.
                 </li>
-                <li>Every record of every list — entries, machines, parts, operators, roles, settings, the logs — exactly as stored.</li>
-                <li>Every uploaded file: profile pictures, company logos, support-ticket attachments.</li>
-                <li>Before it is kept, the file is read back to make sure it opens; a broken one is never saved.</li>
+                <li>Double-click it (Windows or Mac). A folder appears with:</li>
               </ol>
-              {schedule.mailTo || schedule.standby ? (
+              <ul className="ps-3 mb-3" style={{ ...muted, fontSize: "0.8rem", lineHeight: 1.55, listStyle: "none" }}>
+                <li>
+                  <b style={text}>excel/</b> — every list as a spreadsheet: data-entry sheets, machines, parts, operators, the logs… Opens in Excel or Google Sheets.
+                  Dates are India time; passwords are left out.
+                </li>
+                <li>
+                  <b style={text}>uploads/</b> — every uploaded file: profile pictures, logos, ticket attachments.
+                </li>
+                <li>
+                  <b style={text}>database/</b> — every record exactly as stored, for putting the data back.
+                </li>
+                <li>
+                  <b style={text}>README.txt</b> — what is inside and how to restore it, step by step.
+                </li>
+              </ul>
+              <div className="d-flex align-items-start gap-2 mb-3" style={{ ...muted, fontSize: "0.78rem", lineHeight: 1.5 }}>
+                <ShieldCheck size={14} style={{ flexShrink: 0, marginTop: 3 }} />
+                <span>Before a backup is kept, the server opens it again and checks every file and every record count — a broken one is never saved.</span>
+              </div>
+              {schedule.standby ? (
                 <div className="d-flex align-items-start gap-2 mb-3" style={{ ...muted, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                  <Mail size={14} style={{ flexShrink: 0, marginTop: 3 }} />
+                  <HardDrive size={14} style={{ flexShrink: 0, marginTop: 3 }} />
                   <span>
-                    {schedule.mailTo ? (
-                      <>
-                        Each daily backup is also mailed to <b>{schedule.mailTo}</b>.{" "}
-                      </>
-                    ) : null}
-                    {schedule.standby ? (
-                      <>
-                        The standby database <b>{schedule.standby}</b> is refreshed from it every day.
-                      </>
-                    ) : null}
+                    The standby database <b>{schedule.standby}</b> is refreshed from it every day.
                   </span>
                 </div>
               ) : null}
               <div style={{ ...text, fontWeight: 700, fontSize: "0.85rem" }}>Put the data back</div>
               <div style={{ ...muted, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                Only a developer does this, on the server: <code>node seed/backupDb.js --restore &lt;file&gt; --uploads</code> loads it into a database and puts back any
-                missing uploaded files.
+                A developer runs <code>node seed/backupDb.js --restore &lt;file.zip&gt; --uploads</code> (the unzipped folder works too): it loads everything into a new
+                database and puts back any missing uploaded files. The README inside the zip has the exact steps, and how to do it with plain MongoDB tools.
               </div>
               <div className="mt-3 p-2" style={{ borderRadius: 10, background: "rgba(217,119,6,0.08)", color: "#b45309", fontSize: "0.78rem", lineHeight: 1.45 }}>
                 Backups are kept on the server. Download one every week and keep it somewhere else (Google Drive, an office computer), so a copy survives even if

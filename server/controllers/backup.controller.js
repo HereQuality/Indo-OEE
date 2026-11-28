@@ -4,7 +4,6 @@ const jwt = require("jsonwebtoken");
 const backups = require("../jobs/dbBackup");
 const { recordAudit } = require("../utils/auditTrail");
 const { istNow } = require("../jobs/summaryMail");
-const { isConfigured } = require("../services/mailer");
 
 /**
  * controllers/backup.controller.js — Administration › Backups (Super Admin
@@ -44,7 +43,7 @@ const msUntil = (hhmm, now = new Date()) => {
 
 exports.list = async (req, res) => {
   try {
-    const { at, dir, keepDays, mailTo, mirrorUri } = backups.settings();
+    const { at, dir, keepDays, mirrorUri } = backups.settings();
     let standby = "";
     try {
       standby = mirrorUri ? backups.parseTarget(mirrorUri).database : "";
@@ -64,7 +63,6 @@ exports.list = async (req, res) => {
           time: at,
           nextInMs: msUntil(at),
           keepDays,
-          mailTo: mailTo && isConfigured() ? mailTo : "",
           standby,
         },
       },
@@ -84,7 +82,7 @@ exports.create = async (req, res) => {
     res.status(201).json({
       isOk: true,
       message: "Backup saved.",
-      data: { name: r.name, size: r.bytes, documents: r.documents, collections: r.collections, files: r.files, mailed: r.mailed, mailError: r.mailError, removed: r.removed },
+      data: { name: r.name, size: r.bytes, documents: r.documents, collections: r.collections, files: r.files, removed: r.removed },
     });
   } catch (error) {
     if (error.code === "BACKUP_RUNNING") return res.status(409).json({ isOk: false, message: error.message });
@@ -113,7 +111,7 @@ exports.download = (req, res) => {
   if (payload?.purpose !== PURPOSE) return res.status(401).json({ isOk: false, message: "Not a backup download link." });
   const file = backups.backupPath(payload.name);
   if (!file) return res.status(404).json({ isOk: false, message: "No such backup." });
-  res.setHeader("Content-Type", "application/gzip");
+  res.setHeader("Content-Type", payload.name.endsWith(".zip") ? "application/zip" : "application/gzip");
   res.setHeader("Content-Length", fs.statSync(file).size);
   res.setHeader("Content-Disposition", `attachment; filename="${payload.name}"`);
   res.setHeader("Cache-Control", "no-store");

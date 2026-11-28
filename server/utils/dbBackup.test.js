@@ -94,8 +94,11 @@ test("restore fills an empty database, refuses one with data unless dropped", as
 
 test("file names carry the IST date and time, and are recognised", () => {
   // 21:00 UTC on the 27th is 02:30 IST on the 28th.
-  assert.equal(backupFileName("INDO", new Date("2026-11-27T21:00:00.000Z")), "INDO-2026-11-28_0230.json.gz");
+  assert.equal(backupFileName("INDO", new Date("2026-11-27T21:00:00.000Z")), "INDO-2026-11-28_0230.zip");
+  assert.equal(dateOfFile("INDO-2026-11-28_0230.zip", "INDO"), "2026-11-28");
+  // Backups taken before the switch to .zip are still listed and pruned.
   assert.equal(dateOfFile("INDO-2026-11-28_0230.json.gz", "INDO"), "2026-11-28");
+  assert.equal(dateOfFile("INDO-2026-11-28_0230.zip.part", "INDO"), null);
   assert.equal(dateOfFile("OTHER-2026-11-28_0230.json.gz", "INDO"), null);
   assert.equal(dateOfFile("notes.txt", "INDO"), null);
 });
@@ -157,4 +160,82 @@ test("uploaded files ride in the backup and come back byte for byte; existing fi
     fs.rmSync(from, { recursive: true, force: true });
     fs.rmSync(to, { recursive: true, force: true });
   }
+});
+
+test("the .zip: exact data, Excel sheets without secrets, uploads, README and manifest; read back from the zip or its unzipped folder", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { packBackup, readBackup } = require("./dbBackup");
+  const { readZip } = require("./zip");
+  const up = fs.mkdtempSync(path.join(os.tmpdir(), "indo-up-"));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "indo-unzip-"));
+  try {
+    fs.mkdirSync(path.join(up, "profile"));
+    const photo = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 1, 2, 3]);
+    fs.writeFileSync(path.join(up, "profile", "a.jpg"), photo);
+    const db = fakeDb("INDO", {
+      machines: { docs: [{ _id: id, name: "=CNC, \"7B\"", createdAt: when, cycleSec: 57.5, big: Decimal128.fromString("1.10"), meta: { line: "A" } }], indexes: [{ v: 2, key: { name: 1 }, name: "name_1", unique: true }] },
+      users: { docs: [{ _id: new ObjectId(), username: "admin", password: "$2a$10$hash", resetToken: "abc" }] },
+      empty: { docs: [] },
+    });
+    const backup = await dumpDatabase(db, { uploadsDir: up });
+    backup.takenAt = when; // 18:00 IST on the 27th — names the folder inside the zip
+    const zip = packBackup(backup);
+    const files = readZip(zip);
+    const root = "INDO-2026-11-27_1800";
+    for (const f of ["README.txt", "manifest.json", "database/machines.json", "database/users.json", "database/empty.json", "excel/machines.csv", "excel/users.csv", "uploads/profile/a.jpg"]) {
+      assert.ok(files.has(`${root}/${f}`), `${f} is in the zip`);
+    }
+    assert.match(files.get(`${root}/README.txt`).toString(), /PUT THE DATA BACK/);
+    const manifest = JSON.parse(files.get(`${root}/manifest.json`));
+    assert.equal(manifest.format, "indo-backup-zip/1");
+    assert.deepEqual(manifest.collections.map((c) => [c.name, c.count]), [["empty", 0], ["machines", 1], ["users", 1]]);
+    // Spreadsheets: dates in India time, nested fields as columns, formulas defused, secrets left out.
+    const sheet = files.get(`${root}/excel/machines.csv`).toString();
+    assert.ok(sheet.startsWith("\uFEFF_id,"));
+    assert.match(sheet, /2026-11-27 18:00:00/);
+    assert.match(sheet, /meta\.line/);
+    assert.match(sheet, /"'=CNC, ""7B"""/);
+    const users = files.get(`${root}/excel/users.csv`).toString();
+    assert.ok(!/password|resetToken|\$2a\$/.test(users));
+    assert.match(files.get(`${root}/database/users.json`).toString(), /\$2a\$10\$hash/); // the restore copy keeps everything
+
+    const check = (b) => {
+      const m = b.collections.find((c) => c.name === "machines");
+      assert.ok(m.docs[0]._id.equals(id));
+      assert.equal(m.docs[0].createdAt.getTime(), when.getTime());
+      assert.equal(m.docs[0].cycleSec, 57.5);
+      assert.equal(m.docs[0].big.toString(), "1.10");
+      assert.deepEqual(m.indexes, [{ key: { name: 1 }, name: "name_1", unique: true }]);
+      assert.deepEqual(b.uploads.find((u) => u.path === "profile/a.jpg").data, photo);
+      assert.equal(summarize(b).documents, 2);
+    };
+    check(readBackup(zip));
+    // Unzipped (even into a renamed folder) restores the same.
+    for (const [name, data] of files) {
+      const target = path.join(out, "renamed", name.slice(root.length + 1));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, data);
+    }
+    check(readBackup(path.join(out, "renamed")));
+    // And it restores into an empty database.
+    const target = fakeDb("INDO_restored", {});
+    await restoreDatabase(target, readBackup(zip));
+    assert.equal(target.store.machines.docs.length, 1);
+    // A damaged or foreign file is refused with a reason.
+    const broken = Buffer.from(zip);
+    broken[200] ^= 0xff;
+    assert.throws(() => readBackup(broken), /Damaged|checksum|invalid|incorrect/i);
+    assert.throws(() => readBackup(Buffer.from("hello")), /Not an INDO backup/);
+  } finally {
+    fs.rmSync(up, { recursive: true, force: true });
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("an old .json.gz backup still reads", async () => {
+  const { readBackup } = require("./dbBackup");
+  const b = readBackup(serializeBackup(await dumpDatabase(source())));
+  assert.equal(summarize(b).documents, 1);
 });

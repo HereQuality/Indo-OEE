@@ -15,6 +15,7 @@ const auditSend = (setting, kind, period, recipients, error) =>
     action: "sent",
     actor: SCHEDULER,
     remark: `${kind} (scheduled) for ${periodLabel(period)}${error ? ` — NOT sent: ${error.message}` : ` to ${recipients.join(", ")}`}`,
+    success: !error,
   });
 
 /**
@@ -23,10 +24,11 @@ const auditSend = (setting, kind, period, recipients, error) =>
  * Mails the dashboard's OEE and OK Qty summary (utils/dashboardSummary.js)
  * to the addresses on the Company page (models/SummaryMailSetting.js):
  *
- *   daily   at `dailySendAt` IST on each of `dailyDays` (Monday to Saturday,
- *           9:00 AM by default), for the previous day in full; on the first
- *           send day after a skipped one (Monday) it covers every day since
- *           the last send day, so Saturday and Sunday both arrive on Monday
+ *   daily   at `dailySendAt` IST on each of `dailyDays` (every day at
+ *           9:00 AM by default), for the previous day in full — Saturday's
+ *           arrives on Sunday morning, Sunday's on Monday. When some weekdays
+ *           are unticked, the first send day after a gap covers every day
+ *           since the last send day (Mon–Sat only: Monday's covers Sat + Sun)
  *   weekly  at `weeklySendAt` IST on `weeklyDay` (Monday 9:30 AM by default),
  *           for the previous Monday to Sunday, Sunday's entries included
  *
@@ -56,7 +58,8 @@ const shiftDay = (iso, days) => new Date(new Date(`${iso}T00:00:00.000Z`).getTim
 const weekdayOf = (iso) => new Date(`${iso}T00:00:00.000Z`).getUTCDay();
 
 // The periods a summary sent on `today` covers.
-const DEFAULT_DAILY_DAYS = [1, 2, 3, 4, 5, 6];
+// Every day: each morning brings the previous day, Saturday's on Sunday.
+const DEFAULT_DAILY_DAYS = [0, 1, 2, 3, 4, 5, 6];
 // Yesterday — or, when the daily mail skips some weekdays, every day since
 // the last send day: with Monday–Saturday sending, Monday's mail covers
 // Saturday and Sunday. Starts from the most recent send day before today
@@ -150,15 +153,76 @@ const sendSummary = async (kind, period, recipients) => {
   return { sent: true, recipients, period, subject: message.subject };
 };
 
+// When a summary on `days` (weekdays 0..6) at `hhmm` IST next goes out, as a
+// Date. `sentFor` is the IST date it was last sent for: today counts only if
+// it hasn't gone yet — and when today's time has already passed unsent, the
+// answer is `now` (it goes at the next check, within a minute). Pure.
+const IST_OFFSET_MS = 330 * 60 * 1000; // India has no daylight saving
+const nextSendAt = ({ days, hhmm, sentFor = "" }, now = new Date()) => {
+  const list = Array.isArray(days) && days.length ? days.map(Number) : DEFAULT_DAILY_DAYS;
+  const today = istNow(now).date;
+  const [h, m] = String(hhmm || "00:00").split(":").map(Number);
+  for (let d = 0; d <= 7; d += 1) {
+    const date = shiftDay(today, d);
+    if (!list.includes(weekdayOf(date))) continue;
+    if (d === 0 && sentFor === today) continue;
+    const at = new Date(Date.parse(`${date}T00:00:00.000Z`) + (h * 60 + m) * 60000 - IST_OFFSET_MS);
+    return at <= now ? now : at;
+  }
+  return null;
+};
+
+// After a send fails (mail server down, wrong password), wait this long before
+// trying the same summary again, so the log isn't filled with one failure a minute.
+const RETRY_AFTER_MS = 15 * 60 * 1000;
+const failedAt = { daily: 0, weekly: 0 };
+const mayTry = (kind, now) => now.getTime() - failedAt[kind] >= RETRY_AFTER_MS;
+
+// A booked test send (Company page › Email reports › "Send a test at"), once
+// its time has come: mailed, logged, cleared — sent or not, so it never repeats.
+const runTest = async (setting, now) => {
+  if (!setting.testAt || setting.testAt > now) return;
+  const kinds = setting.testKind === "both" ? ["daily", "weekly"] : [setting.testKind === "weekly" ? "weekly" : "daily"];
+  const recipients = setting.testTo?.length ? [...setting.testTo] : [...setting.recipients];
+  const by = setting.testByName;
+  setting.testAt = null;
+  setting.testTo = [];
+  await setting.save();
+  const today = istNow(now).date;
+  const dailyDays = setting.dailyDays?.length ? setting.dailyDays : DEFAULT_DAILY_DAYS;
+  for (const kind of kinds) {
+    const period = kind === "weekly" ? weeklyPeriod(today) : dailyPeriod(today, dailyDays);
+    let error = null;
+    try {
+      if (!recipients.length) throw new Error("No recipients are set");
+      await sendSummary(kind, period, recipients);
+      logger.info(`Test ${kind} summary mailed to ${recipients.join(", ")}`);
+    } catch (e) {
+      error = e;
+      logger.error(`Test ${kind} summary mail failed: ${e.message}`);
+    }
+    await recordAudit({
+      entityType: "summaryMail",
+      entity: setting._id,
+      label: "Summary email",
+      action: "sent",
+      actor: SCHEDULER,
+      remark: `TEST ${kind}${by ? ` booked by ${by}` : ""} for ${periodLabel(period)}${error ? ` — NOT sent: ${error.message}` : ` to ${recipients.join(", ")}`}`,
+      success: !error,
+    });
+  }
+};
+
 // One check: sends whatever is due right now. Exported for tests/manual runs;
 // `now` can be given.
 const tick = async (now = new Date()) => {
   if (!isConfigured()) return;
   const setting = await getOrCreateSummaryMail();
+  await runTest(setting, now);
   if (!setting.recipients.length) return;
   const clock = istNow(now);
   const dailyDays = setting.dailyDays?.length ? setting.dailyDays : DEFAULT_DAILY_DAYS;
-  if (setting.dailyEnabled && dailyDays.includes(clock.weekday) && clock.hhmm >= setting.dailySendAt && setting.lastDailyFor !== clock.date) {
+  if (setting.dailyEnabled && dailyDays.includes(clock.weekday) && clock.hhmm >= setting.dailySendAt && setting.lastDailyFor !== clock.date && mayTry("daily", now)) {
     const period = dailyPeriod(clock.date, dailyDays);
     try {
       await sendSummary("daily", period, setting.recipients);
@@ -167,11 +231,12 @@ const tick = async (now = new Date()) => {
       logger.info(`Daily summary mailed for ${period.from}${period.to !== period.from ? `–${period.to}` : ""} to ${setting.recipients.length} recipient(s)`);
       await auditSend(setting, "daily", period, setting.recipients);
     } catch (error) {
-      logger.error(`Daily summary mail failed: ${error.message}`);
+      failedAt.daily = now.getTime();
+      logger.error(`Daily summary mail failed: ${error.message} — trying again in 15 minutes`);
       await auditSend(setting, "daily", period, setting.recipients, error);
     }
   }
-  if (setting.weeklyEnabled && clock.weekday === setting.weeklyDay && clock.hhmm >= setting.weeklySendAt && setting.lastWeeklyFor !== clock.date) {
+  if (setting.weeklyEnabled && clock.weekday === setting.weeklyDay && clock.hhmm >= setting.weeklySendAt && setting.lastWeeklyFor !== clock.date && mayTry("weekly", now)) {
     const period = weeklyPeriod(clock.date);
     try {
       await sendSummary("weekly", period, setting.recipients);
@@ -180,7 +245,8 @@ const tick = async (now = new Date()) => {
       logger.info(`Weekly summary mailed for ${period.from}–${period.to} to ${setting.recipients.length} recipient(s)`);
       await auditSend(setting, "weekly", period, setting.recipients);
     } catch (error) {
-      logger.error(`Weekly summary mail failed: ${error.message}`);
+      failedAt.weekly = now.getTime();
+      logger.error(`Weekly summary mail failed: ${error.message} — trying again in 15 minutes`);
       await auditSend(setting, "weekly", period, setting.recipients, error);
     }
   }
@@ -193,9 +259,19 @@ const start = () => {
     logger.info("Summary mail: SMTP isn't set in .env, so no summaries will be sent");
     return;
   }
-  timer = setInterval(() => tick().catch((e) => logger.error(`Summary mail check failed: ${e.message}`)), 60 * 1000);
+  // One check at a time: building a PDF can take longer than the minute.
+  let busy = false;
+  timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    tick()
+      .catch((e) => logger.error(`Summary mail check failed: ${e.message}`))
+      .finally(() => {
+        busy = false;
+      });
+  }, 60 * 1000);
   timer.unref?.();
   logger.info("Summary mail: checking every minute (IST)");
 };
 
-module.exports = { start, tick, sendSummary, buildMessage, dailyPeriod, weeklyPeriod, istNow, to12h, DEFAULT_DAILY_DAYS };
+module.exports = { start, tick, sendSummary, buildMessage, dailyPeriod, weeklyPeriod, nextSendAt, istNow, to12h, DEFAULT_DAILY_DAYS, _failedAt: failedAt };

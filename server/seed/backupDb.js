@@ -5,10 +5,11 @@
  *   node seed/backupDb.js                       back up the database in .env (MONGO_URI)
  *                                               into server/backups/ (or BACKUP_DIR)
  *       --out <dir>                             write it somewhere else
- *       --mail                                  also mail it (SMTP in .env; to BACKUP_MAIL_TO / SMTP_USER)
  *       --uri <mongodb uri>                     back up another database (read only)
  *   node seed/backupDb.js --list                the backup files in the folder
  *   node seed/backupDb.js --restore <file>      put a backup into the database in .env
+ *                                               (<file>: a .zip, the folder it unzips to,
+ *                                               or an older .json.gz)
  *       --uri <mongodb uri>                     ...or into another one
  *       --drop                                  replace a database that already has data
  *       --live                                  required to restore into anything but a
@@ -24,7 +25,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const mongoose = require("mongoose");
-const { parseBackup, restoreDatabase, restoreUploads, summarize } = require("../utils/dbBackup");
+const { readBackup, restoreDatabase, restoreUploads, summarize } = require("../utils/dbBackup");
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -53,7 +54,8 @@ const uri = value("uri") || process.env.MONGO_URI;
     const file = value("restore");
     if (!file) throw new Error("--restore needs the backup file");
     const full = fs.existsSync(file) ? file : path.join(dir, file);
-    const backup = parseBackup(fs.readFileSync(full));
+    // A .zip, the folder it unzips to, or an older .json.gz.
+    const backup = readBackup(full);
     const s = summarize(backup);
     if (!isLocal(uri) && !flag("live")) throw new Error("Refusing to restore into a non-local database — pass --live if you really mean it");
     await mongoose.connect(uri);
@@ -67,8 +69,8 @@ const uri = value("uri") || process.env.MONGO_URI;
   }
 
   await mongoose.connect(uri);
-  const r = await runBackup({ reason: "manual", audit: false, mail: flag("mail") });
-  console.log(`${r.file}\n${r.documents} records in ${r.collections} collections, ${r.files} uploaded files, ${Math.round(r.bytes / 1024)} KB${r.mailed ? ` — mailed to ${settings().mailTo}` : r.mailError ? ` — mail failed: ${r.mailError}` : ""}${r.removed.length ? `\nremoved ${r.removed.length} old file(s)` : ""}`);
+  const r = await runBackup({ reason: "manual", audit: false });
+  console.log(`${r.file}\n${r.documents} records in ${r.collections} collections, ${r.files} uploaded files, ${Math.round(r.bytes / 1024)} KB${r.removed.length ? `\nremoved ${r.removed.length} old file(s)` : ""}`);
 })()
   .catch((e) => {
     console.error(e.message);

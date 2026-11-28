@@ -100,12 +100,12 @@ export default function AnnouncementModeCard() {
             )}
 
             {/* Master switch */}
-            <div className="d-flex align-items-center justify-content-between border rounded p-3 mb-4" style={{ background: 'var(--vz-secondary-bg)' }}>
+            <div className="d-flex align-items-center justify-content-between gap-4 border rounded p-3 mb-4" style={{ background: 'var(--vz-secondary-bg)' }}>
               <div>
                 <div className="fw-semibold">Enable Announcement</div>
                 <div className="text-muted small">Shows everyone a once-a-day popup while this is on and today is inside the window below.</div>
               </div>
-              <div className="form-check form-switch" style={{ transform: 'scale(1.4)', transformOrigin: 'right center' }}>
+              <div className="form-check form-switch flex-shrink-0 mb-0 me-2" style={{ transform: 'scale(1.4)', transformOrigin: 'right center' }}>
                 <input
                   className="form-check-input"
                   type="checkbox"

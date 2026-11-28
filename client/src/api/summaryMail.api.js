@@ -10,3 +10,7 @@ export const getSummaryMail = () => api.get(ENDPOINTS.SUMMARY_MAIL.BASE);
 export const updateSummaryMail = (data) => api.put(ENDPOINTS.SUMMARY_MAIL.BASE, data);
 // { kind: "daily" | "weekly", to?: "a@b.com" } — sends that summary right now
 export const sendSummaryMailNow = (data) => api.post(ENDPOINTS.SUMMARY_MAIL.SEND, data);
+// { at: "HH:mm" (IST) | inMinutes: n, kind: "daily" | "weekly" | "both", to?: "a@b.com" } — books one test send
+export const scheduleSummaryMailTest = (data) => api.post(ENDPOINTS.SUMMARY_MAIL.TEST, data);
+// cancels the booked test send
+export const cancelSummaryMailTest = () => api.delete(ENDPOINTS.SUMMARY_MAIL.TEST);

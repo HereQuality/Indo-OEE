@@ -45,6 +45,7 @@ export const ENDPOINTS = {
     SUMMARY_MAIL: {
         BASE: `${V1}/summary-mail`,
         SEND: `${V1}/summary-mail/send`,
+        TEST: `${V1}/summary-mail/test`,
     },
 
     // Announcement mode endpoints

@@ -8,17 +8,22 @@ const mongoose = require("mongoose");
  * Company page (client Components/Common/SummaryMailCard.jsx) and acted on
  * by jobs/summaryMail.js:
  *
- *   daily   on each of `dailyDays` (Monday to Saturday by default) at
- *           `dailySendAt` (IST, 9:00 AM by default), covering the previous
- *           day in full — and on the first send day after a gap (Monday,
- *           when Sunday is skipped) every day since the last send day, so
- *           Saturday and Sunday both arrive on Monday
+ *   daily   on each of `dailyDays` (every day by default) at `dailySendAt`
+ *           (IST, 9:00 AM by default), covering the previous day in full, so
+ *           Saturday's arrives on Sunday — and, when some weekdays are
+ *           unticked, on the first send day after a gap every day since the
+ *           last send day
  *   weekly  every `weeklyDay` (Monday) at `weeklySendAt` (9:30 AM), covering
  *           the previous Monday to Sunday (Sunday's entries, if any, included)
  *
  * `lastDailyFor` / `lastWeeklyFor` remember the last period mailed, so a
  * restart never sends the same summary twice (or skips one that was due
  * while the server was down for less than a day).
+ *
+ * `testAt` is a one-off test send booked on the Company page (Email reports
+ * tab › "Send a test at"): at that moment the scheduler mails `testKind`
+ * ("daily", "weekly" or "both") to `testTo` (or the recipients when empty),
+ * then clears it. Kept here, so a restart doesn't lose it.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -36,10 +41,10 @@ const SummaryMailSettingSchema = new mongoose.Schema(
     weeklyEnabled: { type: Boolean, default: true },
     // "HH:mm", 24-hour, Indian Standard Time.
     dailySendAt: { type: String, default: "09:00", match: [/^([01]\d|2[0-3]):[0-5]\d$/, "Daily send time must be HH:mm"] },
-    // Weekdays the daily mail goes out on (0 = Sunday … 6 = Saturday); Monday to Saturday by default.
+    // Weekdays the daily mail goes out on (0 = Sunday … 6 = Saturday); every day by default.
     dailyDays: {
       type: [Number],
-      default: () => [1, 2, 3, 4, 5, 6],
+      default: () => [0, 1, 2, 3, 4, 5, 6],
       validate: {
         validator: (arr) => arr.length >= 1 && arr.every((d) => Number.isInteger(d) && d >= 0 && d <= 6),
         message: "Pick at least one day for the daily mail",
@@ -50,6 +55,10 @@ const SummaryMailSettingSchema = new mongoose.Schema(
     weeklyDay: { type: Number, default: 1, min: 0, max: 6 },
     lastDailyFor: { type: String, default: "" },
     lastWeeklyFor: { type: String, default: "" },
+    testAt: { type: Date, default: null },
+    testKind: { type: String, enum: ["daily", "weekly", "both"], default: "daily" },
+    testTo: { type: [String], default: [] },
+    testByName: { type: String, default: "" },
     updatedByName: { type: String, default: "" },
   },
   { timestamps: true },
