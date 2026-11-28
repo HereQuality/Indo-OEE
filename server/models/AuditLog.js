@@ -10,7 +10,10 @@ const mongoose = require("mongoose");
  * an entry's Availability / Performance / Quality went over 100% or came back
  * under, every Admin review decision, every change to a process's Operator
  * Planned Shift) and now takes a row from every master, setting, sign-in and
- * Not-running mark as well (utils/auditTrail.js writes them).
+ * Not-running mark as well (utils/auditTrail.js writes them), every backup
+ * taken or downloaded, and — through middlewares/auditCatchAll.middleware.js
+ * — any other change made through the API that no module logged itself.
+ * Shown on Administration › Logs (client pages/Logs.jsx).
  *
  * Append-only by design: the app only ever creates rows here — there is no
  * update or delete route, and the hooks below refuse both, so an ordinary
@@ -52,6 +55,11 @@ const MODULE_LABELS = {
   menu: "Menu Master",
   menuGroup: "Menu Group",
   profile: "Profile",
+  page: "Pages & screens",
+  ticket: "Support tickets",
+  appUpdate: "App Update",
+  notification: "Notifications",
+  other: "Other",
 };
 
 const ACTION_LABELS = {
@@ -76,6 +84,10 @@ const ACTION_LABELS = {
   unblocked: "Unblocked",
   sent: "Sent",
   import: "Imported",
+  download: "Downloaded",
+  view: "Opened page",
+  error: "Error",
+  other: "Other",
 };
 
 const ENTITY_TYPES = Object.keys(MODULE_LABELS);
@@ -128,8 +140,16 @@ const AuditLogSchema = new mongoose.Schema(
     remark: { type: String, default: "" },
     actor: { type: actorSchema, default: () => ({}) },
     // Where the request came from: the web client or the phone / tablet app, and its address.
-    client: { type: String, enum: ["web", "app", ""], default: "" },
+    // "system" = no request behind it (the daily backup, a scheduled mail).
+    client: { type: String, enum: ["web", "app", "system", ""], default: "" },
     ip: { type: String, default: "" },
+    userAgent: { type: String, default: "" },
+    // The API call that caused the row (no query string) and how it ended.
+    // statusCode is 0 for rows written before the response was sent.
+    method: { type: String, default: "" },
+    path: { type: String, default: "" },
+    statusCode: { type: Number, default: 0 },
+    success: { type: Boolean, default: true },
     // Everything a person might search for, lowercased and joined: the label, who did it,
     // the remark, the machine and each change's label / old / new value.
     search: { type: String, default: "" },
@@ -143,6 +163,7 @@ AuditLogSchema.index({ entityType: 1, createdAt: -1 });
 AuditLogSchema.index({ "actor.id": 1, createdAt: -1 });
 AuditLogSchema.index({ action: 1, createdAt: -1 });
 AuditLogSchema.index({ sheet: 1, date: 1, machine: 1, createdAt: -1 });
+AuditLogSchema.index({ success: 1, createdAt: -1 });
 
 const refuse = function refuse(next) {
   next(new Error("Audit log rows can't be changed or deleted"));

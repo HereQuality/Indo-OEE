@@ -13,6 +13,8 @@
  *       --drop                                  replace a database that already has data
  *       --live                                  required to restore into anything but a
  *                                               local (127.0.0.1 / localhost) database
+ *       --uploads                               also put back uploaded files missing
+ *                                               from server/uploads (never overwrites)
  *
  * A backup by hand never writes an audit-trail row (it may be pointed at a
  * database that must not be touched); the server's own daily backup
@@ -22,7 +24,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const mongoose = require("mongoose");
-const { parseBackup, restoreDatabase, summarize } = require("../utils/dbBackup");
+const { parseBackup, restoreDatabase, restoreUploads, summarize } = require("../utils/dbBackup");
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -31,7 +33,7 @@ const value = (name) => {
   return i !== -1 ? args[i + 1] : undefined;
 };
 if (value("out")) process.env.BACKUP_DIR = value("out");
-const { runBackup, settings, listFiles } = require("../jobs/dbBackup");
+const { runBackup, settings, listFiles, UPLOADS_DIR } = require("../jobs/dbBackup");
 
 const isLocal = (uri) => /^mongodb:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(uri);
 const uri = value("uri") || process.env.MONGO_URI;
@@ -58,13 +60,15 @@ const uri = value("uri") || process.env.MONGO_URI;
     const db = mongoose.connection.db;
     console.log(`Restoring ${path.basename(full)} (${s.documents} records, ${s.collections} collections, taken ${s.takenAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST) into "${db.databaseName}" on ${isLocal(uri) ? "localhost" : "a remote server"}${flag("drop") ? ", dropping what's there first" : ""}…`);
     await restoreDatabase(db, backup, { drop: flag("drop") });
+    if (flag("uploads")) console.log(`Uploaded files put back: ${restoreUploads(UPLOADS_DIR, backup)} of ${s.files} (existing ones left alone).`);
+    else if (s.files) console.log(`(The backup also holds ${s.files} uploaded file(s) — add --uploads to put back the missing ones.)`);
     console.log("Restored.");
     return;
   }
 
   await mongoose.connect(uri);
   const r = await runBackup({ reason: "manual", audit: false, mail: flag("mail") });
-  console.log(`${r.file}\n${r.documents} records in ${r.collections} collections, ${Math.round(r.bytes / 1024)} KB${r.mailed ? ` — mailed to ${settings().mailTo}` : r.mailError ? ` — mail failed: ${r.mailError}` : ""}${r.removed.length ? `\nremoved ${r.removed.length} old file(s)` : ""}`);
+  console.log(`${r.file}\n${r.documents} records in ${r.collections} collections, ${r.files} uploaded files, ${Math.round(r.bytes / 1024)} KB${r.mailed ? ` — mailed to ${settings().mailTo}` : r.mailError ? ` — mail failed: ${r.mailError}` : ""}${r.removed.length ? `\nremoved ${r.removed.length} old file(s)` : ""}`);
 })()
   .catch((e) => {
     console.error(e.message);

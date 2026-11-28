@@ -75,7 +75,7 @@ export const REVIEW_STYLE = {
 
 // The kinds of audit row the OEE Review tab filters by, in the order the filter
 // offers them. Labels and colours come from utils/auditTrail.js, the one
-// vocabulary the Audit Trail page and every History modal share.
+// vocabulary the Logs page and every History modal share.
 const OEE_AUDIT_KEYS = ["create", "update", "delete", "flagged", "cleared", "approved", "rejected", "unlocked", "setting"];
 export const AUDIT_ACTIONS = OEE_AUDIT_KEYS.map((key) => ({ key, label: actionLabel(key) }));
 

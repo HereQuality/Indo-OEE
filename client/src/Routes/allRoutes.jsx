@@ -1,5 +1,5 @@
 import React, { lazy } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import NotFoundFallback from "./NotFoundFallback";
 
 // Every page is a separate lazy chunk — none of these download until the
@@ -73,8 +73,15 @@ const ProcessMaster = lazyWithRetry(() => import("../pages/ProcessMaster"));
 const ItemMaster = lazyWithRetry(() => import("../pages/ItemMaster"));
 const WorkOrderMaster = lazyWithRetry(() => import("../pages/WorkOrderMaster"));
 const OeeReviewPage = lazyWithRetry(() => import("../pages/OeeReviewPage"));
-// Audit Trail — every change in the software, who made it and when (menu URL /hqepl/production/audit-trail).
-const AuditTrail = lazyWithRetry(() => import("../pages/AuditTrail"));
+// Administration › Logs — everything that happens in the app (menu URL /hqepl/logs; was Audit Trail).
+const Logs = lazyWithRetry(() => import("../pages/Logs"));
+// Administration › Backups — the daily database backups (menu URL /hqepl/backups, Super Admin only).
+const Backups = lazyWithRetry(() => import("../pages/Backups"));
+// ".../production/audit-trail?x" → ".../logs?x", under whatever role slug the URL had.
+const LegacyAuditTrail = () => {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`${pathname.replace(/\/production\/audit-trail\/?$/, "/logs")}${search}`} replace />;
+};
 const OperatorMaster = lazyWithRetry(() => import("../pages/OperatorMaster"));
 const VendorMaster = lazyWithRetry(() => import("../pages/VendorMaster"));
 const RoleMaster = lazyWithRetry(() => import("../pages/RoleMaster"));
@@ -120,6 +127,10 @@ const protectedRoutes = [
   { path: "/menu-groups", component: <MenuGroup />, roles: ["SuperAdmin"] },
   { path: "/menus", component: <MenuMaster />, roles: ["SuperAdmin"] },
   { path: "/company", component: <CompanyManagement />, roles: ["SuperAdmin"] },
+  // Everything that happens in the app; ?entity=… or ?sheet&date&machine narrows it to one record's history.
+  // Not SuperAdmin-only: a Full access role, or one ticked for "Logs" in Manage Role, may open it too.
+  { path: "/logs", component: <Logs /> },
+  { path: "/backups", component: <Backups />, roles: ["SuperAdmin"] },
 
   // Shared by SuperAdmin and every Operator role alike — what each one
   // actually sees/can edit inside these pages is still narrowed by their
@@ -142,8 +153,8 @@ const protectedRoutes = [
   { path: "/production/work-orders", component: <WorkOrderMaster /> },
   // Admin review of entries whose OEE figures went over 100%, plus the audit log.
   { path: "/production/oee-review", component: <OeeReviewPage /> },
-  // The full audit trail; ?entity=… or ?sheet&date&machine narrows it to one record's history.
-  { path: "/production/audit-trail", component: <AuditTrail /> },
+  // The old Audit Trail address, kept for bookmarks and pinned links: it opens Logs with the same filters.
+  { path: "/production/audit-trail", component: <LegacyAuditTrail /> },
   { path: "/production/machines", component: <MachineMaster /> },
   { path: "/production/processes", component: <ProcessMaster /> },
   { path: "/production/operators", component: <OperatorMaster /> },

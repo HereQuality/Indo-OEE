@@ -2,6 +2,7 @@
 
 const { getOrCreateAppUpdate } = require("../models/AppUpdateMode");
 const { getSocketIo } = require("../socket");
+const { recordAudit } = require("../utils/auditTrail");
 
 const serialize = (doc) => ({
   isActive: !!doc.isActive,
@@ -45,6 +46,7 @@ exports.updateAppUpdate = async (req, res) => {
     }
 
     const doc = await getOrCreateAppUpdate();
+    const before = serialize(doc);
 
     if (isActive !== undefined) doc.isActive = !!isActive;
     if (minVersion !== undefined) doc.minVersion = String(minVersion || "").trim().slice(0, 20);
@@ -58,6 +60,7 @@ exports.updateAppUpdate = async (req, res) => {
     await doc.save();
 
     const payload = serialize(doc);
+    await recordAudit({ req, entityType: "appUpdate", entity: doc._id, label: "App Update", action: "setting", before, after: payload, fields: { isActive: "Forced update on", minVersion: "Minimum version", latestVersion: "Latest version", message: "Message", softMessage: "Soft update message" } });
 
     const io = getSocketIo();
     if (io) io.emit("app-update:update", payload);

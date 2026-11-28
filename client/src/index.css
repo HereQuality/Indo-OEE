@@ -7,6 +7,13 @@
     --font-sans: "Inter", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", monospace;
     scroll-behavior: smooth;
+    /* Surface tokens for pages that draw their own cards (Administration ›
+       Logs / Backups). The .dark block re-points them. */
+    --panel-bg: #ffffff;
+    --panel-bg-subtle: #f8fafc;
+    --panel-border: #eef0f4;
+    --panel-text: #1e293b;
+    --panel-text-muted: #6b7280;
   }
 
   html {
@@ -481,6 +488,11 @@ input, textarea, .form-control {
 }
 /* Chat bubble backgrounds override via BS variables */
 .dark {
+  --panel-bg: #1c1c1e;
+  --panel-bg-subtle: #242426;
+  --panel-border: #3a3a3c;
+  --panel-text: #f1f1f1;
+  --panel-text-muted: #a1a1aa;
   --bs-secondary-bg: #28282a;
   --bs-body-bg: #1c1c1e;
   --bs-body-color: #f1f1f1;

@@ -190,6 +190,14 @@ export const ENDPOINTS = {
         BASE: `${V1}/audit-trail`,
         FILTERS: `${V1}/audit-trail/filters`,
         EXPORT: `${V1}/audit-trail/export.csv`,
+        SUMMARY: `${V1}/audit-trail/summary`,
+        PAGE_VIEW: `${V1}/audit-trail/page-view`,
+        CLIENT_ERROR: `${V1}/audit-trail/client-error`,
+    },
+    // Administration › Backups (routes/backup.routes.js, Super Admin only).
+    BACKUPS: {
+        BASE: `${V1}/backups`,
+        LINK: (name) => `${V1}/backups/${encodeURIComponent(name)}/link`,
     },
     POWDER_SHEET: {
         BASE: `${V1}/powder-coating-sheet`,

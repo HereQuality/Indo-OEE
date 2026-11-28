@@ -23,7 +23,7 @@ const withLog = async (fn, create) => {
 };
 
 test("the model exports one module and action list, each with a label", () => {
-  assert.equal(ENTITY_TYPES.length, 28);
+  assert.equal(ENTITY_TYPES.length, 33);
   assert.ok(ENTITY_TYPES.includes("entry") && ENTITY_TYPES.includes("notRunning") && ENTITY_TYPES.includes("auth") && ENTITY_TYPES.includes("backup"));
   for (const k of ENTITY_TYPES) assert.ok(MODULE_LABELS[k]);
   for (const k of ACTIONS) assert.ok(ACTION_LABELS[k]);
@@ -63,10 +63,20 @@ test("diffChanges: a create shows every field from null, a delete every field to
 });
 
 test("requestMeta: the app says so in its body or header; the address comes from the proxy first", () => {
-  assert.deepEqual(requestMeta({ body: {}, headers: {}, ip: "10.0.0.5" }), { client: "web", ip: "10.0.0.5" });
-  assert.deepEqual(requestMeta({ body: { client: "app" }, headers: {}, ip: "10.0.0.5" }), { client: "app", ip: "10.0.0.5" });
-  assert.deepEqual(requestMeta({ body: {}, headers: { "x-client": "app", "x-forwarded-for": "1.2.3.4, 10.0.0.1" }, ip: "10.0.0.5" }), { client: "app", ip: "1.2.3.4" });
-  assert.deepEqual(requestMeta(undefined), { client: "", ip: "" });
+  const pick = (m) => ({ client: m.client, ip: m.ip });
+  assert.deepEqual(pick(requestMeta({ body: {}, headers: {}, ip: "10.0.0.5" })), { client: "web", ip: "10.0.0.5" });
+  assert.deepEqual(pick(requestMeta({ body: { client: "app" }, headers: {}, ip: "10.0.0.5" })), { client: "app", ip: "10.0.0.5" });
+  assert.deepEqual(pick(requestMeta({ body: {}, headers: { "x-client": "app", "x-forwarded-for": "1.2.3.4, 10.0.0.1" }, ip: "10.0.0.5" })), { client: "app", ip: "1.2.3.4" });
+  assert.deepEqual(pick(requestMeta({ body: {}, headers: { "user-agent": "Dart/3.5 (dart:io)" }, ip: "10.0.0.5" })), { client: "app", ip: "10.0.0.5" });
+  // No request = the server itself.
+  assert.deepEqual(requestMeta(undefined), { client: "system", ip: "", userAgent: "", method: "", path: "" });
+  // The API call is kept (no query string), and the request is marked as logged for the catch-all.
+  const req = { method: "PUT", originalUrl: "/api/v1/machines/abc?x=1", body: {}, headers: { "user-agent": "Mozilla/5.0" }, ip: "1.1.1.1", auditCtx: { audited: false } };
+  const m = requestMeta(req);
+  assert.equal(m.method, "PUT");
+  assert.equal(m.path, "/api/v1/machines/abc");
+  assert.equal(m.userAgent, "Mozilla/5.0");
+  assert.equal(req.auditCtx.audited, true);
 });
 
 test("recordAudit fills module, client, ip, actor and search, and returns the row", async () => {

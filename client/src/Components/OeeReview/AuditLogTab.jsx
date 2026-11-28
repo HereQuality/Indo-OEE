@@ -14,7 +14,7 @@ import { AUDIT_ACTIONS } from "./reviewShared";
  * review decision, every unlock and every process setting change. Filtered
  * by kind of action on the server and by label / user on the page shown.
  * Rows are drawn by Components/AuditTrail/AuditLogList.jsx — the same
- * component the Audit Trail page and the per-record History modal use.
+ * component the Logs page and the per-record History modal use.
  */
 
 const PAGE = 50;

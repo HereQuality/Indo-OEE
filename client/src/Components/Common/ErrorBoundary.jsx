@@ -1,4 +1,5 @@
 import React from "react";
+import { reportClientError } from "../../api/auditTrail.api";
 
 // Top-level safety net. Without this, ANY render error thrown anywhere in
 // the tree — including a lazy-loaded route chunk failing to import — would
@@ -17,6 +18,13 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("Unhandled render error:", error, info);
+    // Into Administration › Logs, so a crash someone saw is on record even if they never mention it.
+    reportClientError({
+      message: String(error?.message || error || "Page crashed"),
+      stack: `${error?.stack || ""}\n${info?.componentStack || ""}`.trim(),
+      path: window.location.pathname,
+      source: "page crashed",
+    });
   }
 
   render() {

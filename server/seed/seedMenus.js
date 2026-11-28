@@ -22,9 +22,9 @@ const Operator = require("../models/Operator");
 // ── Sidebar order (top to bottom) ────────────────────────────────────────
 //   1. Home                      (link)
 //   2. Dashboard                  (link — the process dashboards)
-//   3. Administration             (group: Menu Group, Menu Master, Company)
+//   3. Administration             (group: Menu Group, Menu Master, Company, Logs, Backups)
 //   4. Operator Management        (group)
-//   5. Production                 (group: Processes, Machines, Parts, Operators, Vendors, Work Orders, OEE Review, Audit Trail)
+//   5. Production                 (group: Processes, Machines, Parts, Operators, Vendors, Work Orders, OEE Review)
 //   6. Data Entry                 (group: CNC, VMC, SPM — one entry per sheet)
 //   7. Support                    (link)
 const HOME_GROUP = { menuGroupName: "Home", sequence: 1, isLink: true, menuUrl: "/hqepl/home", portal: "Both", icon: "Home" };
@@ -48,6 +48,14 @@ const ADMINISTRATION_MENUS = [
   { menuName: "Menu Group", menuUrl: "/x/menu-groups", sequence: 1, icon: "FolderTree" },
   { menuName: "Menu Master", menuUrl: "/x/menus", sequence: 2, icon: "List" },
   { menuName: "Company", menuUrl: "/x/company", sequence: 3, icon: "Building2" },
+  // Everything that happens in the app — every create / edit / delete, sign-in,
+  // setting, backup, and any other change made through the API — with filters
+  // and a CSV export (routes/auditTrail.routes.js). It was "Audit Trail" under
+  // Production at /hqepl/production/audit-trail; moveMenu below carries that
+  // row (and every role tick on it) over instead of making a second one.
+  { menuName: "Logs", menuUrl: "/hqepl/logs", sequence: 4, icon: "History" },
+  // The daily database backups: list, back up now, download (routes/backup.routes.js, Super Admin only).
+  { menuName: "Backups", menuUrl: "/hqepl/backups", sequence: 5, icon: "Archive" },
 ];
 
 const PRODUCTION_MENUS = [
@@ -66,11 +74,8 @@ const PRODUCTION_MENUS = [
   // (server/utils/adminAccess.js); this row just puts it in the sidebar —
   // tick it in Manage Role for the Admin role.
   { menuName: "OEE Review", menuUrl: "/hqepl/production/oee-review", sequence: 7, icon: "ShieldAlert" },
-  // The whole audit log (who created / edited / deleted / unlocked / marked
-  // what, in every module), with filters and a CSV export
-  // (routes/auditTrail.routes.js). Full access roles see it without a tick;
-  // any other role needs its view box ticked in Manage Role.
-  { menuName: "Audit Trail", menuUrl: "/hqepl/production/audit-trail", sequence: 8, icon: "History" },
+  // "Audit Trail" (sequence 8) is now Administration › Logs — see
+  // ADMINISTRATION_MENUS. Listing it here again would bring the old row back.
   // Dashboard and Data Entry are NOT listed here any more (they are
   // DASHBOARD_GROUP/DATA_ENTRY_GROUP above). Listing either again would
   // re-activate its retired row on every run.
@@ -198,6 +203,29 @@ async function promoteMenuToLinkGroup(menuUrlPattern, group) {
   console.log(`"${group.menuGroupName}" promoted to a top-level link: ${migratedRoles} role(s) carried over, ${migratedPins} shortcut(s) re-pinned, ${retired.modifiedCount} old menu row(s) retired.`);
 }
 
+// Moves a menu row to a new URL / group in place, so its _id — and with it
+// every role's tick (OperatorRoles) and every pinned shortcut — survives.
+// If a row already sits at the new URL, the old one is just switched off.
+// Safe to run again: once moved there is nothing at the old URL.
+async function moveMenu(oldUrl, newUrl, group) {
+  const old = await MenuMaster.findOne({ menuUrl: oldUrl });
+  if (!old) return;
+  const existing = await MenuMaster.findOne({ menuUrl: newUrl });
+  if (existing) {
+    if (old.isActive) await MenuMaster.updateOne({ _id: old._id }, { $set: { isActive: false } });
+    console.log(`"${oldUrl}" retired — "${newUrl}" already exists.`);
+    return;
+  }
+  await MenuMaster.updateOne({ _id: old._id }, { $set: { menuUrl: newUrl, menuGroup: group._id } });
+  // Role entries name the group as well as the menu: point them at the new group.
+  const roles = await OperatorRoles.updateMany(
+    { "roles.menuId": old._id },
+    { $set: { "roles.$[r].menuGroupId": group._id } },
+    { arrayFilters: [{ "r.menuId": old._id }] },
+  );
+  console.log(`"${oldUrl}" moved to "${newUrl}" (${roles.modifiedCount} role(s) kept their access).`);
+}
+
 async function run() {
   await connectDB();
 
@@ -207,6 +235,7 @@ async function run() {
   await promoteMenuToLinkGroup(/\/production\/dashboard\/?$/, dashboardGroup);
 
   const adminGroup = await upsertGroup(ADMINISTRATION_GROUP);
+  await moveMenu("/hqepl/production/audit-trail", "/hqepl/logs", adminGroup);
   await upsertMenus(ADMINISTRATION_MENUS, adminGroup);
 
   const productionGroup = await upsertGroup(PRODUCTION_GROUP);

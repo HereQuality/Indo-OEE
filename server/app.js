@@ -19,6 +19,7 @@ const { globalErrorHandler } = require("./middlewares/errorHandler");
 const { notFoundHandler } = require("./middlewares/notFoundHandler");
 const { blockDuringMaintenance } = require("./middlewares/maintenance.middleware");
 const apiRouter = require("./routes");
+const { auditCatchAll } = require("./middlewares/auditCatchAll.middleware");
 const logger = require("./config/logger");
  
 const app = express();
@@ -90,7 +91,9 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // blockDuringMaintenance runs ahead of every /api/v1/* route — see
 // middlewares/maintenance.middleware.js for the allowlist (the status
 // endpoints, auth, public company branding) and the SuperAdmin bypass.
-app.use("/api/v1", blockDuringMaintenance, apiRouter);
+// auditCatchAll logs any change (POST/PUT/PATCH/DELETE) no module logged
+// itself, so Administration › Logs misses nothing.
+app.use("/api/v1", auditCatchAll, blockDuringMaintenance, apiRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. 404 HANDLER (must come after all valid routes)

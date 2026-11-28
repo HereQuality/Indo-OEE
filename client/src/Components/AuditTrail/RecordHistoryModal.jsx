@@ -11,7 +11,7 @@ import { toRolePath } from "../../utils/roleUrl";
  * ─────────────────────────────────────────────
  * One record's history — every change made to it, newest first — opened from
  * a sheet row's "History" button or a Not-running mark's. Same rows as the
- * Audit Trail page (AuditLogList), a few to a page.
+ * Logs page (AuditLogList), a few to a page.
  *
  * props: { isOpen, onClose, title, query }
  *   query = { entity } for a saved entry / master record,
@@ -19,9 +19,9 @@ import { toRolePath } from "../../utils/roleUrl";
  */
 
 const PAGE = 10;
-export const AUDIT_TRAIL_PATH = "/hqepl/production/audit-trail";
+export const AUDIT_TRAIL_PATH = "/hqepl/logs";
 
-// The ?query the Audit Trail page reads to show the same record (utils/auditTrail.js isRecordQuery).
+// The ?query the Logs page reads to show the same record (utils/auditTrail.js isRecordQuery).
 export const recordSearch = (query = {}) => {
   const p = new URLSearchParams();
   if (query.entity) p.set("entity", query.entity);
@@ -105,7 +105,7 @@ export default function RecordHistoryModal({ isOpen, onClose, title, query }) {
       </ModalBody>
       <ModalFooter className="flex-wrap gap-2 justify-content-between">
         <Button type="button" color="link" className="d-inline-flex align-items-center gap-1 px-0 text-decoration-none" onClick={openInTrail}>
-          <ExternalLink size={14} /> Open in Audit Trail
+          <ExternalLink size={14} /> Open in Logs
         </Button>
         <Button type="button" color="light" onClick={onClose}>
           Close

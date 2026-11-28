@@ -113,6 +113,8 @@ router.use("/summary-mail", summaryMailRoutes);
 router.use("/machine-day-status", require("./machineDayStatus.routes"));
 // The whole audit log — every module — with filters and a CSV export.
 router.use("/audit-trail", require("./auditTrail.routes"));
+// Administration › Backups — the daily database backups: list, back up now, download (Super Admin).
+router.use("/backups", require("./backup.routes"));
 // router.use("/inventory", inventoryRoutes);
 
 // ── API Info endpoint ─────────────────────────────────────────────────────────

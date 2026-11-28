@@ -4,6 +4,7 @@ import { AuthContext } from "../context/AuthContext";
 import { MenuContext } from "../context/MenuContext";
 import { getRoleSlug } from "../utils/roleUrl";
 import FullPageLoader from "../Components/Common/FullPageLoader";
+import ActivityReporter from "../Components/Common/ActivityReporter";
 
 // Pages every logged-in user may open regardless of menu permissions —
 // they aren't "content" pages governed by Manage Role, they're the
@@ -70,7 +71,13 @@ export default function RoleRoute() {
     return <Navigate to={adminData?.redirectUrl || '/hqepl/home'} replace />;
   }
 
-  return <Outlet />;
+  return (
+    <>
+      {/* Reports each page opened and any error on screen to Administration › Logs. */}
+      <ActivityReporter />
+      <Outlet />
+    </>
+  );
 }
 
 // ── PageGuard (inner) ────────────────────────────────────────────────────

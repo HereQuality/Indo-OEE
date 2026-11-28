@@ -4,10 +4,11 @@
  * ─────────
  * Copies the production (Atlas) database into the local one.
  *
- *   node dump.js                 copy every collection that is empty locally
- *   node dump.js --drop          replace local collections with production's
- *   node dump.js --only items,machines        just these collections
- *   node dump.js --exclude auditlogs          everything but these
+ *   node dump.js                 WIPE the local database, then copy every
+ *                                collection fresh from production
+ *   node dump.js --only items,machines        replace just these collections
+ *   node dump.js --exclude auditlogs          wipe + copy everything but these
+ *                                             (excluded ones end up absent)
  *   node dump.js --dry-run       count what would be copied, write nothing
  *
  * Source: SOURCE_URI in the environment, or else the commented-out
@@ -48,13 +49,10 @@ const parsed = (uri) => {
 
 const masked = (uri) => uri.replace(/\/\/([^:@/]+):[^@]+@/, "//$1:****@");
 
-const copyCollection = async (src, dst, name, { drop, dry }) => {
+const copyCollection = async (src, dst, name, { dry }) => {
   const total = await src.collection(name).estimatedDocumentCount();
-  const existing = (await dst.listCollections({ name }).toArray()).length ? await dst.collection(name).estimatedDocumentCount() : 0;
-
-  if (existing && !drop) return { name, total, copied: 0, note: `skipped — local already has ${existing} (use --drop to replace)` };
   if (dry) return { name, total, copied: 0, note: "dry run" };
-  if (existing || drop) await dst.collection(name).drop().catch(() => {}); // nothing to drop is fine
+  await dst.collection(name).drop().catch(() => {}); // already gone after a full wipe — fine
 
   let copied = 0;
   let batch = [];
@@ -97,7 +95,11 @@ const main = async () => {
   if (!target.db) throw new Error("MONGO_URI has no database name");
 
   console.log(`From  ${masked(from)}  (db "${source.db}")`);
-  console.log(`To    ${masked(to)}  (db "${target.db}")${flag("--drop") ? "  — local collections will be REPLACED" : ""}${flag("--dry-run") ? "  — dry run" : ""}\n`);
+  const only = listOf("--only");
+  const exclude = listOf("--exclude") || [];
+  const dry = flag("--dry-run");
+  const fullWipe = !only;
+  console.log(`To    ${masked(to)}  (db "${target.db}")${dry ? "  — dry run" : fullWipe ? "  — local database will be WIPED" : "  — selected collections will be REPLACED"}\n`);
 
   const srcClient = new MongoClient(from, { readPreference: "secondaryPreferred" });
   const dstClient = new MongoClient(to);
@@ -106,8 +108,6 @@ const main = async () => {
     const src = srcClient.db(source.db || undefined);
     const dst = dstClient.db(target.db);
 
-    const only = listOf("--only");
-    const exclude = listOf("--exclude") || [];
     const names = (await src.listCollections({ type: "collection" }).toArray())
       .map((c) => c.name)
       .filter((n) => !n.startsWith("system."))
@@ -115,9 +115,15 @@ const main = async () => {
       .sort();
     if (!names.length) throw new Error("No collections to copy");
 
+    if (fullWipe && !dry) {
+      const before = (await dst.listCollections().toArray()).length;
+      await dst.dropDatabase();
+      console.log(`Wiped local "${target.db}" (${before} collections dropped)\n`);
+    }
+
     let docs = 0;
     for (const name of names) {
-      const r = await copyCollection(src, dst, name, { drop: flag("--drop"), dry: flag("--dry-run") });
+      const r = await copyCollection(src, dst, name, { dry });
       docs += r.copied;
       console.log(`${r.name.padEnd(28)} ${String(r.copied).padStart(7)} / ${String(r.total).padEnd(7)} ${r.note}`);
     }

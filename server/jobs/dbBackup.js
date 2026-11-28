@@ -6,7 +6,7 @@ const { MongoClient } = require("mongodb");
 const logger = require("../config/logger");
 const { isConfigured, sendMail } = require("../services/mailer");
 const { recordAudit } = require("../utils/auditTrail");
-const { dumpDatabase, serializeBackup, restoreDatabase, summarize, backupFileName, dateOfFile, filesToDelete } = require("../utils/dbBackup");
+const { dumpDatabase, serializeBackup, parseBackup, restoreDatabase, summarize, backupFileName, dateOfFile, filesToDelete } = require("../utils/dbBackup");
 const { istNow } = require("./summaryMail");
 
 /**
@@ -32,8 +32,16 @@ const { istNow } = require("./summaryMail");
  *     must be a different database from the main one; the job refuses to
  *     mirror onto itself.
  *   - recorded in the audit trail (module "Database backup", by Scheduler)
+ *   - holds every uploaded file too (server/uploads: profile pictures, logos,
+ *     ticket attachments), so one file brings the whole app back
+ *   - one at a time: a second request while one runs is refused
+ *     (BACKUP_RUNNING), and the last result is kept in <dir>/status.json for
+ *     Administration › Backups (controllers/backup.controller.js)
  */
 const SCHEDULER = { name: "Scheduler", role: "System" };
+const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
+// Gmail refuses attachments over 25 MB; leave room for the base64 overhead.
+const MAIL_MAX_BYTES = 18 * 1024 * 1024;
 
 const settings = () => ({
   at: /^([01]\d|2[0-3]):[0-5]\d$/.test(process.env.BACKUP_AT || "") ? process.env.BACKUP_AT : "02:30",
@@ -75,28 +83,99 @@ const mirrorBackup = async (backup, mirrorUri, main) => {
 
 const listFiles = (dir, database) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => dateOfFile(f, database)) : []);
 
+// Every backup in the folder, newest first: { name, size, createdAt, day }.
+const listBackups = (database = mongoose.connection.db?.databaseName) => {
+  const { dir } = settings();
+  if (!database) return [];
+  return listFiles(dir, database)
+    .map((name) => {
+      const st = fs.statSync(path.join(dir, name));
+      return { name, size: st.size, createdAt: st.mtime.toISOString(), day: dateOfFile(name, database) };
+    })
+    .sort((a, b) => (a.name < b.name ? 1 : -1));
+};
+
+// The full path of backup `name` in the folder, or null (never a path outside it).
+const backupPath = (name, database = mongoose.connection.db?.databaseName) => {
+  if (typeof name !== "string" || !database || !dateOfFile(name, database)) return null;
+  const file = path.join(settings().dir, name);
+  return fs.existsSync(file) ? file : null;
+};
+
+// The last result: { lastSuccess: { name, bytes, documents, files, at, reason }, lastError, lastErrorAt }.
+const statusFile = () => path.join(settings().dir, "status.json");
+const readStatus = () => {
+  try {
+    return JSON.parse(fs.readFileSync(statusFile(), "utf8"));
+  } catch {
+    return {};
+  }
+};
+const writeStatus = (patch) => {
+  try {
+    fs.mkdirSync(settings().dir, { recursive: true });
+    fs.writeFileSync(statusFile(), JSON.stringify({ ...readStatus(), ...patch }, null, 2));
+  } catch (e) {
+    logger.warn(`Database backup: couldn't save the status file: ${e.message}`);
+  }
+};
+
+let running = null;
+const isRunning = () => !!running;
+
 // Takes one backup now: file on disk, old files pruned, mailed when possible.
 // `audit: false` skips the audit-trail row (the CLI, which may be pointed at a
 // database it must not write to).
-const runBackup = async ({ reason = "manual", actor, audit = true, mail = true, mirror = true } = {}) => {
+// `req` (a signed-in request) makes the audit row name the person who asked.
+const runBackup = async (opts = {}) => {
+  if (running) {
+    const err = new Error("A backup is already running. Try again in a minute.");
+    err.code = "BACKUP_RUNNING";
+    throw err;
+  }
+  running = takeBackup(opts);
+  try {
+    const result = await running;
+    writeStatus({ lastSuccess: { name: result.name, bytes: result.bytes, documents: result.documents, collections: result.collections, files: result.files, at: new Date().toISOString(), reason: opts.reason || "manual", mailed: result.mailed, mailError: result.mailError || "" }, lastError: null, lastErrorAt: null });
+    return result;
+  } catch (error) {
+    writeStatus({ lastError: error.message, lastErrorAt: new Date().toISOString() });
+    throw error;
+  } finally {
+    running = null;
+  }
+};
+
+const takeBackup = async ({ reason = "manual", actor, req, audit = true, mail = true, mirror = true, uploads = true } = {}) => {
   const { dir, mailTo, keepDays, mirrorUri } = settings();
   const db = mongoose.connection.db;
   if (!db) throw new Error("Not connected to the database");
-  const backup = await dumpDatabase(db);
+  const backup = await dumpDatabase(db, { uploadsDir: uploads ? UPLOADS_DIR : null });
   const buffer = serializeBackup(backup);
   const name = backupFileName(db.databaseName, backup.takenAt);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, name);
-  fs.writeFileSync(file, buffer);
+  // Written to a .part file and renamed, so a crash mid-write never leaves a
+  // broken file that looks like a backup; then read back to prove it opens.
+  const part = `${file}.part`;
+  fs.writeFileSync(part, buffer);
+  const check = summarize(parseBackup(fs.readFileSync(part)));
+  if (check.documents !== summarize(backup).documents) {
+    fs.rmSync(part, { force: true });
+    throw new Error("The backup file didn't read back the same — not saved");
+  }
+  fs.renameSync(part, file);
   const removed = filesToDelete(listFiles(dir, db.databaseName), db.databaseName, { today: istNow(backup.takenAt).date, keepDays });
   for (const f of removed) fs.rmSync(path.join(dir, f), { force: true });
 
   const s = summarize(backup);
   const kb = Math.round(buffer.length / 1024);
-  const label = `${s.documents} records in ${s.collections} collections, ${kb} KB`;
+  const label = `${s.documents} records in ${s.collections} collections${s.files ? `, ${s.files} uploaded file${s.files === 1 ? "" : "s"}` : ""}, ${kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`}`;
   let mailed = false;
   let mailError = "";
-  if (mail && mailTo && isConfigured()) {
+  if (mail && mailTo && isConfigured() && buffer.length > MAIL_MAX_BYTES) {
+    mailError = `file too big to mail (${Math.round(buffer.length / 1048576)} MB) — download it from Administration › Backups`;
+  } else if (mail && mailTo && isConfigured()) {
     try {
       await sendMail({
         to: mailTo,
@@ -121,7 +200,7 @@ const runBackup = async ({ reason = "manual", actor, audit = true, mail = true, 
   const outcome = `${mailed ? `, mailed to ${mailTo}` : mailError ? `, mail FAILED: ${mailError}` : ""}${mirrored ? `, standby "${mirrored}" refreshed` : mirrorError ? `, standby FAILED: ${mirrorError}` : ""}${removed.length ? `; removed ${removed.length} old file(s)` : ""}`;
   logger[mailError || mirrorError ? "warn" : "info"](`Database backup (${reason}): ${name} — ${label}${outcome}`);
   if (audit) {
-    await recordAudit({ entityType: "backup", label: "Database backup", action: "create", actor: actor || SCHEDULER, remark: `${reason}: ${name} — ${label}${outcome}` });
+    await recordAudit({ req, entityType: "backup", label: name, action: "create", actor: actor || SCHEDULER, remark: `${reason}: ${label}${outcome}` });
   }
   return { file, name, bytes: buffer.length, ...s, mailed, mailError, mirrored, mirrorError, removed };
 };
@@ -143,6 +222,7 @@ const tick = async (now = new Date()) => {
   try {
     await runBackup({ reason: "scheduled" });
   } catch (error) {
+    if (error.code === "BACKUP_RUNNING") return; // one started by hand is running; check again next minute
     logger.error(`Database backup failed: ${error.message}`);
     await recordAudit({ entityType: "backup", label: "Database backup", action: "create", actor: SCHEDULER, remark: `scheduled backup FAILED: ${error.message}` });
   }
@@ -166,4 +246,4 @@ const start = () => {
   logger.info(`Database backup: daily at ${at} IST into ${dir}${mailTo && isConfigured() ? `, mailed to ${mailTo}` : ""}${standby}`);
 };
 
-module.exports = { start, tick, runBackup, settings, listFiles, parseTarget, sameDatabase };
+module.exports = { start, tick, runBackup, isRunning, readStatus, listBackups, backupPath, settings, listFiles, parseTarget, sameDatabase, UPLOADS_DIR };

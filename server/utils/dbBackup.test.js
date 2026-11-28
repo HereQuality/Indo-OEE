@@ -126,3 +126,35 @@ test("retention keeps 30 days of dailies and the first file of every older month
   // Nothing to delete when everything is recent.
   assert.deepEqual(filesToDelete([f("2026-11-28"), f("2026-11-01")], "INDO", { today: "2026-11-28" }), []);
 });
+
+test("uploaded files ride in the backup and come back byte for byte; existing files are left alone; nothing escapes the folder", async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { restoreUploads, safeUploadPath } = require("./dbBackup");
+  const from = fs.mkdtempSync(path.join(os.tmpdir(), "indo-up-"));
+  const to = fs.mkdtempSync(path.join(os.tmpdir(), "indo-up-"));
+  try {
+    fs.mkdirSync(path.join(from, "profile"));
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x10, 0x80]);
+    fs.writeFileSync(path.join(from, "profile", "a.jpg"), jpeg);
+    fs.writeFileSync(path.join(from, "logo.png"), "png");
+    fs.writeFileSync(path.join(from, ".DS_Store"), "skip me");
+
+    const backup = parseBackup(serializeBackup(await dumpDatabase(source(), { uploadsDir: from })));
+    const s = summarize(backup);
+    assert.equal(s.files, 2);
+    assert.equal(s.fileBytes, jpeg.length + 3);
+
+    fs.writeFileSync(path.join(to, "logo.png"), "newer");
+    assert.equal(restoreUploads(to, backup), 1);
+    assert.deepEqual(fs.readFileSync(path.join(to, "profile", "a.jpg")), jpeg);
+    assert.equal(fs.readFileSync(path.join(to, "logo.png"), "utf8"), "newer");
+    assert.equal(safeUploadPath(to, "../../etc/passwd"), null);
+    // An old backup with no uploads still reads.
+    assert.equal(summarize(parseBackup(serializeBackup(await dumpDatabase(source())))).files, 0);
+  } finally {
+    fs.rmSync(from, { recursive: true, force: true });
+    fs.rmSync(to, { recursive: true, force: true });
+  }
+});

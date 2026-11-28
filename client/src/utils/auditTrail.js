@@ -1,7 +1,7 @@
 /**
  * utils/auditTrail.js
  * ────────────────────
- * What the Audit Trail page, the per-record History modal and the OEE Review
+ * What the Logs page, the per-record History modal and the OEE Review
  * audit tab share and that has no React in it: the action vocabulary (kept in
  * step with server models/AuditLog.js), the query string the server takes,
  * and the name of the CSV download.
@@ -31,6 +31,10 @@ export const AUDIT_ACTIONS = [
   { key: "unblocked", label: "Unblocked", tone: "secondary" },
   { key: "sent", label: "Sent", tone: "secondary" },
   { key: "import", label: "Imported", tone: "secondary" },
+  { key: "download", label: "Downloaded", tone: "primary" },
+  { key: "view", label: "Opened page", tone: "secondary" },
+  { key: "error", label: "Error", tone: "danger" },
+  { key: "other", label: "Other", tone: "secondary" },
 ];
 
 export const ACTION_BY_KEY = Object.fromEntries(AUDIT_ACTIONS.map((a) => [a.key, a]));
@@ -69,6 +73,10 @@ export const EMPTY_FILTERS = {
   entity: "",
   machine: "",
   date: "",
+  status: [],
+  client: [],
+  sort: "",
+  views: "",
 };
 
 const list = (v) => (Array.isArray(v) ? v : v ? String(v).split(",") : []).map((s) => String(s).trim()).filter(Boolean);
@@ -91,14 +99,20 @@ export const buildAuditQuery = (filters = {}, { skip = 0, limit = PAGE_SIZE } = 
   if (f.entity) params.entity = f.entity;
   if (f.machine) params.machine = f.machine;
   if (f.date) params.date = f.date;
+  const status = list(f.status);
+  if (status.length) params.status = status.join(",");
+  const client = list(f.client);
+  if (client.length) params.client = client.join(",");
+  if (f.sort === "oldest") params.sort = "oldest";
+  if (f.views === "0") params.views = "0";
   params.skip = Math.max(0, Number(skip) || 0);
   params.limit = Math.max(1, Number(limit) || PAGE_SIZE);
   return params;
 };
 
-// "audit-trail-2026-10-27_2026-11-25.csv" — the dates it was filtered to, or
+// "logs-2026-10-27_2026-11-25.csv" — the dates it was filtered to, or
 // "all" for an open end.
-export const csvFileName = ({ from, to } = {}) => `audit-trail-${from || "all"}_${to || "all"}.csv`;
+export const csvFileName = ({ from, to } = {}) => `logs-${from || "all"}_${to || "all"}.csv`;
 
 // Whether the page is showing one record's history (?entity=… or ?sheet&date&machine).
 export const isRecordQuery = (f = {}) => !!(f.entity || (f.sheet && f.date));

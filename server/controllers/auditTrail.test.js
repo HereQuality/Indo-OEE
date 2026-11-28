@@ -48,6 +48,46 @@ const withStubs = async (stubs, fn) => {
 };
 
 // ── Filters ──────────────────────────────────────────────────────────────
+test("views=0 hides pages opened unless an action filter is given", () => {
+  assert.deepEqual(buildQuery({ views: "0" }).query.action, { $ne: "view" });
+  assert.deepEqual(buildQuery({ views: "0", action: "view" }).query.action, { $in: ["view"] });
+  assert.equal(buildQuery({}).query.action, undefined);
+});
+
+test("page views: a page path without its role slug, named by its title, once a minute per person; bad paths refused", async () => {
+  const { pageView, clientError, _cleanPage: cleanPage } = require("./auditTrail.controller");
+  assert.equal(cleanPage("/hqepl/production/cnc-data-entry?x=1"), "/production/cnc-data-entry");
+  assert.equal(cleanPage("javascript:alert(1)"), "");
+  const written = [];
+  await withStubs([[AuditLog, "create", async (row) => (written.push(row), row)]], async () => {
+    const req = () => ({ user: { ...SUPER_ADMIN, _id: "64b0c0ffee0000000000b00" + written.length }, body: { path: "/hqepl/logs", title: "Logs | Indo" }, headers: {}, method: "POST", originalUrl: "/api/v1/audit-trail/page-view" });
+    const r1 = req();
+    await call(pageView, r1);
+    await call(pageView, { ...r1 });
+    assert.equal(written.length, 1);
+    assert.equal(written[0].action, "view");
+    assert.equal(written[0].label, "Logs");
+    assert.equal(written[0].path, "/logs");
+    assert.equal(written[0].method, "VIEW");
+    const bad = await call(pageView, { ...r1, body: { path: "nope" } });
+    assert.equal(bad.statusCode, 400);
+    await call(clientError, { ...r1, body: { message: "x is undefined", path: "/hqepl/logs", stack: "TypeError: x\n at a\n at b\n at c", source: "script error" } });
+    const err = written[written.length - 1];
+    assert.equal(err.action, "error");
+    assert.equal(err.success, false);
+    assert.equal(err.label, "x is undefined");
+    assert.match(err.remark, /script error/);
+  });
+});
+test("status and client filters: success / failed, web / app / system (old rows with no client count as system)", () => {
+  assert.deepEqual(buildQuery({ status: "failed" }).query.success, false);
+  assert.deepEqual(buildQuery({ status: "success" }).query.success, { $ne: false });
+  assert.equal(buildQuery({ status: "success,failed" }).query.success, undefined);
+  assert.deepEqual(buildQuery({ client: "app" }).query.client, { $in: ["app"] });
+  assert.deepEqual(buildQuery({ client: "system" }).query.client, { $in: ["system", ""] });
+  assert.equal(buildQuery({ client: "nonsense" }).query.client, undefined);
+});
+
 test("from / to are IST calendar days on createdAt", () => {
   const { query } = buildQuery({ from: "2026-11-20", to: "2026-11-21" });
   assert.equal(query.createdAt.$gte.toISOString(), "2026-11-19T18:30:00.000Z");
@@ -83,12 +123,14 @@ test("GET /audit-trail answers { isOk, data, total } from the query it built", a
     [
       [AuditLog, "countDocuments", async (q) => ((seenQuery = q), 3)],
       [AuditLog, "find", () => chain([{ label: "a" }, { label: "b" }])],
+      [AuditLog, "aggregate", () => ({ allowDiskUse: async () => [{ failed: [{ n: 1 }], actions: [{ _id: "update", n: 3 }], modules: [{ _id: "machine", n: 3 }], users: [{ n: 2 }], topUsers: [] }] })],
     ],
     async () => {
       const res = await call(list, { query: { module: "machine", limit: "2" } });
       assert.equal(res.statusCode, 200);
       assert.equal(res.payload.total, 3);
       assert.equal(res.payload.data.length, 2);
+      assert.deepEqual(res.payload.stats, { total: 3, uniqueUsers: 2, failed: 1, actions: { update: 3 }, modules: { machine: 3 }, topUsers: [] });
       assert.deepEqual(seenQuery, { entityType: { $in: ["machine"] } });
       const bad = await call(list, { query: { from: "nope" } });
       assert.equal(bad.statusCode, 400);
@@ -98,7 +140,7 @@ test("GET /audit-trail answers { isOk, data, total } from the query it built", a
 
 // ── CSV ──────────────────────────────────────────────────────────────────
 test("the CSV header is exactly the agreed columns, prefixed with a BOM", () => {
-  assert.deepEqual(CSV_HEADER, ["Date & time (IST)", "Module", "Action", "Record", "Sheet", "Record date", "Machine", "Field", "From", "To", "Remark", "User", "Role", "Client"]);
+  assert.deepEqual(CSV_HEADER, ["Date & time (IST)", "Module", "Action", "Record", "Sheet", "Record date", "Machine", "Field", "From", "To", "Remark", "User", "Role", "Client", "Result", "IP", "Request"]);
   const csv = toCsv([]);
   assert.ok(csv.startsWith("﻿"));
   assert.equal(csv, "﻿" + CSV_HEADER.join(",") + "\r\n");
@@ -115,13 +157,13 @@ test("one CSV row per change, one row for a log with none, dates in IST, quotes 
     { createdAt: at, entityType: "auth", action: "login", label: "mann", changes: [], remark: "Web", actor: { name: "Mann", role: "Admin" }, client: "web" },
   ]);
   assert.equal(rows.length, 3);
-  assert.deepEqual(rows[0], ["21/11/2026 00:00:00", "Data Entry", "Edited", "VMC · VMC-1 · 20/11/2026 · Entry 1", "VMC", "20/11/2026", "VMC-1", "OK Quantity", 10, 12, "", "Asha, R", "Admin", "app"]);
-  assert.deepEqual(rows[2], ["21/11/2026 00:00:00", "Sign in / Sign out", "Signed in", "mann", "", "", "", "", null, null, "Web", "Mann", "Admin", "web"]);
+  assert.deepEqual(rows[0], ["21/11/2026 00:00:00", "Data Entry", "Edited", "VMC · VMC-1 · 20/11/2026 · Entry 1", "VMC", "20/11/2026", "VMC-1", "OK Quantity", 10, 12, "", "Asha, R", "Admin", "app", "OK", "", ""]);
+  assert.deepEqual(rows[2], ["21/11/2026 00:00:00", "Sign in / Sign out", "Signed in", "mann", "", "", "", "", null, null, "Web", "Mann", "Admin", "web", "OK", "", ""]);
   const lines = toCsv(rows).split("\r\n");
-  assert.equal(lines[1], '21/11/2026 00:00:00,Data Entry,Edited,VMC · VMC-1 · 20/11/2026 · Entry 1,VMC,20/11/2026,VMC-1,OK Quantity,10,12,,"Asha, R",Admin,app');
+  assert.equal(lines[1], '21/11/2026 00:00:00,Data Entry,Edited,VMC · VMC-1 · 20/11/2026 · Entry 1,VMC,20/11/2026,VMC-1,OK Quantity,10,12,,"Asha, R",Admin,app,OK,,');
   // The newline inside a quoted cell stays inside its cell (rows end with \r\n).
-  assert.equal(lines[2], '21/11/2026 00:00:00,Data Entry,Edited,VMC · VMC-1 · 20/11/2026 · Entry 1,VMC,20/11/2026,VMC-1,Remarks,,"He said ""go"", then\nleft",,"Asha, R",Admin,app');
-  assert.equal(lines[3], "21/11/2026 00:00:00,Sign in / Sign out,Signed in,mann,,,,,,,Web,Mann,Admin,web");
+  assert.equal(lines[2], '21/11/2026 00:00:00,Data Entry,Edited,VMC · VMC-1 · 20/11/2026 · Entry 1,VMC,20/11/2026,VMC-1,Remarks,,"He said ""go"", then\nleft",,"Asha, R",Admin,app,OK,,');
+  assert.equal(lines[3], "21/11/2026 00:00:00,Sign in / Sign out,Signed in,mann,,,,,,,Web,Mann,Admin,web,OK,,");
   assert.equal(lines[4], "");
   assert.equal(istStamp("2026-01-01T20:00:00.000Z"), "02/01/2026 01:30:00");
 });
@@ -131,7 +173,7 @@ test("GET /audit-trail/export.csv sets the CSV headers and file name", async () 
     const res = await call(exportCsv, { query: { from: "2026-11-01", to: "2026-11-30" } });
     assert.equal(res.statusCode, 200);
     assert.equal(res.headers["Content-Type"], "text/csv; charset=utf-8");
-    assert.equal(res.headers["Content-Disposition"], 'attachment; filename="audit-trail-2026-11-01_2026-11-30.csv"');
+    assert.equal(res.headers["Content-Disposition"], 'attachment; filename="logs-2026-11-01_2026-11-30.csv"');
     assert.ok(res.body.startsWith("﻿Date & time (IST)"));
   });
 });

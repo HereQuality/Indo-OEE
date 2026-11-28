@@ -34,15 +34,15 @@ test("buildAuditQuery carries a record query (entity, or sheet + date + machine)
 });
 
 test("the CSV download is named after the date range", () => {
-  assert.equal(csvFileName({ from: "2026-10-27", to: "2026-11-25" }), "audit-trail-2026-10-27_2026-11-25.csv");
-  assert.equal(csvFileName({}), "audit-trail-all_all.csv");
-  assert.equal(csvFileName({ from: "2026-11-01" }), "audit-trail-2026-11-01_all.csv");
+  assert.equal(csvFileName({ from: "2026-10-27", to: "2026-11-25" }), "logs-2026-10-27_2026-11-25.csv");
+  assert.equal(csvFileName({}), "logs-all_all.csv");
+  assert.equal(csvFileName({ from: "2026-11-01" }), "logs-2026-11-01_all.csv");
 });
 
 test("every action in the contract has a label and a colour", () => {
   const keys = [
     "create", "update", "delete", "unlocked", "flagged", "cleared", "approved", "rejected", "setting", "marked", "unmarked",
-    "login", "loginFailed", "logout", "passwordChange", "passwordReset", "impersonate", "blocked", "unblocked", "sent", "import",
+    "login", "loginFailed", "logout", "passwordChange", "passwordReset", "impersonate", "blocked", "unblocked", "sent", "import", "download", "other", "view", "error",
   ];
   assert.deepEqual(AUDIT_ACTIONS.map((a) => a.key).sort(), keys.sort());
   assert.equal(actionLabel("marked"), "Marked Not running");

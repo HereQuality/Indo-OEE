@@ -86,18 +86,32 @@ const diffChanges = (before, after, fields, action = "update") => {
   return out;
 };
 
-// Which client sent the request and from where. The app says so in its body
-// (`client: "app"`) or an X-Client header; everything else is the web.
+// Which client sent the request, from where, on what device, and the API
+// call itself. The app says so in its body (`client: "app"`), an X-Client
+// header or its Dart user agent; everything else is the web. No request = the
+// server itself ("system": the daily backup, a scheduled mail).
+//
+// Every audit row is written through here, so it is also where a request is
+// marked as logged: the catch-all (middlewares/auditCatchAll.middleware.js)
+// then knows not to add a generic row for the same request.
 const requestMeta = (req) => {
-  if (!req) return { client: "", ip: "" };
-  const isApp = req.body?.client === "app" || req.headers?.["x-client"] === "app";
+  if (!req) return { client: "system", ip: "", userAgent: "", method: "", path: "" };
+  if (req.auditCtx) req.auditCtx.audited = true;
+  const userAgent = String(req.headers?.["user-agent"] || "").slice(0, 300);
+  const isApp = req.body?.client === "app" || req.headers?.["x-client"] === "app" || /^Dart\//.test(userAgent);
   const forwarded = String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
-  return { client: isApp ? "app" : "web", ip: forwarded || req.ip || req.socket?.remoteAddress || "" };
+  return {
+    client: isApp ? "app" : "web",
+    ip: forwarded || req.ip || req.socket?.remoteAddress || "",
+    userAgent,
+    method: req.method || "",
+    path: String(req.originalUrl || req.url || "").split("?")[0].slice(0, 300),
+  };
 };
 
 // Everything a person might search a row by, lowercased in one string.
 const searchText = (row) => {
-  const parts = [row.label, row.actor?.name, row.actor?.role, row.remark, row.machineName, row.date];
+  const parts = [row.label, row.actor?.name, row.actor?.role, row.remark, row.machineName, row.date, row.module, row.path, row.ip];
   for (const c of row.changes || []) parts.push(c.label, c.from, c.to);
   return parts
     .filter((v) => v !== null && v !== undefined && v !== "")
@@ -134,6 +148,9 @@ const recordAudit = async ({
   actor,
   metrics,
   flagged,
+  success,
+  statusCode,
+  page,
 } = {}) => {
   try {
     const list = Array.isArray(changes) ? changes : diffChanges(before, after, fields, action);
@@ -154,6 +171,13 @@ const recordAudit = async ({
       actor: who,
       ...requestMeta(req),
     };
+    // A page opened in the web app: the page's own address, not the API call that reported it.
+    if (page) {
+      row.method = "VIEW";
+      row.path = String(page).slice(0, 300);
+    }
+    if (success === false) row.success = false;
+    if (statusCode) row.statusCode = statusCode;
     if (metrics) row.metrics = metrics;
     if (flagged) row.flagged = flagged;
     row.search = searchText(row);
